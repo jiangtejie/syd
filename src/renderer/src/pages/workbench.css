@@ -1,0 +1,847 @@
+/* 客服工作台样式（T6/T7/T8）
+ * 布局：左栏会话列表 | 中栏消息区 | 右栏建议面板
+ * 关键约束：grid/flex 子元素必须 min-height:0 / min-width:0，否则内容撑开容器导致无法滚动
+ */
+
+.workbench {
+  position: relative;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  height: 100%; /* 嵌入应用外壳页面区 */
+  background: #f5f6f7;
+  font-size: 14px;
+  color: #1a1a1a;
+  overflow: hidden;
+}
+
+/* ── 通用滚动条（细、低调） ── */
+.wb-sessions,
+.wb-suggest,
+.wb-chat-body {
+  scrollbar-width: thin;
+  scrollbar-color: #c9cdd4 transparent;
+}
+
+.wb-sessions::-webkit-scrollbar,
+.wb-suggest::-webkit-scrollbar,
+.wb-chat-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.wb-sessions::-webkit-scrollbar-thumb,
+.wb-suggest::-webkit-scrollbar-thumb,
+.wb-chat-body::-webkit-scrollbar-thumb {
+  background: #c9cdd4;
+  border-radius: 3px;
+}
+
+.wb-sessions::-webkit-scrollbar-thumb:hover,
+.wb-suggest::-webkit-scrollbar-thumb:hover,
+.wb-chat-body::-webkit-scrollbar-thumb:hover {
+  background: #aab0ba;
+}
+
+/* ══════════ 左栏：会话列表 ══════════ */
+.wb-sessions {
+  min-height: 0; /* 关键：允许 grid 子元素收缩出滚动区 */
+  border-right: 1px solid #e4e6eb;
+  background: #f7f8fa;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.wb-session-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.wb-session-header {
+  padding: 14px 16px 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  position: sticky;
+  top: 0;
+  background: #f7f8fa;
+  z-index: 2;
+}
+
+.wb-session-search {
+  position: sticky;
+  top: 40px;
+  padding: 0 12px 8px;
+  background: #f7f8fa;
+  z-index: 2;
+}
+
+.wb-session-search-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #dfe2e7;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  outline: none;
+  user-select: text;
+}
+
+.wb-session-search-input:focus {
+  border-color: #07c160;
+}
+
+.wb-session {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.15s;
+}
+
+.wb-session:hover {
+  background: #eceef1;
+}
+
+/* 折叠夹虚拟项 */
+.wb-session-foldgroup {
+  background: #f7f8fa;
+}
+
+.wb-session-foldicon {
+  background: #b0b7c3;
+  font-size: 18px;
+}
+
+.wb-fold-arrow {
+  display: inline-block;
+  margin-right: 4px;
+  color: #888;
+  font-size: 12px;
+  transition: transform 0.15s;
+}
+
+.wb-fold-arrow.is-open {
+  transform: rotate(90deg);
+}
+
+/* 折叠夹子项：缩进 + 左边框提示层级 */
+.wb-session.is-child {
+  padding-left: 28px;
+  background: #fafbfc;
+}
+
+.wb-session.is-child .wb-session-avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 14px;
+}
+
+.wb-session.is-active {
+  background: #e3e8f0;
+  border-left-color: #07c160;
+}
+
+.wb-session-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+  overflow: hidden;
+  object-fit: cover;
+}
+
+.wb-session-avatar-img {
+  display: block;
+}
+
+/* 群聊小标记 */
+.wb-group-tag {
+  display: inline-block;
+  font-size: 10px;
+  color: #07c160;
+  border: 1px solid #07c160;
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-right: 4px;
+  vertical-align: middle;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+
+.wb-session-body {
+  flex: 1;
+  min-width: 0; /* 允许名称/摘要省略号 */
+}
+
+.wb-session-top,
+.wb-session-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.wb-session-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-pin {
+  font-size: 11px;
+  margin-right: 2px;
+}
+
+.wb-session-time {
+  font-size: 11px;
+  color: #999;
+  flex-shrink: 0;
+}
+
+.wb-session-summary {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-session-unread {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: #fa5151;
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+
+.wb-empty {
+  padding: 24px;
+  text-align: center;
+  color: #999;
+}
+
+/* ══════════ 中栏：消息区 ══════════ */
+.wb-chat {
+  display: flex;
+  flex-direction: column;
+  background: #f2f3f5;
+  min-width: 0;
+  min-height: 0; /* 关键：grid 子元素可收缩 */
+}
+
+.wb-chat-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.wb-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e4e6eb;
+  background: #fff;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.wb-chat-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eef2ff;
+  color: #4b6bff;
+  font-weight: 400;
+  flex-shrink: 0;
+}
+
+/* 消息滚动区：flex:1 + min-height:0 才能出现滚动条 */
+.wb-chat-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wb-msg {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start; /* 头像与气泡顶部对齐，配合发送人昵称 */
+}
+
+.wb-msg.is-send {
+  flex-direction: row-reverse;
+}
+
+.wb-msg-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 5px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  overflow: hidden;
+  object-fit: cover;
+}
+
+.wb-msg-avatar-img {
+  display: block;
+}
+
+.wb-msg-main {
+  max-width: 72%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.is-send .wb-msg-main {
+  align-items: flex-end;
+}
+
+/* 群聊发送人昵称（微信风格：小字灰绿） */
+.wb-msg-sender {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.2;
+  padding-left: 2px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-msg-bubble {
+  position: relative;
+  padding: 9px 12px;
+  border-radius: 6px;
+  word-break: break-word;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  line-height: 1.5;
+}
+
+/* 气泡小尾巴（接收左 / 发送右） */
+.is-recv .wb-msg-bubble::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 12px;
+  border: 5px solid transparent;
+  border-right-color: #fff;
+  border-left: 0;
+}
+
+.is-send .wb-msg-bubble {
+  background: #95ec69;
+}
+
+.is-send .wb-msg-bubble::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 12px;
+  border: 5px solid transparent;
+  border-left-color: #95ec69;
+  border-right: 0;
+}
+
+.wb-msg-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  user-select: text; /* 消息文本允许选中复制 */
+  cursor: text;
+}
+
+.wb-msg-image {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 4px;
+  cursor: zoom-in;
+  display: block;
+}
+
+.wb-msg-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 180px;
+}
+
+.wb-msg-file-icon {
+  font-size: 26px;
+}
+
+.wb-msg-file-meta {
+  min-width: 0;
+}
+
+.wb-msg-file-name {
+  font-size: 13px;
+  color: #576b95;
+  word-break: break-all;
+}
+
+.wb-msg-file-size {
+  font-size: 11px;
+  color: #999;
+}
+
+.wb-msg-time {
+  font-size: 11px;
+  color: #b0b3b8;
+  align-self: flex-start;
+}
+
+/* 时间分隔条：>5 分钟间隔插入，居中灰字 */
+.wb-time-divider {
+  text-align: center;
+  font-size: 12px;
+  color: #a8adb5;
+  margin: 6px 0 2px;
+  user-select: none;
+}
+
+/* 系统消息（撤回/入群等）：居中灰条，无气泡无头像 */
+.wb-msg-system {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0;
+}
+
+.wb-msg-system-text {
+  font-size: 12px;
+  color: #a8adb5;
+  max-width: 80%;
+  text-align: center;
+  line-height: 1.5;
+  user-select: text;
+}
+
+.is-send .wb-msg-time {
+  align-self: flex-end;
+}
+
+.wb-loading {
+  text-align: center;
+  color: #999;
+  padding: 40px;
+}
+
+.wb-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  gap: 8px;
+}
+
+.wb-chat-empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #888;
+}
+
+.wb-chat-empty-sub {
+  font-size: 13px;
+  color: #aaa;
+}
+
+/* 底部输入区 */
+.wb-chat-input {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid #e4e6eb;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.wb-chat-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 64px;
+  max-height: 140px;
+  resize: none;
+  border: 1px solid #d9dce1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  outline: none;
+  user-select: text; /* 全局 user-select:none 下恢复输入框可选 */
+}
+
+.wb-chat-textarea:focus {
+  border-color: #07c160;
+}
+
+.wb-chat-send {
+  flex-shrink: 0;
+  padding: 8px 22px;
+  border-radius: 8px;
+  border: none;
+  background: #07c160;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wb-chat-send:hover:not(:disabled) {
+  background: #06ad56;
+}
+
+.wb-chat-send:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ══════════ 右栏：建议面板 ══════════ */
+.wb-suggest {
+  min-height: 0; /* 关键：允许滚动 */
+  border-left: 1px solid #e4e6eb;
+  background: #fff;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.wb-suggest-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.wb-suggest-title {
+  font-weight: 600;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.wb-suggest-empty {
+  color: #999;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.wb-suggest-tag {
+  font-size: 10px;
+  font-weight: 500;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  vertical-align: 1px;
+}
+
+.wb-suggest-tag-ai {
+  background: #ecf7ff;
+  color: #1f8ceb;
+}
+
+.wb-suggest-tag-kb {
+  background: #eafbe9;
+  color: #07a63f;
+}
+
+.wb-suggest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.wb-suggest-card {
+  border: 1px solid #e4e6eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fafbfc;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.wb-suggest-card.is-chosen {
+  border-color: #07c160;
+  background: #f2fbf4;
+}
+
+.wb-suggest-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+.wb-suggest-src {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eef2ff;
+  color: #4b6bff;
+  flex-shrink: 0;
+}
+
+.wb-suggest-reason {
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.wb-suggest-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 8px;
+  user-select: text;
+}
+
+.wb-suggest-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.wb-suggest-btn {
+  font-size: 12px;
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1px solid #07c160;
+  background: #fff;
+  color: #07c160;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.wb-suggest-btn:hover:not(:disabled) {
+  background: #07c160;
+  color: #fff;
+}
+
+.wb-suggest-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.wb-suggest-card.is-chosen .wb-suggest-btn {
+  background: #e6f7ec;
+  color: #07a63f;
+  border-color: #07a63f;
+  cursor: default;
+}
+
+.wb-suggest-regenerate {
+  width: 100%;
+  font-size: 13px;
+  padding: 8px 0;
+  border-radius: 8px;
+  border: 1px solid #d9dce1;
+  background: #fff;
+  color: #555;
+  cursor: pointer;
+  margin-top: auto; /* 固定在面板底部 */
+}
+
+.wb-suggest-regenerate:hover:not(:disabled) {
+  background: #f5f6f7;
+}
+
+.wb-suggest-regenerate:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.wb-suggest-error {
+  color: #e5484d;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 发送结果提示 */
+.wb-send-result {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.wb-send-result.is-ok {
+  background: #eafbe9;
+  color: #07a63f;
+}
+
+.wb-send-result.is-fail {
+  background: #fdecec;
+  color: #e5484d;
+}
+
+/* ══════════ 顶部提示条 ══════════ */
+.wb-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(255, 244, 205, 0.95);
+  border: 1px solid #f5d78e;
+  color: #8a6d1a;
+  font-size: 12px;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  pointer-events: none; /* 不遮挡下方内容点击 */
+}
+
+.wb-banner-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f0b429;
+}
+
+/* ══════════ 附件弹层 ══════════ */
+.wb-att-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.wb-att-dialog {
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 80vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+}
+
+.wb-att-image {
+  max-width: 70vw;
+  max-height: 65vh;
+  border-radius: 6px;
+}
+
+.wb-att-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.wb-att-file-icon {
+  font-size: 44px;
+}
+
+.wb-att-file-name {
+  font-weight: 500;
+  word-break: break-all;
+  text-align: center;
+}
+
+.wb-att-file-size {
+  color: #999;
+  font-size: 12px;
+}
+
+.wb-att-file-hint {
+  color: #b0b3b8;
+  font-size: 12px;
+}
+
+.wb-att-close {
+  padding: 6px 20px;
+  border-radius: 6px;
+  border: 1px solid #d9dce1;
+  background: #fff;
+  cursor: pointer;
+}
+
+.wb-att-close:hover {
+  background: #f5f6f7;
+}
+
+/* ── 消息右键菜单 ── */
+.ctx-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.ctx-menu {
+  position: fixed;
+  min-width: 96px;
+  background: #fff;
+  border: 1px solid #e4e6eb;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  z-index: 201;
+}
+
+.ctx-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+}
+
+.ctx-item:hover {
+  background: #f0f2f5;
+}

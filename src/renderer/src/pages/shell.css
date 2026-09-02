@@ -1,0 +1,324 @@
+/* 应用外壳：标题栏 + 导航栏 + 页面容器 */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: #f5f6f7;
+}
+
+/* ── 自定义标题栏（拖拽区，右侧避让原生窗控按钮 ~176px） ── */
+.app-titlebar {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 176px 0 14px;
+  background: #f5f6f7;
+  border-bottom: 1px solid #e8eaee;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.app-titlebar-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+}
+
+.app-titlebar-page {
+  font-size: 11px;
+  color: #999;
+}
+
+.app-titlebar-page::before {
+  content: '·';
+  margin-right: 8px;
+}
+
+.app-titlebar-badge {
+  min-width: 17px;
+  height: 17px;
+  border-radius: 9px;
+  background: #fa5151;
+  color: #fff;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.app-nav {
+  width: 64px;
+  flex-shrink: 0;
+  background: #1f2329;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 4px;
+}
+
+/* 导航顶部：当前微信账号头像（圆形）+ 连接状态指示灯 */
+.app-nav-avatar {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.app-nav-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #2a2f36;
+}
+
+/* 未连接 / 无头像：空占位（虚线圆 + 人形）；已选账号但暂无头像时为实心 */
+.app-nav-avatar-empty {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8a919a;
+  background: #2a2f36;
+  border: 1px dashed rgba(255, 255, 255, 0.28);
+  box-sizing: border-box;
+}
+
+.app-nav-avatar.is-set .app-nav-avatar-empty {
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* 指示灯：灰=未连接；黄=已选账号但数据未就绪；绿=已连接 */
+.app-nav-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid #1f2329;
+  box-sizing: border-box;
+}
+
+.app-nav-dot.on {
+  background: #2ee584;
+  box-shadow: 0 0 5px rgba(46, 229, 132, 0.8);
+}
+
+.app-nav-dot.warn {
+  background: #f5a623;
+}
+
+.app-nav-dot.off {
+  background: #5b626b;
+}
+
+.app-nav-avatar:hover .app-nav-avatar-empty {
+  color: #cfd4da;
+}
+
+.app-nav-item {
+  width: 52px;
+  padding: 8px 0 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa0a6;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.app-nav-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d8dce1;
+}
+
+.app-nav-item.is-active {
+  background: rgba(7, 193, 96, 0.18);
+  color: #2ee584;
+}
+
+.app-nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  line-height: 1;
+}
+
+.app-nav-icon svg {
+  display: block;
+}
+
+.app-nav-label {
+  font-size: 11px;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.app-page {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-page.is-hidden {
+  display: none;
+}
+
+/* 页面通用：带滚动的内容页（客户/看板/设置） */
+.page-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+}
+
+.page-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.page-scroll::-webkit-scrollbar-thumb {
+  background: #c9cdd4;
+  border-radius: 3px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 4px;
+}
+
+.page-subtitle {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 16px;
+}
+
+.page-card {
+  background: #fff;
+  border: 1px solid #e8eaee;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+/* ── Toast ── */
+.toast-host {
+  position: fixed;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.toast-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  animation: toast-in 0.2s ease-out;
+}
+
+.toast-success {
+  background: rgba(7, 166, 63, 0.95);
+}
+
+.toast-error {
+  background: rgba(229, 72, 77, 0.95);
+}
+
+.toast-info {
+  background: rgba(31, 35, 41, 0.92);
+}
+
+.toast-icon {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── 错误边界兜底页 ── */
+.eb-fallback {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #f5f6f7;
+}
+
+.eb-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #333;
+}
+
+.eb-message {
+  font-size: 13px;
+  color: #999;
+  max-width: 480px;
+  text-align: center;
+  word-break: break-all;
+}
+
+.eb-reload {
+  padding: 8px 24px;
+  border: none;
+  border-radius: 8px;
+  background: #07c160;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.eb-reload:hover {
+  background: #06ad56;
+}

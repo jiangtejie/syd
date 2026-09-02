@@ -1,0 +1,222 @@
+/* 设置页 */
+
+/* 双列紧凑网格：宽屏两列、窄屏自动一列 */
+.st-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 14px;
+  max-width: 1080px;
+  align-items: start;
+}
+
+.st-section {
+  margin-bottom: 14px;
+  max-width: 1080px;
+}
+
+/* 网格内的卡片去掉底部外边距，由 gap 控制间距 */
+.st-grid > .st-section {
+  margin-bottom: 0;
+  max-width: none;
+}
+
+.st-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+/* 卡片内二级分区标题（如「图片解密」） */
+.st-subtitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #e8eaee;
+}
+
+.st-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.st-label {
+  width: 170px;
+  flex-shrink: 0;
+  color: #333;
+}
+
+.st-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #dfe2e7;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  user-select: text;
+}
+
+.st-input.sm {
+  max-width: 120px;
+}
+
+.st-input:focus {
+  border-color: #07c160;
+}
+
+select.st-input {
+  cursor: pointer;
+  background: #fff;
+  padding-right: 8px;
+}
+
+.st-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: #07c160;
+  cursor: pointer;
+}
+
+.st-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.st-btn {
+  padding: 7px 18px;
+  border: none;
+  border-radius: 8px;
+  background: #07c160;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.st-btn:hover:not(:disabled) {
+  background: #06ad56;
+}
+
+.st-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.st-btn.danger {
+  background: #fa5151;
+}
+
+.st-btn.danger:hover:not(:disabled) {
+  background: #e5484d;
+}
+
+.st-hint {
+  font-size: 12px;
+  color: #999;
+}
+
+.st-saved {
+  color: #07a63f;
+  margin-left: 8px;
+}
+
+.st-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.st-kv {
+  display: flex;
+  justify-content: space-between;
+  max-width: 320px;
+  font-size: 13px;
+}
+
+.st-kv > span:first-child {
+  color: #999;
+}
+
+.st-ok {
+  color: #07a63f;
+  font-weight: 600;
+}
+
+.st-bad {
+  color: #e5484d;
+  font-weight: 600;
+}
+
+/* 次级按钮 */
+.st-btn.ghost {
+  background: #fff;
+  color: #07c160;
+  border: 1px solid #07c160;
+  flex-shrink: 0;
+  padding: 6px 14px;
+}
+
+.st-btn.ghost:hover:not(:disabled) {
+  background: #f0fbf4;
+}
+
+/* 密钥状态卡片 */
+.st-keystatus {
+  margin-top: 14px;
+  border: 1px solid #eef0f3;
+  border-radius: 8px;
+  background: #fafbfc;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.st-path {
+  font-size: 12px;
+  color: #555;
+  word-break: break-all;
+  text-align: right;
+  max-width: 380px;
+}
+
+/* 解密层提示 */
+.st-decrypt-note {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #8a6d1a;
+  background: #fff8e1;
+  border: 1px solid #f5d78e;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* 缓存目录卡片 */
+.st-cache-effective {
+  margin-top: 10px;
+  max-width: none;
+}
+
+.st-cache-hint {
+  display: block;
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+/* 版本号行 */
+.st-version {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed #e8eaee;
+  font-size: 11px;
+  color: #bbb;
+  text-align: center;
+}

@@ -1,0 +1,302 @@
+/* 客户页 */
+
+.cu-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.cu-search {
+  width: 260px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #dfe2e7;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  user-select: text;
+  background: #fff;
+}
+
+.cu-search:focus {
+  border-color: #07c160;
+}
+
+.cu-filters {
+  display: flex;
+  gap: 6px;
+}
+
+.cu-filter {
+  padding: 5px 14px;
+  border-radius: 14px;
+  border: 1px solid #dfe2e7;
+  background: #fff;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+}
+
+.cu-filter.is-active {
+  border-color: #07c160;
+  color: #07c160;
+  background: #f0fbf4;
+}
+
+.cu-list {
+  padding: 0;
+  overflow: hidden;
+}
+
+.cu-row {
+  display: grid;
+  grid-template-columns: 1.6fr 0.7fr 1.6fr 1.2fr 0.9fr 0.5fr;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f1f3;
+}
+
+.cu-row:last-child {
+  border-bottom: none;
+}
+
+.cu-row:not(.cu-row-head):hover {
+  background: #f7f9fb;
+}
+
+.cu-row-head {
+  cursor: default;
+  font-size: 12px;
+  color: #999;
+  background: #fafbfc;
+}
+
+.cu-cell-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.cu-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cu-avatar.lg {
+  width: 44px;
+  height: 44px;
+  font-size: 17px;
+}
+
+.cu-name-text {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cu-tier {
+  font-size: 10px;
+  font-weight: 700;
+  color: #b8860b;
+  background: #fdf3d7;
+  border: 1px solid #f0dfa8;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.cu-tag-chip {
+  font-size: 11px;
+  color: #4b6bff;
+  background: #eef2ff;
+  padding: 1px 7px;
+  border-radius: 9px;
+  white-space: nowrap;
+}
+
+.cu-cell-tags {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cu-score-bar {
+  display: inline-block;
+  width: 56px;
+  height: 6px;
+  border-radius: 3px;
+  background: #eef0f3;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.cu-score-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #34d17b, #07c160);
+}
+
+.cu-score-num {
+  font-size: 12px;
+  color: #555;
+}
+
+.cu-unread {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: #fa5151;
+  color: #fff;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+.cu-muted {
+  color: #999;
+  font-size: 12px;
+}
+
+.cu-empty {
+  padding: 40px;
+  text-align: center;
+  color: #999;
+}
+
+/* 画像抽屉 */
+.cu-drawer-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 50;
+}
+
+.cu-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 340px;
+  height: 100%;
+  background: #fff;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.cu-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.cu-drawer-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.cu-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cu-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.cu-wxid {
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+.cu-drawer-close {
+  border: none;
+  background: transparent;
+  color: #999;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.cu-drawer-close:hover {
+  color: #333;
+}
+
+.cu-section {
+  border-top: 1px solid #f0f1f3;
+  padding-top: 12px;
+}
+
+.cu-section-title {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.cu-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cu-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.cu-kv > span:first-child {
+  color: #999;
+  flex-shrink: 0;
+}
+
+.cu-summary-cell {
+  text-align: right;
+  word-break: break-all;
+}
+
+.cu-goto {
+  padding: 9px 0;
+  border: none;
+  border-radius: 8px;
+  background: #07c160;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cu-goto:hover {
+  background: #06ad56;
+}
+
+.cu-drawer-hint {
+  font-size: 11px;
+  color: #bbb;
+  text-align: center;
+}

@@ -1,0 +1,324 @@
+/* 数据看板 */
+
+.db-alert {
+  background: #fdecec;
+  border: 1px solid #f5c2c2;
+  color: #c92a2a;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+
+/* 指标卡 */
+.db-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.db-card {
+  text-align: center;
+  padding: 14px 8px;
+}
+
+.db-card-num {
+  font-size: 26px;
+  font-weight: 700;
+  color: #1a1a1a;
+  line-height: 1.2;
+}
+
+.db-card-num.warn {
+  color: #fa5151;
+}
+
+.db-card-num.vip {
+  color: #b8860b;
+}
+
+.db-card-label {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+/* 图表面板网格 */
+.db-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.db-panel {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.db-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.db-panel-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: #b8860b;
+  background: #fdf3d7;
+  padding: 1px 7px;
+  border-radius: 8px;
+}
+
+/* 柱状图 */
+.db-bars {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  min-height: 140px;
+  padding: 0 4px;
+}
+
+.db-bars.sm {
+  min-height: 90px;
+  margin-top: 12px;
+}
+
+.db-bar-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.db-bar-val {
+  font-size: 11px;
+  color: #999;
+}
+
+.db-bar {
+  width: 100%;
+  max-width: 34px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #34d17b, #07c160);
+  min-height: 2px;
+}
+
+.db-bar-stack {
+  width: 100%;
+  max-width: 34px;
+  display: flex;
+  flex-direction: column;
+  min-height: 2px;
+}
+
+.db-bar.sent {
+  width: 100%;
+  background: #07c160;
+  border-radius: 0 0 0 0;
+}
+
+.db-bar-stack .db-bar.sent:last-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.db-bar.fail {
+  width: 100%;
+  background: #fa5151;
+  border-radius: 4px 4px 0 0;
+}
+
+.db-bar-day {
+  font-size: 11px;
+  color: #999;
+}
+
+/* 环形图 */
+.db-donut-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+
+.db-donut {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.db-donut-hole {
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.db-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: #555;
+}
+
+.db-panel > .db-legend {
+  flex-direction: row;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.db-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.db-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.db-dot.vip {
+  background: #f0b429;
+}
+
+.db-dot.normal {
+  background: #e4e6eb;
+}
+
+.db-dot.sent {
+  background: #07c160;
+}
+
+.db-dot.fail {
+  background: #fa5151;
+}
+
+/* 发送频控 */
+.db-freq-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 6px;
+}
+
+.db-freq-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: #eef0f3;
+  overflow: hidden;
+}
+
+.db-freq-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #34d17b, #07c160);
+}
+
+.db-freq-fill.is-high {
+  background: linear-gradient(90deg, #f0b429, #fa5151);
+}
+
+.db-freq-note {
+  font-size: 12px;
+  color: #b8860b;
+  margin-top: 6px;
+}
+
+/* 活跃客户榜 */
+.db-top-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.db-top-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.db-top-item:hover {
+  background: #f7f9fb;
+}
+
+.db-top-rank {
+  width: 18px;
+  text-align: center;
+  font-weight: 700;
+  color: #c9cdd4;
+}
+
+.db-top-item:nth-child(1) .db-top-rank,
+.db-top-item:nth-child(2) .db-top-rank,
+.db-top-item:nth-child(3) .db-top-rank {
+  color: #f0b429;
+}
+
+.db-top-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-top-score {
+  font-size: 12px;
+  color: #07c160;
+  font-weight: 600;
+}
+
+/* 客户页头像复用（customers.css 未引入时的兜底） */
+.db-top-item .cu-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.db-top-item .cu-tier {
+  font-size: 10px;
+  font-weight: 700;
+  color: #b8860b;
+  background: #fdf3d7;
+  border: 1px solid #f0dfa8;
+  padding: 1px 6px;
+  border-radius: 4px;
+}

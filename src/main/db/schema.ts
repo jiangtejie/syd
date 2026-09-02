@@ -1,0 +1,114 @@
+import type Database from 'better-sqlite3-multiple-ciphers'
+
+/**
+ * 本地库 schema（对应方案文档 §5 数据模型）
+ * 消息本体存微信 DB，本地只存密钥、决策与审计数据。
+ */
+const SCHEMA_VERSION = 1
+
+const TABLES: string[] = [
+  // 客户档案
+  `CREATE TABLE IF NOT EXISTS customer (
+    id INTEGER PRIMARY KEY,
+    wxid TEXT UNIQUE,
+    nickname TEXT,
+    remark TEXT,
+    tags TEXT,
+    tier TEXT DEFAULT 'normal',
+    profile TEXT,
+    last_incident_at INTEGER,
+    created_at INTEGER
+  )`,
+
+  // 微信 DB 密钥（外部注入，加密存储，不落明文）
+  `CREATE TABLE IF NOT EXISTS key_store (
+    id INTEGER PRIMARY KEY,
+    wxid TEXT UNIQUE,
+    db_path TEXT,
+    key_encrypted TEXT,
+    source TEXT,
+    status TEXT DEFAULT 'pending',
+    imported_at INTEGER,
+    updated_at INTEGER
+  )`,
+
+  // 会话状态（支撑门控 G1/G3/G4 与转人工）
+  `CREATE TABLE IF NOT EXISTS session (
+    id TEXT PRIMARY KEY,
+    wxid TEXT,
+    status TEXT DEFAULT 'normal',
+    last_msg_time INTEGER,
+    auto_streak INTEGER DEFAULT 0,
+    updated_at INTEGER
+  )`,
+
+  // 全局配置（门控阈值 / 频控 / 时段窗口 / 自动总开关）
+  `CREATE TABLE IF NOT EXISTS app_config (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  )`,
+
+  // 条件规则 P1~P4（P5~P8 为引擎内建 source 分支逻辑）
+  `CREATE TABLE IF NOT EXISTS tier_rule (
+    id INTEGER PRIMARY KEY,
+    priority INTEGER,
+    name TEXT,
+    enabled INTEGER DEFAULT 1,
+    condition_type TEXT,
+    condition TEXT,
+    action TEXT
+  )`,
+
+  // 知识库条目
+  `CREATE TABLE IF NOT EXISTS knowledge_item (
+    id INTEGER PRIMARY KEY,
+    category TEXT,
+    keywords TEXT,
+    question TEXT,
+    answer TEXT,
+    scope TEXT DEFAULT 'public',
+    has_vars INTEGER DEFAULT 0,
+    expires_at INTEGER,
+    priority INTEGER DEFAULT 0,
+    updated_at INTEGER
+  )`,
+
+  // 回复候选与决策（含状态机）
+  `CREATE TABLE IF NOT EXISTS reply_decision (
+    id INTEGER PRIMARY KEY,
+    session_id TEXT,
+    target_key TEXT,
+    mode TEXT,
+    source TEXT,
+    status TEXT DEFAULT 'generated',
+    suggestions TEXT,
+    chosen TEXT,
+    chosen_at INTEGER
+  )`,
+
+  // 发送日志（审计）
+  `CREATE TABLE IF NOT EXISTS send_log (
+    id INTEGER PRIMARY KEY,
+    session_id TEXT,
+    message TEXT,
+    mode TEXT,
+    source TEXT,
+    result TEXT,
+    error_reason TEXT,
+    verified INTEGER DEFAULT 0,
+    verified_at INTEGER,
+    created_at INTEGER
+  )`
+]
+
+export function migrate(db: Database.Database): void {
+  for (const sql of TABLES) db.exec(sql)
+  db.pragma(`user_version = ${SCHEMA_VERSION}`)
+}
+
+export function listTables(db: Database.Database): string[] {
+  const rows = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+    .all() as Array<{ name: string }>
+  return rows.map((r) => r.name)
+}
