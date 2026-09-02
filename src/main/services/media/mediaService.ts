@@ -101,7 +101,8 @@ function findDatByMd5(root: string, md5: string, suffix: string): string | null 
     for (const e of entries) {
       const full = join(dir, e.name)
       if (e.isDirectory()) {
-        if (!/^(Img|Image|MsgImg|Video|File|Voice|avatar)$/i.test(e.name)) stack.push(full)
+        // 附件目录结构为 <会话hash>/<年月>/Img|Video|File|<md5>.dat，需深入所有子目录
+        stack.push(full)
       } else if (/\.dat$/i.test(e.name)) {
         const stem = e.name.replace(/\.dat$/i, '').toLowerCase()
         if (accept.includes(stem)) return full

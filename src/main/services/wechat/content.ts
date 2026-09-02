@@ -121,7 +121,9 @@ export function parseMessageContent(content: string, localType: number): string 
         return fileName ? `[文件] ${fileName}` : '[文件]'
       }
       if (type === '57') {
-        return '[引用消息]'
+        // 引用消息：title 是回复文字，被引用内容在 refermsg 里（由 parseQuoteMessage 解析）
+        const title = decodeHtmlEntities(extractXmlValue(rawContent, 'title'))
+        return title || '[引用消息]'
       }
       if (type === '19') {
         const title = extractXmlValue(rawContent, 'title')
@@ -158,6 +160,22 @@ export function parseImageMd5(content: string): string | undefined {
   return md5 ? md5.toLowerCase() : undefined
 }
 
+/**
+ * 从 packed_info_data（protobuf）提取真实图片文件名 md5。
+ * 微信 4.x 图片 XML 里的 md5 是 CDN md5，本地 .dat 文件按另一个 md5 命名，
+ * 该 md5 存在 packed_info_data 的字节流中（32 位 hex，前缀 `" `）。
+ */
+export function parsePackedInfoMd5(raw: any): string | undefined {
+  if (!raw) return undefined
+  let buf: Buffer
+  if (Buffer.isBuffer(raw)) buf = raw
+  else if (raw instanceof Uint8Array) buf = Buffer.from(raw)
+  else if (typeof raw === 'string') buf = Buffer.from(raw, 'latin1')
+  else return undefined
+  const m = buf.toString('latin1').match(/[0-9a-f]{32}/i)
+  return m ? m[0].toLowerCase() : undefined
+}
+
 /** 从 34 型提取语音时长（毫秒） */
 export function parseVoiceDuration(content: string): number | undefined {
   const match = /voicelength\s*=\s*['"](\d+)['"]/i.exec(content)
@@ -171,4 +189,80 @@ export function parseFileInfo(content: string): { fileName?: string; fileSize?: 
   const totallen = extractXmlValue(content, 'totallen')
   const fileSize = totallen ? parseInt(totallen, 10) : undefined
   return { fileName: fileName || undefined, fileSize: Number.isFinite(fileSize) ? fileSize : undefined }
+}
+
+/** 清理引用内容中的 wxid 前缀与多余分隔符 */
+function sanitizeQuotedContent(content: string): string {
+  let result = content
+  result = result.replace(/wxid_[A-Za-z0-9_-]{3,}/g, '')
+  result = result.replace(/^[\s:：\-]+/, '')
+  result = result.replace(/[:：]{2,}/g, ':')
+  result = result.replace(/^[\s:：\-]+/, '')
+  result = result.replace(/\s+/g, ' ').trim()
+  return result
+}
+
+export interface QuoteInfo {
+  content?: string
+  sender?: string
+  imageMd5?: string
+}
+
+/**
+ * 解析引用消息（type 57）中被引用的那一条（<refermsg> 段）。
+ * 返回被引用消息的摘要文本 / 发送人昵称 / 被引用图片 md5。
+ */
+export function parseQuoteMessage(content: string): QuoteInfo {
+  try {
+    const start = content.indexOf('<refermsg>')
+    const end = content.indexOf('</refermsg>')
+    if (start === -1 || end === -1) return {}
+    const referMsgXml = content.substring(start, end + '</refermsg>'.length)
+
+    let displayName = extractXmlValue(referMsgXml, 'displayname')
+    if (displayName && /^wxid_/i.test(displayName)) displayName = ''
+
+    let referContent = decodeHtmlEntities(extractXmlValue(referMsgXml, 'content'))
+    const referType = extractXmlValue(referMsgXml, 'type')
+    let imageMd5: string | undefined
+
+    let displayContent = referContent
+    switch (referType) {
+      case '1':
+        displayContent = sanitizeQuotedContent(referContent)
+        break
+      case '3':
+        displayContent = '[图片]'
+        imageMd5 =
+          extractXmlValue(referContent, 'md5') || (referContent.match(/\bmd5="([a-f0-9]+)"/i)?.[1]) || undefined
+        break
+      case '34':
+        displayContent = '[语音]'
+        break
+      case '43':
+        displayContent = '[视频]'
+        break
+      case '47':
+        displayContent = '[动画表情]'
+        break
+      case '49': {
+        const appTitle = extractXmlValue(referContent, 'title')
+        displayContent = appTitle ? `[链接] ${appTitle}` : '[链接]'
+        break
+      }
+      case '42':
+        displayContent = '[名片]'
+        break
+      case '48':
+        displayContent = '[位置]'
+        break
+      default:
+        if (!referContent || referContent.includes('wxid_')) displayContent = '[消息]'
+        else displayContent = sanitizeQuotedContent(referContent)
+    }
+
+    return { content: displayContent, sender: displayName || undefined, imageMd5 }
+  } catch {
+    return {}
+  }
 }

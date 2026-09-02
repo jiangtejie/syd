@@ -16,6 +16,7 @@ import {
   decodeMessageContent,
   parseMessageContent,
   parseImageMd5,
+  parsePackedInfoMd5,
   parseVoiceDuration,
   parseFileInfo
 } from './content'
@@ -391,7 +392,9 @@ function rowToMessage(
   }
 
   const parsed = parseMessageContent(content, localType)
-  const imageMd5 = parseImageMd5(content)
+  // 图片文件名 md5 优先取 packed_info_data（本地 .dat 命名），XML 的 md5 是 CDN md5 对不上本地文件
+  const imageMd5 =
+    parsePackedInfoMd5(getRowField(row, ['packed_info_data', 'packedInfoData'])) || parseImageMd5(content)
   const voiceDuration = parseVoiceDuration(content)
   const fileInfo = parseFileInfo(content)
 
