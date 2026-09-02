@@ -83,6 +83,12 @@ export interface ChatMessage {
   voiceDuration?: number
   fileName?: string
   fileSize?: number
+  /** 引用消息：被引用内容的摘要文本 */
+  quotedContent?: string
+  /** 引用消息：被引用消息发送人昵称 */
+  quotedSender?: string
+  /** 引用消息：被引用图片的 md5 */
+  quotedImageMd5?: string
 }
 
 /** 微信库连接状态（T4 门面） */
