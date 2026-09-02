@@ -1,7 +1,7 @@
 import * as keyStore from '../keyStoreService'
 import { testWxConnection } from './wxDb'
-import { listSessions, listMessages, listMessagesSince, enrichSessionsWithContacts, getAvatar } from './queries'
-import type { WxConnectInfo } from '../../../shared/types'
+import { listSessions, listMessages, listMessagesSince, enrichSessionsWithContacts, getAvatar, getRedEnvelopeStatuses as queryRedEnvelopeStatuses } from './queries'
+import type { WxConnectInfo, MessageCursor } from '../../../shared/types'
 
 /**
  * 微信通道门面（T4）。
@@ -58,11 +58,11 @@ export function getSessions(wxid: string) {
   return { ok: true as const, sessions }
 }
 
-/** 消息分页读取 */
-export function getMessages(wxid: string, sessionId: string, limit = 50, offset = 0) {
+/** 消息分页读取（keyset）：before 为空取最新一页，否则取更早一页 */
+export function getMessages(wxid: string, sessionId: string, limit = 50, before?: MessageCursor) {
   const session = buildWxSession(wxid)
   if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
-  return listMessages(session, sessionId, limit, offset)
+  return listMessages(session, sessionId, limit, before)
 }
 
 /** 增量消息（T5 轮询用） */
@@ -70,6 +70,13 @@ export function getMessagesSince(wxid: string, sessionId: string, sinceSortSeq: 
   const session = buildWxSession(wxid)
   if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
   return listMessagesSince(session, sessionId, sinceSortSeq, limit)
+}
+
+/** 会话内红包本地状态（general.db redEnvelopeTable） */
+export function getRedEnvelopeStatuses(wxid: string, sessionId: string) {
+  const session = buildWxSession(wxid)
+  if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
+  return queryRedEnvelopeStatuses(session, sessionId)
 }
 
 /** 解析头像（contact URL 优先，head_image 本地 BLOB 兜底）。localOnly=远程 URL 已失败，强制取本地 */

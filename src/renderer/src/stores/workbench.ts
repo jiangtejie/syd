@@ -1,5 +1,10 @@
 import { create } from 'zustand'
-import type { ChatMessage, ReplyCandidate, SessionSummary } from '../../../shared/types'
+import type {
+  ChatMessage,
+  MessageCursor,
+  ReplyCandidate,
+  SessionSummary
+} from '../../../shared/types'
 import { toast } from './toast'
 
 /**
@@ -25,6 +30,12 @@ interface WorkbenchState {
   activeSessionId: string | null
   messages: ChatMessage[]
   loading: boolean
+  /** 是否有更早的历史消息可加载（keyset 分页） */
+  messagesHasMore: boolean
+  /** 加载更早消息的游标（null=没有更多） */
+  nextCursor: MessageCursor | null
+  /** 是否正在加载更早消息 */
+  loadingOlder: boolean
   /** 解密层未实现时的提示 */
   fallbackReason: string | null
 
@@ -43,6 +54,7 @@ interface WorkbenchState {
   init: (wxid: string) => Promise<void>
   selectSession: (sessionId: string) => Promise<void>
   refreshSessions: () => Promise<void>
+  loadOlder: () => Promise<void>
   generateSuggestions: () => Promise<void>
   adoptSuggestion: (text: string) => void
   sendText: (text: string, source?: string) => Promise<void>
@@ -64,6 +76,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   activeSessionId: null,
   messages: [],
   loading: false,
+  messagesHasMore: false,
+  nextCursor: null,
+  loadingOlder: false,
   fallbackReason: null,
 
   suggestions: [],
@@ -109,21 +124,26 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   selectSession: async (sessionId: string) => {
-    set({ activeSessionId: sessionId, loading: true })
+    set({ activeSessionId: sessionId, loading: true, nextCursor: null, messagesHasMore: false })
     const { wxid, source } = get()
     try {
       if (source === 'wx' && wxid && wxApi) {
-        const res = await wxApi.getMessages(wxid, sessionId, 50, 0)
+        const res = await wxApi.getMessages(wxid, sessionId, 50)
         if (res.ok && res.messages) {
-          set({ messages: res.messages, loading: false })
+          set({
+            messages: res.messages,
+            messagesHasMore: !!res.hasMore,
+            nextCursor: res.nextCursor ?? null,
+            loading: false
+          })
           void get().generateSuggestions()
           return
         }
       }
-      set({ messages: [], loading: false })
+      set({ messages: [], loading: false, messagesHasMore: false, nextCursor: null })
     } catch (e) {
       console.error('[workbench] load messages failed', e)
-      set({ messages: [], loading: false })
+      set({ messages: [], loading: false, messagesHasMore: false, nextCursor: null })
     }
   },
 
@@ -133,6 +153,30 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const res = await wxApi.getSessions(wxid)
     if (res.ok && res.sessions) {
       set({ sessions: res.sessions })
+    }
+  },
+
+  loadOlder: async () => {
+    const { wxid, activeSessionId, nextCursor, loadingOlder, source } = get()
+    if (source !== 'wx' || !wxid || !activeSessionId || !nextCursor || loadingOlder || !wxApi) return
+    set({ loadingOlder: true })
+    try {
+      const res = await wxApi.getMessages(wxid, activeSessionId, 50, nextCursor)
+      // 防竞态：加载期间用户切走了会话则丢弃结果
+      if (get().activeSessionId !== activeSessionId) return
+      if (res.ok && res.messages && res.messages.length > 0) {
+        set({
+          messages: [...res.messages, ...get().messages],
+          messagesHasMore: !!res.hasMore,
+          nextCursor: res.nextCursor ?? null
+        })
+      } else {
+        set({ messagesHasMore: false, nextCursor: null })
+      }
+    } catch (e) {
+      console.error('[workbench] load older failed', e)
+    } finally {
+      if (get().activeSessionId === activeSessionId) set({ loadingOlder: false })
     }
   },
 

@@ -10,7 +10,9 @@ import type {
   AiGenOptions,
   ReplyCandidate,
   SendResult,
-  SendStatusInfo
+  SendStatusInfo,
+  MessageCursor,
+  RedEnvelopeStatus
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -51,13 +53,17 @@ declare global {
             wxid: string,
             sessionId: string,
             limit?: number,
-            offset?: number
-          ) => Promise<Result<{ messages?: ChatMessage[]; hasMore?: boolean }>>
+            before?: MessageCursor
+          ) => Promise<Result<{ messages?: ChatMessage[]; hasMore?: boolean; nextCursor?: MessageCursor }>>
           getMessagesSince: (
             wxid: string,
             sessionId: string,
             sinceSortSeq: number
           ) => Promise<Result<{ messages?: ChatMessage[] }>>
+          getRedEnvelopeStatuses: (
+            wxid: string,
+            sessionId: string
+          ) => Promise<Result<{ statuses?: RedEnvelopeStatus[] }>>
           getAvatar: (
             wxid: string,
             username: string,
@@ -106,6 +112,11 @@ declare global {
             kind?: 'orig' | 'thumb' | 'hd'
             dbPath?: string
           }) => Promise<{ ok: boolean; url?: string; ext?: string; error?: string }>
+          decryptVideo: (opts: {
+            wxid: string
+            videoMd5: string
+            dbPath?: string
+          }) => Promise<{ ok: boolean; url?: string; error?: string }>
           testImageDecrypt: (
             wxid: string,
             dbPath?: string

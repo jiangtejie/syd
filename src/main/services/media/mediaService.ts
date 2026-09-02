@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { extname, join } from 'node:path'
 import { getCachePath } from '../paths'
 import { getConfig } from '../../db/repos/config'
 import * as keyRepo from '../../db/repos/keyStore'
@@ -292,4 +292,100 @@ export async function testImageDecrypt(wxid: string, dbPath?: string): Promise<D
     }
   }
   return { ok: false, error: `解密失败：${result.error}` }
+}
+
+export interface DecryptVideoOptions {
+  /** 归属账号 wxid */
+  wxid: string
+  /** 消息中的视频文件名 md5（来自 packed_info_data） */
+  videoMd5: string
+  /** 微信数据根路径；缺省尝试 key_store 中的 db_path */
+  dbPath?: string
+}
+
+export interface DecryptVideoResult {
+  ok: boolean
+  url?: string
+  error?: string
+}
+
+/** 定位视频目录：<wxid>/msg/video 或 <dbPath>/msg/video */
+function findVideoRoot(basePath: string, wxid: string): string | null {
+  const candidates = [join(basePath, wxid, 'msg', 'video'), join(basePath, 'msg', 'video')]
+  for (const c of candidates) {
+    if (existsSync(c) && statSync(c).isDirectory()) return c
+  }
+  return null
+}
+
+/** 视频附件支持的后缀（微信视频落地即明文 MP4，无 .dat 加密） */
+const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.m4v']
+
+/** 深度遍历 msg/video，返回首个文件名 md5 匹配的视频文件 */
+function findVideoByMd5(root: string, md5: string): string | null {
+  const base = md5.toLowerCase()
+  const stack: string[] = [root]
+  let guard = 0
+  while (stack.length > 0 && guard < 5000) {
+    guard++
+    const dir = stack.pop()!
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name)
+      if (e.isDirectory()) {
+        stack.push(full)
+      } else if (e.name.replace(/\.\w+$/, '').toLowerCase() === base && VIDEO_EXTS.includes(extname(e.name).toLowerCase())) {
+        return full
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * 解析视频 → 拷贝到缓存目录 → 返回 ct-media:// URL（渲染端可用 <video> 播放）。
+ * 微信 4.x 视频附件落地在 msg/video/<年月>/<md5>.mp4，本身已是明文 MP4，无需解密。
+ */
+export async function decryptVideo(opts: DecryptVideoOptions): Promise<DecryptVideoResult> {
+  const wxid = opts.wxid?.trim()
+  const md5 = opts.videoMd5?.trim().toLowerCase()
+  if (!wxid || !md5 || !/^[0-9a-f]{32}$/.test(md5)) {
+    return { ok: false, error: '缺少有效的 wxid / videoMd5' }
+  }
+
+  const dbPath = opts.dbPath?.trim()
+
+  let videoRoot: string | null = null
+  if (dbPath) videoRoot = findVideoRoot(dbPath, wxid)
+  if (!videoRoot) {
+    const profile = keyRepo.getKey(wxid)
+    if (profile?.dbPath) videoRoot = findVideoRoot(profile.dbPath, wxid)
+  }
+  if (!videoRoot) {
+    return { ok: false, error: '未找到微信视频目录 msg/video（请先连接账号或配置数据路径）' }
+  }
+
+  const srcPath = findVideoByMd5(videoRoot, md5)
+  if (!srcPath) {
+    return { ok: false, error: `未找到视频文件 ${md5}（可能已被微信清理）` }
+  }
+
+  try {
+    const ext = extname(srcPath).toLowerCase()
+    const cacheDir = join(getCachePath(), 'media', wxid)
+    mkdirSync(cacheDir, { recursive: true })
+    const cacheName = `${md5}_video${ext}`
+    const cacheFile = join(cacheDir, cacheName)
+    if (!existsSync(cacheFile)) {
+      copyFileSync(srcPath, cacheFile)
+    }
+    return { ok: true, url: toMediaUrl(wxid, cacheName) }
+  } catch (e) {
+    return { ok: false, error: `${md5} 视频读取失败: ${e instanceof Error ? e.message : String(e)}` }
+  }
 }

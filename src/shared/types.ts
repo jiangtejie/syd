@@ -80,15 +80,61 @@ export interface ChatMessage {
   parsedContent: string
   rawContent: string
   imageMd5?: string
+  isLivePhoto?: boolean
   voiceDuration?: number
+  videoMd5?: string
+  videoDuration?: number
+  emojiCdnUrl?: string
+  emojiMd5?: string
+  productId?: string
   fileName?: string
   fileSize?: number
+  fileExt?: string
+  fileMd5?: string
+  chatRecordList?: ChatRecordItem[]
   /** 引用消息：被引用内容的摘要文本 */
   quotedContent?: string
   /** 引用消息：被引用消息发送人昵称 */
   quotedSender?: string
   /** 引用消息：被引用图片的 md5 */
   quotedImageMd5?: string
+  /** 引用消息：被引用表情的 md5 */
+  quotedEmojiMd5?: string
+  /** 引用消息：被引用表情的 cdn 地址 */
+  quotedEmojiCdnUrl?: string
+  /** 红包 sendId（type 49/2001），用于匹配本地领取状态（general.db redEnvelopeTable） */
+  redEnvelopeSendId?: string
+}
+
+/** 合并转发聊天记录单条（type 19） */
+export interface ChatRecordItem {
+  datatype: number
+  datadesc?: string
+  datatitle?: string
+  sourcename?: string
+  sourcetime?: string
+  sourceheadurl?: string
+  fileext?: string
+  datasize?: number
+  messageuuid?: string
+  dataurl?: string
+  datathumburl?: string
+  datacdnurl?: string
+  md5?: string
+  imgheight?: number
+  imgwidth?: number
+  duration?: number
+}
+
+/** 红包本地状态（general.db redEnvelopeTable），无金额与领取人列表 */
+export interface RedEnvelopeStatus {
+  sendId: string
+  senderUsername: string
+  /** 微信内部状态码（语义未完全确认，原样透传） */
+  hbStatus: number
+  hbType: number
+  /** 2 = 我已领取；0 = 未领取 */
+  receiveStatus: number
 }
 
 /** 微信库连接状态（T4 门面） */
@@ -104,6 +150,13 @@ export interface WxConnectInfo {
 export interface PageResult<T> {
   items: T[]
   hasMore: boolean
+}
+
+/** 消息分页游标（keyset）：以库原始字段定位"更早的消息"。createTime 为库原始值（未转 ms） */
+export interface MessageCursor {
+  sortSeq: number
+  createTime: number
+  localId: number
 }
 
 /** 库文件变化信息（T5 监控桥推送） */

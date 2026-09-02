@@ -89,7 +89,7 @@ function registerMediaProtocol(): void {
       const wxid = decodeURIComponent(seg[0])
       const name = decodeURIComponent(seg[1])
       if (!/^[a-zA-Z0-9_@.\-]+$/.test(wxid)) return new Response('Forbidden', { status: 403 })
-      if (!/^[0-9a-f]{32}_[a-z0-9]+\.(jpe?g|png|gif|webp)$/i.test(name)) {
+      if (!/^[0-9a-f]{32}_[a-z0-9]+\.(jpe?g|png|gif|webp|mp4|mkv|avi|mov|m4v)$/i.test(name)) {
         return new Response('Forbidden', { status: 403 })
       }
       const base = resolve(getCachePath(), 'media')

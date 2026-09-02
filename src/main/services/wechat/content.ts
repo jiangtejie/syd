@@ -1,4 +1,5 @@
 import { decompress } from 'fzstd'
+import type { ChatRecordItem } from '../../../shared/types'
 
 /**
  * 消息内容解码（自研实现）。
@@ -50,15 +51,27 @@ export function stripSenderPrefix(content: string): string {
   return content.replace(/^[\s]*([a-zA-Z0-9_-]+):(?!\/\/)\s*/, '')
 }
 
-/** HTML 实体解码（消息正文常见） */
+/** HTML 实体解码（消息正文常见，含数字/十六进制实体） */
 export function decodeHtmlEntities(content: string): string {
+  const decodeCodePoint = (value: string, radix: 10 | 16, fallback: string): string => {
+    const cp = parseInt(value, radix)
+    if (!Number.isFinite(cp) || cp < 0 || cp > 0x10ffff) return fallback
+    try {
+      return String.fromCodePoint(cp)
+    } catch {
+      return fallback
+    }
+  }
   return String(content || '')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
     .replace(/&nbsp;/g, ' ')
+    .replace(/&#x([0-9a-fA-F]+);/g, (entity, hex) => decodeCodePoint(hex, 16, entity))
+    .replace(/&#(\d+);/g, (entity, dec) => decodeCodePoint(dec, 10, entity))
 }
 
 function extractXmlValue(xml: string, tagName: string): string {
@@ -82,11 +95,76 @@ export const MESSAGE_TYPE_LABELS: Record<number, string> = {
   34: '[语音]',
   42: '[名片]',
   43: '[视频]',
-  47: '[表情]',
+  47: '[动画表情]',
   48: '[位置]',
   49: '[链接/文件]',
-  50: '[语音转文字]',
+  50: '[通话]',
   10000: '[系统消息]'
+}
+
+/** 通话消息（VoIP）：提取 <msg> 文本 */
+function parseVoipMessage(content: string): string {
+  const msg = extractXmlValue(content, 'msg')
+  return msg || '通话'
+}
+
+/**
+ * type 49（appmsg）子类型解析。
+ * title/type 需在未解码的 rawContent 上提取，避免正文里粘贴的内嵌 XML 污染（其标签仍是转义态）。
+ */
+function parseType49(content: string, rawContent: string): string {
+  const title = decodeHtmlEntities(extractXmlValue(rawContent, 'title'))
+  const type = extractXmlValue(rawContent, 'type')
+
+  // 群公告（type 87）
+  if (type === '87') {
+    const textAnnouncement = extractXmlValue(content, 'textannouncement')
+    return textAnnouncement ? `[群公告] ${textAnnouncement}` : '[群公告]'
+  }
+  // 转账（type 2000）
+  if (type === '2000') {
+    const feedesc = extractXmlValue(content, 'feedesc')
+    const payMemo = extractXmlValue(content, 'pay_memo')
+    if (feedesc) return payMemo ? `[转账] ${feedesc} ${payMemo}` : `[转账] ${feedesc}`
+    return '[转账]'
+  }
+  // 红包（type 2001）
+  if (type === '2001') {
+    const greeting = extractXmlValue(content, 'receivertitle') || extractXmlValue(content, 'sendertitle')
+    return greeting ? `[红包] ${greeting}` : '[红包]'
+  }
+  // 微信礼物（type 115）
+  if (type === '115') {
+    const wish = extractXmlValue(content, 'wishmessage')
+    const skutitle = extractXmlValue(content, 'skutitle')
+    return skutitle ? `[微信礼物] ${wish || '送你一份心意'} - ${skutitle}` : `[微信礼物] ${wish || '送你一份心意'}`
+  }
+  // 音乐分享（type 3）
+  if (type === '3') {
+    const des = extractXmlValue(content, 'des')
+    return title ? `[音乐] ${title}${des ? ` - ${des}` : ''}` : '[音乐]'
+  }
+
+  if (title) {
+    switch (type) {
+      case '5':
+      case '49':
+        return `[链接] ${title}`
+      case '6':
+        return `[文件] ${title}`
+      case '19':
+        return `[聊天记录] ${title}`
+      case '33':
+      case '36':
+        return `[小程序] ${title}`
+      case '57':
+        // 引用消息，title 就是回复内容
+        return title
+      default:
+        return title
+    }
+  }
+  return '[消息]'
 }
 
 /** 消息类型 -> 可展示摘要文本 */
@@ -109,33 +187,36 @@ export function parseMessageContent(content: string, localType: number): string 
     case 43:
       return '[视频]'
     case 47:
-      return '[表情]'
+      return '[动画表情]'
     case 48: {
       const poiname = content.match(/poiname="([^"]*)"/)?.[1]
-      return poiname ? `[位置] ${poiname}` : '[位置]'
+      const label = content.match(/label="([^"]*)"/)?.[1]
+      return poiname ? `[位置] ${poiname}` : label ? `[位置] ${label}` : '[位置]'
     }
-    case 49: {
-      const type = extractXmlValue(rawContent, 'type')
-      if (type === '6') {
-        const fileName = extractXmlValue(rawContent, 'title')
-        return fileName ? `[文件] ${fileName}` : '[文件]'
-      }
-      if (type === '57') {
-        // 引用消息：title 是回复文字，被引用内容在 refermsg 里（由 parseQuoteMessage 解析）
-        const title = decodeHtmlEntities(extractXmlValue(rawContent, 'title'))
-        return title || '[引用消息]'
-      }
-      if (type === '19') {
-        const title = extractXmlValue(rawContent, 'title')
-        return title ? `[聊天记录] ${title}` : '[聊天记录]'
-      }
-      const title = extractXmlValue(rawContent, 'title')
-      return title ? `[链接] ${title}` : '[链接/文件]'
+    case 49:
+      return parseType49(content, rawContent)
+    case 50:
+      return parseVoipMessage(content)
+    case 244813135921: {
+      // 引用消息（微信 4.x 专属 localType）：title 是回复文字，被引用内容在 refermsg 里
+      const title = decodeHtmlEntities(extractXmlValue(rawContent, 'title'))
+      return title || '[引用消息]'
     }
     case 10000:
       return cleanSystemMessage(content)
-    default:
-      return content
+    default: {
+      // 未知 localType 时按 XML type 兜底识别 appmsg 子类型（红包/转账/群公告等）
+      const xmlType = extractXmlValue(rawContent, 'type')
+      if (
+        xmlType === '87' || xmlType === '2000' || xmlType === '2001' || xmlType === '115' ||
+        xmlType === '3' || xmlType === '5' || xmlType === '6' || xmlType === '19' ||
+        xmlType === '33' || xmlType === '36' || xmlType === '49' || xmlType === '57'
+      ) {
+        return parseType49(content, rawContent)
+      }
+      if (content.length > 200) return MESSAGE_TYPE_LABELS[localType] || '[消息]'
+      return stripSenderPrefix(content) || MESSAGE_TYPE_LABELS[localType] || '[消息]'
+    }
   }
 }
 
@@ -160,20 +241,53 @@ export function parseImageMd5(content: string): string | undefined {
   return md5 ? md5.toLowerCase() : undefined
 }
 
+/** 解码 packed_info_data（protobuf 二进制），支持 Buffer / Uint8Array / hex / base64 / {data}（对齐 CipherTalk decodePackedInfo） */
+function decodePackedInfo(raw: any): Buffer | null {
+  if (!raw) return null
+  if (Buffer.isBuffer(raw)) return raw
+  if (raw instanceof Uint8Array) return Buffer.from(raw)
+  if (Array.isArray(raw)) return Buffer.from(raw)
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+      try {
+        return Buffer.from(trimmed, 'hex')
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      return Buffer.from(trimmed, 'base64')
+    } catch {
+      /* ignore */
+    }
+  }
+  if (typeof raw === 'object' && Array.isArray((raw as any).data)) {
+    return Buffer.from((raw as any).data)
+  }
+  return null
+}
+
 /**
- * 从 packed_info_data（protobuf）提取真实图片文件名 md5。
+ * 从 packed_info_data（protobuf）提取真实本地文件名 md5（图片 .dat / 视频 .mp4 命名）。
  * 微信 4.x 图片 XML 里的 md5 是 CDN md5，本地 .dat 文件按另一个 md5 命名，
- * 该 md5 存在 packed_info_data 的字节流中（32 位 hex，前缀 `" `）。
+ * 该 md5 存在 packed_info_data 的字节流中。
+ * 对齐 CipherTalk parseImageDatNameFromRow：非可打印字节替换为空格后，
+ * 优先匹配 `.dat` 文件名（8+ 位 hex），兜底匹配 16+ 位 hex。
  */
 export function parsePackedInfoMd5(raw: any): string | undefined {
-  if (!raw) return undefined
-  let buf: Buffer
-  if (Buffer.isBuffer(raw)) buf = raw
-  else if (raw instanceof Uint8Array) buf = Buffer.from(raw)
-  else if (typeof raw === 'string') buf = Buffer.from(raw, 'latin1')
-  else return undefined
-  const m = buf.toString('latin1').match(/[0-9a-f]{32}/i)
-  return m ? m[0].toLowerCase() : undefined
+  const buffer = decodePackedInfo(raw)
+  if (!buffer || buffer.length === 0) return undefined
+  const printable: number[] = []
+  for (let i = 0; i < buffer.length; i++) {
+    const byte = buffer[i]
+    printable.push(byte >= 0x20 && byte <= 0x7e ? byte : 0x20)
+  }
+  const text = Buffer.from(printable).toString('utf-8')
+  const datMatch = /([0-9a-fA-F]{8,})(?:\.t)?\.dat/.exec(text)
+  if (datMatch?.[1]) return datMatch[1].toLowerCase()
+  const hexMatch = /([0-9a-fA-F]{16,})/.exec(text)
+  return hexMatch?.[1]?.toLowerCase()
 }
 
 /** 从 34 型提取语音时长（毫秒） */
@@ -183,12 +297,142 @@ export function parseVoiceDuration(content: string): number | undefined {
 }
 
 /** 从 49 型提取文件名与大小 */
-export function parseFileInfo(content: string): { fileName?: string; fileSize?: number } {
+export function parseFileInfo(content: string): { fileName?: string; fileSize?: number; fileExt?: string; fileMd5?: string } {
   if (extractXmlValue(content, 'type') !== '6') return {}
   const fileName = extractXmlValue(content, 'title')
   const totallen = extractXmlValue(content, 'totallen')
   const fileSize = totallen ? parseInt(totallen, 10) : undefined
-  return { fileName: fileName || undefined, fileSize: Number.isFinite(fileSize) ? fileSize : undefined }
+  const fileExt = extractXmlValue(content, 'fileext')
+  const fileMd5 = extractXmlValue(content, 'md5')?.toLowerCase()
+  return {
+    fileName: fileName || undefined,
+    fileSize: Number.isFinite(fileSize) ? fileSize : undefined,
+    fileExt: fileExt || undefined,
+    fileMd5: fileMd5 || undefined
+  }
+}
+
+/** 从 47 型表情 XML 提取 cdn 地址 / md5 / productId */
+export function parseEmojiInfo(content: string): { cdnUrl?: string; md5?: string; productId?: string } {
+  try {
+    let cdnUrl: string | undefined
+    const cdnUrlMatch =
+      /cdnurl\s*=\s*['"]([^'"]+)['"]/i.exec(content) || /cdnurl\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
+    if (cdnUrlMatch) {
+      cdnUrl = cdnUrlMatch[1].replace(/&amp;/g, '&')
+      if (cdnUrl.includes('%')) {
+        try {
+          cdnUrl = decodeURIComponent(cdnUrl)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    if (!cdnUrl) {
+      const thumbMatch =
+        /thumburl\s*=\s*['"]([^'"]+)['"]/i.exec(content) || /thumburl\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
+      if (thumbMatch) {
+        cdnUrl = thumbMatch[1].replace(/&amp;/g, '&')
+        if (cdnUrl.includes('%')) {
+          try {
+            cdnUrl = decodeURIComponent(cdnUrl)
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+    const md5Match =
+      /md5\s*=\s*['"]([a-fA-F0-9]+)['"]/i.exec(content) ||
+      /md5\s*=\s*([a-fA-F0-9]+)/i.exec(content) ||
+      /<md5>([^<]+)<\/md5>/i.exec(content)
+    const md5 = md5Match ? md5Match[1] : undefined
+    const idMatch =
+      /productid\s*=\s*['"]([^'"]+)['"]/i.exec(content) || /productid\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
+    return { cdnUrl, md5, productId: idMatch ? idMatch[1] : undefined }
+  } catch {
+    return {}
+  }
+}
+
+/** 从 3 型图片 XML 提取 md5 / 是否实况照片 */
+export function parseImageInfo(content: string): { md5?: string; isLivePhoto?: boolean } {
+  try {
+    const isLivePhoto = /<live>/i.test(content)
+    const contentNoLive = content.replace(/<live>[\s\S]*?<\/live>/gi, '')
+    const md5 =
+      extractXmlValue(contentNoLive, 'md5') ||
+      extractXmlAttribute(contentNoLive, 'img', 'md5') ||
+      extractXmlAttribute(contentNoLive, 'img', 'cdnthumbmd5') ||
+      extractXmlAttribute(contentNoLive, 'img', 'thumbfullmd5') ||
+      extractXmlAttribute(contentNoLive, 'img', 'fullmd5') ||
+      undefined
+    return { md5: md5?.toLowerCase(), isLivePhoto: isLivePhoto || undefined }
+  } catch {
+    return {}
+  }
+}
+
+/** 从 43 型视频 XML 提取时长（秒） */
+export function parseVideoDuration(content: string): number | undefined {
+  if (!content) return undefined
+  const match = /playlength\s*=\s*['"](\d+)['"]/i.exec(content)
+  return match ? parseInt(match[1], 10) : undefined
+}
+
+/** 从 43 型视频 XML 提取 md5（32 位 hex） */
+export function parseVideoMd5(content: string): string | undefined {
+  if (!content) return undefined
+  const md5 =
+    extractXmlValue(content, 'md5') ||
+    extractXmlAttribute(content, 'videomsg', 'md5') ||
+    extractXmlValue(content, 'newmd5') ||
+    extractXmlAttribute(content, 'videomsg', 'newmd5') ||
+    extractXmlValue(content, 'rawmd5') ||
+    extractXmlAttribute(content, 'videomsg', 'rawmd5') ||
+    undefined
+  const result = md5?.toLowerCase()
+  return result && result !== 'null' && /^[a-f0-9]{32}$/.test(result) ? result : undefined
+}
+
+/** 解析合并转发聊天记录（type 19）中的逐条记录 */
+export function parseChatHistory(content: string): ChatRecordItem[] | undefined {
+  try {
+    if (extractXmlValue(content, 'type') !== '19') return undefined
+    const match = /<recorditem>[\s\S]*?<!\[CDATA\[([\s\S]*?)\]\]>[\s\S]*?<\/recorditem>/.exec(content)
+    if (!match) return undefined
+    const innerXml = match[1]
+
+    const items: ChatRecordItem[] = []
+    const itemRegex = /<dataitem\s+(.*?)>([\s\S]*?)<\/dataitem>/g
+    let itemMatch: RegExpExecArray | null
+    while ((itemMatch = itemRegex.exec(innerXml)) !== null) {
+      const attrs = itemMatch[1]
+      const body = itemMatch[2]
+      const datatypeMatch = /datatype="(\d+)"/.exec(attrs)
+      items.push({
+        datatype: datatypeMatch ? parseInt(datatypeMatch[1], 10) : 0,
+        sourcename: extractXmlValue(body, 'sourcename'),
+        sourcetime: extractXmlValue(body, 'sourcetime'),
+        sourceheadurl: extractXmlValue(body, 'sourceheadurl'),
+        datadesc: decodeHtmlEntities(extractXmlValue(body, 'datadesc')),
+        datatitle: decodeHtmlEntities(extractXmlValue(body, 'datatitle')),
+        fileext: extractXmlValue(body, 'fileext'),
+        datasize: parseInt(extractXmlValue(body, 'datasize') || '0') || undefined,
+        messageuuid: extractXmlValue(body, 'messageuuid'),
+        dataurl: decodeHtmlEntities(extractXmlValue(body, 'dataurl')),
+        datathumburl: decodeHtmlEntities(extractXmlValue(body, 'datathumburl') || extractXmlValue(body, 'thumburl')),
+        datacdnurl: decodeHtmlEntities(extractXmlValue(body, 'datacdnurl') || extractXmlValue(body, 'cdnurl')),
+        md5: extractXmlValue(body, 'md5') || extractXmlValue(body, 'datamd5'),
+        imgheight: parseInt(extractXmlValue(body, 'imgheight') || '0') || undefined,
+        imgwidth: parseInt(extractXmlValue(body, 'imgwidth') || '0') || undefined,
+        duration: parseInt(extractXmlValue(body, 'duration') || '0') || undefined
+      })
+    }
+    return items.length > 0 ? items : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** 清理引用内容中的 wxid 前缀与多余分隔符 */
@@ -206,6 +450,8 @@ export interface QuoteInfo {
   content?: string
   sender?: string
   imageMd5?: string
+  emojiMd5?: string
+  emojiCdnUrl?: string
 }
 
 /**
@@ -242,9 +488,11 @@ export function parseQuoteMessage(content: string): QuoteInfo {
       case '43':
         displayContent = '[视频]'
         break
-      case '47':
+      case '47': {
         displayContent = '[动画表情]'
-        break
+        const emojiInfo = parseEmojiInfo(referContent)
+        return { content: displayContent, sender: displayName || undefined, emojiMd5: emojiInfo.md5, emojiCdnUrl: emojiInfo.cdnUrl }
+      }
       case '49': {
         const appTitle = extractXmlValue(referContent, 'title')
         displayContent = appTitle ? `[链接] ${appTitle}` : '[链接]'
@@ -265,4 +513,26 @@ export function parseQuoteMessage(content: string): QuoteInfo {
   } catch {
     return {}
   }
+}
+
+/**
+ * 会话摘要兜底（对齐 CipherTalk processSummary）：
+ * 清洗控制字符后非空则原样返回，否则按最后消息类型生成默认摘要（如 [文本]/[图片]）。
+ */
+export function processSummary(summary: string, lastMsgType: number): string {
+  const cleaned = String(summary || '')
+    .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+    .trim()
+  if (cleaned) return cleaned
+  return MESSAGE_TYPE_LABELS[lastMsgType] || '[消息]'
+}
+
+/** 从红包消息（type 49 / type=2001）XML 提取 sendId（nativeurl 的 ?sendid= 优先，paymsgid 兜底） */
+export function parseRedEnvelopeSendId(content: string): string | undefined {
+  if (!content) return undefined
+  const nativeUrl = extractXmlValue(content, 'nativeurl')
+  const fromUrl = /[?&]sendid=(\d+)/.exec(nativeUrl)?.[1]
+  if (fromUrl) return fromUrl
+  const payMsgId = extractXmlValue(content, 'paymsgid')
+  return payMsgId || undefined
 }

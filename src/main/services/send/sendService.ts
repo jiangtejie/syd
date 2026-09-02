@@ -54,7 +54,7 @@ async function verifySend(
   text: string
 ): Promise<{ verified: boolean; verifiable: boolean; reason?: string }> {
   try {
-    const res = await wxService.getMessages(wxid, sessionId, 20, 0)
+    const res = await wxService.getMessages(wxid, sessionId, 20)
     if (!res.ok || !res.messages) {
       return { verified: false, verifiable: false, reason: res.error || '微信库不可读' }
     }

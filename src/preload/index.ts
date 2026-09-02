@@ -7,7 +7,8 @@ import type {
   ChatMessage,
   ReplyCandidate,
   SendResult,
-  SendStatusInfo
+  SendStatusInfo,
+  MessageCursor
 } from '../shared/types'
 
 // Custom APIs for renderer
@@ -24,10 +25,12 @@ const api = {
     wx: {
       connect: (wxid: string) => ipcRenderer.invoke('cs:wx:connect', wxid),
       getSessions: (wxid: string) => ipcRenderer.invoke('cs:wx:getSessions', wxid),
-      getMessages: (wxid: string, sessionId: string, limit?: number, offset?: number) =>
-        ipcRenderer.invoke('cs:wx:getMessages', wxid, sessionId, limit, offset),
+      getMessages: (wxid: string, sessionId: string, limit?: number, before?: MessageCursor) =>
+        ipcRenderer.invoke('cs:wx:getMessages', wxid, sessionId, limit, before),
       getMessagesSince: (wxid: string, sessionId: string, sinceSortSeq: number) =>
         ipcRenderer.invoke('cs:wx:getMessagesSince', wxid, sessionId, sinceSortSeq),
+      getRedEnvelopeStatuses: (wxid: string, sessionId: string) =>
+        ipcRenderer.invoke('cs:wx:getRedEnvelopeStatuses', wxid, sessionId),
       getAvatar: (
         wxid: string,
         username: string,
@@ -86,6 +89,12 @@ const api = {
         dbPath?: string
       }): Promise<{ ok: boolean; url?: string; ext?: string; error?: string }> =>
         ipcRenderer.invoke('cs:media:decryptImage', opts),
+      decryptVideo: (opts: {
+        wxid: string
+        videoMd5: string
+        dbPath?: string
+      }): Promise<{ ok: boolean; url?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:media:decryptVideo', opts),
       testImageDecrypt: (
         wxid: string,
         dbPath?: string

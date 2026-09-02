@@ -16,11 +16,19 @@ import {
   decodeMessageContent,
   parseMessageContent,
   parseImageMd5,
+  parseImageInfo,
   parsePackedInfoMd5,
   parseVoiceDuration,
-  parseFileInfo
+  parseVideoMd5,
+  parseVideoDuration,
+  parseEmojiInfo,
+  parseFileInfo,
+  parseChatHistory,
+  parseQuoteMessage,
+  processSummary,
+  parseRedEnvelopeSendId
 } from './content'
-import type { ChatMessage, SessionSummary } from '../../../shared/types'
+import type { ChatMessage, MessageCursor, RedEnvelopeStatus, SessionSummary } from '../../../shared/types'
 
 /**
  * 微信读库查询层（自研实现）。
@@ -163,6 +171,7 @@ function rowToSession(row: Record<string, any>): SessionRow {
   const username = toString(getRowField(row, ['username', 'user_name', 'userName']))
   const sortTs = toMs(toNumber(getRowField(row, ['sort_timestamp', 'sortTimestamp', 'sort_time'])))
   const lastTs = toMs(toNumber(getRowField(row, ['last_timestamp', 'lastTimestamp']), sortTs))
+  const lastMsgType = toNumber(getRowField(row, ['last_msg_type', 'lastMsgType']), 1)
   const cls = classifyUsername(username)
   return {
     username,
@@ -171,8 +180,8 @@ function rowToSession(row: Record<string, any>): SessionRow {
     sortTimestamp: sortTs,
     lastTimestamp: lastTs,
     unreadCount: toNumber(getRowField(row, ['unread_count', 'unreadCount'])),
-    summary: toString(getRowField(row, ['summary', 'digest', 'message'])),
-    lastMsgType: toNumber(getRowField(row, ['last_msg_type', 'lastMsgType']), 1),
+    summary: processSummary(toString(getRowField(row, ['summary', 'digest', 'message'])), lastMsgType),
+    lastMsgType,
     isPinned: false,
     isCollapsed: false,
     ...cls
@@ -347,6 +356,19 @@ function cleanAccountDirWxid(wxid: string): string {
   return m ? m[1] : t
 }
 
+/**
+ * 发送人是否为自己（is_send 归一化兜底）：sender 与 myWxid 做 wxid_ 实例后缀互通匹配。
+ * 仅剥离 `wxid_xxx_yyyy` 的实例后缀，不剥离自定义微信号 `tom_2020` 的 4 位后缀，
+ * 避免把形如 `tom_abcd` 的对方微信号误判为自己。
+ */
+function isOwnSender(sender: string | null, myWxid: string): boolean {
+  if (!sender) return false
+  if (sender === myWxid) return true
+  const s = cleanWxid(sender)
+  const m = cleanWxid(myWxid)
+  return s !== '' && s === m
+}
+
 function loadNameIdMap(db: Database.Database, myWxid: string): NameIdMap {
   const idToName = new Map<number, string>()
   let myRowId: number | null = null
@@ -371,7 +393,8 @@ function rowToMessage(
   row: Record<string, any>,
   cols: MessageTableColumns,
   nameId: NameIdMap,
-  isGroup: boolean
+  isGroup: boolean,
+  myWxid: string
 ): ChatMessage {
   const content = decodeMessageContent(getRowField(row, [cols.contentColumn || 'message_content']))
   const localType = toNumber(getRowField(row, ['local_type', 'localType', 'type']), 1)
@@ -383,10 +406,15 @@ function rowToMessage(
     senderUsername = toString(getRowField(row, [cols.senderColumn || 'sender'])) || null
   }
 
-  // 是否我发的：real_sender_id == 我的 rowid；无映射时退回 is_send 列（旧版兼容）
+  // 是否我发的（对齐 CipherTalk 三重判定）：
+  // 1) Name2Id 命中：real_sender_id == 我的 rowid（权威）
+  // 2) 无 Name2Id：发送人 wxid 与 myWxid 归一化匹配
+  // 3) 兜底：is_send 列（旧版兼容）
   let isSend = false
   if (nameId.myRowId !== null && realSenderId >= 0) {
     isSend = realSenderId === nameId.myRowId
+  } else if (isOwnSender(senderUsername, myWxid)) {
+    isSend = true
   } else {
     isSend = toNumber(getRowField(row, ['is_send', 'isSend', 'is_sender']), 0) === 1
   }
@@ -395,8 +423,35 @@ function rowToMessage(
   // 图片文件名 md5 优先取 packed_info_data（本地 .dat 命名），XML 的 md5 是 CDN md5 对不上本地文件
   const imageMd5 =
     parsePackedInfoMd5(getRowField(row, ['packed_info_data', 'packedInfoData'])) || parseImageMd5(content)
+  const imageInfo = localType === 3 ? parseImageInfo(content) : {}
+  const isLivePhoto = imageInfo.isLivePhoto
   const voiceDuration = parseVoiceDuration(content)
+  // 视频文件名 md5 同图片：真实文件名存 packed_info_data，XML 里只有 CDN 信息
+  const videoMd5 =
+    localType === 43
+      ? parsePackedInfoMd5(getRowField(row, ['packed_info_data', 'packedInfoData'])) || parseVideoMd5(content)
+      : undefined
+  const videoDuration = localType === 43 ? parseVideoDuration(content) : undefined
+  const emojiInfo = localType === 47 ? parseEmojiInfo(content) : {}
   const fileInfo = parseFileInfo(content)
+  const chatRecordList = localType === 49 ? parseChatHistory(content) : undefined
+  // 红包 sendId（type 49/2001），供渲染端匹配本地领取状态；非红包消息返回 undefined
+  const redEnvelopeSendId = localType === 49 ? parseRedEnvelopeSendId(content) : undefined
+
+  // 引用消息：localType 244813135921（微信 4.x 专属）或 49 型内嵌 refermsg
+  let quotedContent: string | undefined
+  let quotedSender: string | undefined
+  let quotedImageMd5: string | undefined
+  let quotedEmojiMd5: string | undefined
+  let quotedEmojiCdnUrl: string | undefined
+  if (localType === 244813135921 || content.includes('<refermsg>')) {
+    const quote = parseQuoteMessage(content)
+    quotedContent = quote.content
+    quotedSender = quote.sender
+    quotedImageMd5 = quote.imageMd5
+    quotedEmojiMd5 = quote.emojiMd5
+    quotedEmojiCdnUrl = quote.emojiCdnUrl
+  }
 
   return {
     localId: toNumber(getRowField(row, ['local_id', 'localId'])),
@@ -411,19 +466,62 @@ function rowToMessage(
     parsedContent: parsed,
     rawContent: content,
     imageMd5,
+    isLivePhoto,
     voiceDuration,
+    videoMd5,
+    videoDuration,
+    emojiCdnUrl: emojiInfo.cdnUrl,
+    emojiMd5: emojiInfo.md5,
+    productId: emojiInfo.productId,
     fileName: fileInfo.fileName,
-    fileSize: fileInfo.fileSize
+    fileSize: fileInfo.fileSize,
+    fileExt: fileInfo.fileExt,
+    fileMd5: fileInfo.fileMd5,
+    chatRecordList,
+    redEnvelopeSendId,
+    quotedContent,
+    quotedSender,
+    quotedImageMd5,
+    quotedEmojiMd5,
+    quotedEmojiCdnUrl
   }
 }
 
-/** 读取某会话最新一页消息（跨多个消息库合并，按时间倒序取最新 limit 条） */
+/** 消息 identity：跨库去重 key（serverId 优先，否则 localId+sortSeq+createTime 组合） */
+function messageDedupKey(m: ChatMessage): string {
+  return m.serverId ? `s:${m.serverId}` : `l:${m.localId}:${m.sortSeq}:${m.createTime}`
+}
+
+/** 从原始行取 keyset 游标（库原始字段，未转 ms） */
+function rawMessageCursor(row: Record<string, any>): MessageCursor {
+  return {
+    sortSeq: toNumber(getRowField(row, ['sort_seq', 'sortSeq'])),
+    createTime: toNumber(getRowField(row, ['create_time', 'createTime', 'timestamp'])),
+    localId: toNumber(getRowField(row, ['local_id', 'localId']))
+  }
+}
+
+interface MsgWithCursor {
+  msg: ChatMessage
+  cursor: MessageCursor
+}
+
+/**
+ * 读取某会话消息（跨多个消息库合并，keyset 分页）。
+ * before 为空取最新一页；否则按游标取"更早的一页"。返回 nextCursor 供继续向前翻页。
+ */
 export function listMessages(
   ctx: WxReaderContext,
   sessionId: string,
   limit = 50,
-  offset = 0
-): { ok: boolean; messages?: ChatMessage[]; hasMore?: boolean; error?: string } {
+  before?: MessageCursor
+): {
+  ok: boolean
+  messages?: ChatMessage[]
+  hasMore?: boolean
+  nextCursor?: MessageCursor
+  error?: string
+} {
   try {
     const paths = locateWeChatDbs(ctx.dbPath, ctx.wxid)
     if (!paths.dbStoragePath) return { ok: false, error: '未找到微信数据目录' }
@@ -431,7 +529,8 @@ export function listMessages(
 
     const targetHash = messageTableHash(sessionId)
     const isGroup = sessionId.includes('@chatroom')
-    const all: ChatMessage[] = []
+    const all: MsgWithCursor[] = []
+    const fetchCount = limit + 1
     let anyDbHasMore = false
 
     for (const file of paths.msgDbFiles) {
@@ -449,36 +548,61 @@ export function listMessages(
           const cols = getMessageTableColumns(db, t.name)
           if (!cols.contentColumn && !cols.hasIsSend) continue
 
-          const fetchCount = Math.max(offset + limit + 1, 100)
-          const rows = db
-            .prepare(
-              `SELECT * FROM "${t.name}" ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT ?`
-            )
-            .all(fetchCount) as Record<string, any>[]
+          const rows = (
+            before
+              ? db
+                  .prepare(
+                    `SELECT * FROM "${t.name}" WHERE (sort_seq < ?) OR (sort_seq = ? AND create_time < ?) OR (sort_seq = ? AND create_time = ? AND local_id < ?) ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT ?`
+                  )
+                  .all(
+                    before.sortSeq,
+                    before.sortSeq,
+                    before.createTime,
+                    before.sortSeq,
+                    before.createTime,
+                    before.localId,
+                    fetchCount
+                  )
+              : db
+                  .prepare(
+                    `SELECT * FROM "${t.name}" ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT ?`
+                  )
+                  .all(fetchCount)
+          ) as Record<string, any>[]
           if (rows.length >= fetchCount) anyDbHasMore = true
-          for (const r of rows) all.push(rowToMessage(r, cols, nameId, isGroup))
+          for (const r of rows) {
+            all.push({ msg: rowToMessage(r, cols, nameId, isGroup, ctx.wxid), cursor: rawMessageCursor(r) })
+          }
         }
       } finally {
         db.close()
       }
     }
 
-    // 跨库合并去重（localId 可能重复）+ 时间倒序取最新一页
-    const seen = new Set<number>()
-    const deduped = all
-      .sort((a, b) => b.sortSeq - a.sortSeq || b.createTime - a.createTime || b.localId - a.localId)
-      .filter((m) => {
-        const key = m.localId || m.sortSeq
-        if (seen.has(key)) return false
+    // 跨库合并：按游标倒序；同一条消息可能散在多个历史分片库，按 identity 去重
+    const seen = new Set<string>()
+    const deduped: MsgWithCursor[] = []
+    all
+      .sort(
+        (a, b) =>
+          b.cursor.sortSeq - a.cursor.sortSeq ||
+          b.cursor.createTime - a.cursor.createTime ||
+          b.cursor.localId - a.cursor.localId
+      )
+      .forEach((item) => {
+        const key = messageDedupKey(item.msg)
+        if (seen.has(key)) return
         seen.add(key)
-        return true
+        deduped.push(item)
       })
 
-    const hasMore = deduped.length > offset + limit
-    const page = deduped.slice(offset, offset + limit).reverse()
+    const hasMore = deduped.length > limit || anyDbHasMore
+    const pageItems = deduped.slice(0, limit)
+    const nextCursor = hasMore && pageItems.length > 0 ? pageItems[pageItems.length - 1].cursor : undefined
+    const page = pageItems.map((it) => it.msg).reverse()
     // enrich 发送人昵称/头像（群消息关键）
     enrichMessagesWithSenders(page, ctx)
-    return { ok: true, messages: page, hasMore: hasMore || anyDbHasMore }
+    return { ok: true, messages: page, hasMore, nextCursor }
   } catch (e: any) {
     return { ok: false, error: `读取消息失败: ${e?.message || String(e)}` }
   }
@@ -491,10 +615,58 @@ export function listMessagesSince(
   sinceSortSeq: number,
   limit = 200
 ): { ok: boolean; messages?: ChatMessage[]; error?: string } {
-  const result = listMessages(ctx, sessionId, limit, 0)
+  const result = listMessages(ctx, sessionId, limit)
   if (!result.ok || !result.messages) return { ok: false, error: result.error }
   const filtered = result.messages.filter((m) => m.sortSeq > sinceSortSeq)
   return { ok: true, messages: filtered }
+}
+
+/**
+ * 会话内红包的本地状态（general.db redEnvelopeTable）。
+ * 只记录「我领没领 / 红包状态」，本地没有金额与领取人列表（对齐 CipherTalk redEnvelopeQueries）。
+ * 老版本无此表 / 库未就绪时返回空数组（不报错）。
+ */
+export function getRedEnvelopeStatuses(
+  ctx: WxReaderContext,
+  sessionId: string
+): { ok: boolean; statuses?: RedEnvelopeStatus[]; error?: string } {
+  try {
+    const paths = locateWeChatDbs(ctx.dbPath, ctx.wxid)
+    if (!paths.dbStoragePath) return { ok: true, statuses: [] }
+    const generalFile = findDbFileByName(paths.dbStoragePath, 'general.db')
+    if (!generalFile) return { ok: true, statuses: [] }
+
+    const opened = openWxDbFile(generalFile, ctx.hexKey)
+    if (!opened.db) return { ok: true, statuses: [] }
+    const db = opened.db
+    try {
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='redEnvelopeTable'")
+        .all()
+      if (tables.length === 0) return { ok: true, statuses: [] }
+
+      const rows = db
+        .prepare(
+          'SELECT send_id, sender_user_name, hb_status, hb_type, receive_status FROM redEnvelopeTable WHERE session_name = ?'
+        )
+        .all(sessionId) as Record<string, any>[]
+      const statuses: RedEnvelopeStatus[] = rows
+        .filter((r) => getRowField(r, ['send_id', 'sendId']))
+        .map((r) => ({
+          sendId: toString(getRowField(r, ['send_id', 'sendId'])),
+          senderUsername: toString(getRowField(r, ['sender_user_name', 'senderUsername'])),
+          hbStatus: toNumber(getRowField(r, ['hb_status', 'hbStatus'])),
+          hbType: toNumber(getRowField(r, ['hb_type', 'hbType'])),
+          receiveStatus: toNumber(getRowField(r, ['receive_status', 'receiveStatus']))
+        }))
+      return { ok: true, statuses }
+    } finally {
+      db.close()
+    }
+  } catch {
+    // 老版本微信没有这张表 / 库未就绪：当作没有状态
+    return { ok: true, statuses: [] }
+  }
 }
 
 /**

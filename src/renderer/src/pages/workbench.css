@@ -384,11 +384,122 @@
   cursor: text;
 }
 
+/* 引用消息块：气泡内顶部浅色卡片（发送人 + 被引用内容摘要） */
+.wb-msg-quote {
+  position: relative;
+  margin-bottom: 6px;
+  padding: 5px 8px 5px 10px;
+  border-left: 3px solid rgba(0, 0, 0, 0.16);
+  background: rgba(0, 0, 0, 0.045);
+  border-radius: 3px;
+  line-height: 1.4;
+}
+
+.is-send .wb-msg-quote {
+  border-left-color: rgba(0, 0, 0, 0.22);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.wb-msg-quote-sender {
+  font-size: 12px;
+  color: #576b95;
+  margin-bottom: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-msg-quote-content {
+  font-size: 12px;
+  color: #8a8a8a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .wb-msg-image {
   max-width: 220px;
   max-height: 220px;
   border-radius: 4px;
   cursor: zoom-in;
+  display: block;
+}
+
+.wb-msg-image-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.wb-msg-live {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 3px;
+}
+
+.wb-msg-emoji {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  display: block;
+}
+
+.wb-msg-video {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.wb-msg-video-icon {
+  font-size: 22px;
+}
+
+.wb-msg-video-dur {
+  font-size: 12px;
+  color: #666;
+}
+
+.wb-msg-chathistory {
+  min-width: 200px;
+  max-width: 280px;
+}
+
+.wb-msg-chathistory-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.wb-msg-chathistory-item {
+  font-size: 12px;
+  color: #444;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-msg-chathistory-more {
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
+}
+
+.wb-msg-quote-emoji {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
   display: block;
 }
 
@@ -417,6 +528,24 @@
 .wb-msg-file-size {
   font-size: 11px;
   color: #999;
+}
+
+/* 红包消息卡片（type 49/2001） */
+.wb-msg-hongbao {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.wb-msg-hongbao-text {
+  font-size: 13px;
+}
+
+.wb-msg-hongbao-status {
+  font-size: 11px;
+  color: #f5a623;
+  white-space: nowrap;
 }
 
 .wb-msg-time {
@@ -458,6 +587,29 @@
   text-align: center;
   color: #999;
   padding: 40px;
+}
+
+/* 加载更早消息（keyset 翻页）按钮 */
+.wb-load-older {
+  display: block;
+  margin: 8px auto;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #6b7280;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.wb-load-older:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.wb-load-older:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .wb-chat-empty {
@@ -769,6 +921,19 @@
   max-width: 70vw;
   max-height: 65vh;
   border-radius: 6px;
+}
+
+.wb-att-video {
+  max-width: 70vw;
+  max-height: 65vh;
+  border-radius: 6px;
+  background: #000;
+}
+
+.wb-att-video-hint {
+  padding: 24px;
+  color: #888;
+  font-size: 13px;
 }
 
 .wb-att-file {

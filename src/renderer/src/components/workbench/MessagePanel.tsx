@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { avatarColor, formatTimeDivider, needTimeDivider } from '../../lib/ui'
-import type { ChatMessage } from '../../../../shared/types'
+import type { ChatMessage, ChatRecordItem, RedEnvelopeStatus } from '../../../../shared/types'
 import AttachmentViewer, {
   PLACEHOLDER_IMAGE_URL,
   useDecryptImage,
@@ -48,6 +48,62 @@ function useAvatar(username?: string, localOnly = false): string | null {
 function useMyAvatar(): string | null {
   const wxid = useWorkbenchStore((s) => s.wxid)
   return useAvatar(wxid || undefined)
+}
+
+// 红包状态缓存：会话内一次查询，30s 内复用（对齐 CipherTalk useRedEnvelopeStatus）
+const redEnvelopeCache = new Map<string, { at: number; promise: Promise<Map<string, RedEnvelopeStatus>> }>()
+function loadRedEnvelopeStatuses(wxid: string, sessionId: string): Promise<Map<string, RedEnvelopeStatus>> {
+  const key = `${wxid}::${sessionId}`
+  const hit = redEnvelopeCache.get(key)
+  if (hit && Date.now() - hit.at < 30_000) return hit.promise
+  const promise = (
+    window.api?.cs?.wx?.getRedEnvelopeStatuses?.(wxid, sessionId) ??
+    Promise.resolve({ ok: true as const, statuses: [] })
+  )
+    .then((res) => new Map((res.ok && res.statuses ? res.statuses : []).map((r) => [r.sendId, r])))
+    .catch(() => new Map<string, RedEnvelopeStatus>())
+  redEnvelopeCache.set(key, { at: Date.now(), promise })
+  return promise
+}
+
+/** 按 sendId 取红包本地状态（会话内一次查询，30s 缓存） */
+function useRedEnvelopeStatus(sessionId: string, sendId: string | undefined): RedEnvelopeStatus | null {
+  const wxid = useWorkbenchStore((s) => s.wxid)
+  const source = useWorkbenchStore((s) => s.source)
+  const [status, setStatus] = useState<RedEnvelopeStatus | null>(null)
+  useEffect(() => {
+    let alive = true
+    if (!sendId || source !== 'wx' || !wxid) {
+      setStatus(null)
+      return
+    }
+    loadRedEnvelopeStatuses(wxid, sessionId).then((map) => {
+      if (alive) setStatus(map.get(sendId) ?? null)
+    })
+    return () => {
+      alive = false
+    }
+  }, [sessionId, sendId, wxid, source])
+  return status
+}
+
+/** 视频时长（秒）→ mm:ss */
+function formatVideoDuration(sec: number): string {
+  const s = Math.max(0, Math.round(sec))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return `${m}:${String(r).padStart(2, '0')}`
+}
+
+/** 聊天记录单条摘要（发送人: 内容） */
+function chatRecordText(item: ChatRecordItem): string {
+  const name = item.sourcename ? `${item.sourcename}: ` : ''
+  const body = item.datadesc || item.datatitle
+  if (body) return name + body
+  const labels: Record<number, string> = {
+    1: '[文本]', 3: '[图片]', 34: '[语音]', 43: '[视频]', 47: '[表情]', 49: '[链接]'
+  }
+  return name + (labels[item.datatype] || '[消息]')
 }
 
 /**
@@ -110,9 +166,15 @@ function MessageBubble({
   onContextMenu: (e: React.MouseEvent, text: string) => void
 }): React.JSX.Element {
   const isImage = message.localType === 3
-  const isFile = message.localType === 49 && !!message.fileName
+  const isEmoji = message.localType === 47 && !!message.emojiCdnUrl
+  const isVideo = message.localType === 43
+  const isChatHistory = message.localType === 49 && !!message.chatRecordList?.length
+  const isFile = message.localType === 49 && !!message.fileName && !isChatHistory
+  const isRedEnvelope = message.localType === 49 && !!message.redEnvelopeSendId
   const copyText = isFile ? message.fileName || '' : message.parsedContent
   const { url: imgUrl } = useDecryptImage(isImage ? message.imageMd5 : undefined, 'thumb')
+  const [emojiFailed, setEmojiFailed] = useState(false)
+  const redEnvelopeStatus = useRedEnvelopeStatus(sessionUsername, isRedEnvelope ? message.redEnvelopeSendId : undefined)
 
   const isRecv = !message.isSend
   const myAvatar = useMyAvatar()
@@ -182,19 +244,69 @@ function MessageBubble({
       <div className="wb-msg-main">
         {showSenderName && <div className="wb-msg-sender">{message.senderNickname}</div>}
         <div className="wb-msg-bubble">
+          {message.quotedContent && (
+            <div className="wb-msg-quote">
+              {message.quotedSender && (
+                <div className="wb-msg-quote-sender">{message.quotedSender}</div>
+              )}
+              {message.quotedEmojiCdnUrl ? (
+                <img
+                  className="wb-msg-quote-emoji"
+                  src={message.quotedEmojiCdnUrl}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="wb-msg-quote-content">{message.quotedContent}</div>
+              )}
+            </div>
+          )}
           {isImage ? (
+            <div className="wb-msg-image-wrap">
+              <img
+                className="wb-msg-image"
+                src={imgUrl || PLACEHOLDER_IMAGE_URL}
+                alt="图片消息"
+                onClick={() =>
+                  onOpenAttachment({
+                    kind: 'image',
+                    url: imgUrl ?? undefined,
+                    imageMd5: message.imageMd5
+                  })
+                }
+              />
+              {message.isLivePhoto && <span className="wb-msg-live">LIVE</span>}
+            </div>
+          ) : isEmoji && !emojiFailed ? (
             <img
-              className="wb-msg-image"
-              src={imgUrl || PLACEHOLDER_IMAGE_URL}
-              alt="图片消息"
-              onClick={() =>
-                onOpenAttachment({
-                  kind: 'image',
-                  url: imgUrl ?? undefined,
-                  imageMd5: message.imageMd5
-                })
-              }
+              className="wb-msg-emoji"
+              src={message.emojiCdnUrl}
+              alt="动画表情"
+              referrerPolicy="no-referrer"
+              onError={() => setEmojiFailed(true)}
             />
+          ) : isVideo ? (
+            <div
+              className="wb-msg-video"
+              onClick={() => onOpenAttachment({ kind: 'video', videoMd5: message.videoMd5 })}
+            >
+              <span className="wb-msg-video-icon">🎬</span>
+              {message.videoDuration !== undefined && (
+                <span className="wb-msg-video-dur">{formatVideoDuration(message.videoDuration)}</span>
+              )}
+            </div>
+          ) : isChatHistory ? (
+            <div className="wb-msg-chathistory">
+              <div className="wb-msg-chathistory-title">{bubbleText}</div>
+              {message.chatRecordList!.slice(0, 4).map((item, i) => (
+                <div className="wb-msg-chathistory-item" key={i}>
+                  {chatRecordText(item)}
+                </div>
+              ))}
+              {message.chatRecordList!.length > 4 && (
+                <div className="wb-msg-chathistory-more">… 共 {message.chatRecordList!.length} 条</div>
+              )}
+            </div>
           ) : isFile ? (
             <div
               className="wb-msg-file"
@@ -216,6 +328,16 @@ function MessageBubble({
                 )}
               </div>
             </div>
+          ) : isRedEnvelope ? (
+            <div className="wb-msg-hongbao">
+              <span className="wb-msg-hongbao-text">{bubbleText}</span>
+              {redEnvelopeStatus && redEnvelopeStatus.receiveStatus === 2 && (
+                <span className="wb-msg-hongbao-status">已领取</span>
+              )}
+              {redEnvelopeStatus && redEnvelopeStatus.receiveStatus !== 2 && !message.isSend && (
+                <span className="wb-msg-hongbao-status">未领取</span>
+              )}
+            </div>
           ) : (
             <span className="wb-msg-text">{bubbleText}</span>
           )}
@@ -230,9 +352,14 @@ function MessagePanel(): React.JSX.Element {
   const sessions = useWorkbenchStore((s) => s.sessions)
   const messages = useWorkbenchStore((s) => s.messages)
   const loading = useWorkbenchStore((s) => s.loading)
+  const messagesHasMore = useWorkbenchStore((s) => s.messagesHasMore)
+  const loadingOlder = useWorkbenchStore((s) => s.loadingOlder)
+  const loadOlder = useWorkbenchStore((s) => s.loadOlder)
   const sending = useWorkbenchStore((s) => s.sending)
   const sendText = useWorkbenchStore((s) => s.sendText)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const lastSessionRef = useRef<string | null>(null)
+  const pendingScrollRef = useRef(false)
   const [attachment, setAttachment] = useState<Attachment | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [draft, setDraft] = useState('')
@@ -245,17 +372,24 @@ function MessagePanel(): React.JSX.Element {
     setCtxMenu({ x: e.clientX, y: e.clientY, text })
   }
 
-  // 切换会话：滚到底部 + 清空草稿（避免误发到其他会话）
+  // 切换会话：清空草稿 + 标记“消息加载完成后滚到底部”（消息是异步加载，此刻滚动无意义）
   useEffect(() => {
     setDraft('')
-    const el = bodyRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (lastSessionRef.current !== activeSessionId) {
+      lastSessionRef.current = activeSessionId
+      pendingScrollRef.current = true
+    }
   }, [activeSessionId])
 
-  // 新消息：仅当用户本就在底部附近时才自动跟随，浏览历史时不打断
+  // 消息更新：新会话加载完成则强制滚到底部；否则仅当用户本就在底部附近时才跟随
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
+    if (pendingScrollRef.current) {
+      pendingScrollRef.current = false
+      el.scrollTop = el.scrollHeight
+      return
+    }
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
     if (nearBottom) el.scrollTop = el.scrollHeight
   }, [messages])
@@ -290,24 +424,36 @@ function MessagePanel(): React.JSX.Element {
         ) : messages.length === 0 ? (
           <div className="wb-loading">暂无消息</div>
         ) : (
-          messages.map((m, i) => {
-            const prev = i > 0 ? messages[i - 1] : null
-            const showDivider = !prev || needTimeDivider(prev.createTime, m.createTime)
-            return (
-              <div key={m.localId || `${m.serverSeq}-${m.sortSeq}`}>
-                {showDivider && <div className="wb-time-divider">{formatTimeDivider(m.createTime)}</div>}
-                <MessageBubble
-                  message={m}
-                  isGroup={activeSession.isGroup}
-                  sessionAvatarUrl={activeSession.avatarUrl}
-                  sessionName={activeSession.displayName || activeSession.username}
-                  sessionUsername={activeSession.username}
-                  onOpenAttachment={setAttachment}
-                  onContextMenu={handleContextMenu}
-                />
-              </div>
-            )
-          })
+          <>
+            {messagesHasMore && (
+              <button
+                type="button"
+                className="wb-load-older"
+                disabled={loadingOlder}
+                onClick={() => void loadOlder()}
+              >
+                {loadingOlder ? '加载中…' : '加载更早消息'}
+              </button>
+            )}
+            {messages.map((m, i) => {
+              const prev = i > 0 ? messages[i - 1] : null
+              const showDivider = !prev || needTimeDivider(prev.createTime, m.createTime)
+              return (
+                <div key={m.localId || `${m.serverSeq}-${m.sortSeq}`}>
+                  {showDivider && <div className="wb-time-divider">{formatTimeDivider(m.createTime)}</div>}
+                  <MessageBubble
+                    message={m}
+                    isGroup={activeSession.isGroup}
+                    sessionAvatarUrl={activeSession.avatarUrl}
+                    sessionName={activeSession.displayName || activeSession.username}
+                    sessionUsername={activeSession.username}
+                    onOpenAttachment={setAttachment}
+                    onContextMenu={handleContextMenu}
+                  />
+                </div>
+              )
+            })}
+          </>
         )}
       </div>
       <div className="wb-chat-input">

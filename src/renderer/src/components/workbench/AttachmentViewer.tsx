@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 
 export interface Attachment {
-  kind: 'image' | 'file'
+  kind: 'image' | 'file' | 'video'
   url?: string
   /** 图片消息的 md5（解密层可用时经 cs:media:decryptImage 获取真实图） */
   imageMd5?: string
+  /** 视频消息的文件名 md5（经 cs:media:decryptVideo 解密播放） */
+  videoMd5?: string
   fileName?: string
   fileSize?: number
 }
@@ -53,6 +55,47 @@ export function useDecryptImage(
 }
 
 /**
+ * 视频消息解密 hook：调用 cs:media:decryptVideo 解密出可播放的 ct-media:// URL。
+ */
+export function useDecryptVideo(videoMd5?: string): { url: string | null; busy: boolean } {
+  const wxid = useWorkbenchStore((s) => s.wxid)
+  const source = useWorkbenchStore((s) => s.source)
+  const [url, setUrl] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    setUrl(null)
+    const media = window.api?.cs?.media
+    if (!videoMd5 || !media || source !== 'wx' || !wxid) return
+    setBusy(true)
+    media
+      .decryptVideo({ wxid, videoMd5 })
+      .then((res) => {
+        if (!alive) return
+        if (res.ok && res.url) setUrl(res.url)
+        setBusy(false)
+      })
+      .catch(() => {
+        if (alive) setBusy(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [videoMd5, wxid, source])
+
+  return { url, busy }
+}
+
+/** 视频播放子组件（独立组件以合规调用 useDecryptVideo） */
+function VideoPlayer({ videoMd5 }: { videoMd5?: string }): React.JSX.Element {
+  const { url, busy } = useDecryptVideo(videoMd5)
+  if (busy) return <div className="wb-att-video-hint">视频加载中…</div>
+  if (!url) return <div className="wb-att-video-hint">视频加载失败或原文件已被清理</div>
+  return <video className="wb-att-video" src={url} controls autoPlay />
+}
+
+/**
  * 附件查看弹层（T6）。
  * image：展示图片预览；file：展示文件信息（打开/导出待 M3 接入媒体解密）。
  * 交互：点击遮罩 / Esc 关闭。
@@ -81,6 +124,8 @@ function AttachmentViewer({
       <div className="wb-att-dialog" onClick={(e) => e.stopPropagation()}>
         {attachment.kind === 'image' ? (
           <img className="wb-att-image" src={src} alt="图片预览" />
+        ) : attachment.kind === 'video' ? (
+          <VideoPlayer videoMd5={attachment.videoMd5} />
         ) : (
           <div className="wb-att-file">
             <div className="wb-att-file-icon">📄</div>
