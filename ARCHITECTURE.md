@@ -115,7 +115,10 @@ wechat-cs-desktop/
   - 页 N：加密区为 `page[0:4016]`，IV 在 `page[4016:4032]`。
 - **密钥派生**：`AES key = PBKDF2-HMAC-SHA512(encKey, salt, iter=256000, dklen=32)`，逐页 AES-256-CBC 解密（无 padding）。
 - **WAL 合并**：解析 WAL 帧（32B 头 + N×(24B 帧头 + 4096B 帧页)），将「文件头第一周期帧」解密合并到主库，覆盖新页并修正 db size 字段，失败时静默回退主库。
-- **明文缓存**：解密结果落盘到缓存目录（`wx-plain/<name>_<hash>.db`），以「源库路径 + key」的 md5 命名复用；每次打开只读、用完即关。
+- **明文缓存**：解密结果落盘到缓存目录 **db 分区**（`db/<name>_<hash>.db`，历史目录 `wx-plain` 已并入，启动自动迁移），以「源库路径 + key」的 md5 命名复用；每次打开只读、用完即关。
+
+> 缓存目录规范结构（由 `services/paths.ts` 统一管理，写缓存代码禁止硬编码子目录）：
+> `db/` 解密微信明文库副本 · `media/<wxid>/` 附件解码产物（图片/视频，ct-media 协议映射根）· `tmp/` 一次性临时文件 · `export/` 用户导出产物；「清理缓存」会整目录清除。
 
 数据库定位 `dbLocator.ts` 兼容多种目录形态：
 

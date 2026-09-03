@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
-import { getCachePath } from '../paths'
+import { getMediaCacheDir } from '../paths'
 import { getConfig } from '../../db/repos/config'
 import * as keyRepo from '../../db/repos/keyStore'
 import {
@@ -55,7 +55,7 @@ export function toMediaUrl(wxid: string, fileName: string): string {
 
 /** 缓存目录快照：查找已解出的 <md5>_<kind>.* 文件（命中即跳过重新扫描/解密，返回文件名） */
 function findCachedMedia(wxid: string, md5: string, kind: 'orig' | 'thumb' | 'hd'): string | null {
-  const cacheDir = join(getCachePath(), 'media', wxid)
+  const cacheDir = getMediaCacheDir(wxid)
   let entries: string[]
   try {
     entries = readdirSync(cacheDir)
@@ -226,7 +226,7 @@ async function tryDecryptOne(
     }
 
     // 写入缓存目录 media/<wxid>/<md5>_<kind><ext>
-    const cacheDir = join(getCachePath(), 'media', wxid)
+    const cacheDir = getMediaCacheDir(wxid)
     mkdirSync(cacheDir, { recursive: true })
     const cacheName = `${md5}_${foundKind}${ext}`
     const cacheFile = join(cacheDir, cacheName)
@@ -399,7 +399,7 @@ export async function decryptVideo(opts: DecryptVideoOptions): Promise<DecryptVi
 
   try {
     const ext = extname(srcPath).toLowerCase()
-    const cacheDir = join(getCachePath(), 'media', wxid)
+    const cacheDir = getMediaCacheDir(wxid)
     mkdirSync(cacheDir, { recursive: true })
     const cacheName = `${md5}_video${ext}`
     const cacheFile = join(cacheDir, cacheName)

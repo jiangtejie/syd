@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3-multiple-ciphers'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
 import { createHash, createDecipheriv, pbkdf2Sync } from 'node:crypto'
-import { getCachePath } from '../paths'
+import { getPlainDbDir } from '../paths'
 
 /**
  * 微信 4.x（xwechat）加密库解密层。
@@ -173,9 +173,8 @@ function getPlainDbPath(filePath: string, hexKey: string): string {
     .digest('hex')
     .slice(0, 16)
   const name = basename(filePath).replace(/\.db$/i, '') + '_' + hash + '.db'
-  const dir = join(getCachePath(), 'wx-plain')
-  mkdirSync(dir, { recursive: true })
-  return join(dir, name)
+  // 明文库副本归入缓存 db 分区（<cache>/db），与媒体/临时/导出分区隔离
+  return join(getPlainDbDir(), name)
 }
 
 function assertDbFileExists(filePath: string): string | null {
