@@ -68,6 +68,23 @@
   gap: 4px;
 }
 
+/* 设置固定于导航底部(分隔线 + 底部容器自动贴底) */
+.app-nav-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.app-nav-sep {
+  width: 28px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 2px 0 4px;
+}
+
 /* 导航顶部：当前微信账号头像（圆形）+ 连接状态指示灯 */
 .app-nav-avatar {
   position: relative;

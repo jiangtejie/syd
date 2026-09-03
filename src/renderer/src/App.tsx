@@ -84,8 +84,7 @@ const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }>
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
   { key: 'customers', icon: 'customers', label: '客户' },
-  { key: 'export', icon: 'export', label: '数据' },
-  { key: 'settings', icon: 'settings', label: '设置' }
+  { key: 'export', icon: 'export', label: '数据' }
 ]
 
 const VALID_PAGES = new Set(NAV_ITEMS.map((i) => i.key))
@@ -201,6 +200,20 @@ function App(): React.JSX.Element {
                 <span className="app-nav-label">{item.label}</span>
               </button>
             ))}
+            {/* 设置固定在导航底部 */}
+            <div className="app-nav-bottom">
+              <span className="app-nav-sep" />
+              <button
+                type="button"
+                className={`app-nav-item${page === 'settings' ? ' is-active' : ''}`}
+                onClick={() => setPage('settings')}
+              >
+                <span className="app-nav-icon">
+                  <NavIcon name="settings" />
+                </span>
+                <span className="app-nav-label">设置</span>
+              </button>
+            </div>
           </nav>
           <div className="app-main">
             {/* 对话页常驻，仅隐藏 */}
