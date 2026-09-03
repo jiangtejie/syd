@@ -188,6 +188,7 @@ declare global {
           groupBadges: (
             wxid: string
           ) => Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }>
+          onChanged: (callback: () => void) => () => void
         }
         team: {
           list: (accountWxid: string) => Promise<Result<{ members?: TeamMemberInfo[] }>>
@@ -219,6 +220,11 @@ declare global {
             folder: string
           ) => Promise<{ ok: boolean; folder?: string; name?: string; error?: string }>
           openFolder: (folder: string) => Promise<{ ok: boolean; error?: string }>
+          writeFile: (
+            folder: string,
+            name: string,
+            content: string
+          ) => Promise<{ ok: boolean; path?: string; error?: string }>
           onProgress: (callback: (evt: {
             phase: string
             current: number

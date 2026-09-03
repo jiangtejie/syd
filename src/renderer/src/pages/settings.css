@@ -485,3 +485,9 @@ select.st-input {
   line-height: 1.5;
   margin-left: 6px;
 }
+
+/* 阈值小时输入(设置-偏好与数据) */
+.st-th-input {
+  width: 92px !important;
+  flex: none;
+}

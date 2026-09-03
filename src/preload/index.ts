@@ -184,7 +184,12 @@ const api = {
       groupBadges: (
         wxid: string
       ): Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }> =>
-        ipcRenderer.invoke('cs:issue:groupBadges', wxid)
+        ipcRenderer.invoke('cs:issue:groupBadges', wxid),
+      onChanged: (callback: () => void): (() => void) => {
+        const listener = (): void => callback()
+        ipcRenderer.on('cs:issue:changed', listener)
+        return () => ipcRenderer.removeListener('cs:issue:changed', listener)
+      }
     },
     team: {
       list: (
@@ -223,6 +228,12 @@ const api = {
         ipcRenderer.invoke('cs:export:business', wxid, folder),
       openFolder: (folder: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:export:openFolder', folder),
+      writeFile: (
+        folder: string,
+        name: string,
+        content: string
+      ): Promise<{ ok: boolean; path?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:export:writeFile', folder, name, content),
       onProgress: (callback: (evt: unknown) => void): (() => void) => {
         const listener = (_e: Electron.IpcRendererEvent, evt: unknown): void => callback(evt)
         ipcRenderer.on('cs:export:progress', listener)

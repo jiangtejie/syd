@@ -42,7 +42,11 @@ export interface MonitorData {
 }
 
 const TYPE_ORDER: FeedbackIssueType[] = ['客诉', '售后', '物流', '价格', '咨询', '建议', '其他']
-const BACKLOG_MS = 48 * 3600_000
+
+export interface MonitorOptions {
+  /** 积压超时阈值(小时,默认 48) */
+  backlogHours?: number
+}
 
 function startOfDay(ts: number): number {
   const d = new Date(ts)
@@ -53,11 +57,13 @@ function startOfDay(ts: number): number {
 export function computeMonitorData(
   issues: FeedbackIssue[],
   rangeDays: number,
+  opts: MonitorOptions = {},
   now = Date.now()
 ): MonitorData {
   const today0 = startOfDay(now)
   const rangeStart = today0 - (rangeDays - 1) * 24 * 3600_000
   const days = Math.min(Math.max(Math.floor(rangeDays), 1), 90)
+  const backlogMs = Math.max(1, Math.floor(opts.backlogHours ?? 48)) * 3600_000
 
   // 趋势:每一天的 新增(occur)与 解决(done updated)
   const trendMap = new Map<number, TrendPoint>()
@@ -130,7 +136,7 @@ export function computeMonitorData(
       } else {
         pending++
       }
-      if (now - it.occurAt > BACKLOG_MS) backlog48++
+      if (now - it.occurAt > backlogMs) backlog48++
       const age = now - it.occurAt
       const dayMs = 24 * 3600_000
       const ageLabel =

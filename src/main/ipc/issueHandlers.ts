@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import {
   analyzeGroupIssues,
   analyzeIssues,
@@ -18,6 +18,13 @@ import type { FeedbackIssueStatus } from '../../shared/types'
  */
 
 export function registerIssueHandlers(): void {
+  /** 数据变更通知:监控/看板等页面据此同步刷新 */
+  const notifyChanged = (): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('cs:issue:changed', { at: Date.now() })
+    }
+  }
+
   ipcMain.handle('cs:issue:list', (_e, wxid: string) => {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
     try {
@@ -32,7 +39,10 @@ export function registerIssueHandlers(): void {
 
   ipcMain.handle('cs:issue:analyze', async (_e, wxid: string) => {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
-    return analyzeIssues(wxid)
+    return analyzeIssues(wxid).then((r) => {
+      notifyChanged()
+      return r
+    })
   })
 
   // 单群窗口分析（工作台「群问题」视图）：days 自然日窗口、自动触发带节流;reset=先清空该群待处理再重扫
@@ -46,7 +56,10 @@ export function registerIssueHandlers(): void {
       opts?: { days?: number; force?: boolean; reset?: boolean }
     ) => {
       if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
-      return analyzeGroupIssues(wxid, groupUsername, groupName ?? '', opts ?? {})
+      return analyzeGroupIssues(wxid, groupUsername, groupName ?? '', opts ?? {}).then((r) => {
+        notifyChanged()
+        return r
+      })
     }
   )
 
@@ -69,6 +82,7 @@ export function registerIssueHandlers(): void {
     try {
       clearIssuesByGroup(wxid, groupUsername)
       clearGroupRunState(wxid, groupUsername)
+      notifyChanged()
       return { ok: true as const }
     } catch (err) {
       return {
@@ -86,6 +100,7 @@ export function registerIssueHandlers(): void {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
     try {
       clearFeedbackIssues(wxid)
+      notifyChanged()
       return { ok: true as const }
     } catch (err) {
       return {
@@ -101,6 +116,7 @@ export function registerIssueHandlers(): void {
     if (!valid.includes(status)) return { ok: false as const, error: '非法状态' }
     try {
       updateIssueStatus(id, status)
+      notifyChanged()
       return { ok: true as const }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }

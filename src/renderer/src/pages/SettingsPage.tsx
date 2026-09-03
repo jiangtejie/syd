@@ -139,6 +139,9 @@ function SettingsPage(): React.JSX.Element {
   const [dataStats, setDataStats] = useState<{ dbBytes: number; cacheBytes: number } | null>(null)
   const [clearArmed, setClearArmed] = useState(false)
   const [version, setVersion] = useState('')
+  // 问题监控口径(小时):积压超时 / 跟进超时
+  const [backlogHours, setBacklogHours] = useState(48)
+  const [followUpHours, setFollowUpHours] = useState(12)
 
   /** 刷新缓存目录状态（生效目录/默认目录；effect 与路径变更共用） */
   const refreshCachePath = async (): Promise<void> => {
@@ -171,6 +174,13 @@ function SettingsPage(): React.JSX.Element {
         }
         return next
       })
+      // 问题监控口径(小时)
+      const hours = (v: string | undefined, fb: number): number => {
+        const n = Number(v)
+        return Number.isFinite(n) && n > 0 ? Math.floor(n) : fb
+      }
+      setBacklogHours(hours(cfg['monitor.backlogHours'], 48))
+      setFollowUpHours(hours(cfg['monitor.followUpHours'], 12))
       setLoaded(true)
     })
     void replyApi?.getSendStatus().then(setSendStatus).catch(() => undefined)
@@ -206,6 +216,18 @@ function SettingsPage(): React.JSX.Element {
 
   const resetCachePath = async (): Promise<void> => {
     await applyCachePath('')
+  }
+
+  /** 保存监控口径阈值(失焦/回车),非法值回落默认 */
+  const saveThreshold = (key: 'monitor.backlogHours' | 'monitor.followUpHours', value: number, fallback: number): void => {
+    if (!Number.isFinite(value) || value < 1 || value > 24 * 30) {
+      if (key === 'monitor.backlogHours') setBacklogHours(fallback)
+      else setFollowUpHours(fallback)
+      toast.error('请输入 1~720 之间的整数小时')
+      return
+    }
+    void configApi?.set(key, String(Math.floor(value)))
+    toast.success('口径已保存(监控与群问题面板即时生效)')
   }
 
   const toggleAutoLaunch = async (enabled: boolean): Promise<void> => {
@@ -697,6 +719,46 @@ function SettingsPage(): React.JSX.Element {
         <div className="st-hint st-cache-hint">
           关闭窗口会最小化到系统托盘，可在托盘菜单中退出；
           开机自启在打包安装后生效（开发模式下指向 Electron 本体）。
+        </div>
+      </div>
+
+      {/* 问题监控口径 */}
+      <div className="page-card st-section">
+        <div className="st-title">问题监控口径</div>
+        <label className="st-row">
+          <span className="st-label">积压超时阈值</span>
+          <input
+            type="number"
+            min={1}
+            max={720}
+            className="st-input st-th-input"
+            value={backlogHours}
+            onChange={(e) => setBacklogHours(Number(e.target.value))}
+            onBlur={() => saveThreshold('monitor.backlogHours', backlogHours, 48)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveThreshold('monitor.backlogHours', backlogHours, 48)
+            }}
+          />
+          <span className="st-hint-inline">小时：问题首现超过该时长未闭环即标为「积压超时」</span>
+        </label>
+        <label className="st-row">
+          <span className="st-label">跟进超时阈值</span>
+          <input
+            type="number"
+            min={1}
+            max={720}
+            className="st-input st-th-input"
+            value={followUpHours}
+            onChange={(e) => setFollowUpHours(Number(e.target.value))}
+            onBlur={() => saveThreshold('monitor.followUpHours', followUpHours, 12)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveThreshold('monitor.followUpHours', followUpHours, 12)
+            }}
+          />
+          <span className="st-hint-inline">小时：客服回复后超过该时长仍未闭环即标为「跟进超时」</span>
+        </label>
+        <div className="st-hint">
+          应用于监控中心 KPI、群问题面板的逾期徽标与排序提示；失焦或回车保存，立即生效。
         </div>
       </div>
 

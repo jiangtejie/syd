@@ -1,4 +1,6 @@
 import { ipcMain, shell, BrowserWindow } from 'electron'
+import { writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { exportChat, exportBusiness, type ChatExportOptions, type ProgressEvent } from '../services/export/exportService'
 
 /**
@@ -31,6 +33,26 @@ export function registerExportHandlers(): void {
     try {
       const error = await shell.openPath(folder)
       return error ? { ok: false as const, error } : { ok: true as const }
+    } catch (err) {
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err)
+      }
+    }
+  })
+
+  // 通用写文件(监控快照等页面生成的内容落盘);文件名安全清洗防路径穿越
+  ipcMain.handle('cs:export:writeFile', (_e, folder: string, name: string, content: string) => {
+    if (!folder || typeof name !== 'string' || !name.trim()) {
+      return { ok: false as const, error: '缺少参数' }
+    }
+    const safe = name.replace(/[\\/:*?"<>|\r\n\t]+/g, '_').slice(0, 120)
+    if (!safe) return { ok: false as const, error: '文件名非法' }
+    try {
+      if (!existsSync(folder)) mkdirSync(folder, { recursive: true })
+      const file = join(folder, safe)
+      writeFileSync(file, String(content ?? ''), 'utf-8')
+      return { ok: true as const, path: file }
     } catch (err) {
       return {
         ok: false as const,

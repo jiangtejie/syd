@@ -1,4 +1,5 @@
 import { getDb } from '../database'
+import { getConfigNumber } from './config'
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
@@ -82,19 +83,20 @@ function rowToIssue(r: IssueRow): FeedbackIssue {
   }
 }
 
-/** 跟进超时阈值：客服最后回复距今超过该值仍未闭环 → followUpOverdue */
-const FOLLOW_UP_OVERDUE_MS = 12 * 3600_000
+/** 跟进超时阈值:app_config monitor.followUpHours 可配(默认 12h),见 decorateFollowUpOverdue */
 
-/** open 且 followUp 的行：按最后一条证据是否为客服消息及时间计算 overdue */
+/** open 且 followUp 的行：按最后一条证据是否为客服消息及时间计算 overdue(阈值 app_config monitor.followUpHours,默认 12) */
 function decorateFollowUpOverdue(issue: FeedbackIssue): void {
   if (!issue.followUp || issue.status !== 'open') return
+  const hours = getConfigNumber('monitor.followUpHours', 12)
+  const limit = Math.max(1, hours) * 3600_000
   const last = getDb()
     .prepare(
       `SELECT msg_time, is_send FROM issue_feedback_msg
        WHERE issue_id = ? ORDER BY seq DESC LIMIT 1`
     )
     .get(issue.id) as { msg_time: number; is_send: number } | undefined
-  if (last && last.is_send === 1 && Date.now() - last.msg_time > FOLLOW_UP_OVERDUE_MS) {
+  if (last && last.is_send === 1 && Date.now() - last.msg_time > limit) {
     issue.followUpOverdue = true
   }
 }

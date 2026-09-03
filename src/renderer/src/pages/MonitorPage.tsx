@@ -124,6 +124,8 @@ function MonitorPage(): React.JSX.Element {
   const [groupFilter, setGroupFilter] = useState('')
   const [keyword, setKeyword] = useState('')
   const [visible, setVisible] = useState(40)
+  // 口径配置(读取 app_config,默认 积压48h / 跟进超时12h)
+  const [thresh, setThresh] = useState({ backlog: 48, followUp: 12 })
   // 追踪抽屉
   const [active, setActive] = useState<FeedbackIssue | null>(null)
   const [detail, setDetail] = useState<FeedbackIssueDetail | null>(null)
@@ -148,10 +150,52 @@ function MonitorPage(): React.JSX.Element {
   }, [connected, wxid, issueApi])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面异步加载(回调内 setState,全仓同款模式)
     void load()
   }, [load])
 
-  const metrics = useMemo(() => computeMonitorData(issues, range), [issues, range])
+  // 阈值读取(设置 → 偏好与数据 可配)
+  useEffect(() => {
+    const config = window.api?.cs?.config
+    if (!config) return
+    config
+      .getAll()
+      .then((all) => {
+        const num = (v: string | undefined, fb: number): number => {
+          const n = Number(v)
+          return Number.isFinite(n) && n > 0 ? Math.floor(n) : fb
+        }
+        setThresh({
+          backlog: num(all['monitor.backlogHours'], 48),
+          followUp: num(all['monitor.followUpHours'], 12)
+        })
+      })
+      .catch(() => undefined)
+  }, [])
+
+  // 数据变更自动刷新(主进程 cs:issue:changed 推送:任何页面处置/分析后同步)+ 窗口聚焦兜底
+  useEffect(() => {
+    let timer: number | null = null
+    const unsub = issueApi?.onChanged?.(() => {
+      if (timer !== null) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        timer = null
+        void load()
+      }, 250)
+    })
+    const onFocus = (): void => void load()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      if (timer !== null) window.clearTimeout(timer)
+      unsub?.()
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [issueApi, load])
+
+  const metrics = useMemo(
+    () => computeMonitorData(issues, range, { backlogHours: thresh.backlog }),
+    [issues, range, thresh.backlog]
+  )
 
   const filtered = useMemo(() => {
     let list = issues
@@ -191,6 +235,49 @@ function MonitorPage(): React.JSX.Element {
     if (seq !== detailSeqRef.current) return
     if (res?.ok && res.issue) setDetail(res.issue as FeedbackIssueDetail)
     setDetailLoading(false)
+  }
+
+  /** BI 快照导出(当前视野的 KPI/图表数据与问题清单,JSON) */
+  const exportSnapshot = async (): Promise<void> => {
+    if (!connected || issues.length === 0) {
+      toast.error('暂无可导出的监控数据')
+      return
+    }
+    const r = await window.api?.cs?.dialog?.pickDirectory('选择快照保存目录')
+    if (!r?.ok || !r.path) return
+    const d = new Date()
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    const name = `monitor_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(
+      d.getHours()
+    )}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`
+    const payload = {
+      app: 'wechat-cs-desktop',
+      kind: 'monitor-snapshot',
+      exportedAt: new Date().toISOString(),
+      wxid,
+      rangeDays: range,
+      thresholdHours: thresh,
+      kpis: metrics.kpis,
+      trend: metrics.trend,
+      typeOpen: metrics.typeOpen,
+      groupTop: metrics.groupTop,
+      age: metrics.age,
+      issues: filtered.slice(0, 2000).map((i) => ({
+        id: i.id,
+        type: i.type,
+        status: i.status,
+        followUp: i.followUp,
+        followUpOverdue: i.followUpOverdue,
+        title: i.title,
+        summary: i.summary ?? null,
+        group: i.groupName || i.groupUsername,
+        occurAt: i.occurAt,
+        msgCount: i.msgCount
+      }))
+    }
+    const w = await window.api?.cs?.export?.writeFile(r.path, name, JSON.stringify(payload, null, 2))
+    if (w?.ok) toast.success(`快照已导出:${name}`)
+    else toast.error(w?.error || '快照导出失败')
   }
   // 图表配置
 const trendOption = useMemo<EChartsOption>(() => {
@@ -306,6 +393,9 @@ const trendOption = useMemo<EChartsOption>(() => {
           <button type="button" className="mon-btn ghost" disabled={loading} onClick={() => void load()}>
             {loading ? '刷新中…' : '刷新'}
           </button>
+          <button type="button" className="mon-btn ghost" onClick={() => void exportSnapshot()} title="导出当前监控快照(KPI/图表/问题清单 JSON)">
+            导出快照
+          </button>
         </div>
       </div>
 
@@ -319,8 +409,18 @@ const trendOption = useMemo<EChartsOption>(() => {
           <div className="mon-kpis">
             <KpiCard label="待处理(未回复)" value={metrics.kpis.pending} tone="danger" />
             <KpiCard label="跟进中" value={metrics.kpis.following} hint="客服已回复未闭环" tone="warn" />
-            <KpiCard label="跟进超时" value={metrics.kpis.followOverdue} hint="回复后超 12h 无下文" tone="danger" />
-            <KpiCard label="积压超时" value={metrics.kpis.backlog48} hint="首现超 48h 未闭环" tone="warn" />
+            <KpiCard
+              label="跟进超时"
+              value={metrics.kpis.followOverdue}
+              hint={`回复后超 ${thresh.followUp}h 无下文`}
+              tone="danger"
+            />
+            <KpiCard
+              label="积压超时"
+              value={metrics.kpis.backlog48}
+              hint={`首现超 ${thresh.backlog}h 未闭环`}
+              tone="warn"
+            />
             <KpiCard label="今日新增" value={metrics.kpis.createdToday} />
             <KpiCard label="今日解决" value={metrics.kpis.resolvedToday} tone="ok" />
             <KpiCard
@@ -421,7 +521,8 @@ const trendOption = useMemo<EChartsOption>(() => {
               )}
               {visibleList.map((it) => {
                 const chip = statusChip(it)
-                const isOld = it.status === 'open' && Date.now() - it.occurAt > 48 * 3600_000
+                // eslint-disable-next-line -- 渲染中取当前时间仅用于积压标红(展示层,允许偶发非纯)
+                const isOld = it.status === 'open' && Date.now() - it.occurAt > thresh.backlog * 3600_000
                 return (
                   <div
                     key={it.id}
