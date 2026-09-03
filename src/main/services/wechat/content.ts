@@ -536,3 +536,17 @@ export function parseRedEnvelopeSendId(content: string): string | undefined {
   const payMsgId = extractXmlValue(content, 'paymsgid')
   return payMsgId || undefined
 }
+
+/** 转账消息（49 型 type=2000）付款/收款方 username（对齐 CipherTalk messageMapper 提取） */
+export function parseTransferUsernames(content: string): {
+  payerUsername?: string
+  receiverUsername?: string
+} {
+  if (!content) return {}
+  const payer = extractXmlValue(content, 'payer_username')
+  const receiver = extractXmlValue(content, 'receiver_username')
+  return {
+    payerUsername: payer && !payer.includes(' ') ? payer : undefined,
+    receiverUsername: receiver && !receiver.includes(' ') ? receiver : undefined
+  }
+}

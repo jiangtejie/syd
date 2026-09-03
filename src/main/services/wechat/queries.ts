@@ -26,8 +26,10 @@ import {
   parseChatHistory,
   parseQuoteMessage,
   processSummary,
-  parseRedEnvelopeSendId
+  parseRedEnvelopeSendId,
+  parseTransferUsernames
 } from './content'
+import { resolveOpenimDisplayName } from './weCom'
 import type {
   ChatMessage,
   MessageCursor,
@@ -582,6 +584,9 @@ function rowToMessage(
   const chatRecordList = localType === 49 ? parseChatHistory(content) : undefined
   // 红包 sendId（type 49/2001），供渲染端匹配本地领取状态；非红包消息返回 undefined
   const redEnvelopeSendId = localType === 49 ? parseRedEnvelopeSendId(content) : undefined
+  // 转账消息（49/2000）付款/收款方 username
+  const transfer =
+    localType === 49 && content.includes('payer_username') ? parseTransferUsernames(content) : {}
 
   // 引用消息：localType 244813135921（微信 4.x 专属）或 49 型内嵌 refermsg
   let quotedContent: string | undefined
@@ -624,6 +629,8 @@ function rowToMessage(
     fileMd5: fileInfo.fileMd5,
     chatRecordList,
     redEnvelopeSendId,
+    transferPayerUsername: transfer.payerUsername,
+    transferReceiverUsername: transfer.receiverUsername,
     quotedContent,
     quotedSender,
     quotedImageMd5,
@@ -749,8 +756,8 @@ export function listMessages(
     const nextCursor =
       hasMore && pageItems.length > 0 ? pageItems[pageItems.length - 1].cursor : undefined
     const page = pageItems.map((it) => it.msg).reverse()
-    // enrich 发送人昵称/头像（群消息关键）
-    enrichMessagesWithSenders(page, ctx)
+    // enrich 发送人昵称/头像/群昵称/企微名/转账双方名（群消息关键）
+    enrichMessagesWithSenders(page, ctx, sessionId)
     return { ok: true, messages: page, hasMore, nextCursor }
   } catch (e: any) {
     return { ok: false, error: `读取消息失败: ${e?.message || String(e)}` }
@@ -818,23 +825,143 @@ export function getRedEnvelopeStatuses(
   }
 }
 
+/** 进程级群昵称缓存（key = wxid|chatroomId，TTL 10 分钟，容量超限整体重建） */
+const groupNickCache = new Map<string, { at: number; map: Map<string, string> }>()
+const GROUP_NICK_TTL_MS = 10 * 60_000
+const GROUP_NICK_MAX = 100
+
+/** 解析群成员名单 XML（room_data：<member><username>…<displayName>…），username -> 群昵称 */
+function extractRoomMemberNames(roomData: string): Map<string, string> {
+  const map = new Map<string, string>()
+  const re =
+    /<member>[\s\S]*?<username>(.*?)<\/username>[\s\S]*?<displayName>(.*?)<\/displayName>[\s\S]*?<\/member>/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(roomData)) !== null) {
+    const u = (m[1] || '').trim()
+    const n = (m[2] || '').trim()
+    if (u && n && n !== u) map.set(u, n)
+  }
+  return map
+}
+
 /**
- * 用 contact 库 enrich 消息发送人（昵称 + 头像）。
- * 群消息：按发送人 wxid 逐个查；私聊：对方消息用会话头像即可（渲染端处理），这里仅补昵称。
+ * 读取群成员群昵称映射（contact.db 中表名含 chatroom 的表，如 chatroom_info；
+ * 移植 CipherTalk resolveTransferDisplayNames 的 room_data 解析）。
+ * 兼容表名/列名差异，任一步失败静默返回空 Map。
+ */
+function loadGroupNicknames(ctx: WxReaderContext, chatroomId: string): Map<string, string> {
+  const cacheKey = `${ctx.wxid}|${chatroomId}`
+  const hit = groupNickCache.get(cacheKey)
+  if (hit && Date.now() - hit.at < GROUP_NICK_TTL_MS) return hit.map
+  if (groupNickCache.size >= GROUP_NICK_MAX) groupNickCache.clear()
+
+  const empty = new Map<string, string>()
+  try {
+    const paths = locateWeChatDbs(ctx.dbPath, ctx.wxid)
+    if (!paths.dbStoragePath) return empty
+    const contactFile = findContactDb(paths.dbStoragePath)
+    if (!contactFile) return empty
+    const opened = openWxDbFile(contactFile, ctx.hexKey)
+    if (!opened.db) return empty
+    const db = opened.db
+    try {
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        name: string
+      }[]
+      const out = new Map<string, string>()
+      for (const t of tables) {
+        if (!/chatroom/i.test(t.name)) continue
+        try {
+          const cols = (
+            db.prepare(`PRAGMA table_info(${t.name})`).all() as { name: string }[]
+          ).map((c) => c.name)
+          const roomKeyCol =
+            cols.find((c) => /chatroom_name|room_name|username/i.test(c)) ?? null
+          const dataCol = cols.find((c) => /room_data|ext_buffer|member_list|member/i.test(c))
+          if (!roomKeyCol || !dataCol) continue
+          const rows = db
+            .prepare(`SELECT ${roomKeyCol} AS k, ${dataCol} AS d FROM ${t.name}`)
+            .all() as Array<{ k?: string; d?: unknown }>
+          for (const r of rows) {
+            if (r.k !== chatroomId) continue // 只取当前群那一行（多数表一行一群）
+            const d = r.d
+            const data = Buffer.isBuffer(d)
+              ? d.toString('utf-8')
+              : typeof d === 'string'
+                ? d
+                : ''
+            if (data.includes('<member>')) {
+              for (const [u, n] of extractRoomMemberNames(data)) out.set(u, n)
+            }
+          }
+        } catch {
+          /* 表结构不适配，跳过 */
+        }
+      }
+      groupNickCache.set(cacheKey, { at: Date.now(), map: out })
+      return out
+    } finally {
+      db.close()
+    }
+  } catch {
+    return empty
+  }
+}
+
+/** 我方身份变体集合（原 wxid + 清洗后），用于匹配 room_data 里的自己 */
+function myWxidVariants(wxid: string): string[] {
+  const clean = cleanAccountDirWxid(wxid)
+  return clean && clean !== wxid ? [wxid, clean] : [wxid]
+}
+
+/** 转账参与方显示名：己方 → 群昵称或「我」；群昵称 > 备注 > 昵称 > alias > 原样（移植 CipherTalk resolveName） */
+function resolvePartyName(
+  username: string | undefined,
+  groupNick: Map<string, string>,
+  contactMap: Map<string, Record<string, any>>,
+  myVariants: string[]
+): string | undefined {
+  if (!username) return undefined
+  if (myVariants.includes(username)) return '我'
+  const groupName =
+    groupNick.get(username) ||
+    (username.startsWith('wxid_') ? groupNick.get(cleanWxid(username)) : undefined)
+  if (groupName) return groupName
+  const contact = contactMap.get(username)
+  if (contact) {
+    const name = pickDisplayName(contact)
+    if (name) return name
+  }
+  return undefined
+}
+
+/**
+ * 用 contact 库 enrich 消息（发送人昵称/头像 + 群昵称 + 企微展示名 + 转账双方名）。
+ * 群消息发送人名优先级：群昵称(chatroom_info room_data) > 联系人备注/昵称/alias
+ *   > 企微 openim 展示名(extra_buffer/openim_wording)。
+ * sessionId 为消息所属会话（群时为群 id，用于加载该群群昵称映射）。
  * 自己发的消息不 enrich（渲染端用"我"的占位）。
  */
 export function enrichMessagesWithSenders(
   messages: ChatMessage[],
-  ctx: WxReaderContext
+  ctx: WxReaderContext,
+  sessionId?: string
 ): ChatMessage[] {
   if (messages.length === 0) return messages
+  const isGroup = !!sessionId && sessionId.includes('@chatroom')
   // 只处理有真实发送人 wxid 的接收消息
   const senderIds = Array.from(
     new Set(
       messages.filter((m) => !m.isSend && m.senderUsername).map((m) => m.senderUsername as string)
     )
   )
+  // 转账消息里的参与方也纳入联系人查询
+  for (const m of messages) {
+    if (m.transferPayerUsername) senderIds.push(m.transferPayerUsername)
+    if (m.transferReceiverUsername) senderIds.push(m.transferReceiverUsername)
+  }
   if (senderIds.length === 0) return messages
+
   try {
     const paths = locateWeChatDbs(ctx.dbPath, ctx.wxid)
     if (!paths.dbStoragePath) return messages
@@ -859,31 +986,62 @@ export function enrichMessagesWithSenders(
       if (!contactTable) return messages
 
       const contactMap = queryContactsByUsernames(db, contactTable, senderIds)
-      // 诊断（企业微信 openim 成员昵称缺失时打一次，用于定位昵称存储位置）
+      const myVariants = myWxidVariants(ctx.wxid)
+      // 群昵称映射（同会话一次性加载，缓存 10 分钟）
+      const groupNick = isGroup ? loadGroupNicknames(ctx, sessionId!) : undefined
+
       const missingOpenim: string[] = []
       for (const m of messages) {
         if (m.isSend || !m.senderUsername) continue
-        const contact = contactMap.get(m.senderUsername)
-        if (!contact) {
-          if (m.senderUsername.includes('@openim') && missingOpenim.length < 5) {
-            missingOpenim.push(m.senderUsername)
-          }
-          continue
+        const username = m.senderUsername
+        const contact = contactMap.get(username)
+        const contactName = contact ? pickDisplayName(contact) : ''
+        const isWeCom = username.includes('@openim') && !username.includes('@kefu.openim')
+        let name = ''
+        // 群昵称优先（企微成员在群内通常有 displayName）
+        if (groupNick) {
+          name =
+            groupNick.get(username) ||
+            (username.startsWith('wxid_') ? groupNick.get(cleanWxid(username)) || '' : '')
         }
-        m.senderNickname = pickDisplayName(contact) || m.senderUsername
-        m.senderAvatarUrl = pickAvatarUrl(contact)
-        if (m.senderNickname === m.senderUsername && m.senderUsername.includes('@openim')) {
-          console.warn('[wx] openim contact row found but no name fields',
-            m.senderUsername,
-            'fields:', Object.keys(contact).slice(0, 40))
+        // 其次联系人备注/昵称；企微用户无常规名时再尝试 openim 展示名
+        if (!name) name = contactName
+        if (!name && isWeCom && contact?.extra_buffer) {
+          name =
+            resolveOpenimDisplayName(db, contact.extra_buffer, [
+              toString(contact.remark),
+              toString(contact.nick_name),
+              toString(contact.nickname),
+              toString(contact.alias),
+              username
+            ]) || ''
         }
+        if (!name && contact) {
+          if (isWeCom && missingOpenim.length < 5) missingOpenim.push(username)
+        }
+        // 不再把原始 id 当作昵称（气泡/分析链路仅在确实有名时展示）
+        if (name) m.senderNickname = name
+        if (contact) m.senderAvatarUrl = pickAvatarUrl(contact)
       }
       if (missingOpenim.length > 0) {
         console.warn(
-          '[wx] openim senders missing in contact table',
+          '[wx] openim senders without any name',
           JSON.stringify(missingOpenim),
-          'contactTable:', contactTable,
-          'contact rows:', contactMap.size
+          'contact rows:', contactMap.size,
+          'group nicknames:', groupNick?.size ?? 0
+        )
+      }
+
+      // 转账参与方显示名（群昵称/备注/昵称；己方为"我"）
+      for (const m of messages) {
+        if (!m.transferPayerUsername && !m.transferReceiverUsername) continue
+        const gmap = groupNick ?? new Map<string, string>()
+        m.transferPayerName = resolvePartyName(m.transferPayerUsername, gmap, contactMap, myVariants)
+        m.transferReceiverName = resolvePartyName(
+          m.transferReceiverUsername,
+          gmap,
+          contactMap,
+          myVariants
         )
       }
       return messages

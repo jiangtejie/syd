@@ -106,6 +106,12 @@ export interface ChatMessage {
   quotedEmojiCdnUrl?: string
   /** 红包 sendId（type 49/2001），用于匹配本地领取状态（general.db redEnvelopeTable） */
   redEnvelopeSendId?: string
+  /** 转账消息（49/2000）付款/收款方 username（XML payer_username/receiver_username） */
+  transferPayerUsername?: string
+  transferReceiverUsername?: string
+  /** 转账付款/收款显示名（主进程解析：群昵称/备注/昵称，己方为“我”） */
+  transferPayerName?: string
+  transferReceiverName?: string
 }
 
 /** 合并转发聊天记录单条（type 19） */
