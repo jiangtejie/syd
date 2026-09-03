@@ -69,7 +69,7 @@ const aiApi = window.api?.cs?.ai
 const replyApi = window.api?.cs?.reply
 
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
-  page: 'chat',
+  page: 'dashboard',
   wxid: null,
   source: 'empty',
   sessions: [],
