@@ -6,11 +6,11 @@
 .workbench {
   position: relative;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  grid-template-columns: 280px minmax(0, 1fr) 460px;
   height: 100%; /* 嵌入应用外壳页面区 */
   background: var(--bg);
   font-size: 14px;
-  color: #1a1a1a;
+  color: var(--text-1);
   overflow: hidden;
 }
 
@@ -709,13 +709,84 @@
   cursor: default;
 }
 
-/* ══════════ 右栏：建议面板 ══════════ */
+/* ══════════ 右栏（宽栏）：双视图容器 ══════════ */
 .wb-suggest {
   min-height: 0; /* 关键：允许滚动 */
   border-left: 1px solid var(--border);
   background: var(--bg-panel);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.wb-side {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 视图切换（群会话时出现） */
+.wb-side-tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+
+.wb-side-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.wb-side-tab:hover {
+  background: var(--bg-hover);
+}
+
+.wb-side-tab.is-active {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.wb-side-badge {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 14px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--danger);
+  color: var(--on-brand);
+  text-align: center;
+}
+
+.wb-side-content {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #c9cdd4 transparent;
+}
+
+.wb-side-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.wb-side-content::-webkit-scrollbar-thumb {
+  background: #c9cdd4;
+  border-radius: 3px;
 }
 
 .wb-suggest-panel {
@@ -1037,4 +1108,457 @@
 
 .ctx-item:hover {
   background: #f0f2f5;
+}
+
+/* ══════════ 右栏「群问题」面板 ══════════ */
+.gip {
+  padding: 12px 14px 20px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.gip-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gip-head-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gip-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.gip-days-tag {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.gip-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gip-select {
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel, #fff);
+  color: inherit;
+  outline: none;
+}
+
+.gip-stats {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 8px;
+  font-size: 11.5px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 8px;
+}
+
+.gip-stat {
+  color: var(--text-2);
+}
+
+.gip-stat.is-open {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.gip-stat.is-done {
+  color: var(--success-strong);
+}
+
+.gip-stat.is-stalled {
+  color: var(--warn-text);
+}
+
+.gip-meta {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.gip-busy {
+  font-size: 12px;
+  color: var(--info);
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--info-soft);
+  margin-bottom: 8px;
+  animation: gip-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes gip-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.gip-error {
+  font-size: 12px;
+  color: var(--danger);
+  line-height: 1.5;
+  padding: 6px 10px;
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
+  border-radius: var(--r-sm);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.gip-empty-box {
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.7;
+  padding: 18px 6px;
+  text-align: center;
+}
+
+/* ── 表格 ── */
+.gip-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.gip-tr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+}
+
+.gip-th {
+  font-size: 11px;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 5px;
+  user-select: none;
+}
+
+.gip-cell-st {
+  flex: none;
+  width: 52px;
+}
+
+.gip-cell-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.gip-cell-x {
+  flex: none;
+  width: 18px;
+  text-align: center;
+  color: var(--text-3);
+}
+
+.gip-caret {
+  font-size: 12px;
+}
+
+.gip-row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.12s;
+}
+
+.gip-row:hover {
+  background: var(--bg-hover);
+}
+
+.gip-row.is-expanded {
+  background: var(--bg-hover);
+  border-bottom-color: transparent;
+}
+
+.gip-st {
+  display: inline-block;
+  font-size: 10.5px;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.gip-st.is-open {
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.gip-st.is-done {
+  background: var(--success-soft);
+  color: var(--success-strong);
+}
+
+.gip-st.is-stalled {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.gip-st.is-archived {
+  background: var(--bg-hover);
+  color: var(--text-3);
+}
+
+.gip-title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gip-title-line b {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gip-type {
+  flex: none;
+  font-style: normal;
+  font-size: 10px;
+  line-height: 15px;
+  padding: 0 5px;
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+
+.gip-type.t-客诉 {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: transparent;
+}
+
+.gip-type.t-售后,
+.gip-type.t-物流 {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  border-color: transparent;
+}
+
+.gip-type.t-价格 {
+  background: var(--info-soft);
+  color: var(--info);
+  border-color: transparent;
+}
+
+.gip-sub-line {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 展开详情：证据时间线 ── */
+.gip-detail-wrap {
+  border-bottom: 1px solid var(--border-light);
+}
+
+.gip-detail {
+  padding: 6px 6px 12px 12px;
+  border-left: 2px solid var(--brand);
+  margin-left: 6px;
+}
+
+.gip-summary {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+  padding: 8px 10px;
+  margin: 2px 0 10px;
+  background: var(--bg);
+  border-radius: var(--r-sm);
+  word-break: break-all;
+}
+
+.gip-tl-caption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+
+.gip-method {
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.gip-when {
+  margin-left: auto;
+}
+
+.gip-tl {
+  position: relative;
+  padding-left: 14px;
+}
+
+.gip-tl::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--border);
+}
+
+.gip-tl-item {
+  position: relative;
+  padding: 2px 0 10px;
+}
+
+.gip-tl-dot {
+  position: absolute;
+  left: -13.5px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-4);
+  border: 1.5px solid var(--bg-panel);
+}
+
+.gip-tl-item.is-my .gip-tl-dot {
+  background: var(--brand);
+}
+
+.gip-tl-item.is-my .gip-tl-body {
+  background: var(--success-soft);
+}
+
+.gip-tl-body {
+  border-radius: var(--r-sm);
+  padding: 5px 8px;
+  background: var(--bg);
+}
+
+.gip-tl-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.gip-tl-head b {
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gip-tl-item.is-my .gip-tl-head b {
+  color: var(--success-strong);
+}
+
+.gip-tl-head time {
+  color: var(--text-3);
+  flex: none;
+}
+
+.gip-tag-mark {
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 14px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--border-light);
+  color: var(--text-2);
+  flex: none;
+}
+
+.gip-tl-text {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-1);
+  margin-top: 3px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.gip-detail-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.gip-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gip-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-panel);
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.gip-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.gip-btn.primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
+}
+
+.gip-btn.primary:hover {
+  background: var(--brand-hover);
+}
+
+.gip-btn.ghost {
+  border-color: var(--border);
+  background: var(--bg-panel);
+}
+
+.gip-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.gip-sync {
+  font-size: 10.5px;
+  color: var(--text-4);
 }

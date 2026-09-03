@@ -43,7 +43,7 @@ function SuggestionPanel(): React.JSX.Element {
   return (
     <div className="wb-suggest-panel">
       <div className="wb-suggest-title">
-        智能建议
+        回复建议
         {suggestions.length > 0 && <span className="wb-suggest-tag wb-suggest-tag-ai">AI</span>}
       </div>
 

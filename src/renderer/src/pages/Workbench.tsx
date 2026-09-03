@@ -2,12 +2,12 @@ import { useEffect } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import SessionList from '../components/workbench/SessionList'
 import MessagePanel from '../components/workbench/MessagePanel'
-import SuggestionPanel from '../components/workbench/SuggestionPanel'
+import SidePanel from '../components/workbench/SidePanel'
 import './workbench.css'
 
 /**
  * 客服工作台（T6）。
- * 布局：左栏会话列表 | 中栏消息区 | 右栏建议条（T7 填充）
+ * 布局：左栏会话列表 | 中栏消息区 | 右栏（群问题 / 回复建议 双视图）
  */
 function Workbench(): React.JSX.Element {
   const wxid = useWorkbenchStore((s) => s.wxid)
@@ -28,7 +28,7 @@ function Workbench(): React.JSX.Element {
         <MessagePanel />
       </main>
       <aside className="wb-suggest">
-        <SuggestionPanel />
+        <SidePanel />
       </aside>
       {fallbackReason && (
         <div className="wb-banner">

@@ -111,7 +111,8 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 1024,
+    // 右栏(群问题/回复建议)460px 宽,消息区需保有可用宽度
+    minWidth: 1160,
     minHeight: 680,
     show: false,
     autoHideMenuBar: true,

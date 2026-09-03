@@ -2,6 +2,9 @@ import { create } from 'zustand'
 import type {
   AiAgent,
   ChatMessage,
+  FeedbackIssue,
+  FeedbackIssueDetail,
+  FeedbackIssueStatus,
   MessageCursor,
   ReplyCandidate,
   SessionSummary
@@ -53,6 +56,19 @@ interface WorkbenchState {
   /** 全局默认智能体 id（仅作展示用，标注“默认”） */
   defaultAgentId: string | null
 
+  /** 群问题（右栏「群问题」视图，仅群会话；数据来自 issue_feedback，与看板同源同状态） */
+  groupIssues: FeedbackIssue[]
+  groupIssueLoading: boolean
+  groupAnalyzing: boolean
+  groupIssueError: string | null
+  /** 最近一次分析/尝试时间戳（头显展示用） */
+  groupAnalyzedAt: number | null
+  /** 分析窗口（自然日，默认 2：今天+昨天；看板为 7） */
+  groupDays: number
+  /** 展开中的问题详情（证据消息时间线） */
+  groupActiveDetail: FeedbackIssueDetail | null
+  groupDetailLoading: boolean
+
   /** 发送（T8） */
   sending: boolean
   sendResult: { ok: boolean; error?: string; status?: string; verified?: boolean } | null
@@ -66,6 +82,20 @@ interface WorkbenchState {
   generateSuggestions: () => Promise<void>
   adoptSuggestion: (text: string) => void
   sendText: (text: string, source?: string) => Promise<void>
+  /** 群问题视图：读取该群问题列表并自动触发窗口分析（主进程侧节流） */
+  loadGroupIssues: (sessionId: string) => Promise<void>
+  /** 手动强制重新分析当前群 */
+  analyzeGroupNow: () => Promise<void>
+  /** 切换分析窗口天数；当前为群时立即以新窗口强制重析 */
+  setGroupDays: (days: number) => void
+  /** 仅重新拉取当前群问题列表（分析后/状态变更后刷新） */
+  refreshGroupIssues: () => Promise<void>
+  /** 展开/关闭问题详情（证据时间线） */
+  openGroupIssue: (id: number | null) => Promise<void>
+  /** 状态流转（open/done/stalled/archived），本地即时生效并回写主进程 */
+  setGroupIssueStatus: (id: number, status: FeedbackIssueStatus) => Promise<void>
+  /** 清理群问题状态（切到非群会话/换账号时） */
+  resetGroupState: () => void
   /** 页面导航 */
   setPage: (page: WorkbenchPage) => void
   /** 从客户页/看板跳转到指定会话（切到对话页并选中） */
@@ -76,6 +106,10 @@ const wxApi = window.api?.cs?.wx
 const aiApi = window.api?.cs?.ai
 const replyApi = window.api?.cs?.reply
 const agentApi = window.api?.cs?.agent
+const issueApi = window.api?.cs?.issue
+
+/** 问题详情请求序号：防止慢响应覆盖用户后点击的展开行 */
+let detailReqSeq = 0
 
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   page: 'dashboard',
@@ -98,6 +132,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   agents: [],
   agentId: null,
   defaultAgentId: null,
+
+  groupIssues: [],
+  groupIssueLoading: false,
+  groupAnalyzing: false,
+  groupIssueError: null,
+  groupAnalyzedAt: null,
+  groupDays: 2,
+  groupActiveDetail: null,
+  groupDetailLoading: false,
 
   sending: false,
   sendResult: null,
@@ -138,6 +181,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   selectSession: async (sessionId: string) => {
     set({ activeSessionId: sessionId, loading: true, nextCursor: null, messagesHasMore: false })
     void get().loadAgents()
+    // 群会话联动右侧「群问题」视图（自动读取 + 窗口分析）；非群清理
+    const picked = get().sessions.find((s) => s.username === sessionId)
+    if (picked?.isGroup) void get().loadGroupIssues(sessionId)
+    else get().resetGroupState()
     const { wxid, source } = get()
     try {
       if (source === 'wx' && wxid && wxApi) {
@@ -190,6 +237,128 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     // 切换智能体即用新角色重出建议（无会话时静默）
     const { activeSessionId, messages } = get()
     if (id && activeSessionId && messages.length > 0) void get().generateSuggestions()
+  },
+
+  // ── 群问题（右栏「群问题」视图；与看板同源 issue_feedback）──
+
+  loadGroupIssues: async (sessionId: string) => {
+    const { wxid } = get()
+    const session = get().sessions.find((s) => s.username === sessionId)
+    if (!wxid || !session?.isGroup) return
+    const groupName = session.displayName || session.nickname || ''
+    // 1) 立即读本地问题列表（秒开；分析完成后会刷新）
+    set({ groupIssueLoading: true, groupIssueError: null, groupActiveDetail: null })
+    const listRes = await issueApi?.listGroup(wxid, sessionId).catch(() => null)
+    if (get().activeSessionId !== sessionId) return
+    set({
+      groupIssues: (listRes?.ok && listRes.issues ? listRes.issues : []) as FeedbackIssue[],
+      groupIssueLoading: false,
+      groupIssueError: listRes && !listRes.ok ? (listRes.error ?? '读取问题列表失败') : null
+    })
+    // 2) 自动窗口分析（主进程侧节流：2 分钟内已尝试则 skipped）
+    set({ groupAnalyzing: true })
+    const an = await issueApi
+      ?.analyzeGroup(wxid, sessionId, groupName || undefined, { days: get().groupDays })
+      .catch(() => null)
+    if (get().activeSessionId !== sessionId) return
+    set({
+      groupAnalyzing: false,
+      groupAnalyzedAt: an?.ok && an.lastAt ? an.lastAt : get().groupAnalyzedAt,
+      groupIssueError: an
+        ? an.ok
+          ? an.skipped
+            ? an.error ?? get().groupIssueError
+            : null
+          : (an.error ?? '分析失败')
+        : get().groupIssueError
+    })
+    // 3) 有新产出时重读列表
+    if (an?.ok && !an.skipped) await get().refreshGroupIssues()
+  },
+
+  analyzeGroupNow: async () => {
+    const { wxid, activeSessionId } = get()
+    if (!wxid || !activeSessionId) return
+    const session = get().sessions.find((s) => s.username === activeSessionId)
+    if (!session?.isGroup) return
+    const groupName = session.displayName || session.nickname || ''
+    set({ groupAnalyzing: true, groupIssueError: null })
+    const an = await issueApi
+      ?.analyzeGroup(wxid, activeSessionId, groupName || undefined, {
+        force: true,
+        days: get().groupDays
+      })
+      .catch(() => null)
+    if (get().activeSessionId !== activeSessionId) return
+    set({
+      groupAnalyzing: false,
+      groupAnalyzedAt: an?.ok && an.lastAt ? an.lastAt : get().groupAnalyzedAt,
+      groupIssueError: an && !an.ok ? (an.error ?? '分析失败') : null
+    })
+    if (an?.ok) await get().refreshGroupIssues()
+  },
+
+  setGroupDays: (days: number) => {
+    const d = Math.min(Math.max(Math.floor(days), 1), 7)
+    set({ groupDays: d })
+    const { wxid, activeSessionId } = get()
+    const session = activeSessionId
+      ? get().sessions.find((s) => s.username === activeSessionId)
+      : undefined
+    if (wxid && session?.isGroup) void get().analyzeGroupNow()
+  },
+
+  refreshGroupIssues: async () => {
+    const { wxid, activeSessionId } = get()
+    if (!wxid || !activeSessionId) return
+    const res = await issueApi?.listGroup(wxid, activeSessionId).catch(() => null)
+    if (get().activeSessionId !== activeSessionId) return
+    if (res?.ok && res.issues) set({ groupIssues: res.issues as FeedbackIssue[] })
+  },
+
+  openGroupIssue: async (id: number | null) => {
+    if (id === null) {
+      detailReqSeq++
+      set({ groupActiveDetail: null, groupDetailLoading: false })
+      return
+    }
+    const seq = ++detailReqSeq
+    set({ groupDetailLoading: true })
+    const res = await issueApi?.detail(id).catch(() => null)
+    if (seq !== detailReqSeq) return // 期间已打开/关闭其它行，丢弃慢响应
+    set({
+      groupDetailLoading: false,
+      groupActiveDetail: (res?.ok && res.issue ? res.issue : null) as FeedbackIssueDetail | null
+    })
+  },
+
+  setGroupIssueStatus: async (id: number, status: FeedbackIssueStatus) => {
+    // 本地即时生效（乐观更新）
+    set((s) => ({
+      groupIssues: s.groupIssues.map((it) => (it.id === id ? { ...it, status } : it)),
+      groupActiveDetail:
+        s.groupActiveDetail && s.groupActiveDetail.id === id
+          ? { ...s.groupActiveDetail, status }
+          : s.groupActiveDetail
+    }))
+    const res = await issueApi?.setStatus(id, status).catch(() => null)
+    if (!res?.ok) {
+      toast.error(res?.error || '状态更新失败')
+      void get().refreshGroupIssues() // 回滚为真实状态
+    }
+  },
+
+  resetGroupState: () => {
+    detailReqSeq++
+    set({
+      groupIssues: [],
+      groupIssueLoading: false,
+      groupAnalyzing: false,
+      groupIssueError: null,
+      groupAnalyzedAt: null,
+      groupActiveDetail: null,
+      groupDetailLoading: false
+    })
   },
 
   loadOlder: async () => {
