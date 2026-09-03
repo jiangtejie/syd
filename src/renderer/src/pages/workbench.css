@@ -1562,3 +1562,20 @@
   font-size: 10.5px;
   color: var(--text-4);
 }
+
+/* 转账消息双方显示名（49/2000） */
+.wb-msg-transfer-names {
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 500;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 动画表情加载占位 */
+.wb-msg-emoji-loading {
+  font-size: 11px;
+  color: var(--text-3);
+}

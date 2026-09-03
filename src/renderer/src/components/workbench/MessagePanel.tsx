@@ -205,8 +205,35 @@ const MessageBubble = memo(function MessageBubble({
   const isChatHistory = message.localType === 49 && !!message.chatRecordList?.length
   const isFile = message.localType === 49 && !!message.fileName && !isChatHistory
   const isRedEnvelope = message.localType === 49 && !!message.redEnvelopeSendId
+  // 转账消息（49/2000）：主进程已解析付款/收款方显示名
+  const isTransfer = !!message.transferPayerUsername || !!message.transferReceiverUsername
   const copyText = isFile ? message.fileName || '' : message.parsedContent
-  const [emojiFailed, setEmojiFailed] = useState(false)
+  // 动画表情加载：cdn 直显 → 失败后向主进程要本地缓存（下载/复用，ct-media）→ 再失败回落文本摘要
+  const [emojiStage, setEmojiStage] = useState<'cdn' | 'local' | 'failed'>('cdn')
+  const [emojiLocalUrl, setEmojiLocalUrl] = useState<string | null>(null)
+  const onEmojiError = (): void => {
+    if (emojiStage !== 'cdn') {
+      setEmojiStage('failed')
+      return
+    }
+    setEmojiStage('local')
+    const wxid = useWorkbenchStore.getState().wxid
+    if (!wxid) {
+      setEmojiStage('failed')
+      return
+    }
+    window.api?.cs?.media
+      ?.resolveEmoji(wxid, {
+        md5: message.emojiMd5,
+        productId: message.productId,
+        cdnUrl: message.emojiCdnUrl
+      })
+      .then((r) => {
+        if (r?.ok && r.url) setEmojiLocalUrl(r.url)
+        else setEmojiStage('failed')
+      })
+      .catch(() => setEmojiStage('failed'))
+  }
   const redEnvelopeStatus = useRedEnvelopeStatus(
     sessionUsername,
     isRedEnvelope ? message.redEnvelopeSendId : undefined
@@ -311,6 +338,12 @@ const MessageBubble = memo(function MessageBubble({
               )}
             </div>
           )}
+          {isTransfer && (
+            <div className="wb-msg-transfer-names">
+              {message.transferPayerName ?? message.transferPayerUsername ?? '?'} →{' '}
+              {message.transferReceiverName ?? message.transferReceiverUsername ?? '?'}
+            </div>
+          )}
           {isImage ? (
             <BubbleImage
               imageMd5={message.imageMd5}
@@ -322,14 +355,18 @@ const MessageBubble = memo(function MessageBubble({
                 })
               }
             />
-          ) : isEmoji && !emojiFailed ? (
-            <img
-              className="wb-msg-emoji"
-              src={message.emojiCdnUrl}
-              alt="动画表情"
-              referrerPolicy="no-referrer"
-              onError={() => setEmojiFailed(true)}
-            />
+          ) : isEmoji && emojiStage !== 'failed' ? (
+            emojiStage === 'local' && !emojiLocalUrl ? (
+              <span className="wb-msg-emoji-loading">表情加载中…</span>
+            ) : (
+              <img
+                className="wb-msg-emoji"
+                src={emojiStage === 'local' ? emojiLocalUrl || '' : message.emojiCdnUrl}
+                alt="动画表情"
+                referrerPolicy="no-referrer"
+                onError={onEmojiError}
+              />
+            )
           ) : isVideo ? (
             <div
               className="wb-msg-video"

@@ -143,6 +143,10 @@ declare global {
             wxid: string,
             dbPath?: string
           ) => Promise<{ ok: boolean; url?: string; ext?: string; error?: string }>
+          resolveEmoji: (
+            wxid: string,
+            input: { md5?: string; productId?: string; cdnUrl?: string }
+          ) => Promise<{ ok: boolean; url?: string; error?: string }>
         }
         issue: {
           list: (wxid: string) => Promise<Result<{ issues?: FeedbackIssue[] }>>

@@ -125,7 +125,12 @@ const api = {
         wxid: string,
         dbPath?: string
       ): Promise<{ ok: boolean; url?: string; ext?: string; error?: string }> =>
-        ipcRenderer.invoke('cs:media:testImageDecrypt', wxid, dbPath)
+        ipcRenderer.invoke('cs:media:testImageDecrypt', wxid, dbPath),
+      resolveEmoji: (
+        wxid: string,
+        input: { md5?: string; productId?: string; cdnUrl?: string }
+      ): Promise<{ ok: boolean; url?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:media:resolveEmoji', wxid, input)
     },
     issue: {
       list: (wxid: string): Promise<{ ok: boolean; issues?: unknown[]; error?: string }> =>
