@@ -859,12 +859,32 @@ export function enrichMessagesWithSenders(
       if (!contactTable) return messages
 
       const contactMap = queryContactsByUsernames(db, contactTable, senderIds)
+      // 诊断（企业微信 openim 成员昵称缺失时打一次，用于定位昵称存储位置）
+      const missingOpenim: string[] = []
       for (const m of messages) {
         if (m.isSend || !m.senderUsername) continue
         const contact = contactMap.get(m.senderUsername)
-        if (!contact) continue
+        if (!contact) {
+          if (m.senderUsername.includes('@openim') && missingOpenim.length < 5) {
+            missingOpenim.push(m.senderUsername)
+          }
+          continue
+        }
         m.senderNickname = pickDisplayName(contact) || m.senderUsername
         m.senderAvatarUrl = pickAvatarUrl(contact)
+        if (m.senderNickname === m.senderUsername && m.senderUsername.includes('@openim')) {
+          console.warn('[wx] openim contact row found but no name fields',
+            m.senderUsername,
+            'fields:', Object.keys(contact).slice(0, 40))
+        }
+      }
+      if (missingOpenim.length > 0) {
+        console.warn(
+          '[wx] openim senders missing in contact table',
+          JSON.stringify(missingOpenim),
+          'contactTable:', contactTable,
+          'contact rows:', contactMap.size
+        )
       }
       return messages
     } finally {
