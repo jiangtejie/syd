@@ -8,6 +8,7 @@ import {
   typeCounts,
   upsertIssue,
   listOpenUnrepliedByGroup,
+  findIssueByKey,
   type NewIssue
 } from '../../db/repos/issueRepo'
 import { getConfig, setConfig } from '../../db/repos/config'
@@ -159,6 +160,12 @@ interface LlmIssue {
   type?: string
   title?: string
   summary?: string
+  /** 议题涉及客户（昵称，辅助理解；不作为存储主键） */
+  customers?: unknown
+  /** 处理状态：未处理 | 跟进中 | 已解决 */
+  status?: string
+  /** 是否需要运营介入（false = 已闭环/无需处理，不落待办） */
+  need_action?: unknown
   evidence?: number[]
 }
 
@@ -194,33 +201,82 @@ function readGroupMessages(wxid: string, groupUsername: string, windowStartMs: n
   return all.length > MAX_GROUP_MSGS ? all.slice(all.length - MAX_GROUP_MSGS) : all
 }
 
-/** 本地规则提取：客户真文本关键词命中（未获客服/团队跟进）+ 末尾未回复兜底（会话语义） */
+/** 规则议题聚类窗：同一客户同一类型诉求间隔 ≤ 该值视为同一议题的多句跟进 */
+const RULE_CLUSTER_MS = 60 * 60_000
+/** 规则单议题证据消息上限 */
+const RULE_EVIDENCE_CAP = 8
+
+/**
+ * 本地规则提取（议题级）：
+ * 1) 关键词命中按「同一客户 + 同一类型 + 60 分钟窗」聚成议题（一次抱怨的多句/追问只建一条问题）；
+ * 2) followUp=客服/团队在议题期间介入过但未闭环（不再简单跳过）；无介入=未处理；
+ * 3) 末尾「客户留言无回复」兜底（与关键词议题去重）。
+ */
 function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] {
-  const issues: NewIssue[] = []
+  interface RuleHit {
+    i: number
+    m: ChatMessage
+    type: string
+  }
+  const hits: RuleHit[] = []
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i]
     const u = m.senderUsername
     if (m.isSend || (u && team.has(u)) || !isRuleText(m)) continue
     const text = msgToText(m)
-    // 已跟进：其后至下一条客户消息前存在我方/团队客服回复
-    if (hasStaffReplyAfter(msgs, i, team)) continue
-    // 同一条消息只按 RULE_KEYWORDS 顺序取优先级最高的一个类型，避免一词多类型重复行
     const rule = RULE_KEYWORDS.find((r) => r.keywords.some((k) => text.includes(k)))
     if (!rule) continue
+    hits.push({ i, m, type: rule.type })
+  }
+  // 聚类：同人同类型、与前一条命中间隔 ≤ 窗 → 同一议题
+  const clusters: RuleHit[][] = []
+  for (const h of hits) {
+    const cur = clusters[clusters.length - 1]
+    if (
+      cur &&
+      cur[0].m.senderUsername === h.m.senderUsername &&
+      cur[0].type === h.type &&
+      h.m.createTime - cur[cur.length - 1].m.createTime <= RULE_CLUSTER_MS
+    ) {
+      cur.push(h)
+      continue
+    }
+    clusters.push([h])
+  }
+
+  const issues: NewIssue[] = []
+  const clusterAnchorTimes = new Set<number>()
+  for (const c of clusters) {
+    const first = c[0].m
+    const label = senderLabel(first, team)
+    const text0 = msgToText(first)
+    // 议题内任一句后有客服/团队介入（至下一位客户开口前）→ 跟进中
+    const replied = c.some((h) => hasStaffReplyAfter(msgs, h.i, team))
+    const evidMsgs = c.map((h) => h.m).slice(-RULE_EVIDENCE_CAP)
+    const n = c.length
+    const title =
+      n > 1
+        ? `${label}：${text0.slice(0, 16)}…（共 ${n} 句）`
+        : `${label}：${text0.slice(0, 24)}`
+    const summary =
+      n > 1 ? evidMsgs.map((mm) => msgToText(mm)).join(' ｜ ').slice(0, 90) : text0.slice(0, 80)
+    for (const h of c) clusterAnchorTimes.add(h.m.createTime)
     issues.push({
-      key: `${rule.type}|${m.createTime}|${m.localId}`,
+      key: `${c[0].type}|${first.createTime}|${first.localId}`,
       wxid: '',
       groupUsername: '',
       groupName: '',
-      type: rule.type,
-      title: `${senderLabel(m, team)}：${text.slice(0, 24)}`,
-      summary: text.slice(0, 80),
-      occurAt: m.createTime,
+      type: c[0].type as FeedbackIssueType,
+      title,
+      summary,
+      occurAt: first.createTime,
       method: 'rule',
-      msgs: [msgToSummaryMsg(m, senderLabel(m, team))]
+      followUp: replied,
+      msgs: evidMsgs.map((mm) => msgToSummaryMsg(mm, senderLabel(mm, team)))
     })
   }
-  // 末尾「客户留言无回复」：窗内最后一条客户真文本消息仍无任何我方/团队回复 → 待回复提示
+
+  // 末尾「客户留言无回复」：窗内最后一条客户真文本消息，不属于任何关键词议题，且仍无我方/团队回复
   let tailIdx = -1
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i]
@@ -233,8 +289,8 @@ function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] {
   const tail = tailIdx >= 0 ? msgs[tailIdx] : undefined
   if (
     tail &&
-    !hasStaffReplyAfter(msgs, tailIdx, team) &&
-    !issues.some((it) => it.occurAt === tail.createTime)
+    !clusterAnchorTimes.has(tail.createTime) &&
+    !hasStaffReplyAfter(msgs, tailIdx, team)
   ) {
     issues.push({
       key: `unreplied:${tail.createTime}`,
@@ -279,11 +335,17 @@ function normalizeIssues(
     const evidenceIdx = (raw.evidence ?? [])
       .filter((i) => Number.isInteger(i) && i >= 0 && i < lines.length)
       .sort((a, b) => a - b)
+      .slice(0, 16)
     if (evidenceIdx.length === 0) continue
     const first = lines[evidenceIdx[0]].msg
     const key = `llm:${wxid}:${groupUsername}:${first.createTime}:${first.localId}`
     if (seenKeys.has(key)) continue // 同一问题被模型拆成多条时只保留首条
     seenKeys.add(key)
+    // 议题级判定：状态/是否需运营介入（已解决或无需处理 → resolved，落库侧自动闭环/不新建）
+    const rawStatus = String(raw.status ?? '').trim()
+    const followUp = rawStatus === '跟进中' || rawStatus === '进行中'
+    const needAction = raw.need_action !== false && String(raw.need_action ?? '').toLowerCase() !== 'false'
+    const resolved = !needAction || rawStatus === '已解决' || rawStatus === '解决'
     issues.push({
       key,
       wxid,
@@ -294,6 +356,8 @@ function normalizeIssues(
       summary: (raw.summary || '').slice(0, 90) || undefined,
       occurAt: first.createTime,
       method: 'llm',
+      followUp,
+      resolved,
       msgs: evidenceIdx.map((i) => {
         const it = lines[i]
         return msgToSummaryMsg(it.msg, it.senderName)
@@ -303,7 +367,28 @@ function normalizeIssues(
   return issues
 }
 
-/** 单群分析：收集消息 -> LLM 或规则 -> issues（LLM 失败自动降级到该群规则） */
+/** 会话段切分：消息间隔 ≥ 该值视为新一段（沉默分隔话题） */
+const SEGMENT_GAP_MS = 15 * 60_000
+
+/** 输入行（过滤后）按时间切段，供 LLM 以「段」为单位整体理解 */
+function segmentizeLines(
+  lines: Array<{ line: string; msg: ChatMessage; senderName: string }>
+): Array<{ start: number; end: number }> {
+  const segs: Array<{ start: number; end: number }> = []
+  let s = 0
+  for (let i = 1; i <= lines.length; i++) {
+    if (
+      i === lines.length ||
+      lines[i].msg.createTime - lines[i - 1].msg.createTime >= SEGMENT_GAP_MS
+    ) {
+      segs.push({ start: s, end: i })
+      s = i
+    }
+  }
+  return segs
+}
+
+/** 单群分析：收集消息 -> 议题级整合（LLM 段输入）或规则 -> issues（LLM 失败自动降级到该群规则） */
 async function analyzeGroup(
   wxid: string,
   groupUsername: string,
@@ -316,7 +401,7 @@ async function analyzeGroup(
   if (!provider) {
     return normalizeIssues(wxid, groupUsername, groupName, msgs, ruleExtract(msgs, team), 'rule')
   }
-  // LLM 模式：文本相关行编号后送入（截最新，控制 token）
+  // LLM 模式：文本相关行编号后送入（截最新，控制 token），按段排版便于整体理解
   const lines = msgs
     .filter((m) => isTextLike(m) || m.localType === 3)
     .map((m) => ({
@@ -330,22 +415,46 @@ async function analyzeGroup(
     }))
     .slice(-LLM_LINES_CAP)
   if (lines.length === 0) return []
-  const body = lines.map((it, i) => `[${i}] ${it.line}`).join('\n')
+  const segs = segmentizeLines(lines)
+  const parts: string[] = []
+  for (const seg of segs) {
+    const names = new Set<string>()
+    for (let i = seg.start; i < seg.end; i++) names.add(lines[i].senderName)
+    const from = new Date(lines[seg.start].msg.createTime)
+    parts.push(
+      `[段 ${parts.length + 1} | ${from.getMonth() + 1}月${from.getDate()}日 ${String(
+        from.getHours()
+      ).padStart(2, '0')}:${String(from.getMinutes()).padStart(2, '0')} | 参与：${Array.from(
+        names
+      ).join('、')}]`
+    )
+    for (let i = seg.start; i < seg.end; i++) parts.push(`[${i}] ${lines[i].line}`)
+  }
+  const body = parts.join('\n')
 
   const system = [
     '你是资深微信客服运营分析员。用户会给出一段客户服务群聊天记录，',
-    '每行形如：[i] HH:mm 发送者: 内容，其中“我方客服”和“我方同事（xxx）”都是我们这边的人，',
-    '其余的是客户/普通群友。',
-    '请找出仍需运营关注的客户问题/反馈/诉求（如客诉、售后、物流、价格、咨询、建议等），',
-    '忽略客服内部说明、广告、表情图与寒暄。',
-    '已被我方明确解答、客户已致谢收尾或确认满意的诉求不要提取；拿不准宁可不提取。',
+    '记录已按时间切成若干【会话段】（沉默分隔），每段开头有 [段 n | 时间 | 参与人] 标注，段内行形如 [i] HH:mm 发送者: 内容。',
+    '其中“我方客服”和“我方同事（xxx）”都是我们这边的人，其余是客户/群友；团队客服名单在背景中给出时不可将同事发言视为客户诉求。',
+    '',
+    '工作方法（先整体理解，再逐议题提炼）：',
+    '1. 先按段整体阅读，识别正在进行的“议题”（同一件事的起因、多人附和、客服介入、追问与结果可以跨行跨段，合并为一个议题）；',
+    '   同一位客户围绕同一件事的多条消息必须串成一条议题，禁止一条消息单独成问题；',
+    '2. 对每个议题判断：谁在抱怨/咨询（customers）、客服/团队是否已介入、客户是否已收尾；',
+    '3. 只需提取仍需要运营处理或值得记录的议题。已被我方明确解答且客户致谢/确认满意的不要输出；纯闲聊、广告、表情、与运营无关的不输出。',
+    '',
     '只输出严格 JSON 数组（不要 markdown、不要额外文字）：',
-    '[{"type":"客诉|售后|物流|价格|咨询|建议|其他","title":"不超过24字的概括","summary":"不超过60字的现象说明","evidence":[至少1个最多4个行号]}]',
-    'evidence 必须是记录中的行号 i；同问题的多句发言（含客服答复）都作为 evidence；宁可少而准，不要虚构。'
-  ].join('')
+    '[{"type":"客诉|售后|物流|价格|咨询|建议|其他","title":"不超过24字的概括","summary":"不超过70字的现象与进展","customers":["客户昵称1","客户昵称2"],"status":"未处理|跟进中|已解决","need_action":true,"evidence":[行号1,行号2]}]',
+    '字段约束：',
+    '- evidence 给该议题全部关键行（可跨段，1~12 个），行号必须是记录中真实存在的 [i]；',
+    '- status=已解决 或 need_action=false：已闭环/无需运营，不会出现在待办里；',
+    '- status=跟进中：客服已回复但客户未确认闭环（如“查一下回复您”后无下文、客户仍不满）；',
+    '- status=未处理：无人回复或明显遗漏；',
+    '- 宁可少而准，不要虚构与拆分。'
+  ].join('\n')
 
   try {
-    const raw = await provider.complete(system, body, { maxTokens: 1200 })
+    const raw = await provider.complete(system, body, { maxTokens: 1800 })
     const parsed = parseLlmJson(raw)
     return normalizeIssues(wxid, groupUsername, groupName, lines, parsed, 'llm')
   } catch {
@@ -424,6 +533,14 @@ async function analyzeOneGroup(
   const issues = await analyzeGroup(wxid, groupUsername, groupName, windowMsgs, team)
   let n = 0
   for (const issue of issues) {
+    if (issue.resolved) {
+      // 已解决/无需运营：不新建；同 key 已存在 open（上次仍待办）→ 自动闭环为已解决
+      const existing = findIssueByKey(issue.key)
+      if (existing && existing.status === 'open') {
+        setIssueStatus(existing.id, 'done', true)
+      }
+      continue
+    }
     upsertIssue(issue)
     n++
   }

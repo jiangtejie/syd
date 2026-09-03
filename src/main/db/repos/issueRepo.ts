@@ -27,6 +27,7 @@ interface IssueRow {
   status: string
   method: string
   auto_done?: number | null
+  follow_up?: number | null
   created_at: number
   updated_at: number
 }
@@ -53,6 +54,10 @@ export interface NewIssue {
   summary?: string
   occurAt: number
   method: 'llm' | 'rule'
+  /** 跟进中（客服已回复未闭环）：open + followUp 展示为「跟进中」 */
+  followUp?: boolean
+  /** LLM 判定已解决/无需运营：true 时不新建，仅当同 key 已存在 open 时自动闭环 */
+  resolved?: boolean
   /** 关联消息（证据） */
   msgs: FeedbackIssueMsg[]
 }
@@ -70,20 +75,39 @@ function rowToIssue(r: IssueRow): FeedbackIssue {
     status: r.status as FeedbackIssueStatus,
     method: (r.method === 'llm' ? 'llm' : 'rule') as FeedbackIssue['method'],
     autoDone: r.auto_done === 1,
+    followUp: r.follow_up === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     msgCount: 0
   }
 }
 
-/** upsert 一个问题：新建或更新内容，人工状态原样保留 */
+/** 跟进超时阈值：客服最后回复距今超过该值仍未闭环 → followUpOverdue */
+const FOLLOW_UP_OVERDUE_MS = 12 * 3600_000
+
+/** open 且 followUp 的行：按最后一条证据是否为客服消息及时间计算 overdue */
+function decorateFollowUpOverdue(issue: FeedbackIssue): void {
+  if (!issue.followUp || issue.status !== 'open') return
+  const last = getDb()
+    .prepare(
+      `SELECT msg_time, is_send FROM issue_feedback_msg
+       WHERE issue_id = ? ORDER BY seq DESC LIMIT 1`
+    )
+    .get(issue.id) as { msg_time: number; is_send: number } | undefined
+  if (last && last.is_send === 1 && Date.now() - last.msg_time > FOLLOW_UP_OVERDUE_MS) {
+    issue.followUpOverdue = true
+  }
+}
+
+/** upsert 一个问题：新建或更新内容，人工状态原样保留（follow_up 随最新分析刷新） */
 export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
   const db = getDb()
   const now = Date.now()
+  const followUp = issue.followUp ? 1 : 0
   db.prepare(
     `INSERT OR IGNORE INTO issue_feedback
-       (key, wxid, group_username, group_name, type, title, summary, occur_at, status, method, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`
+       (key, wxid, group_username, group_name, type, title, summary, occur_at, status, method, follow_up, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`
   ).run(
     issue.key,
     issue.wxid,
@@ -94,6 +118,7 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     issue.summary ?? null,
     issue.occurAt,
     issue.method,
+    followUp,
     now,
     now
   )
@@ -106,9 +131,9 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
   const created = row.created_at === now && row.status === 'open'
   db.prepare(
     `UPDATE issue_feedback
-       SET group_name = ?, type = ?, title = ?, summary = ?, occur_at = ?, updated_at = ?
+       SET group_name = ?, type = ?, title = ?, summary = ?, occur_at = ?, follow_up = ?, updated_at = ?
      WHERE id = ?`
-  ).run(issue.groupName, issue.type, issue.title, issue.summary ?? null, issue.occurAt, now, row.id)
+  ).run(issue.groupName, issue.type, issue.title, issue.summary ?? null, issue.occurAt, followUp, now, row.id)
 
   // 重建关联消息（外键未强制启用，先删后插）
   db.prepare(`DELETE FROM issue_feedback_msg WHERE issue_id = ?`).run(row.id)
@@ -139,20 +164,31 @@ export function setIssueStatus(
 ): void {
   if (auto && status === 'done') {
     getDb()
-      .prepare(`UPDATE issue_feedback SET status = ?, updated_at = ?, auto_done = 1 WHERE id = ?`)
+      .prepare(
+        `UPDATE issue_feedback SET status = ?, updated_at = ?, auto_done = 1, follow_up = 0 WHERE id = ?`
+      )
       .run(status, Date.now(), id)
   } else if (auto) {
     getDb()
-      .prepare(`UPDATE issue_feedback SET status = ?, updated_at = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE issue_feedback SET status = ?, updated_at = ?, follow_up = 0 WHERE id = ?`
+      )
       .run(status, Date.now(), id)
   } else {
-    // 人工操作：清除自动闭环标记（人工重新打开/处理即不再展示“自动解决”）
+    // 人工操作：清除自动闭环与跟进中标记（人工重新打开/处理即不再展示“自动解决/跟进中”）
     getDb()
       .prepare(
-        `UPDATE issue_feedback SET status = ?, updated_at = ?, auto_done = 0 WHERE id = ?`
+        `UPDATE issue_feedback SET status = ?, updated_at = ?, auto_done = 0, follow_up = 0 WHERE id = ?`
       )
       .run(status, Date.now(), id)
   }
+}
+
+/** 按稳定 key 查已有行（供 resolved 判定：存在 open 时自动闭环，不存在则不新建） */
+export function findIssueByKey(key: string): { id: number; status: string } | undefined {
+  return getDb()
+    .prepare(`SELECT id, status FROM issue_feedback WHERE key = ?`)
+    .get(key) as { id: number; status: string } | undefined
 }
 
 /** 某群待自动闭环的 open 问题（rule 型 unreplied，key 含 :unreplied:），返回 id + 锚时间 */
@@ -214,6 +250,7 @@ export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }
   return rows.map((r) => {
     const issue = rowToIssue(r)
     issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
+    decorateFollowUpOverdue(issue)
     return issue
   })
 }
@@ -232,6 +269,7 @@ export function listIssuesByGroup(wxid: string, groupUsername: string): Feedback
   return rows.map((r) => {
     const issue = rowToIssue(r)
     issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
+    decorateFollowUpOverdue(issue)
     return issue
   })
 }
@@ -257,6 +295,7 @@ export function getIssueDetail(id: number): FeedbackIssueDetail | null {
     localType: m.local_type ?? undefined
   }))
   issue.msgCount = msgs.length
+  decorateFollowUpOverdue(issue)
   return issue
 }
 
@@ -304,6 +343,7 @@ export function searchIssues(
   return rows.map((r) => {
     const issue = rowToIssue(r)
     issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
+    decorateFollowUpOverdue(issue)
     return issue
   })
 }

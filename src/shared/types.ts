@@ -367,6 +367,12 @@ export interface FeedbackIssue {
   method: FeedbackIssueMethod
   /** 是否由引擎自动闭环（unreplied 问题检测到客服已回复后自动 done） */
   autoDone?: boolean
+  /** 跟进中：客服/团队已回复但尚未闭环（规则按回复判定、LLM 按 status=跟进中 输出） */
+  followUp?: boolean
+  /** 跟进超时：followUp 且客服最后回复距今超 12 小时仍未闭环（仅 open 行动态计算） */
+  followUpOverdue?: boolean
+  /** 涉及的客户（LLM 输出 customers 归一；群内昵称） */
+  customers?: string[]
   createdAt: number
   updatedAt: number
   /** 关联消息数（展开时才拉明细） */

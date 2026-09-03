@@ -155,6 +155,8 @@ export function migrate(db: Database.Database): void {
   for (const sql of TABLES) db.exec(sql)
   // 增量列迁移：issue_feedback.auto_done（自动闭环标记：unreplied 问题检测到回复后自动关闭）
   ensureColumn(db, 'issue_feedback', 'auto_done', 'INTEGER NOT NULL DEFAULT 0')
+  // 增量列迁移：follow_up（跟进中：客服已回复未闭环）
+  ensureColumn(db, 'issue_feedback', 'follow_up', 'INTEGER NOT NULL DEFAULT 0')
   db.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
 
