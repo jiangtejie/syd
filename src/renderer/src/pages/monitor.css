@@ -477,3 +477,61 @@
   border-radius: var(--r-sm);
   padding: 6px 9px;
 }
+
+/* ── 跟进人（问题指派）── */
+
+.mon-row-owner {
+  flex: none;
+}
+
+.mon-owner-select {
+  max-width: 116px;
+  font-size: 11px;
+  line-height: 20px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  cursor: pointer;
+  outline: none;
+}
+
+.mon-owner-select:hover,
+.mon-owner-select:focus {
+  border-color: var(--brand);
+  color: var(--text-1);
+}
+
+.mon-drawer-owner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 2px;
+}
+
+.mon-drawer-owner-label {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.mon-owner-select-wide {
+  width: 150px;
+}
+
+.mon-drawer-owner-state {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.mon-drawer-owner-state b {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.mon-drawer-owner-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}

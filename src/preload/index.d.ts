@@ -78,6 +78,10 @@ declare global {
             username: string,
             localOnly?: boolean
           ) => Promise<Result<{ url?: string }>>
+          contactNames: (
+            wxid: string,
+            usernames: string[]
+          ) => Promise<{ ok: boolean; names?: Record<string, string>; error?: string }>
           startWatch: (wxid: string) => Promise<Result<{}>>
           stopWatch: (wxid: string) => Promise<Result<{}>>
           opsStats: (
@@ -130,7 +134,10 @@ declare global {
           }>
         }
         dialog: {
-          pickDirectory: (title?: string, defaultPath?: string) => Promise<{ ok: boolean; path?: string }>
+          pickDirectory: (
+            title?: string,
+            defaultPath?: string
+          ) => Promise<{ ok: boolean; path?: string }>
         }
         media: {
           decryptImage: (opts: {
@@ -155,7 +162,9 @@ declare global {
         }
         issue: {
           list: (wxid: string) => Promise<Result<{ issues?: FeedbackIssue[] }>>
-          analyze: (wxid: string) => Promise<{ ok: boolean; state?: FeedbackAnalysisState; error?: string }>
+          analyze: (
+            wxid: string
+          ) => Promise<{ ok: boolean; state?: FeedbackAnalysisState; error?: string }>
           analyzeGroup: (
             wxid: string,
             groupUsername: string,
@@ -183,6 +192,7 @@ declare global {
             id: number,
             status: FeedbackIssueStatus
           ) => Promise<{ ok: boolean; error?: string }>
+          assign: (id: number, username: string | null) => Promise<{ ok: boolean; error?: string }>
           detail: (id: number) => Promise<Result<{ issue?: FeedbackIssueDetail }>>
           typeCounts: (wxid: string) => Promise<Result<{ counts?: FeedbackTypeCount[] }>>
           groupBadges: (
@@ -197,7 +207,10 @@ declare global {
             username: string,
             label?: string
           ) => Promise<{ ok: boolean; error?: string }>
-          remove: (accountWxid: string, username: string) => Promise<{ ok: boolean; error?: string }>
+          remove: (
+            accountWxid: string,
+            username: string
+          ) => Promise<{ ok: boolean; error?: string }>
         }
         export: {
           chat: (
@@ -225,13 +238,15 @@ declare global {
             name: string,
             content: string
           ) => Promise<{ ok: boolean; path?: string; error?: string }>
-          onProgress: (callback: (evt: {
-            phase: string
-            current: number
-            total: number
-            name: string
-            detail: string
-          }) => void) => () => void
+          onProgress: (
+            callback: (evt: {
+              phase: string
+              current: number
+              total: number
+              name: string
+              detail: string
+            }) => void
+          ) => () => void
         }
         agent: {
           list: () => Promise<Result<{ agents?: AiAgent[]; defaultId?: string | null }>>

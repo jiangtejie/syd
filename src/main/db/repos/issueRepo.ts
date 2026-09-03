@@ -27,6 +27,7 @@ interface IssueRow {
   occur_at: number
   status: string
   method: string
+  assignee: string | null
   auto_done?: number | null
   follow_up?: number | null
   created_at: number
@@ -75,6 +76,7 @@ function rowToIssue(r: IssueRow): FeedbackIssue {
     occurAt: r.occur_at,
     status: r.status as FeedbackIssueStatus,
     method: (r.method === 'llm' ? 'llm' : 'rule') as FeedbackIssue['method'],
+    assignee: r.assignee ?? undefined,
     autoDone: r.auto_done === 1,
     followUp: r.follow_up === 1,
     createdAt: r.created_at,
@@ -124,11 +126,8 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     now,
     now
   )
-  const row = db
-    .prepare(
-      `SELECT * FROM issue_feedback WHERE key = ?`
-    )
-    .get(issue.key) as IssueRow | undefined
+  const row = db.prepare(`SELECT * FROM issue_feedback WHERE key = ?`).get(issue.key) as
+    IssueRow | undefined
   if (!row) return { id: 0, created: false }
   const created = row.created_at === now && row.status === 'open'
   // 内容无实质变化时保留原 updated_at(状态变更时间=处理时间口径),避免重析刷新污染「今日解决/最近处理」
@@ -144,7 +143,16 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     `UPDATE issue_feedback
        SET group_name = ?, type = ?, title = ?, summary = ?, occur_at = ?, follow_up = ?, updated_at = ?
      WHERE id = ?`
-  ).run(issue.groupName, issue.type, issue.title, issue.summary ?? null, issue.occurAt, followUp, touchedAt, row.id)
+  ).run(
+    issue.groupName,
+    issue.type,
+    issue.title,
+    issue.summary ?? null,
+    issue.occurAt,
+    followUp,
+    touchedAt,
+    row.id
+  )
 
   // 重建关联消息（外键未强制启用，先删后插）
   db.prepare(`DELETE FROM issue_feedback_msg WHERE issue_id = ?`).run(row.id)
@@ -168,11 +176,7 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
 }
 
 /** 人工/自动状态流转。auto=true 表示引擎自动闭环（unreplied 检测到回复），auto_done 标记保留供 UI 区分 */
-export function setIssueStatus(
-  id: number,
-  status: FeedbackIssueStatus,
-  auto = false
-): void {
+export function setIssueStatus(id: number, status: FeedbackIssueStatus, auto = false): void {
   if (auto && status === 'done') {
     getDb()
       .prepare(
@@ -181,9 +185,7 @@ export function setIssueStatus(
       .run(status, Date.now(), id)
   } else if (auto) {
     getDb()
-      .prepare(
-        `UPDATE issue_feedback SET status = ?, updated_at = ?, follow_up = 0 WHERE id = ?`
-      )
+      .prepare(`UPDATE issue_feedback SET status = ?, updated_at = ?, follow_up = 0 WHERE id = ?`)
       .run(status, Date.now(), id)
   } else {
     // 人工操作：清除自动闭环与跟进中标记（人工重新打开/处理即不再展示“自动解决/跟进中”）
@@ -195,11 +197,17 @@ export function setIssueStatus(
   }
 }
 
+/** 指派/更换/取消跟进人（团队成员 username；null/空串 = 未指派）。不动 updated_at（处理时间口径） */
+export function setIssueAssignee(id: number, assignee: string | null): boolean {
+  const owner = (assignee ?? '').trim() || null
+  const info = getDb().prepare(`UPDATE issue_feedback SET assignee = ? WHERE id = ?`).run(owner, id)
+  return info.changes > 0
+}
+
 /** 按稳定 key 查已有行（供 resolved 判定：存在 open 时自动闭环，不存在则不新建） */
 export function findIssueByKey(key: string): { id: number; status: string } | undefined {
-  return getDb()
-    .prepare(`SELECT id, status FROM issue_feedback WHERE key = ?`)
-    .get(key) as { id: number; status: string } | undefined
+  return getDb().prepare(`SELECT id, status FROM issue_feedback WHERE key = ?`).get(key) as
+    { id: number; status: string } | undefined
 }
 
 /** 某群待自动闭环的 open 问题（rule 型 unreplied，key 含 :unreplied:），返回 id + 锚时间 */
@@ -243,9 +251,7 @@ export function clearIssuesByGroup(wxid: string, groupUsername: string): number 
                         WHERE wxid = ? AND group_username = ?)`
   ).run(wxid, groupUsername)
   const info = db
-    .prepare(
-      `DELETE FROM issue_feedback WHERE wxid = ? AND group_username = ?`
-    )
+    .prepare(`DELETE FROM issue_feedback WHERE wxid = ? AND group_username = ?`)
     .run(wxid, groupUsername)
   return info.changes
 }
@@ -295,10 +301,7 @@ export function openIssuesForGroup(
 }
 
 /** open 议题证据消息时间集合（LLM 输入截断时的保底行） */
-export function openIssueEvidenceTimes(
-  wxid: string,
-  groupUsername: string
-): Set<number> {
+export function openIssueEvidenceTimes(wxid: string, groupUsername: string): Set<number> {
   const rows = getDb()
     .prepare(
       `SELECT m.msg_time FROM issue_feedback_msg m
@@ -337,7 +340,8 @@ export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }
 }
 
 /** 按群列出问题（工作台「群问题」视图；open 优先，其次发生时间倒序） */
-export function listIssuesByGroup(wxid: string, groupUsername: string): FeedbackIssue[] {  const rows = getDb()
+export function listIssuesByGroup(wxid: string, groupUsername: string): FeedbackIssue[] {
+  const rows = getDb()
     .prepare(
       `SELECT * FROM issue_feedback WHERE wxid = ? AND group_username = ?
        ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'stalled' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
@@ -358,13 +362,10 @@ export function listIssuesByGroup(wxid: string, groupUsername: string): Feedback
 export function getIssueDetail(id: number): FeedbackIssueDetail | null {
   const db = getDb()
   const row = db.prepare(`SELECT * FROM issue_feedback WHERE id = ?`).get(id) as
-    | IssueRow
-    | undefined
+    IssueRow | undefined
   if (!row) return null
   const msgs = db
-    .prepare(
-      `SELECT * FROM issue_feedback_msg WHERE issue_id = ? ORDER BY seq ASC`
-    )
+    .prepare(`SELECT * FROM issue_feedback_msg WHERE issue_id = ? ORDER BY seq ASC`)
     .all(id) as MsgRow[]
   const issue = rowToIssue(row) as FeedbackIssueDetail
   issue.related = msgs.map((m) => ({
@@ -404,11 +405,7 @@ export function countByStatus(wxid: string): Partial<Record<FeedbackIssueStatus,
 }
 
 /** 跨群关键词搜索客户问题（标题/摘要 LIKE；排除已归档），供建议 Agent 判断客户历史诉求 */
-export function searchIssues(
-  wxid: string,
-  q: string,
-  limit = 5
-): FeedbackIssue[] {
+export function searchIssues(wxid: string, q: string, limit = 5): FeedbackIssue[] {
   const rows = getDb()
     .prepare(
       `SELECT * FROM issue_feedback

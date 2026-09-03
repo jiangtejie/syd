@@ -9,7 +9,13 @@ import {
   updateIssueStatus,
   issueTypeCounts
 } from '../services/feedback/analyzer'
-import { getIssueDetail, listIssuesByGroup, countOpenByGroup, clearIssuesByGroup } from '../db/repos/issueRepo'
+import {
+  getIssueDetail,
+  listIssuesByGroup,
+  countOpenByGroup,
+  clearIssuesByGroup,
+  setIssueAssignee
+} from '../db/repos/issueRepo'
 import type { FeedbackIssueStatus } from '../../shared/types'
 
 /**
@@ -129,6 +135,18 @@ export function registerIssueHandlers(): void {
     return detail
       ? { ok: true as const, issue: detail }
       : { ok: false as const, error: '问题不存在' }
+  })
+
+  // 指派跟进人（username 为团队客服成员；空/缺失 = 取消指派，成员名单由 cs:team 维护）
+  ipcMain.handle('cs:issue:assign', (_e, id: number, username: string | null) => {
+    if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
+    try {
+      if (!setIssueAssignee(id, username)) return { ok: false as const, error: '问题不存在' }
+      notifyChanged()
+      return { ok: true as const }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle('cs:issue:typeCounts', (_e, wxid: string) => {

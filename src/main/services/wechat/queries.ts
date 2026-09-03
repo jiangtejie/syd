@@ -321,6 +321,57 @@ export function enrichSessionsWithContacts(
   }
 }
 
+/**
+ * 批量解析联系人展示名（备注 > 昵称 > alias），查不到/库不可读时不在结果中。
+ * 供「跟进人」等按 username 落库后的展示回显；调用方对缺失项降级显示 username。
+ */
+export function queryContactDisplayNames(
+  ctx: WxReaderContext,
+  usernames: string[]
+): Record<string, string> {
+  const want = Array.from(new Set((usernames ?? []).map((u) => toString(u).trim()).filter(Boolean)))
+  const out: Record<string, string> = {}
+  if (want.length === 0) return out
+  try {
+    const paths = locateWeChatDbs(ctx.dbPath, ctx.wxid)
+    if (!paths.dbStoragePath) return out
+    const contactFile = findContactDb(paths.dbStoragePath)
+    if (!contactFile) return out
+    const opened = openWxDbFile(contactFile, ctx.hexKey)
+    if (!opened.db) return out
+    const db = opened.db
+    try {
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        name: string
+      }[]
+      const names = new Set(tables.map((t) => t.name))
+      let contactTable: string | null = null
+      for (const cand of CONTACT_TABLE_CANDIDATES) {
+        if (names.has(cand)) {
+          contactTable = cand
+          break
+        }
+      }
+      if (!contactTable) return out
+      const contactMap = queryContactsByUsernames(db, contactTable, want)
+      for (const u of want) {
+        const contact = contactMap.get(u)
+        if (!contact) continue
+        const name =
+          toString(getRowField(contact, ['remark'])) ||
+          toString(getRowField(contact, ['nick_name', 'nickname'])) ||
+          toString(getRowField(contact, ['alias', 'alias_name']))
+        if (name) out[u] = name
+      }
+    } finally {
+      db.close()
+    }
+  } catch {
+    /* 联系人库不可读/版本差异：返回空对象，由调用方降级 */
+  }
+  return out
+}
+
 /** keyset 时间倒序比较：a 是否比 b 新（对齐 listMessages 的分页排序） */
 function cursorNewerThan(
   a: { sortSeq: number; createTime: number; localId: number },
@@ -354,7 +405,13 @@ export function annotateUnreadLastSender(sessions: SessionSummary[], ctx: WxRead
 
   const probes = new Map<string, LastSenderProbe>()
   for (const c of candidates) {
-    probes.set(messageTableHash(c.username), { session: c, cursor: null, row: null, cols: null, nameId: null })
+    probes.set(messageTableHash(c.username), {
+      session: c,
+      cursor: null,
+      row: null,
+      cols: null,
+      nameId: null
+    })
   }
 
   for (const file of paths.msgDbFiles) {
@@ -373,7 +430,9 @@ export function annotateUnreadLastSender(sessions: SessionSummary[], ctx: WxRead
         // 无法判定发送人的表（无 sender/real_sender_id/is_send）跳过
         if (!cols.senderColumn && !cols.hasRealSenderId && !cols.hasIsSend) continue
         const row = db
-          .prepare(`SELECT * FROM "${t.name}" ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT 1`)
+          .prepare(
+            `SELECT * FROM "${t.name}" ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT 1`
+          )
           .get() as Record<string, any> | undefined
         if (!row) continue
         const probe = probes.get(hash[1])!
@@ -873,11 +932,10 @@ function loadGroupNicknames(ctx: WxReaderContext, chatroomId: string): Map<strin
       for (const t of tables) {
         if (!/chatroom/i.test(t.name)) continue
         try {
-          const cols = (
-            db.prepare(`PRAGMA table_info(${t.name})`).all() as { name: string }[]
-          ).map((c) => c.name)
-          const roomKeyCol =
-            cols.find((c) => /chatroom_name|room_name|username/i.test(c)) ?? null
+          const cols = (db.prepare(`PRAGMA table_info(${t.name})`).all() as { name: string }[]).map(
+            (c) => c.name
+          )
+          const roomKeyCol = cols.find((c) => /chatroom_name|room_name|username/i.test(c)) ?? null
           const dataCol = cols.find((c) => /room_data|ext_buffer|member_list|member/i.test(c))
           if (!roomKeyCol || !dataCol) continue
           const rows = db
@@ -886,11 +944,7 @@ function loadGroupNicknames(ctx: WxReaderContext, chatroomId: string): Map<strin
           for (const r of rows) {
             if (r.k !== chatroomId) continue // 只取当前群那一行（多数表一行一群）
             const d = r.d
-            const data = Buffer.isBuffer(d)
-              ? d.toString('utf-8')
-              : typeof d === 'string'
-                ? d
-                : ''
+            const data = Buffer.isBuffer(d) ? d.toString('utf-8') : typeof d === 'string' ? d : ''
             if (data.includes('<member>')) {
               for (const [u, n] of extractRoomMemberNames(data)) out.set(u, n)
             }
@@ -1034,8 +1088,10 @@ export function enrichMessagesWithSenders(
         console.warn(
           '[wx] openim senders without any name',
           JSON.stringify(missingOpenim),
-          'contact rows:', contactMap.size,
-          'group nicknames:', groupNick?.size ?? 0
+          'contact rows:',
+          contactMap.size,
+          'group nicknames:',
+          groupNick?.size ?? 0
         )
       }
 
@@ -1043,7 +1099,12 @@ export function enrichMessagesWithSenders(
       for (const m of messages) {
         if (!m.transferPayerUsername && !m.transferReceiverUsername) continue
         const gmap = groupNick ?? new Map<string, string>()
-        m.transferPayerName = resolvePartyName(m.transferPayerUsername, gmap, contactMap, myVariants)
+        m.transferPayerName = resolvePartyName(
+          m.transferPayerUsername,
+          gmap,
+          contactMap,
+          myVariants
+        )
         m.transferReceiverName = resolvePartyName(
           m.transferReceiverUsername,
           gmap,

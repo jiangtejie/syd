@@ -7,6 +7,7 @@ import {
   enrichSessionsWithContacts,
   annotateUnreadLastSender,
   getAvatar,
+  queryContactDisplayNames,
   getRedEnvelopeStatuses as queryRedEnvelopeStatuses
 } from './queries'
 import { computeOpsStats } from './opsStats'
@@ -105,6 +106,20 @@ export function getAvatarForUser(
   if (!session) return { ok: false, error: '未配置密钥，请先导入' }
   const url = getAvatar(session, username, { localOnly })
   return url ? { ok: true, url } : { ok: false, error: '无头像' }
+}
+
+/** 批量解析联系人展示名（备注>昵称>alias）；无 key/库不可读时返回空表，调用方降级显示 username */
+export function getContactNames(
+  wxid: string,
+  usernames: string[]
+): { ok: boolean; names?: Record<string, string>; error?: string } {
+  const session = buildWxSession(wxid)
+  if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
+  try {
+    return { ok: true as const, names: queryContactDisplayNames(session, usernames ?? []) }
+  } catch (err) {
+    return { ok: false as const, error: `读取联系人异常: ${(err as Error)?.message ?? err}` }
+  }
 }
 
 /** 运营统计（L2/L3）：窗口内活跃会话聚合，内部 60s 缓存 + dbChanged 失效 */

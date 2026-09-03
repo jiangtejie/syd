@@ -326,14 +326,7 @@ export interface OpsStats {
 // ── 群问题反馈（看板 · 智能提取 + 人工处理）──
 
 /** 问题类型（LLM 输出与规则词典都收敛到该枚举） */
-export type FeedbackIssueType =
-  | '客诉'
-  | '售后'
-  | '物流'
-  | '价格'
-  | '咨询'
-  | '建议'
-  | '其他'
+export type FeedbackIssueType = '客诉' | '售后' | '物流' | '价格' | '咨询' | '建议' | '其他'
 
 /** 处理状态：open 待处理 / done 已处理 / stalled 已搁置 / archived 已归档 */
 export type FeedbackIssueStatus = 'open' | 'done' | 'stalled' | 'archived'
@@ -365,6 +358,8 @@ export interface FeedbackIssue {
   occurAt: number
   status: FeedbackIssueStatus
   method: FeedbackIssueMethod
+  /** 跟进人：团队客服成员 username（cs:team 维护，按账号作用域）；空 = 未指派 */
+  assignee?: string
   /** 是否由引擎自动闭环（unreplied 问题检测到客服已回复后自动 done） */
   autoDone?: boolean
   /** 跟进中：客服/团队已回复但尚未闭环（规则按回复判定、LLM 按 status=跟进中 输出） */
@@ -404,5 +399,3 @@ export interface TeamMemberInfo {
   /** 自定义备注（如「店长-小张」），展示用 */
   label?: string
 }
-
-

@@ -41,6 +41,11 @@ const api = {
         localOnly?: boolean
       ): Promise<{ ok: boolean; url?: string; error?: string }> =>
         ipcRenderer.invoke('cs:wx:getAvatar', wxid, username, localOnly),
+      contactNames: (
+        wxid: string,
+        usernames: string[]
+      ): Promise<{ ok: boolean; names?: Record<string, string>; error?: string }> =>
+        ipcRenderer.invoke('cs:wx:contactNames', wxid, usernames),
       startWatch: (wxid: string) => ipcRenderer.invoke('cs:wx:startWatch', wxid),
       stopWatch: (wxid: string) => ipcRenderer.invoke('cs:wx:stopWatch', wxid),
       opsStats: (
@@ -68,8 +73,7 @@ const api = {
         llm?: boolean
         error?: string
         toolsUsed?: string[]
-      }> =>
-        ipcRenderer.invoke('cs:ai:generateReply', wxid, sessionId, sessionName, messages, opts),
+      }> => ipcRenderer.invoke('cs:ai:generateReply', wxid, sessionId, sessionName, messages, opts),
       test: (input?: {
         baseUrl?: string
         apiKey?: string
@@ -112,7 +116,10 @@ const api = {
       }> => ipcRenderer.invoke('cs:config:cachePath')
     },
     dialog: {
-      pickDirectory: (title?: string, defaultPath?: string): Promise<{ ok: boolean; path?: string }> =>
+      pickDirectory: (
+        title?: string,
+        defaultPath?: string
+      ): Promise<{ ok: boolean; path?: string }> =>
         ipcRenderer.invoke('cs:dialog:pickDirectory', title, defaultPath)
     },
     media: {
@@ -167,16 +174,12 @@ const api = {
         ipcRenderer.invoke('cs:issue:state', wxid),
       clear: (wxid: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:issue:clear', wxid),
-      clearGroup: (
-        wxid: string,
-        groupUsername: string
-      ): Promise<{ ok: boolean; error?: string }> =>
+      clearGroup: (wxid: string, groupUsername: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:issue:clearGroup', wxid, groupUsername),
-      setStatus: (
-        id: number,
-        status: string
-      ): Promise<{ ok: boolean; error?: string }> =>
+      setStatus: (id: number, status: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:issue:setStatus', id, status),
+      assign: (id: number, username: string | null): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:assign', id, username),
       detail: (id: number): Promise<{ ok: boolean; issue?: unknown; error?: string }> =>
         ipcRenderer.invoke('cs:issue:detail', id),
       typeCounts: (wxid: string): Promise<{ ok: boolean; counts?: unknown[]; error?: string }> =>
@@ -192,9 +195,7 @@ const api = {
       }
     },
     team: {
-      list: (
-        accountWxid: string
-      ): Promise<{ ok: boolean; members?: unknown[]; error?: string }> =>
+      list: (accountWxid: string): Promise<{ ok: boolean; members?: unknown[]; error?: string }> =>
         ipcRenderer.invoke('cs:team:list', accountWxid),
       save: (
         accountWxid: string,
@@ -241,8 +242,12 @@ const api = {
       }
     },
     agent: {
-      list: (): Promise<{ ok: boolean; agents?: AiAgent[]; defaultId?: string | null; error?: string }> =>
-        ipcRenderer.invoke('cs:agent:list'),
+      list: (): Promise<{
+        ok: boolean
+        agents?: AiAgent[]
+        defaultId?: string | null
+        error?: string
+      }> => ipcRenderer.invoke('cs:agent:list'),
       save: (input: AiAgentInput): Promise<{ ok: boolean; agent?: AiAgent; error?: string }> =>
         ipcRenderer.invoke('cs:agent:save', input),
       remove: (id: string): Promise<{ ok: boolean; error?: string }> =>

@@ -9,7 +9,8 @@ import type {
   FeedbackIssueDetail,
   FeedbackIssueStatus,
   FeedbackIssueType,
-  FeedbackAnalysisState
+  FeedbackAnalysisState,
+  TeamMemberInfo
 } from '../../../shared/types'
 import './monitor.css'
 
@@ -136,6 +137,10 @@ function MonitorPage(): React.JSX.Element {
   // 分析管理(全量重析/清空/最近分析状态)
   const [anaBusy, setAnaBusy] = useState(false)
   const [anaState, setAnaState] = useState<FeedbackAnalysisState | null>(null)
+  // 跟进人：团队成员(按账号作用域) + 微信联系人展示名回显(label 为空时)
+  const [members, setMembers] = useState<TeamMemberInfo[]>([])
+  const [memberNames, setMemberNames] = useState<Record<string, string>>({})
+  const [ownerFilter, setOwnerFilter] = useState('')
 
   const load = useCallback(async (): Promise<void> => {
     if (!connected || !issueApi) return
@@ -156,10 +161,34 @@ function MonitorPage(): React.JSX.Element {
     }
   }, [connected, wxid, issueApi])
 
+  // 团队成员加载（指派候选）；label 为空时用微信联系人备注/昵称回显
+  const loadTeam = useCallback(async (): Promise<void> => {
+    const teamApi = window.api?.cs?.team
+    if (!connected || !teamApi) {
+      setMembers([])
+      return
+    }
+    const res = await teamApi.list(wxid!).catch(() => null)
+    if (!res?.ok || !res.members) {
+      setMembers([])
+      return
+    }
+    const list = res.members as TeamMemberInfo[]
+    setMembers(list)
+    const needName = list.filter((m) => !(m.label ?? '').trim()).map((m) => m.username)
+    setMemberNames({})
+    if (needName.length > 0) {
+      const namesApi = window.api?.cs?.wx?.contactNames
+      const nr = namesApi ? await namesApi(wxid!, needName).catch(() => null) : null
+      if (nr?.ok && nr.names) setMemberNames(nr.names)
+    }
+  }, [connected, wxid])
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面异步加载(回调内 setState,全仓同款模式)
     void load()
-  }, [load])
+    void loadTeam()
+  }, [load, loadTeam])
 
   // 阈值读取(设置 → 偏好与数据 可配)
   useEffect(() => {
@@ -210,6 +239,8 @@ function MonitorPage(): React.JSX.Element {
     else if (statusFilter !== 'all') list = list.filter((i) => i.status === statusFilter)
     if (typeFilter !== 'all') list = list.filter((i) => i.type === typeFilter)
     if (groupFilter) list = list.filter((i) => i.groupUsername === groupFilter)
+    if (ownerFilter === '$none') list = list.filter((i) => !i.assignee)
+    else if (ownerFilter) list = list.filter((i) => i.assignee === ownerFilter)
     if (keyword.trim()) {
       const k = keyword.trim().toLowerCase()
       list = list.filter(
@@ -217,7 +248,7 @@ function MonitorPage(): React.JSX.Element {
       )
     }
     return list
-  }, [issues, statusFilter, typeFilter, groupFilter, keyword])
+  }, [issues, statusFilter, typeFilter, groupFilter, ownerFilter, keyword])
 
   // 状态处置:乐观更新 + 回写,成功同步刷新
   const applyStatus = useCallback(
@@ -242,6 +273,28 @@ function MonitorPage(): React.JSX.Element {
     if (seq !== detailSeqRef.current) return
     if (res?.ok && res.issue) setDetail(res.issue as FeedbackIssueDetail)
     setDetailLoading(false)
+  }
+
+  // 跟进人展示名：成员备注 label 优先，其次微信联系人备注/昵称，最后 username
+  const ownerName = (username: string): string => {
+    if (!username) return ''
+    const m = members.find((x) => x.username === username)
+    if (m && (m.label ?? '').trim()) return m.label ?? ''
+    return memberNames[username] || username
+  }
+
+  // 指派/更换/取消跟进人：乐观更新(列表/抽屉/详情) + 回写，失败重载
+  const applyAssignee = async (id: number, username: string): Promise<void> => {
+    const owner = username || ''
+    const assignee = owner || undefined
+    setIssues((prev) => prev.map((it) => (it.id === id ? { ...it, assignee } : it)))
+    setActive((prev) => (prev && prev.id === id ? { ...prev, assignee } : prev))
+    setDetail((prev) => (prev && prev.id === id ? { ...prev, assignee } : prev))
+    const res = await issueApi?.assign(id, owner || null).catch(() => null)
+    if (!res?.ok) {
+      toast.error((res as { error?: string } | null)?.error || '跟进人设置失败')
+      void load()
+    }
   }
 
   /** BI 快照导出(当前视野的 KPI/图表数据与问题清单,JSON) */ const exportSnapshot =
@@ -279,6 +332,7 @@ function MonitorPage(): React.JSX.Element {
           summary: i.summary ?? null,
           group: i.groupName || i.groupUsername,
           occurAt: i.occurAt,
+          assignee: i.assignee ? ownerName(i.assignee) : null,
           msgCount: i.msgCount
         }))
       }
@@ -620,6 +674,23 @@ function MonitorPage(): React.JSX.Element {
                     </option>
                   ))}
                 </select>
+                <select
+                  className="mon-select"
+                  value={ownerFilter}
+                  onChange={(e) => {
+                    setOwnerFilter(e.target.value)
+                    setVisible(40)
+                  }}
+                  title="按跟进人筛选"
+                >
+                  <option value="">全部跟进人</option>
+                  <option value="$none">未指派</option>
+                  {members.map((m) => (
+                    <option key={m.username} value={m.username}>
+                      {ownerName(m.username)}
+                    </option>
+                  ))}
+                </select>
                 <input
                   className="mon-input"
                   placeholder="搜索标题/摘要…"
@@ -656,6 +727,26 @@ function MonitorPage(): React.JSX.Element {
                         {it.groupName || it.groupUsername} · {fmtTimeShort(it.occurAt)} · 证据{' '}
                         {it.msgCount} 条{it.autoDone ? ' · 自动' : ''}
                       </span>
+                    </span>
+                    <span className="mon-row-owner">
+                      <select
+                        className="mon-owner-select"
+                        value={it.assignee ?? ''}
+                        aria-label="跟进人"
+                        title={it.assignee ? `跟进人：${ownerName(it.assignee)}` : '指派跟进人'}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          void applyAssignee(it.id, e.target.value)
+                        }}
+                      >
+                        <option value="">未指派</option>
+                        {members.map((m) => (
+                          <option key={m.username} value={m.username}>
+                            {ownerName(m.username)}
+                          </option>
+                        ))}
+                      </select>
                     </span>
                     <span className={`mon-row-age${isOld ? ' is-old' : ''}`}>
                       {it.status === 'open' ? ageText(it.occurAt) : ''}
@@ -699,6 +790,34 @@ function MonitorPage(): React.JSX.Element {
                   {active.status === 'open' && <> · 已积压 {ageText(active.occurAt)}</>}
                 </div>
                 {active.summary && <div className="mon-drawer-summary">{active.summary}</div>}
+
+                <div className="mon-drawer-owner">
+                  <span className="mon-drawer-owner-label">跟进人</span>
+                  <select
+                    className="mon-select mon-owner-select-wide"
+                    value={active.assignee ?? ''}
+                    onChange={(e) => void applyAssignee(active.id, e.target.value)}
+                    title="指派/更换跟进人（团队成员，空 = 取消指派）"
+                  >
+                    <option value="">未指派</option>
+                    {members.map((m) => (
+                      <option key={m.username} value={m.username}>
+                        {ownerName(m.username)}
+                      </option>
+                    ))}
+                  </select>
+                  {active.assignee ? (
+                    <span className="mon-drawer-owner-state">
+                      由 <b>{ownerName(active.assignee)}</b> 跟进
+                    </span>
+                  ) : members.length === 0 ? (
+                    <span className="mon-drawer-owner-hint">
+                      暂无团队成员：对话页右键消息「标记为团队客服」后即可指派
+                    </span>
+                  ) : (
+                    <span className="mon-drawer-owner-hint">指派后列表可按人筛选跟进</span>
+                  )}
+                </div>
 
                 {detailLoading ? (
                   <div className="mon-drawer-empty">加载证据中…</div>

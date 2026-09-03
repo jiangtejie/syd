@@ -157,16 +157,13 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'issue_feedback', 'auto_done', 'INTEGER NOT NULL DEFAULT 0')
   // 增量列迁移：follow_up（跟进中：客服已回复未闭环）
   ensureColumn(db, 'issue_feedback', 'follow_up', 'INTEGER NOT NULL DEFAULT 0')
+  // 增量列迁移：assignee（跟进人：团队客服成员 username，NULL = 未指派）
+  ensureColumn(db, 'issue_feedback', 'assignee', 'TEXT')
   db.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
 
 /** 旧库补列（CREATE TABLE IF NOT EXISTS 不会加列）：探测后 ALTER */
-function ensureColumn(
-  db: Database.Database,
-  table: string,
-  column: string,
-  ddl: string
-): void {
+function ensureColumn(db: Database.Database, table: string, column: string, ddl: string): void {
   try {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
     if (!cols.some((c) => c.name === column)) {
@@ -179,7 +176,9 @@ function ensureColumn(
 
 export function listTables(db: Database.Database): string[] {
   const rows = db
-    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`
+    )
     .all() as Array<{ name: string }>
   return rows.map((r) => r.name)
 }

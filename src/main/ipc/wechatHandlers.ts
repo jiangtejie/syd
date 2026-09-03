@@ -28,6 +28,11 @@ export function registerWechatHandlers(): void {
     wxService.getAvatarForUser(wxid, username, localOnly === true)
   )
 
+  // 批量解析联系人展示名(备注>昵称>alias)，供「跟进人」等按 username 落库的数据回显；库不可读时返回空表
+  ipcMain.handle('cs:wx:contactNames', (_e, wxid: string, usernames: string[]) =>
+    wxService.getContactNames(wxid, usernames ?? [])
+  )
+
   ipcMain.handle('cs:wx:startWatch', (_e, wxid: string) => startWatch(wxid))
   ipcMain.handle('cs:wx:stopWatch', (_e, wxid: string) => {
     stopWatch(wxid)
