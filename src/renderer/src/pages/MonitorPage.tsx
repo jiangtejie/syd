@@ -3,16 +3,13 @@ import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
 import EChart from '../components/EChart'
 import type { EChartsOption } from 'echarts'
-import {
-  computeMonitorData,
-  fmtTimeShort,
-  ageText
-} from '../lib/monitorMetrics'
+import { computeMonitorData, fmtTimeShort, ageText } from '../lib/monitorMetrics'
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
   FeedbackIssueStatus,
-  FeedbackIssueType
+  FeedbackIssueType,
+  FeedbackAnalysisState
 } from '../../../shared/types'
 import './monitor.css'
 
@@ -94,7 +91,12 @@ function IssueActions({
           <button type="button" className="mon-btn" onClick={() => onSet('stalled')}>
             暂搁置
           </button>
-          <button type="button" className="mon-btn" onClick={() => onSet('archived')} title="误报/无需处理,归档后不再提醒">
+          <button
+            type="button"
+            className="mon-btn"
+            onClick={() => onSet('archived')}
+            title="误报/无需处理,归档后不再提醒"
+          >
             不是问题
           </button>
         </>
@@ -131,6 +133,9 @@ function MonitorPage(): React.JSX.Element {
   const [detail, setDetail] = useState<FeedbackIssueDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const detailSeqRef = useRef(0)
+  // 分析管理(全量重析/清空/最近分析状态)
+  const [anaBusy, setAnaBusy] = useState(false)
+  const [anaState, setAnaState] = useState<FeedbackAnalysisState | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
     if (!connected || !issueApi) return
@@ -142,6 +147,8 @@ function MonitorPage(): React.JSX.Element {
       } else {
         toast.error((res as { error?: string }).error || '读取问题失败')
       }
+      const st = await issueApi.state(wxid!)
+      if (st.ok && st.state) setAnaState(st.state as FeedbackAnalysisState)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '读取问题失败')
     } finally {
@@ -237,59 +244,117 @@ function MonitorPage(): React.JSX.Element {
     setDetailLoading(false)
   }
 
-  /** BI 快照导出(当前视野的 KPI/图表数据与问题清单,JSON) */
-  const exportSnapshot = async (): Promise<void> => {
-    if (!connected || issues.length === 0) {
-      toast.error('暂无可导出的监控数据')
+  /** BI 快照导出(当前视野的 KPI/图表数据与问题清单,JSON) */ const exportSnapshot =
+    async (): Promise<void> => {
+      if (!connected || issues.length === 0) {
+        toast.error('暂无可导出的监控数据')
+        return
+      }
+      const r = await window.api?.cs?.dialog?.pickDirectory('选择快照保存目录')
+      if (!r?.ok || !r.path) return
+      const d = new Date()
+      const pad = (n: number): string => String(n).padStart(2, '0')
+      const name = `monitor_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(
+        d.getHours()
+      )}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`
+      const payload = {
+        app: 'wechat-cs-desktop',
+        kind: 'monitor-snapshot',
+        exportedAt: new Date().toISOString(),
+        wxid,
+        rangeDays: range,
+        thresholdHours: thresh,
+        kpis: metrics.kpis,
+        trend: metrics.trend,
+        typeOpen: metrics.typeOpen,
+        groupTop: metrics.groupTop,
+        age: metrics.age,
+        issues: filtered.slice(0, 2000).map((i) => ({
+          id: i.id,
+          type: i.type,
+          status: i.status,
+          followUp: i.followUp,
+          followUpOverdue: i.followUpOverdue,
+          title: i.title,
+          summary: i.summary ?? null,
+          group: i.groupName || i.groupUsername,
+          occurAt: i.occurAt,
+          msgCount: i.msgCount
+        }))
+      }
+      const w = await window.api?.cs?.export?.writeFile(
+        r.path,
+        name,
+        JSON.stringify(payload, null, 2)
+      )
+      if (w?.ok) toast.success(`快照已导出:${name}`)
+      else toast.error(w?.error || '快照导出失败')
+    }
+
+  /** 全量重析(近 7 天全部活跃群;原看板维护操作迁移至此) */
+  const runFullAnalyze = async (): Promise<void> => {
+    if (!connected || !issueApi || anaBusy) return
+    setAnaBusy(true)
+    try {
+      const res = await issueApi.analyze(wxid!)
+      if (!res.ok) {
+        toast.error((res as { error?: string }).error || '分析失败')
+      } else {
+        toast.success('全量分析完成,数据已更新')
+        await load()
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '分析失败')
+    } finally {
+      setAnaBusy(false)
+    }
+  }
+
+  /** 清空账号全部问题记录(含证据与历史,不可恢复) */
+  const runClearAll = async (): Promise<void> => {
+    if (!connected || !issueApi) return
+    const ok = window.confirm(
+      '将删除该账号的全部问题记录(含证据与历史,不可恢复)。确认清空?\n清空后可点「全量重析」从近 7 天群消息重新提取。'
+    )
+    if (!ok) return
+    const res = await issueApi.clear(wxid!).catch(() => null)
+    if (!res?.ok) {
+      toast.error((res as { error?: string } | null)?.error || '清空失败')
       return
     }
-    const r = await window.api?.cs?.dialog?.pickDirectory('选择快照保存目录')
-    if (!r?.ok || !r.path) return
-    const d = new Date()
-    const pad = (n: number): string => String(n).padStart(2, '0')
-    const name = `monitor_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(
-      d.getHours()
-    )}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`
-    const payload = {
-      app: 'wechat-cs-desktop',
-      kind: 'monitor-snapshot',
-      exportedAt: new Date().toISOString(),
-      wxid,
-      rangeDays: range,
-      thresholdHours: thresh,
-      kpis: metrics.kpis,
-      trend: metrics.trend,
-      typeOpen: metrics.typeOpen,
-      groupTop: metrics.groupTop,
-      age: metrics.age,
-      issues: filtered.slice(0, 2000).map((i) => ({
-        id: i.id,
-        type: i.type,
-        status: i.status,
-        followUp: i.followUp,
-        followUpOverdue: i.followUpOverdue,
-        title: i.title,
-        summary: i.summary ?? null,
-        group: i.groupName || i.groupUsername,
-        occurAt: i.occurAt,
-        msgCount: i.msgCount
-      }))
-    }
-    const w = await window.api?.cs?.export?.writeFile(r.path, name, JSON.stringify(payload, null, 2))
-    if (w?.ok) toast.success(`快照已导出:${name}`)
-    else toast.error(w?.error || '快照导出失败')
+    setIssues([])
+    setActive(null)
+    setDetail(null)
+    setAnaState(null)
+    toast.success('已清空全部问题记录')
   }
   // 图表配置
-const trendOption = useMemo<EChartsOption>(() => {
+  const trendOption = useMemo<EChartsOption>(() => {
     return {
       tooltip: { trigger: 'axis' },
       legend: { data: ['新增', '解决'], top: 0, right: 0, textStyle: { fontSize: 11 } },
       grid: { left: 8, right: 8, top: 26, bottom: 0, containLabel: true },
-      xAxis: { type: 'category', data: metrics.trend.map((t) => t.day), axisLabel: { fontSize: 10 } },
+      xAxis: {
+        type: 'category',
+        data: metrics.trend.map((t) => t.day),
+        axisLabel: { fontSize: 10 }
+      },
       yAxis: { type: 'value', minInterval: 1, axisLabel: { fontSize: 10 } },
       series: [
-        { name: '新增', type: 'bar', data: metrics.trend.map((t) => t.created), itemStyle: { color: '#fa8a8a' }, barMaxWidth: 14 },
-        { name: '解决', type: 'line', data: metrics.trend.map((t) => t.resolved), itemStyle: { color: BRAND }, lineStyle: { width: 2 } }
+        {
+          name: '新增',
+          type: 'bar',
+          data: metrics.trend.map((t) => t.created),
+          itemStyle: { color: '#fa8a8a' },
+          barMaxWidth: 14
+        },
+        {
+          name: '解决',
+          type: 'line',
+          data: metrics.trend.map((t) => t.resolved),
+          itemStyle: { color: BRAND },
+          lineStyle: { width: 2 }
+        }
       ]
     }
   }, [metrics])
@@ -307,7 +372,11 @@ const trendOption = useMemo<EChartsOption>(() => {
           avoidLabelOverlap: true,
           itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 1 },
           label: { show: false },
-          data: metrics.typeOpen.map((x, i) => ({ name: x.name, value: x.value, itemStyle: { color: PALETTE[i % PALETTE.length] } }))
+          data: metrics.typeOpen.map((x, i) => ({
+            name: x.name,
+            value: x.value,
+            itemStyle: { color: PALETTE[i % PALETTE.length] }
+          }))
         }
       ],
       graphic: [
@@ -315,7 +384,13 @@ const trendOption = useMemo<EChartsOption>(() => {
           type: 'text',
           left: 'center',
           top: '34%',
-          style: { text: String(total), fontSize: 20, fontWeight: 700, fill: '#1f2329', textAlign: 'center' },
+          style: {
+            text: String(total),
+            fontSize: 20,
+            fontWeight: 700,
+            fill: '#1f2329',
+            textAlign: 'center'
+          },
           z: 10
         },
         {
@@ -358,7 +433,11 @@ const trendOption = useMemo<EChartsOption>(() => {
     return {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       grid: { left: 8, right: 8, top: 20, bottom: 0, containLabel: true },
-      xAxis: { type: 'category', data: metrics.age.map((a) => a.label), axisLabel: { fontSize: 10 } },
+      xAxis: {
+        type: 'category',
+        data: metrics.age.map((a) => a.label),
+        axisLabel: { fontSize: 10 }
+      },
       yAxis: { type: 'value', minInterval: 1, axisLabel: { fontSize: 10 } },
       series: [
         {
@@ -390,11 +469,45 @@ const trendOption = useMemo<EChartsOption>(() => {
               </option>
             ))}
           </select>
-          <button type="button" className="mon-btn ghost" disabled={loading} onClick={() => void load()}>
+          <button
+            type="button"
+            className="mon-btn ghost"
+            disabled={loading}
+            onClick={() => void load()}
+          >
             {loading ? '刷新中…' : '刷新'}
           </button>
-          <button type="button" className="mon-btn ghost" onClick={() => void exportSnapshot()} title="导出当前监控快照(KPI/图表/问题清单 JSON)">
+          <button
+            type="button"
+            className="mon-btn ghost"
+            onClick={() => void exportSnapshot()}
+            title="导出当前监控快照(KPI/图表/问题清单 JSON)"
+          >
             导出快照
+          </button>
+          {anaState?.lastAt && (
+            <span className="mon-ana-state" title={anaState.error || '最近一次全量分析状态'}>
+              上次分析 {fmtTimeShort(anaState.lastAt)}
+              {anaState.method === 'llm' ? ' · AI 提取' : ' · 规则提取'}
+              {anaState.error ? ' · 上次失败' : ''}
+            </span>
+          )}
+          <button
+            type="button"
+            className="mon-btn ghost"
+            disabled={anaBusy || loading}
+            onClick={() => void runFullAnalyze()}
+            title="对全部活跃群按近 7 天重新分析提取(数据量大时较慢)"
+          >
+            {anaBusy ? '分析中…' : '全量重析'}
+          </button>
+          <button
+            type="button"
+            className="mon-btn danger"
+            onClick={() => void runClearAll()}
+            title="删除该账号全部问题记录(不可恢复)"
+          >
+            清空数据
           </button>
         </div>
       </div>
@@ -408,7 +521,12 @@ const trendOption = useMemo<EChartsOption>(() => {
           {/* KPI 大卡 */}
           <div className="mon-kpis">
             <KpiCard label="待处理(未回复)" value={metrics.kpis.pending} tone="danger" />
-            <KpiCard label="跟进中" value={metrics.kpis.following} hint="客服已回复未闭环" tone="warn" />
+            <KpiCard
+              label="跟进中"
+              value={metrics.kpis.following}
+              hint="客服已回复未闭环"
+              tone="warn"
+            />
             <KpiCard
               label="跟进超时"
               value={metrics.kpis.followOverdue}
@@ -521,8 +639,9 @@ const trendOption = useMemo<EChartsOption>(() => {
               )}
               {visibleList.map((it) => {
                 const chip = statusChip(it)
-                // eslint-disable-next-line -- 渲染中取当前时间仅用于积压标红(展示层,允许偶发非纯)
-                const isOld = it.status === 'open' && Date.now() - it.occurAt > thresh.backlog * 3600_000
+                const isOld =
+                  // eslint-disable-next-line -- 渲染中取当前时间仅用于积压标红(展示层,允许偶发非纯)
+                  it.status === 'open' && Date.now() - it.occurAt > thresh.backlog * 3600_000
                 return (
                   <div
                     key={it.id}
@@ -545,7 +664,11 @@ const trendOption = useMemo<EChartsOption>(() => {
                 )
               })}
               {filtered.length > visible && (
-                <button type="button" className="mon-more" onClick={() => setVisible((v) => v + 40)}>
+                <button
+                  type="button"
+                  className="mon-more"
+                  onClick={() => setVisible((v) => v + 40)}
+                >
                   加载更多（{filtered.length - visible}）
                 </button>
               )}
@@ -555,7 +678,9 @@ const trendOption = useMemo<EChartsOption>(() => {
             {active && (
               <div className="mon-card mon-drawer">
                 <div className="mon-drawer-head">
-                  <span className={`mon-st ${statusChip(active).cls}`}>{statusChip(active).label}</span>
+                  <span className={`mon-st ${statusChip(active).cls}`}>
+                    {statusChip(active).label}
+                  </span>
                   <span className="mon-row-type">{active.type}</span>
                   <button
                     type="button"
@@ -582,12 +707,19 @@ const trendOption = useMemo<EChartsOption>(() => {
                 ) : (
                   <div className="mon-drawer-tl">
                     {detail.related.map((m, i) => (
-                      <div key={i} className={`mon-tl-item${m.isSend || m.senderIsTeam ? ' is-my' : ''}`}>
+                      <div
+                        key={i}
+                        className={`mon-tl-item${m.isSend || m.senderIsTeam ? ' is-my' : ''}`}
+                      >
                         <span className="mon-tl-dot" />
                         <div className="mon-tl-body">
                           <div className="mon-tl-head">
                             <b>
-                              {m.isSend ? `我方 · ${m.senderName}` : m.senderIsTeam ? `团队 · ${m.senderName}` : m.senderName}
+                              {m.isSend
+                                ? `我方 · ${m.senderName}`
+                                : m.senderIsTeam
+                                  ? `团队 · ${m.senderName}`
+                                  : m.senderName}
                             </b>
                             <time>{fmtTimeShort(m.time)}</time>
                             {i === 0 && <em className="mon-tl-mark">首现</em>}
@@ -603,7 +735,10 @@ const trendOption = useMemo<EChartsOption>(() => {
                 )}
 
                 <div className="mon-drawer-foot">
-                  <IssueActions issue={detail ?? active} onSet={(s) => void applyStatus(active.id, s)} />
+                  <IssueActions
+                    issue={detail ?? active}
+                    onSet={(s) => void applyStatus(active.id, s)}
+                  />
                   <button
                     type="button"
                     className="mon-btn ghost"
