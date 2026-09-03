@@ -5,8 +5,8 @@ import { listRemoteModels, readProviderConfig, testAiConnection } from '../servi
 
 /**
  * AI 建议生成 IPC（T7）。
- * cs:ai:generateReply(sessionName, messages, opts) → Result<{ candidates, llm }>
- * 消息上下文由渲染端传入（真实库与 mock 数据均可），AI 层不依赖微信库。
+ * cs:ai:generateReply(sessionName, messages, opts) → Result<{ candidates, llm, error? }>
+ * 消息上下文由渲染端传入，AI 层不依赖微信库；未启用/未配置通道时 candidates 为空且 error 携带引导文案。
  * cs:ai:test({ baseUrl?, apiKey?, model? }) → 用传入/已保存参数测试 OpenAI 兼容通道连通性
  */
 export function registerAiHandlers(): void {
@@ -16,7 +16,7 @@ export function registerAiHandlers(): void {
       try {
         const list = Array.isArray(messages) ? messages : []
         const res = await generateSuggestions(sessionName ?? '', list, opts ?? {})
-        return { ok: true, candidates: res.candidates, llm: res.llm } as const
+        return { ok: true, candidates: res.candidates, llm: res.llm, error: res.error } as const
       } catch (e) {
         console.error('[ai] generateReply failed', e)
         return {

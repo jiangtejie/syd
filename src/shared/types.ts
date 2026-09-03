@@ -173,7 +173,7 @@ export interface DbChangedPayload {
 }
 
 // ── AI 建议生成（T7，方案 §4.4）──
-/** 建议来源：kb_direct=知识库直答（固定底稿）/ ai_free=AI 自由生成 */
+/** 建议来源：ai_free=AI 自由生成 / kb_direct=知识库直答（枚举保留，内置示例模板已移除，待真实知识库接入） */
 export type SuggestionSource = 'kb_direct' | 'ai_free'
 
 /** 话术风格预设 */

@@ -14,7 +14,7 @@
 
 - 读取并解密本地微信数据库（微信 4.x「魔改 SQLCipher」格式）。
 - 通过 PowerShell + Win32 API 模拟键盘/剪贴板，向真实微信客户端「注入」发送消息。
-- AI 话术建议采用「模板命中 → LLM 生成 → 兜底话术」三级降级，永不抛错、可审计。
+- AI 话术建议由 LLM 生成（OpenAI 兼容），AI 未启用/未配置时不产出任何候选（内置示例模板与兜底话术已移除，避免模拟话术误导），由 UI 提示引导配置。
 
 ---
 
@@ -157,13 +157,12 @@ wechat-cs-desktop/
 
 ### 5.5 AI 建议生成（T7）
 
-`suggest.ts`：输入「会话上下文（最近消息）」→ 输出 1~3 条候选。三级降级：
+`suggest.ts`：输入「会话上下文（最近消息）+ 智能体人设」→ 输出 1~3 条候选（ai_free）。流程：
 
-1. **模板命中（kb_direct）**：`templates.ts` 内置关键词模板（退款/售后、价格、试用、物流、寒暄），命中敏感词/售后类直接采用、不做 LLM。
-2. **LLM 生成（ai_free）**：`provider.ts` 抽象任意 OpenAI 兼容接口（`/chat/completions`），配置 `ai.baseUrl/ai.apiKey/ai.model/ai.enabled`，输出 JSON 数组解析为候选。
-3. **兜底话术**：固定安全底稿。
+- **LLM 生成**：`provider.ts` 抽象任意 OpenAI 兼容接口（`/chat/completions`），配置 `ai.baseUrl/ai.apiKey/ai.model/ai.enabled`，按智能体（`ai_agent`）组装系统提示词（名称+人设+风格+自定义守则），输出 JSON 数组解析为候选。
+- **空结果与错误**：AI 未启用/未配置 Key/生成失败时不返回任何内置话术，仅回传错误提示由 UI 展示（设置页可开启通道并测试）。
 
-风格预设：`formal / warm / brief`。整体流程永不抛错。
+> 内置示例模板（kb_direct 关键词底稿：价格/试用/寒暄等虚构文案）与兜底话术已随「去除模拟数据」移除；真实知识库命中待 `knowledge_item` 接入后另行实现。
 
 ### 5.6 发送执行（T8）
 
