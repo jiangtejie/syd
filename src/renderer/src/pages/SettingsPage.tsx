@@ -295,7 +295,7 @@ function SettingsPage(): React.JSX.Element {
     }
   }
 
-  /** 用当前表单值（无需先保存）拉取该通道可用模型，自动选中第一个并列入下拉 */
+  /** 用当前表单值（无需先保存）拉取该通道可用模型并列入下拉 */
   const fetchAiModels = async (): Promise<void> => {
     if (!aiApi) return
     setAiModelsLoading(true)
@@ -308,8 +308,15 @@ function SettingsPage(): React.JSX.Element {
       if (r?.ok && r.models && r.models.length > 0) {
         setAiModels(r.models)
         setModelFree(false)
-        patch('ai.model', r.models[0]) // 默认模型 = 获取到的第一个
-        setAiModelsMsg({ ok: true, text: `已获取 ${r.models.length} 个模型，默认选中第一个，可下拉切换` })
+        // 模型名空（自定义等未填）才自动选第一个；已填模型尊重用户手动输入，不覆盖
+        const current = form['ai.model'].trim()
+        if (!current || !r.models.includes(current)) patch('ai.model', r.models[0])
+        setAiModelsMsg({
+          ok: true,
+          text: current
+            ? `已获取 ${r.models.length} 个模型，保留当前填写（可下拉切换）`
+            : `已获取 ${r.models.length} 个模型，默认选中第一个，可下拉切换`
+        })
       } else {
         setAiModelsMsg({ ok: false, text: r?.error ?? '获取模型失败' })
       }
