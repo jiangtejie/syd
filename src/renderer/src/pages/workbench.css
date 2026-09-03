@@ -782,12 +782,7 @@
 
 .wb-suggest-tag-ai {
   background: var(--info-soft);
-  color: #1f8ceb;
-}
-
-.wb-suggest-tag-kb {
-  background: var(--success-soft);
-  color: var(--success);
+  color: var(--info);
 }
 
 .wb-suggest-list {
@@ -808,32 +803,6 @@
 .wb-suggest-card.is-chosen {
   border-color: var(--brand);
   background: var(--success-soft);
-}
-
-.wb-suggest-card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  min-width: 0;
-}
-
-.wb-suggest-src {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: var(--r-sm);
-  background: var(--info-soft);
-  color: #4b6bff;
-  flex-shrink: 0;
-}
-
-.wb-suggest-reason {
-  font-size: 11px;
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
 .wb-suggest-text {

@@ -40,11 +40,10 @@ interface WorkbenchState {
   /** 解密层未实现时的提示 */
   fallbackReason: string | null
 
-  /** AI 建议（T7） */
+  /** AI 建议（T7，候选均来自 LLM 通道） */
   suggestions: ReplyCandidate[]
   suggestLoading: boolean
   suggestError: string | null
-  suggestLlm: boolean
   /** 已选中的建议文本（T8 发送入口用） */
   chosenText: string | null
 
@@ -94,7 +93,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   suggestions: [],
   suggestLoading: false,
   suggestError: null,
-  suggestLlm: false,
   chosenText: null,
 
   agents: [],
@@ -232,7 +230,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         // 防竞态：生成期间用户切走了会话则丢弃结果
         if (get().activeSessionId !== activeSessionId) return
         if (res.ok && res.candidates && res.candidates.length > 0) {
-          set({ suggestions: res.candidates, suggestLlm: !!res.llm, suggestLoading: false })
+          set({ suggestions: res.candidates, suggestLoading: false })
           return
         }
         set({ suggestions: [], suggestError: res.error || '未生成建议', suggestLoading: false })
