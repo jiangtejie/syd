@@ -217,3 +217,82 @@ export interface SendStatusInfo {
   /** 每日上限 */
   dailyLimit: number
 }
+
+/** 发送审计聚合（看板用，基于 send_log） */
+export interface SendOverview {
+  /** 统计区间天数（近 N 天，含今天） */
+  days: number
+  /** 各结果计数（result 原值） */
+  totals: Record<string, number>
+  /** 成功消息中被闭环校验确认的比例 0~1；无成功记录为 null */
+  verifiedRate: number | null
+  /** 失败原因 Top（result=failed 且 error_reason 非空），按次数倒序 */
+  failReasons: Array<{ reason: string; count: number }>
+  /** 发送对象 Top（按成功条数倒序） */
+  topTargets: Array<{ sessionId: string; sent: number; failed: number }>
+}
+
+/** 消息级运营统计（看板用，基于微信消息库聚合） */
+export interface OpsDayPoint {
+  /** 本地日期标签（M/D） */
+  day: string
+  /** 客户发来的消息数 */
+  inbound: number
+  /** 我发出的消息数 */
+  outbound: number
+}
+
+export interface OpsHourPoint {
+  /** 0~23 */
+  hour: number
+  inbound: number
+  outbound: number
+}
+
+export interface OpsTypeCount {
+  label: string
+  count: number
+}
+
+export interface OpsStats {
+  /** 统计范围（自然日） */
+  range: number
+  /** 计算时间 */
+  computedAt: number
+  totals: {
+    total: number
+    inbound: number
+    outbound: number
+    /** 群聊消息数 */
+    group: number
+    /** 非群消息数（个人/公众号等） */
+    privateChat: number
+  }
+  /** 每日收发趋势（含今天，长度=range） */
+  trend: OpsDayPoint[]
+  /** 24 小时收发分布（长度=24） */
+  hours: OpsHourPoint[]
+  /** 消息类型分布（含 49 型子类细分），按次数倒序 */
+  typeDist: OpsTypeCount[]
+  redPackets: {
+    /** 我发出的红包条数 */
+    sent: number
+    /** 我收到的红包条数 */
+    received: number
+    /** 领取回执数（系统消息"红包已被领取"） */
+    claimReceipts: number
+  }
+  /** 响应时效：以一条回复结算其最近一条未回客户消息 */
+  response: {
+    /** 有效回复样本数 */
+    samples: number
+    /** 30 分钟内回复 */
+    within30Min: number
+    /** 2 小时内回复（含 30 分钟档） */
+    within2h: number
+    /** 窗口结束时仍未回（距今超 2 小时） */
+    noResponse: number
+    /** 回复间隔中位数（分钟），无样本为 null */
+    medianMinutes: number | null
+  }
+}

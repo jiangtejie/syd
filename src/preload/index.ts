@@ -8,6 +8,8 @@ import type {
   ReplyCandidate,
   SendResult,
   SendStatusInfo,
+  SendOverview,
+  OpsStats,
   MessageCursor
 } from '../shared/types'
 
@@ -39,6 +41,11 @@ const api = {
         ipcRenderer.invoke('cs:wx:getAvatar', wxid, username, localOnly),
       startWatch: (wxid: string) => ipcRenderer.invoke('cs:wx:startWatch', wxid),
       stopWatch: (wxid: string) => ipcRenderer.invoke('cs:wx:stopWatch', wxid),
+      opsStats: (
+        wxid: string,
+        rangeDays?: number
+      ): Promise<{ ok: boolean; stats?: OpsStats; error?: string }> =>
+        ipcRenderer.invoke('cs:wx:opsStats', wxid, rangeDays),
       onDbChanged: (callback: (payload: DbChangedPayload) => void) => {
         const listener = (_e: Electron.IpcRendererEvent, payload: DbChangedPayload): void =>
           callback(payload)
@@ -63,19 +70,23 @@ const api = {
         source?: string
       }): Promise<{ ok: boolean; result?: SendResult; error?: string }> =>
         ipcRenderer.invoke('cs:reply:sendText', args),
-      getSendStatus: (): Promise<SendStatusInfo> =>
-        ipcRenderer.invoke('cs:reply:getSendStatus'),
+      getSendStatus: (): Promise<SendStatusInfo> => ipcRenderer.invoke('cs:reply:getSendStatus'),
       stats7d: (): Promise<Array<{ day: string; sent: number; failed: number }>> =>
         ipcRenderer.invoke('cs:reply:stats7d'),
-      resetCircuit: (): Promise<{ ok: boolean }> =>
-        ipcRenderer.invoke('cs:reply:resetCircuit')
+      overview: (): Promise<{ ok: boolean; data?: SendOverview; error?: string }> =>
+        ipcRenderer.invoke('cs:reply:overview'),
+      resetCircuit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('cs:reply:resetCircuit')
     },
     config: {
       getAll: (): Promise<Record<string, string>> => ipcRenderer.invoke('cs:config:getAll'),
       set: (key: string, value: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:config:set', key, value),
-      cachePath: (): Promise<{ ok: boolean; path?: string; defaultPath?: string; isDefault?: boolean }> =>
-        ipcRenderer.invoke('cs:config:cachePath')
+      cachePath: (): Promise<{
+        ok: boolean
+        path?: string
+        defaultPath?: string
+        isDefault?: boolean
+      }> => ipcRenderer.invoke('cs:config:cachePath')
     },
     dialog: {
       pickDirectory: (title?: string): Promise<{ ok: boolean; path?: string }> =>

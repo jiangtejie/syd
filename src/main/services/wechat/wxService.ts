@@ -1,7 +1,15 @@
 import * as keyStore from '../keyStoreService'
 import { testWxConnection } from './wxDb'
-import { listSessions, listMessages, listMessagesSince, enrichSessionsWithContacts, getAvatar, getRedEnvelopeStatuses as queryRedEnvelopeStatuses } from './queries'
-import type { WxConnectInfo, MessageCursor } from '../../../shared/types'
+import {
+  listSessions,
+  listMessages,
+  listMessagesSince,
+  enrichSessionsWithContacts,
+  getAvatar,
+  getRedEnvelopeStatuses as queryRedEnvelopeStatuses
+} from './queries'
+import { computeOpsStats } from './opsStats'
+import type { OpsStats, WxConnectInfo, MessageCursor } from '../../../shared/types'
 
 /**
  * 微信通道门面（T4）。
@@ -66,7 +74,12 @@ export function getMessages(wxid: string, sessionId: string, limit = 50, before?
 }
 
 /** 增量消息（T5 轮询用） */
-export function getMessagesSince(wxid: string, sessionId: string, sinceSortSeq: number, limit = 200) {
+export function getMessagesSince(
+  wxid: string,
+  sessionId: string,
+  sinceSortSeq: number,
+  limit = 200
+) {
   const session = buildWxSession(wxid)
   if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
   return listMessagesSince(session, sessionId, sinceSortSeq, limit)
@@ -89,4 +102,19 @@ export function getAvatarForUser(
   if (!session) return { ok: false, error: '未配置密钥，请先导入' }
   const url = getAvatar(session, username, { localOnly })
   return url ? { ok: true, url } : { ok: false, error: '无头像' }
+}
+
+/** 运营统计（L2/L3）：窗口内活跃会话聚合，内部 60s 缓存 + dbChanged 失效 */
+export function getOpsStats(
+  wxid: string,
+  rangeDays = 7
+): { ok: boolean; stats?: OpsStats; error?: string } {
+  const session = buildWxSession(wxid)
+  if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
+  try {
+    const stats = computeOpsStats(session, rangeDays)
+    return { ok: true as const, stats }
+  } catch (err) {
+    return { ok: false as const, error: `统计异常: ${(err as Error)?.message ?? err}` }
+  }
 }

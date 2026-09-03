@@ -34,4 +34,8 @@ export function registerWechatHandlers(): void {
     return { ok: true }
   })
   ipcMain.handle('cs:wx:listWatch', () => listWatchWxids())
+
+  ipcMain.handle('cs:wx:opsStats', (_e, wxid: string, rangeDays?: number) =>
+    wxService.getOpsStats(wxid, rangeDays ?? 7)
+  )
 }

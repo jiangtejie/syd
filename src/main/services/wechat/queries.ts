@@ -28,7 +28,12 @@ import {
   processSummary,
   parseRedEnvelopeSendId
 } from './content'
-import type { ChatMessage, MessageCursor, RedEnvelopeStatus, SessionSummary } from '../../../shared/types'
+import type {
+  ChatMessage,
+  MessageCursor,
+  RedEnvelopeStatus,
+  SessionSummary
+} from '../../../shared/types'
 
 /**
  * 微信读库查询层（自研实现）。
@@ -63,7 +68,11 @@ function findContactDb(dbStoragePath: string): string | null {
       if (st.isFile() && CONTACT_DB_CANDIDATES.includes(entry.toLowerCase())) {
         return full
       }
-      if (st.isDirectory() && entry.toLowerCase() !== 'message' && entry.toLowerCase() !== 'session') {
+      if (
+        st.isDirectory() &&
+        entry.toLowerCase() !== 'message' &&
+        entry.toLowerCase() !== 'session'
+      ) {
         stack.push(full)
       }
     }
@@ -95,7 +104,11 @@ function findDbFileByName(dbStoragePath: string, fileName: string): string | nul
         continue
       }
       if (st.isFile() && entry.toLowerCase() === target) return full
-      if (st.isDirectory() && entry.toLowerCase() !== 'message' && entry.toLowerCase() !== 'session') {
+      if (
+        st.isDirectory() &&
+        entry.toLowerCase() !== 'message' &&
+        entry.toLowerCase() !== 'session'
+      ) {
         stack.push(full)
       }
     }
@@ -136,10 +149,9 @@ interface SessionRow {
 const OFFICIAL_ACCOUNT_PREFIXES = ['gh_']
 const OFFICIAL_FOLDER = '@placeholder_foldgroup'
 
-function classifyUsername(username: string): Pick<
-  SessionRow,
-  'isOfficialAccount' | 'isFoldGroup' | 'isWeCom' | 'isGroup'
-> {
+function classifyUsername(
+  username: string
+): Pick<SessionRow, 'isOfficialAccount' | 'isFoldGroup' | 'isWeCom' | 'isGroup'> {
   const u = username || ''
   return {
     isOfficialAccount: OFFICIAL_ACCOUNT_PREFIXES.some((p) => u.startsWith(p)),
@@ -151,9 +163,17 @@ function classifyUsername(username: string): Pick<
 
 /** 系统/服务号会话过滤（参考 CipherTalk shouldKeepSession）：这些不是真实聊天，不应进会话列表 */
 const SESSION_EXCLUDE_PREFIXES = [
-  'weixin', 'qqmail', 'fmessage', 'medianote', 'floatbottle',
-  'newsapp', 'brandservicesessionholder', 'notifymessage',
-  'opencustomerservicemsg', 'notification_messages', 'userexperience_alarm'
+  'weixin',
+  'qqmail',
+  'fmessage',
+  'medianote',
+  'floatbottle',
+  'newsapp',
+  'brandservicesessionholder',
+  'notifymessage',
+  'opencustomerservicemsg',
+  'notification_messages',
+  'userexperience_alarm'
 ]
 
 function shouldKeepSession(username: string): boolean {
@@ -180,7 +200,10 @@ function rowToSession(row: Record<string, any>): SessionRow {
     sortTimestamp: sortTs,
     lastTimestamp: lastTs,
     unreadCount: toNumber(getRowField(row, ['unread_count', 'unreadCount'])),
-    summary: processSummary(toString(getRowField(row, ['summary', 'digest', 'message'])), lastMsgType),
+    summary: processSummary(
+      toString(getRowField(row, ['summary', 'digest', 'message'])),
+      lastMsgType
+    ),
     lastMsgType,
     isPinned: false,
     isCollapsed: false,
@@ -189,14 +212,18 @@ function rowToSession(row: Record<string, any>): SessionRow {
 }
 
 /** 微信时间戳统一为毫秒：秒级（10 位）×1000，毫秒级（13 位）原样。渲染端一律用 new Date(ms) */
-function toMs(ts: number): number {
+export function toMs(ts: number): number {
   if (!ts || ts <= 0) return 0
   // 秒级时间戳 < 1e12（约 2001-09 之前不可能是毫秒），据此判定单位
   return ts < 1e12 ? ts * 1000 : ts
 }
 
 /** 会话列表（按 sort_timestamp 倒序），enrich 联系人备注/头像/置顶/折叠 */
-export function listSessions(ctx: WxReaderContext): { ok: boolean; sessions?: SessionSummary[]; error?: string } {
+export function listSessions(ctx: WxReaderContext): {
+  ok: boolean
+  sessions?: SessionSummary[]
+  error?: string
+} {
   try {
     const paths = locateWeChatDbs(ctx.dbPath, ctx.wxid)
     if (!paths.dbStoragePath) return { ok: false, error: '未找到微信数据目录' }
@@ -215,7 +242,12 @@ export function listSessions(ctx: WxReaderContext): { ok: boolean; sessions?: Se
       const sessions: SessionSummary[] = rows
         .map((r) => {
           const s = rowToSession(r)
-          return { ...s, displayName: s.displayName, isPinned: s.isPinned, isCollapsed: s.isCollapsed }
+          return {
+            ...s,
+            displayName: s.displayName,
+            isPinned: s.isPinned,
+            isCollapsed: s.isCollapsed
+          }
         })
         .filter((s) => shouldKeepSession(s.username))
       return { ok: true, sessions }
@@ -244,7 +276,9 @@ export function enrichSessionsWithContacts(
     const db = opened.db
     try {
       let contactTable: string | null = null
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        name: string
+      }[]
       const names = new Set(tables.map((t) => t.name))
       for (const cand of CONTACT_TABLE_CANDIDATES) {
         if (names.has(cand)) {
@@ -361,7 +395,7 @@ function cleanAccountDirWxid(wxid: string): string {
  * 仅剥离 `wxid_xxx_yyyy` 的实例后缀，不剥离自定义微信号 `tom_2020` 的 4 位后缀，
  * 避免把形如 `tom_abcd` 的对方微信号误判为自己。
  */
-function isOwnSender(sender: string | null, myWxid: string): boolean {
+export function isOwnSender(sender: string | null, myWxid: string): boolean {
   if (!sender) return false
   if (sender === myWxid) return true
   const s = cleanWxid(sender)
@@ -369,15 +403,20 @@ function isOwnSender(sender: string | null, myWxid: string): boolean {
   return s !== '' && s === m
 }
 
-function loadNameIdMap(db: Database.Database, myWxid: string): NameIdMap {
+export function loadNameIdMap(db: Database.Database, myWxid: string): NameIdMap {
   const idToName = new Map<number, string>()
   let myRowId: number | null = null
   // Name2Id 里自己可能是原始 wxid 或清洗后的 wxid（账号目录带实例后缀/自定义微信号后缀时）
   const cleaned = cleanAccountDirWxid(myWxid)
   try {
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='Name2Id'").all()
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='Name2Id'")
+      .all()
     if (tables.length === 0) return { idToName, myRowId }
-    const rows = db.prepare('SELECT rowid, user_name FROM Name2Id').all() as { rowid: number; user_name: string }[]
+    const rows = db.prepare('SELECT rowid, user_name FROM Name2Id').all() as {
+      rowid: number
+      user_name: string
+    }[]
     for (const r of rows) {
       const name = toString(r.user_name)
       idToName.set(toNumber(r.rowid), name)
@@ -401,7 +440,8 @@ function rowToMessage(
 
   // 发送人：real_sender_id -> Name2Id.user_name（真实 wxid）
   const realSenderId = toNumber(getRowField(row, ['real_sender_id', 'realSenderId']), -1)
-  let senderUsername: string | null = realSenderId >= 0 ? nameId.idToName.get(realSenderId) || null : null
+  let senderUsername: string | null =
+    realSenderId >= 0 ? nameId.idToName.get(realSenderId) || null : null
   if (!senderUsername) {
     senderUsername = toString(getRowField(row, [cols.senderColumn || 'sender'])) || null
   }
@@ -422,14 +462,16 @@ function rowToMessage(
   const parsed = parseMessageContent(content, localType)
   // 图片文件名 md5 优先取 packed_info_data（本地 .dat 命名），XML 的 md5 是 CDN md5 对不上本地文件
   const imageMd5 =
-    parsePackedInfoMd5(getRowField(row, ['packed_info_data', 'packedInfoData'])) || parseImageMd5(content)
+    parsePackedInfoMd5(getRowField(row, ['packed_info_data', 'packedInfoData'])) ||
+    parseImageMd5(content)
   const imageInfo = localType === 3 ? parseImageInfo(content) : {}
   const isLivePhoto = imageInfo.isLivePhoto
   const voiceDuration = parseVoiceDuration(content)
   // 视频文件名 md5 同图片：真实文件名存 packed_info_data，XML 里只有 CDN 信息
   const videoMd5 =
     localType === 43
-      ? parsePackedInfoMd5(getRowField(row, ['packed_info_data', 'packedInfoData'])) || parseVideoMd5(content)
+      ? parsePackedInfoMd5(getRowField(row, ['packed_info_data', 'packedInfoData'])) ||
+        parseVideoMd5(content)
       : undefined
   const videoDuration = localType === 43 ? parseVideoDuration(content) : undefined
   const emojiInfo = localType === 47 ? parseEmojiInfo(content) : {}
@@ -571,7 +613,10 @@ export function listMessages(
           ) as Record<string, any>[]
           if (rows.length >= fetchCount) anyDbHasMore = true
           for (const r of rows) {
-            all.push({ msg: rowToMessage(r, cols, nameId, isGroup, ctx.wxid), cursor: rawMessageCursor(r) })
+            all.push({
+              msg: rowToMessage(r, cols, nameId, isGroup, ctx.wxid),
+              cursor: rawMessageCursor(r)
+            })
           }
         }
       } finally {
@@ -598,7 +643,8 @@ export function listMessages(
 
     const hasMore = deduped.length > limit || anyDbHasMore
     const pageItems = deduped.slice(0, limit)
-    const nextCursor = hasMore && pageItems.length > 0 ? pageItems[pageItems.length - 1].cursor : undefined
+    const nextCursor =
+      hasMore && pageItems.length > 0 ? pageItems[pageItems.length - 1].cursor : undefined
     const page = pageItems.map((it) => it.msg).reverse()
     // enrich 发送人昵称/头像（群消息关键）
     enrichMessagesWithSenders(page, ctx)
@@ -681,7 +727,9 @@ export function enrichMessagesWithSenders(
   if (messages.length === 0) return messages
   // 只处理有真实发送人 wxid 的接收消息
   const senderIds = Array.from(
-    new Set(messages.filter((m) => !m.isSend && m.senderUsername).map((m) => m.senderUsername as string))
+    new Set(
+      messages.filter((m) => !m.isSend && m.senderUsername).map((m) => m.senderUsername as string)
+    )
   )
   if (senderIds.length === 0) return messages
   try {
@@ -695,7 +743,9 @@ export function enrichMessagesWithSenders(
     const db = opened.db
     try {
       let contactTable: string | null = null
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        name: string
+      }[]
       const names = new Set(tables.map((t) => t.name))
       for (const cand of CONTACT_TABLE_CANDIDATES) {
         if (names.has(cand)) {
@@ -735,15 +785,24 @@ function getHeadImageAvatar(ctx: WxReaderContext, usernames: string[]): string |
     if (!opened.db) return null
     const db = opened.db
     try {
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='head_image'").all()
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='head_image'")
+        .all()
       if (tables.length === 0) return null
       for (const u of usernames) {
         const row = db
-          .prepare('SELECT image_buffer FROM head_image WHERE username = ? ORDER BY update_time DESC LIMIT 1')
+          .prepare(
+            'SELECT image_buffer FROM head_image WHERE username = ? ORDER BY update_time DESC LIMIT 1'
+          )
           .get(u) as { image_buffer?: Buffer } | undefined
         const buf = row?.image_buffer
         if (!buf || !Buffer.isBuffer(buf) || buf.length < 4) continue
-        const mime = buf[0] === 0xff && buf[1] === 0xd8 ? 'image/jpeg' : buf[0] === 0x89 && buf[1] === 0x50 ? 'image/png' : 'image/jpeg'
+        const mime =
+          buf[0] === 0xff && buf[1] === 0xd8
+            ? 'image/jpeg'
+            : buf[0] === 0x89 && buf[1] === 0x50
+              ? 'image/png'
+              : 'image/jpeg'
         return `data:${mime};base64,${buf.toString('base64')}`
       }
       return null
@@ -785,7 +844,9 @@ export function getAvatar(
             const db = opened.db
             try {
               let contactTable: string | null = null
-              const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
+              const tables = db
+                .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+                .all() as { name: string }[]
               const names = new Set(tables.map((t) => t.name))
               for (const cand of CONTACT_TABLE_CANDIDATES) {
                 if (names.has(cand)) {
@@ -795,9 +856,9 @@ export function getAvatar(
               }
               if (contactTable) {
                 for (const u of candidates) {
-                  const row = db.prepare(`SELECT * FROM ${contactTable} WHERE username = ? LIMIT 1`).get(u) as
-                    | Record<string, any>
-                    | undefined
+                  const row = db
+                    .prepare(`SELECT * FROM ${contactTable} WHERE username = ? LIMIT 1`)
+                    .get(u) as Record<string, any> | undefined
                   const url = row ? pickAvatarUrl(row) : undefined
                   if (url) return url
                 }

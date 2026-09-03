@@ -6,7 +6,7 @@ import {
   stopSending,
   type SendMode
 } from '../services/send/sendService'
-import { countRecentDays } from '../db/repos/sendLog'
+import { countRecentDays, sendOverview } from '../db/repos/sendLog'
 
 /**
  * 发送执行 IPC（T8，方案 §6 回复流程）。
@@ -41,6 +41,13 @@ export function registerSendHandlers(): void {
 
   ipcMain.handle('cs:reply:getSendStatus', () => getSendStatus())
   ipcMain.handle('cs:reply:stats7d', () => countRecentDays(7))
+  ipcMain.handle('cs:reply:overview', () => {
+    try {
+      return sendOverview(7)
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '统计失败' }
+    }
+  })
   ipcMain.handle('cs:reply:resetCircuit', () => {
     resetCircuit()
     return { ok: true }

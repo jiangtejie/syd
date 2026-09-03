@@ -11,6 +11,8 @@ import type {
   ReplyCandidate,
   SendResult,
   SendStatusInfo,
+  SendOverview,
+  OpsStats,
   MessageCursor,
   RedEnvelopeStatus
 } from '../shared/types'
@@ -20,7 +22,7 @@ interface KeyActionResult {
   error?: string
 }
 
-type Result<T> = { ok: true } & T | { ok: false; error?: string }
+type Result<T> = ({ ok: true } & T) | { ok: false; error?: string }
 
 type AiReplyResult = {
   ok: boolean
@@ -54,7 +56,9 @@ declare global {
             sessionId: string,
             limit?: number,
             before?: MessageCursor
-          ) => Promise<Result<{ messages?: ChatMessage[]; hasMore?: boolean; nextCursor?: MessageCursor }>>
+          ) => Promise<
+            Result<{ messages?: ChatMessage[]; hasMore?: boolean; nextCursor?: MessageCursor }>
+          >
           getMessagesSince: (
             wxid: string,
             sessionId: string,
@@ -71,6 +75,10 @@ declare global {
           ) => Promise<Result<{ url?: string }>>
           startWatch: (wxid: string) => Promise<Result<{}>>
           stopWatch: (wxid: string) => Promise<Result<{}>>
+          opsStats: (
+            wxid: string,
+            rangeDays?: number
+          ) => Promise<{ ok: boolean; stats?: OpsStats; error?: string }>
           onDbChanged: (callback: (payload: DbChangedPayload) => void) => () => void
         }
         ai: {
@@ -90,6 +98,7 @@ declare global {
           }) => Promise<{ ok: boolean; result?: SendResult; error?: string }>
           getSendStatus: () => Promise<SendStatusInfo>
           stats7d: () => Promise<Array<{ day: string; sent: number; failed: number }>>
+          overview: () => Promise<{ ok: boolean; data?: SendOverview; error?: string }>
           resetCircuit: () => Promise<{ ok: boolean }>
         }
         config: {

@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { WeChatDbMonitor, type DbChangeInfo } from './monitor'
 import { locateWeChatDbs } from './dbLocator'
+import { invalidateOpsCache } from './opsStats'
 import * as keyStore from '../keyStoreService'
 
 /**
@@ -25,6 +26,8 @@ export interface DbChangedPayload {
 }
 
 function broadcast(payload: DbChangedPayload): void {
+  // 消息库有变化时使运营统计缓存失效，下一次查询会重新聚合
+  invalidateOpsCache(payload.wxid)
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('cs:wx:dbChanged', payload)
   }
