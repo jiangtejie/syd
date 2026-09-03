@@ -147,6 +147,23 @@ declare global {
         issue: {
           list: (wxid: string) => Promise<Result<{ issues?: FeedbackIssue[] }>>
           analyze: (wxid: string) => Promise<{ ok: boolean; state?: FeedbackAnalysisState; error?: string }>
+          analyzeGroup: (
+            wxid: string,
+            groupUsername: string,
+            groupName?: string,
+            opts?: { days?: number; force?: boolean }
+          ) => Promise<{
+            ok: boolean
+            error?: string
+            skipped?: boolean
+            method?: 'llm' | 'rule'
+            count?: number
+            lastAt?: number
+          }>
+          listGroup: (
+            wxid: string,
+            groupUsername: string
+          ) => Promise<Result<{ issues?: FeedbackIssue[] }>>
           state: (wxid: string) => Promise<{ ok: boolean; state?: FeedbackAnalysisState }>
           clear: (wxid: string) => Promise<{ ok: boolean; error?: string }>
           setStatus: (

@@ -170,6 +170,25 @@ export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }
   })
 }
 
+/** 按群列出问题（工作台「群问题」视图；open 优先，其次发生时间倒序） */
+export function listIssuesByGroup(wxid: string, groupUsername: string): FeedbackIssue[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM issue_feedback WHERE wxid = ? AND group_username = ?
+       ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'stalled' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
+                occur_at DESC`
+    )
+    .all(wxid, groupUsername) as IssueRow[]
+  const msgCountStmt = getDb().prepare(
+    `SELECT COUNT(*) AS n FROM issue_feedback_msg WHERE issue_id = ?`
+  )
+  return rows.map((r) => {
+    const issue = rowToIssue(r)
+    issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
+    return issue
+  })
+}
+
 export function getIssueDetail(id: number): FeedbackIssueDetail | null {
   const db = getDb()
   const row = db.prepare(`SELECT * FROM issue_feedback WHERE id = ?`).get(id) as

@@ -132,6 +132,24 @@ const api = {
         ipcRenderer.invoke('cs:issue:list', wxid),
       analyze: (wxid: string): Promise<{ ok: boolean; error?: string; state?: unknown }> =>
         ipcRenderer.invoke('cs:issue:analyze', wxid),
+      analyzeGroup: (
+        wxid: string,
+        groupUsername: string,
+        groupName?: string,
+        opts?: { days?: number; force?: boolean }
+      ): Promise<{
+        ok: boolean
+        error?: string
+        skipped?: boolean
+        method?: 'llm' | 'rule'
+        count?: number
+        lastAt?: number
+      }> => ipcRenderer.invoke('cs:issue:analyzeGroup', wxid, groupUsername, groupName, opts),
+      listGroup: (
+        wxid: string,
+        groupUsername: string
+      ): Promise<{ ok: boolean; issues?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:listGroup', wxid, groupUsername),
       state: (wxid: string): Promise<{ ok: boolean; state?: unknown }> =>
         ipcRenderer.invoke('cs:issue:state', wxid),
       clear: (wxid: string): Promise<{ ok: boolean; error?: string }> =>

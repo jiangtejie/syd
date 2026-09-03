@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import {
+  analyzeGroupIssues,
   analyzeIssues,
   clearFeedbackIssues,
   listFeedbackIssues,
@@ -7,12 +8,12 @@ import {
   updateIssueStatus,
   issueTypeCounts
 } from '../services/feedback/analyzer'
-import { getIssueDetail } from '../db/repos/issueRepo'
+import { getIssueDetail, listIssuesByGroup } from '../db/repos/issueRepo'
 import type { FeedbackIssueStatus } from '../../shared/types'
 
 /**
- * 群问题反馈 IPC（看板）。
- * cs:issue:list / analyze / state / detail / setStatus / typeCounts
+ * 群问题反馈 IPC（看板 + 工作台）。
+ * cs:issue:list / analyze / analyzeGroup / listGroup / state / detail / setStatus / typeCounts
  */
 
 export function registerIssueHandlers(): void {
@@ -31,6 +32,34 @@ export function registerIssueHandlers(): void {
   ipcMain.handle('cs:issue:analyze', async (_e, wxid: string) => {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
     return analyzeIssues(wxid)
+  })
+
+  // 单群窗口分析（工作台「群问题」视图）：days 自然日窗口、自动触发带节流
+  ipcMain.handle(
+    'cs:issue:analyzeGroup',
+    async (
+      _e,
+      wxid: string,
+      groupUsername: string,
+      groupName?: string,
+      opts?: { days?: number; force?: boolean }
+    ) => {
+      if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
+      return analyzeGroupIssues(wxid, groupUsername, groupName ?? '', opts ?? {})
+    }
+  )
+
+  // 某群的问题列表（工作台「群问题」视图本地读取，秒开）
+  ipcMain.handle('cs:issue:listGroup', (_e, wxid: string, groupUsername: string) => {
+    if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
+    try {
+      return { ok: true as const, issues: listIssuesByGroup(wxid, groupUsername) }
+    } catch (err) {
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err)
+      }
+    }
   })
 
   ipcMain.handle('cs:issue:state', (_e, wxid: string) => {

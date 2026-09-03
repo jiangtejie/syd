@@ -35,6 +35,10 @@ const REPLY_WINDOW_MS = 30 * 60_000
 const LLM_LINES_CAP = 220
 /** 分析的群数上限（按活跃度取最新） */
 const MAX_GROUPS = 30
+/** 工作台单群分析节流：距上次尝试（成功或失败）短于该值时自动触发直接跳过（force 忽略） */
+const GROUP_AUTO_REANALYZE_MS = 2 * 60_000
+/** 单群分析尝试记录配置键（工作台「切群自动分析」防抖与失败信息透传） */
+const groupStampKey = (wxid: string, group: string): string => `issue.groupAt:${wxid}:${group}`
 
 export const ISSUE_TYPES: FeedbackIssueType[] = [
   '客诉',
@@ -312,6 +316,135 @@ async function analyzeGroup(
   }
 }
 
+/** 单群分析（含写库）：读窗口消息 → LLM/规则提炼 → upsert，返回写入条数 */
+async function analyzeOneGroup(
+  wxid: string,
+  groupUsername: string,
+  groupName: string,
+  windowStartMs: number
+): Promise<number> {
+  const msgs = readGroupMessages(wxid, groupUsername, windowStartMs)
+  const issues = await analyzeGroup(wxid, groupUsername, groupName, msgs)
+  let n = 0
+  for (const issue of issues) {
+    upsertIssue(issue)
+    n++
+  }
+  return n
+}
+
+/** 读取某群最近一次分析尝试记录（成功或失败；失败携带 error 供 UI 透传） */
+function readGroupStamp(
+  wxid: string,
+  groupUsername: string
+): { at: number; method?: 'llm' | 'rule'; count?: number; error?: string } | null {
+  const raw = getConfig(groupStampKey(wxid, groupUsername))
+  if (!raw) return null
+  try {
+    const p = JSON.parse(raw) as {
+      at?: number
+      method?: string
+      count?: number
+      error?: string
+    }
+    if (typeof p.at !== 'number') return null
+    return {
+      at: p.at,
+      method: p.method === 'llm' || p.method === 'rule' ? p.method : undefined,
+      count: typeof p.count === 'number' ? p.count : undefined,
+      error: p.error
+    }
+  } catch {
+    return null
+  }
+}
+
+const groupRunKeys = new Map<string, Promise<AnalyzeGroupResult>>()
+
+export interface AnalyzeGroupResult {
+  ok: boolean
+  error?: string
+  skipped?: boolean
+  method?: 'llm' | 'rule'
+  count?: number
+  lastAt?: number
+}
+
+/**
+ * 单群窗口分析（工作台「群问题」入口）。
+ * - days 为自然日窗口（默认 2：今天 + 昨天，与看板口径一致）；
+ * - 自动触发节流：距上次尝试（含失败）不足 GROUP_AUTO_REANALYZE_MS 直接 skipped（force 忽略）；
+ * - 按群 in-flight 防重；失败也落尝试记录，避免反复切群触发失败重试轰炸。
+ * - 与看板全量分析共用同一存储（稳定 key 以消息为锚点），两入口不产生重复行。
+ */
+export async function analyzeGroupIssues(
+  wxid: string,
+  groupUsername: string,
+  groupName = '',
+  opts: { days?: number; force?: boolean } = {}
+): Promise<AnalyzeGroupResult> {
+  if (!wxid || !groupUsername) return { ok: false, error: '缺少账号或群标识' }
+  const days = Math.min(Math.max(Math.floor(opts.days ?? 2), 1), 30)
+  const force = !!opts.force
+
+  const stamp = readGroupStamp(wxid, groupUsername)
+  if (!force && stamp && Date.now() - stamp.at < GROUP_AUTO_REANALYZE_MS) {
+    return {
+      ok: true,
+      skipped: true,
+      method: stamp.method,
+      count: stamp.count,
+      lastAt: stamp.at,
+      error: stamp.error
+    }
+  }
+
+  const runKey = `${wxid}|${groupUsername}`
+  const inflight = groupRunKeys.get(runKey)
+  if (inflight) {
+    try {
+      await inflight
+    } catch {
+      // 首发起方已返回错误
+    }
+    const last = readGroupStamp(wxid, groupUsername)
+    return { ok: true, skipped: true, method: last?.method, count: last?.count, lastAt: last?.at }
+  }
+
+  const stampNow = (at: number, extra: { method?: 'llm' | 'rule'; count?: number; error?: string }): void => {
+    setConfig(
+      groupStampKey(wxid, groupUsername),
+      JSON.stringify({ at, method: extra.method, count: extra.count, error: extra.error ?? '' })
+    )
+  }
+
+  const run = (async (): Promise<AnalyzeGroupResult> => {
+    const startedAt = Date.now()
+    try {
+      const today = new Date(startedAt)
+      today.setHours(0, 0, 0, 0)
+      const windowStart = today.getTime() - (days - 1) * 24 * 3600_000
+      const count = await analyzeOneGroup(wxid, groupUsername, groupName, windowStart)
+      // 0 条时无法从结果推断方式：以是否配好 provider 判定（与全量分析口径一致）
+      const provider = createAiProvider()
+      const method: 'llm' | 'rule' = provider ? 'llm' : 'rule'
+      stampNow(Date.now(), { method, count })
+      return { ok: true, method, count, lastAt: Date.now() }
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e)
+      stampNow(Date.now(), { error })
+      return { ok: false, error }
+    }
+  })()
+
+  groupRunKeys.set(runKey, run)
+  try {
+    return await run
+  } finally {
+    groupRunKeys.delete(runKey)
+  }
+}
+
 /** 分析并写库（带 in-flight 保护，按账号串行） */
 const runningWxids = new Map<string, Promise<void>>()
 /** 成功态（含 lastAt）配置键 */
@@ -352,12 +485,8 @@ export async function analyzeIssues(
 
     let upserted = 0
     for (const g of groups) {
-      const msgs = readGroupMessages(wxid, g.username, windowStart)
-      const issues = await analyzeGroup(wxid, g.username, g.displayName, msgs)
-      for (const issue of issues) {
-        upsertIssue(issue)
-        upserted++
-      }
+      const n = await analyzeOneGroup(wxid, g.username, g.displayName, windowStart)
+      upserted += n
     }
 
     const payload = { at: Date.now(), method, count: upserted }
