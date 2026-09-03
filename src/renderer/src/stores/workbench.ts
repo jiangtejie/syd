@@ -81,6 +81,8 @@ interface WorkbenchState {
   selectSession: (sessionId: string) => Promise<void>
   refreshSessions: () => Promise<void>
   loadOlder: () => Promise<void>
+  /** 增量刷新当前会话消息(水位=最后一条真实消息 sortSeq;用于 dbChanged 推送后自动补新) */
+  refreshCurrentMessages: () => Promise<void>
   loadAgents: () => Promise<void>
   setAgentId: (id: string | null) => void
   generateSuggestions: () => Promise<void>
@@ -466,6 +468,32 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       console.error('[workbench] load older failed', e)
     } finally {
       if (get().activeSessionId === activeSessionId) set({ loadingOlder: false })
+    }
+  },
+
+  refreshCurrentMessages: async () => {
+    const { wxid, activeSessionId, source, messages } = get()
+    if (source !== 'wx' || !wxid || !activeSessionId || !wxApi) return
+    if (messages.length === 0) return // 尚未加载的会话交给 selectSession 处理,避免灌入全量历史
+    // 水位 = 最后一条真实消息(本地发送占位 local-* 不计,避免漏掉并发到达的远端消息)
+    let sinceSortSeq = 0
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.serverId && !m.serverId.startsWith('local-')) {
+        sinceSortSeq = m.sortSeq
+        break
+      }
+    }
+    if (sinceSortSeq === 0) return
+    const res = await wxApi.getMessagesSince(wxid, activeSessionId, sinceSortSeq).catch(() => null)
+    // 防竞态：刷新期间用户切走了会话则丢弃结果
+    if (get().activeSessionId !== activeSessionId) return
+    if (res?.ok && res.messages && res.messages.length > 0) {
+      const have = new Set(get().messages.map((m) => m.serverId || `l:${m.localId}`))
+      const fresh = res.messages.filter((m) => !have.has(m.serverId || `l:${m.localId}`))
+      if (fresh.length > 0) {
+        set({ messages: [...get().messages, ...fresh] })
+      }
     }
   },
 

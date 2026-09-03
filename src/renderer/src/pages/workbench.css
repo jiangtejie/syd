@@ -1722,3 +1722,11 @@
   background: var(--danger-soft);
   border-color: var(--danger);
 }
+
+/* 历史顶部状态 */
+.wb-history-end {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-4);
+  padding: 10px 0 4px;
+}

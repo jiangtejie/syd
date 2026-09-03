@@ -497,7 +497,8 @@ function MessagePanel(): React.JSX.Element {
     }
   }, [activeSessionId])
 
-  // 消息更新：新会话加载完成则强制滚到底部；否则仅当用户本就在底部附近时才跟随
+  // 消息更新：新会话加载完成则强制滚到底部；翻页加载保持视口锚点；否则仅当用户本就在底部附近时才跟随
+  const anchorGapRef = useRef<number | null>(null)
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
@@ -506,9 +507,31 @@ function MessagePanel(): React.JSX.Element {
       el.scrollTop = el.scrollHeight
       return
     }
+    // 顶部翻页后:内容在顶部插入,按「距底距离不变」恢复视口,避免跳变
+    if (anchorGapRef.current !== null) {
+      el.scrollTop = el.scrollHeight - anchorGapRef.current
+      anchorGapRef.current = null
+      return
+    }
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
     if (nearBottom) el.scrollTop = el.scrollHeight
   }, [messages])
+
+  /** 加载更早一页(记录当前距底距离,翻页后恢复视口位置) */
+  const requestOlder = (): void => {
+    const el = bodyRef.current
+    if (el && anchorGapRef.current === null) {
+      anchorGapRef.current = el.scrollHeight - el.scrollTop
+    }
+    void loadOlder()
+  }
+
+  /** 滚到接近顶部时自动加载更早历史(loadingOlder/是否还有更多由 store 状态兜底) */
+  const onBodyScroll = (): void => {
+    const el = bodyRef.current
+    if (!el || messagesHasMore === false || loadingOlder || loading) return
+    if (el.scrollTop <= 64) requestOlder()
+  }
 
   // 「在聊天中定位」：滚动到目标时间对应消息并短暂高亮
   const scrollHint = useWorkbenchStore((s) => s.scrollHint)
@@ -563,22 +586,24 @@ function MessagePanel(): React.JSX.Element {
           <span className="wb-tag wb-tag-danger">{activeSession.unreadCount} 条未读</span>
         )}
       </div>
-      <div className="wb-chat-body" ref={bodyRef}>
+      <div className="wb-chat-body" ref={bodyRef} onScroll={onBodyScroll}>
         {loading && messages.length === 0 ? (
           <div className="wb-loading">加载中...</div>
         ) : messages.length === 0 ? (
           <div className="wb-loading">暂无消息</div>
         ) : (
           <>
-            {messagesHasMore && (
+            {messagesHasMore ? (
               <button
                 type="button"
                 className="wb-load-older"
                 disabled={loadingOlder}
-                onClick={() => void loadOlder()}
+                onClick={requestOlder}
               >
-                {loadingOlder ? '加载中…' : '加载更早消息'}
+                {loadingOlder ? '正在加载更早消息…' : '加载更早消息（上滑自动加载）'}
               </button>
+            ) : (
+              <div className="wb-history-end">已是最早消息</div>
             )}
             {messages.map((m, i) => {
               const prev = i > 0 ? messages[i - 1] : null
