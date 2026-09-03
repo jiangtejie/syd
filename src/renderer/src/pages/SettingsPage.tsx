@@ -264,6 +264,7 @@ function SettingsPage(): React.JSX.Element {
 
   const save = async (keys: Array<keyof FormState>): Promise<void> => {
     if (!configApi) return
+    if (!loaded) return // 配置尚未回读完成，避免用表单默认值覆盖已保存配置
     for (const k of keys) {
       await configApi.set(k, form[k])
     }
@@ -511,6 +512,7 @@ function SettingsPage(): React.JSX.Element {
           <button
             type="button"
             className="st-btn"
+            disabled={!loaded}
             onClick={() =>
               void save([
                 'ai.enabled',
@@ -535,7 +537,7 @@ function SettingsPage(): React.JSX.Element {
         <span className="st-hint">
           选择通道会自动填充官方地址与常用模型（火山方舟需在控制台创建推理接入点后填入
           ep-xxx），地址与模型可手动修改。建议先「测试连接」通过后再保存；未启用或未配置 Key
-          时自动降级：回复建议回退模板话术、问题反馈走本地规则提取。
+          时：回复建议不产出候选并提示开启、群问题反馈提取走本地规则降级。
         </span>
       </div>
 

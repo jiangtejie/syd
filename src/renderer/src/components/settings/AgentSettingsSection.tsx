@@ -261,7 +261,7 @@ function AgentSettingsSection(): React.JSX.Element {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder={
-              '留空则由内置模板自动组装。可写：品牌口径、禁忌词、转人工条件、回复句式偏好等，例如：\n1. 报价必须按最新价目表，不承诺优惠未生效；\n2. 涉及退款/投诉一律引导转人工。'
+              '留空时人设自动由「名称 + 一句话人设 + 话术风格」组装。可写：品牌口径、禁忌词、转人工条件、回复句式偏好等，例如：\n1. 报价必须按最新价目表，不承诺优惠未生效；\n2. 涉及退款/投诉一律引导转人工。'
             }
           />
         </label>
