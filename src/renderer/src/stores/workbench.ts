@@ -100,6 +100,8 @@ interface WorkbenchState {
   setGroupIssueStatus: (id: number, status: FeedbackIssueStatus) => Promise<void>
   /** 清理群问题状态（切到非群会话/换账号时） */
   resetGroupState: () => void
+  /** 清空当前群全部问题记录(含已解决/归档与证据,不可恢复);随后可手动重新分析 */
+  clearGroupAll: () => Promise<void>
   /** 刷新各群 open 计数（会话列表徽标） */
   refreshGroupBadges: () => Promise<void>
   /** 把指定成员标记/取消为团队客服（本地即时生效，重载消息后持久一致） */
@@ -376,6 +378,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       groupActiveDetail: null,
       groupDetailLoading: false
     })
+  },
+
+  clearGroupAll: async () => {
+    const { wxid, activeSessionId } = get()
+    if (!wxid || !activeSessionId) return
+    const res = await issueApi?.clearGroup(wxid, activeSessionId).catch(() => null)
+    if (!res?.ok) {
+      toast.error(res?.error || '清空失败')
+      return
+    }
+    detailReqSeq++
+    set({
+      groupIssues: [],
+      groupActiveDetail: null,
+      groupDetailLoading: false,
+      groupAnalyzedAt: null
+    })
+    toast.success('已清空本群全部问题记录,可点「重新分析」重新提取')
+    void get().refreshGroupBadges()
   },
 
   refreshGroupBadges: async () => {

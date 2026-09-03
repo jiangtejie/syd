@@ -1655,3 +1655,14 @@
 .gip-stat.is-follow {
   color: var(--warn-text);
 }
+
+/* 危险操作(清空本群) */
+.gip-btn.danger {
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+
+.gip-btn.danger:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}

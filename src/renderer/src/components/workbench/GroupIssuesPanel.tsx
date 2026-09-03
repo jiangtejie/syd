@@ -148,6 +148,7 @@ function GroupIssuesPanel(): React.JSX.Element {
   const activeDetail = useWorkbenchStore((s) => s.groupActiveDetail)
   const detailLoading = useWorkbenchStore((s) => s.groupDetailLoading)
   const analyzeNow = useWorkbenchStore((s) => s.analyzeGroupNow)
+  const clearGroupAll = useWorkbenchStore((s) => s.clearGroupAll)
   const openDetail = useWorkbenchStore((s) => s.openGroupIssue)
   const locateIssueAt = useWorkbenchStore((s) => s.locateIssueAt)
   const activeSessionId = useWorkbenchStore((s) => s.activeSessionId)
@@ -208,6 +209,15 @@ function GroupIssuesPanel(): React.JSX.Element {
     } else {
       void analyzeNow()
     }
+  }
+
+  /** 「清空本群」:删除该群全部记录(含历史,不可恢复) */
+  const onClearAll = (): void => {
+    if (analyzing) return
+    const ok = window.confirm(
+      `将删除本群全部问题记录(共 ${issues.length} 条,含已解决/已归档与证据消息),此操作不可恢复。\n之后可点「重新分析」从零提取。确认删除?`
+    )
+    if (ok) void clearGroupAll()
   }
 
   const locate = (ts: number): void => {
@@ -325,6 +335,15 @@ function GroupIssuesPanel(): React.JSX.Element {
             title="重算本群问题:清空待处理记录后按当前窗口重新分析(历史已解决/归档保留)"
           >
             {analyzing ? '分析中…' : '重新分析'}
+          </button>
+          <button
+            type="button"
+            className="gip-btn danger"
+            disabled={analyzing || issues.length === 0}
+            onClick={onClearAll}
+            title="删除本群全部问题记录(含历史/证据,不可恢复),适合从零开始"
+          >
+            清空本群
           </button>
         </div>
       </div>

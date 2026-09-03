@@ -223,6 +223,22 @@ export function clearOpenIssuesByGroup(wxid: string, groupUsername: string): num
   return info.changes
 }
 
+/** 清空某群全部记录(含已解决/归档与证据)——「从零开始」用,不可恢复 */
+export function clearIssuesByGroup(wxid: string, groupUsername: string): number {
+  const db = getDb()
+  db.prepare(
+    `DELETE FROM issue_feedback_msg
+     WHERE issue_id IN (SELECT id FROM issue_feedback
+                        WHERE wxid = ? AND group_username = ?)`
+  ).run(wxid, groupUsername)
+  const info = db
+    .prepare(
+      `DELETE FROM issue_feedback WHERE wxid = ? AND group_username = ?`
+    )
+    .run(wxid, groupUsername)
+  return info.changes
+}
+
 /** 按群聚合 open 计数（工作台会话列表徽标） */
 export function countOpenByGroup(wxid: string): Record<string, number> {
   const rows = getDb()

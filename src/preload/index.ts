@@ -167,6 +167,11 @@ const api = {
         ipcRenderer.invoke('cs:issue:state', wxid),
       clear: (wxid: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:issue:clear', wxid),
+      clearGroup: (
+        wxid: string,
+        groupUsername: string
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:clearGroup', wxid, groupUsername),
       setStatus: (
         id: number,
         status: string

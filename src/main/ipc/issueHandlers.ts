@@ -8,7 +8,7 @@ import {
   updateIssueStatus,
   issueTypeCounts
 } from '../services/feedback/analyzer'
-import { getIssueDetail, listIssuesByGroup, countOpenByGroup } from '../db/repos/issueRepo'
+import { getIssueDetail, listIssuesByGroup, countOpenByGroup, clearIssuesByGroup } from '../db/repos/issueRepo'
 import type { FeedbackIssueStatus } from '../../shared/types'
 
 /**
@@ -54,6 +54,20 @@ export function registerIssueHandlers(): void {
     if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
     try {
       return { ok: true as const, issues: listIssuesByGroup(wxid, groupUsername) }
+    } catch (err) {
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err)
+      }
+    }
+  })
+
+  // 清空某群全部记录(含历史/证据)——「从零开始」,不可恢复
+  ipcMain.handle('cs:issue:clearGroup', (_e, wxid: string, groupUsername: string) => {
+    if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
+    try {
+      clearIssuesByGroup(wxid, groupUsername)
+      return { ok: true as const }
     } catch (err) {
       return {
         ok: false as const,

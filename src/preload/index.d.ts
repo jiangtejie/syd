@@ -175,6 +175,10 @@ declare global {
           ) => Promise<Result<{ issues?: FeedbackIssue[] }>>
           state: (wxid: string) => Promise<{ ok: boolean; state?: FeedbackAnalysisState }>
           clear: (wxid: string) => Promise<{ ok: boolean; error?: string }>
+          clearGroup: (
+            wxid: string,
+            groupUsername: string
+          ) => Promise<{ ok: boolean; error?: string }>
           setStatus: (
             id: number,
             status: FeedbackIssueStatus
