@@ -21,7 +21,7 @@ import { toast } from './toast'
 export type DataSource = 'wx' | 'empty'
 
 /** 工作台页面（应用外壳导航） */
-export type WorkbenchPage = 'chat' | 'customers' | 'dashboard' | 'settings' | 'export'
+export type WorkbenchPage = 'monitor' | 'chat' | 'customers' | 'dashboard' | 'settings' | 'export'
 
 interface WorkbenchState {
   /** 当前页面 */

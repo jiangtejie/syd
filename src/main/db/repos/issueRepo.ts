@@ -129,11 +129,20 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     .get(issue.key) as IssueRow | undefined
   if (!row) return { id: 0, created: false }
   const created = row.created_at === now && row.status === 'open'
+  // 内容无实质变化时保留原 updated_at(状态变更时间=处理时间口径),避免重析刷新污染「今日解决/最近处理」
+  const sameContent =
+    row.group_name === issue.groupName &&
+    row.type === issue.type &&
+    row.title === issue.title &&
+    (row.summary ?? null) === (issue.summary ?? null) &&
+    row.occur_at === issue.occurAt &&
+    (row.follow_up === 1) === !!issue.followUp
+  const touchedAt = sameContent ? row.updated_at : now
   db.prepare(
     `UPDATE issue_feedback
        SET group_name = ?, type = ?, title = ?, summary = ?, occur_at = ?, follow_up = ?, updated_at = ?
      WHERE id = ?`
-  ).run(issue.groupName, issue.type, issue.title, issue.summary ?? null, issue.occurAt, followUp, now, row.id)
+  ).run(issue.groupName, issue.type, issue.title, issue.summary ?? null, issue.occurAt, followUp, touchedAt, row.id)
 
   // 重建关联消息（外键未强制启用，先删后插）
   db.prepare(`DELETE FROM issue_feedback_msg WHERE issue_id = ?`).run(row.id)
