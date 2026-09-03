@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import type { AiGenOptions, ChatMessage } from '../../shared/types'
 import { generateSuggestions } from '../services/ai/suggest'
-import { readProviderConfig, testAiConnection } from '../services/ai/provider'
+import { listRemoteModels, readProviderConfig, testAiConnection } from '../services/ai/provider'
 
 /**
  * AI 建议生成 IPC（T7）。
@@ -40,6 +40,15 @@ export function registerAiHandlers(): void {
       return res.ok
         ? { ok: true as const, latencyMs: res.latencyMs }
         : { ok: false as const, error: res.error }
+    }
+  )
+
+  ipcMain.handle(
+    'cs:ai:models',
+    async (_e, input?: { baseUrl?: string; apiKey?: string; timeoutMs?: number }) => {
+      const saved = readProviderConfig()
+      const merged = { ...saved, ...(input ?? {}) }
+      return listRemoteModels(merged.baseUrl, merged.apiKey, input?.timeoutMs)
     }
   )
 }

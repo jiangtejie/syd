@@ -124,3 +124,62 @@ export async function testAiConnection(
     clearTimeout(timer)
   }
 }
+
+/**
+ * 拉取 OpenAI 兼容通道的模型列表（GET {baseUrl}/models）。
+ * 兼容 data[].id（OpenAI 规范）与 models[].model/name（Ollama 等非标准返回）。
+ */
+export async function listRemoteModels(
+  baseUrl: string,
+  apiKey: string,
+  timeoutMs = 15_000
+): Promise<{ ok: true; models: string[] } | { ok: false; error: string }> {
+  const url = `${baseUrl.replace(/\/+$/, '')}/models`
+  const key = apiKey.trim()
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: key ? { Authorization: `Bearer ${key}` } : undefined,
+      signal: ctrl.signal
+    })
+    if (!res.ok) {
+      const body = (await res.text()).slice(0, 300)
+      return { ok: false, error: `HTTP ${res.status}：${body || res.statusText}` }
+    }
+    const data = (await res.json()) as {
+      data?: Array<{ id?: unknown }>
+      models?: Array<{ model?: unknown; name?: unknown; id?: unknown }>
+    }
+    const raw: unknown[] = Array.isArray(data.data)
+      ? (data.data as Array<{ id?: unknown }>)
+      : Array.isArray(data.models)
+        ? (data.models as Array<{ model?: unknown; name?: unknown; id?: unknown }>)
+        : []
+    const seen = new Set<string>()
+    const models: string[] = []
+    for (const item of raw as Array<Record<string, unknown>>) {
+      const id = String(item?.id ?? item?.model ?? item?.name ?? '').trim()
+      if (id && !seen.has(id)) {
+        seen.add(id)
+        models.push(id)
+      }
+      if (models.length >= 300) break // 防止极端大列表拖慢界面
+    }
+    if (models.length === 0) {
+      return { ok: false, error: '接口已连通，但未返回任何模型（请检查通道类型是否为 OpenAI 兼容）' }
+    }
+    return { ok: true, models }
+  } catch (e) {
+    const error =
+      ctrl.signal.aborted
+        ? `连接超时（${Math.round(timeoutMs / 1000)}s）`
+        : e instanceof Error
+          ? e.message
+          : String(e)
+    return { ok: false, error }
+  } finally {
+    clearTimeout(timer)
+  }
+}
