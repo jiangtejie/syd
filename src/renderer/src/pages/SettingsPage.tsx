@@ -22,78 +22,58 @@ interface FormState {
   'notify.enabled': string
 }
 
-/** AI 通道预设（OpenAI 兼容 chat/completions），选择后自动填充地址与示例模型，仍可手动修改 */
+/** AI 通道预设（OpenAI 兼容 chat/completions）：仅预置官方接口地址；模型名不预置，通过「获取模型」拉取或手动填写 */
 interface AiPreset {
   id: string
   label: string
   baseUrl: string
-  model: string
-  models: string[]
 }
 
 const AI_PRESETS: AiPreset[] = [
   {
     id: 'openai',
     label: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1']
+    baseUrl: 'https://api.openai.com/v1'
   },
   {
     id: 'deepseek',
     label: 'DeepSeek（深度求索）',
-    baseUrl: 'https://api.deepseek.com/v1',
-    model: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner']
+    baseUrl: 'https://api.deepseek.com/v1'
   },
   {
     id: 'dashscope',
     label: '阿里云百炼（通义千问）',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    model: 'qwen-plus',
-    models: ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen-long']
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1'
   },
   {
     id: 'zhipu',
     label: '智谱 AI（GLM）',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-4-flash',
-    models: ['glm-4-flash', 'glm-4-air', 'glm-4-plus', 'glm-4-long']
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4'
   },
   {
     id: 'moonshot',
     label: 'Moonshot（Kimi）',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    model: 'kimi-latest',
-    models: ['kimi-latest', 'moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']
+    baseUrl: 'https://api.moonshot.cn/v1'
   },
   {
     id: 'siliconflow',
     label: '硅基流动 SiliconFlow',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    model: 'Qwen/Qwen2.5-7B-Instruct',
-    models: ['Qwen/Qwen2.5-7B-Instruct', 'deepseek-ai/DeepSeek-V3', 'THUDM/glm-4-9b-chat']
+    baseUrl: 'https://api.siliconflow.cn/v1'
   },
   {
     id: 'volcengine',
     label: '火山方舟（豆包）',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    model: 'ep-xxxxxxxx（推理接入点 ID）',
-    models: ['doubao-pro-32k', 'doubao-lite-32k']
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3'
   },
   {
     id: 'ollama',
     label: 'Ollama（本地）',
-    baseUrl: 'http://localhost:11434/v1',
-    model: 'qwen2.5',
-    models: ['qwen2.5', 'llama3.1', 'deepseek-r1']
+    baseUrl: 'http://localhost:11434/v1'
   },
   {
     id: 'custom',
     label: '自定义（OpenAI 兼容）',
-    baseUrl: '',
-    model: '',
-    models: []
+    baseUrl: ''
   }
 ]
 
@@ -102,7 +82,7 @@ const DEFAULTS: FormState = {
   'ai.provider': 'openai',
   'ai.baseUrl': 'https://api.openai.com/v1',
   'ai.apiKey': '',
-  'ai.model': 'gpt-4o-mini',
+  'ai.model': '',
   'send.dailyLimit': '200',
   'send.humanizeDelay': '1',
   'inject.enabled': '1',
@@ -278,20 +258,18 @@ function SettingsPage(): React.JSX.Element {
     setSendStatus(s ?? null)
   }
 
-  /** 选择通道预设：除「自定义」外自动填充地址与示例模型（之后仍可手动改） */
+  /** 选择通道预设：仅自动填充官方接口地址（模型名不预置，留空待「获取模型」或手动填写） */
   const pickAiProvider = (id: string): void => {
     patch('ai.provider', id)
-    // 通道切换后清空上次拉取的模型列表，避免混入上一通道的模型
+    // 通道切换后清空上次拉取的模型列表与当前模型名，避免串入上一通道的值
     setAiModels([])
     setAiModelsMsg(null)
-    // 自定义通道无预置模型 → 直接进入自由输入；其它通道用下拉选择
+    patch('ai.model', '')
+    // 自定义通道无预置地址 → 直接进入自由输入；其它通道用下拉选择
     setModelFree(id === 'custom')
-    if (id !== 'custom') {
-      const preset = AI_PRESETS.find((p) => p.id === id)
-      if (preset) {
-        patch('ai.baseUrl', preset.baseUrl)
-        patch('ai.model', preset.model)
-      }
+    const preset = AI_PRESETS.find((p) => p.id === id)
+    if (preset) {
+      patch('ai.baseUrl', preset.baseUrl)
     }
   }
 
@@ -349,14 +327,10 @@ function SettingsPage(): React.JSX.Element {
   const boolVal = (v: string): boolean => v === '1' || v === 'true'
   const boolStr = (b: boolean): string => (b ? '1' : '0')
 
-  // 模型下拉候选：当前通道预置模型 ∪ 远程获取模型 ∪ 当前已填值（保证已选项可见）
+  // 模型下拉候选：远程获取模型 ∪ 当前已填值（保证已选项可见；不预置任何模型名）
   const modelCandidates = Array.from(
     new Set(
-      [
-        ...(AI_PRESETS.find((p) => p.id === form['ai.provider'])?.models ?? []),
-        ...aiModels,
-        form['ai.model']
-      ].filter((m) => typeof m === 'string' && m.trim() !== '')
+      [...aiModels, form['ai.model']].filter((m) => typeof m === 'string' && m.trim() !== '')
     )
   ) as string[]
 
@@ -542,9 +516,10 @@ function SettingsPage(): React.JSX.Element {
             ))}
         </div>
         <span className="st-hint">
-          选择通道会自动填充官方地址与常用模型（火山方舟需在控制台创建推理接入点后填入
-          ep-xxx），地址与模型可手动修改。建议先「测试连接」通过后再保存；未启用或未配置 Key
-          时：回复建议不产出候选并提示开启、群问题反馈提取走本地规则降级。
+          选择通道会自动填入官方接口地址（火山方舟需在控制台创建推理接入点后填写
+          ep-xxx）；模型名不做预置，可点「获取模型」从当前通道拉取，或手动填写。建议先
+          「测试连接」通过后再保存；未启用或未配置 Key/模型名时：回复建议不产出候选并提示开启、
+          群问题反馈提取走本地规则降级。
         </span>
       </div>
 

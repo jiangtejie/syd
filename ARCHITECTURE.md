@@ -231,7 +231,7 @@ preload 暴露 `window.api.cs.*`，主进程 `ipc/` 按域注册：
 | `ai.enabled` | `0` | 启用 LLM 生成 |
 | `ai.baseUrl` | `https://api.openai.com/v1` | OpenAI 兼容接口 |
 | `ai.apiKey` | 空 | API Key（落库前 safeStorage 加封，`enc1:` 前缀；明文形态兼容，启动时迁移存量） |
-| `ai.model` | `gpt-4o-mini` | 模型名 |
+| `ai.model` | 空 | 模型名（不预置；由「获取模型」拉取或手动填写，未填时通道视为未配置） |
 | `send.dailyLimit` | `200` | 每日发送上限 |
 | `send.humanizeDelay` | `1` | 拟人化延迟开关 |
 | `send.halted` | `0` | 熔断状态 |

@@ -97,7 +97,7 @@ export async function generateSuggestions(
     return {
       candidates: [],
       llm: false,
-      error: 'AI 通道未启用或未配置 API Key，暂无法生成建议（设置 → AI 助手 中开启）'
+      error: 'AI 通道未就绪：未启用，或未配置 API Key / 模型名（设置 → AI 助手 完善后重试）'
     }
   }
   if (messages.length === 0) {

@@ -24,7 +24,7 @@ export interface ProviderConfig {
 export function readProviderConfig(): ProviderConfig {
   const baseUrl = (getConfig('ai.baseUrl') || 'https://api.openai.com/v1').replace(/\/+$/, '')
   const apiKey = openSecret(getConfig('ai.apiKey'))
-  const model = getConfig('ai.model') || 'gpt-4o-mini'
+  const model = getConfig('ai.model')?.trim() || ''
   const enabled = getConfig('ai.enabled') === '1' || getConfig('ai.enabled') === 'true'
   return { baseUrl, apiKey, model, enabled }
 }
@@ -90,10 +90,10 @@ class OpenAiCompatProvider implements AiProvider {
   }
 }
 
-/** 创建 provider；未配置时返回 null（调用方走模板降级） */
+/** 创建 provider；未启用 / 未配 Key / 未填模型名时返回 null（调用方走提示或本地降级） */
 export function createAiProvider(): AiProvider | null {
   const cfg = readProviderConfig()
-  if (!cfg.enabled || !cfg.apiKey) return null
+  if (!cfg.enabled || !cfg.apiKey || !cfg.model) return null
   return new OpenAiCompatProvider(cfg)
 }
 
