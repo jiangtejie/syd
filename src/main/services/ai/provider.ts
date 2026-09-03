@@ -34,30 +34,58 @@ class OpenAiCompatProvider implements AiProvider {
   constructor(private cfg: ProviderConfig) {}
 
   async complete(system: string, user: string, opts?: { maxTokens?: number }): Promise<string> {
-    const res = await fetch(`${this.cfg.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.cfg.apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.cfg.model,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user }
-        ],
-        temperature: 0.7,
-        max_tokens: opts?.maxTokens ?? 600
+    const model = this.cfg.model
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: user }
+    ]
+    const maxTokens = opts?.maxTokens ?? 600
+    // 部分推理模型（DeepSeek Reasoner/GLM 思考等）不接受 temperature 参数；
+    // 先带 temperature 请求，若 400 且提示不支持该参数，则去掉后重试一次
+    const doFetch = (withTemp: boolean): Promise<Response> =>
+      fetch(`${this.cfg.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.cfg.apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          ...(withTemp ? { temperature: 0.7 } : {}),
+          max_tokens: maxTokens
+        })
       })
-    })
+    let res = await doFetch(true)
+    if (res.status === 400) {
+      const errText = await res.text()
+      if (/temperature/i.test(errText) && /not support|unsupported|unexpected|invalid|不支持|不允许/i.test(errText)) {
+        res = await doFetch(false)
+      } else {
+        throw new Error(`LLM 调用失败 HTTP ${res.status}: ${errText.slice(0, 200)}`)
+      }
+    }
     if (!res.ok) {
       throw new Error(`LLM 调用失败 HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
     }
     const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>
+      choices?: Array<{
+        message?: { content?: string | null; reasoning_content?: string | null }
+        finish_reason?: string
+      }>
     }
     const content = data.choices?.[0]?.message?.content?.trim()
-    if (!content) throw new Error('LLM 返回为空')
+    if (!content) {
+      // 思考型模型（DeepSeek Reasoner / GLM 思考等）预算可能全耗在 reasoning 上 → 给出可诊断信息
+      const msg = data.choices?.[0]?.message
+      const reasoning = msg?.reasoning_content
+      const finishedByLength = data.choices?.[0]?.finish_reason === 'length'
+      throw new Error(
+        reasoning || finishedByLength
+          ? '模型思考过长耗尽输出预算、未生成正文（可重试或改用非思考模型）'
+          : 'LLM 返回为空（响应结构异常或无内容）'
+      )
+    }
     return content
   }
 }
@@ -72,6 +100,9 @@ export function createAiProvider(): AiProvider | null {
 /**
  * 测试 OpenAI 兼容通道：发一条最简 chat 请求验证 baseUrl/apiKey/model 是否可用。
  * 不会改动任何已保存配置，返回连通结果与耗时。
+ * 连通判据 = HTTP 200 且返回标准 choices[].message 结构（模型无效会 4xx，不会 200）；
+ * 不要求 content 非空——思考型模型（DeepSeek Reasoner/GLM 思考等）可能把预算
+ * 全部花在 reasoning_content 上而 content 为空，此时通道仍是通的。
  */
 export async function testAiConnection(
   cfg: ProviderConfig,
@@ -97,7 +128,8 @@ export async function testAiConnection(
       body: JSON.stringify({
         model,
         messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 4
+        // 预算太小会被思考型模型的 reasoning 耗尽；32 token 足够普通模型答完 ping
+        max_tokens: 32
       }),
       signal: ctrl.signal
     })
@@ -106,12 +138,16 @@ export async function testAiConnection(
       const body = (await res.text()).slice(0, 300)
       return { ok: false, error: `HTTP ${res.status}：${body || res.statusText}` }
     }
-    const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>
+    let data: {
+      choices?: Array<{ message?: { content?: string | null } }>
     }
-    const content = data.choices?.[0]?.message?.content
-    if (!content) {
-      return { ok: false, error: '接口已连通但返回内容为空，请检查模型名称是否正确' }
+    try {
+      data = (await res.json()) as typeof data
+    } catch {
+      return { ok: false, error: '接口已连通，但响应不是有效 JSON（请确认通道为 OpenAI 兼容 /chat/completions）' }
+    }
+    if (!Array.isArray(data.choices) || data.choices.length === 0 || !data.choices[0]?.message) {
+      return { ok: false, error: '接口已连通，但响应缺少 choices/message（请确认通道为 OpenAI 兼容格式）' }
     }
     return { ok: true, latencyMs }
   } catch (e) {
