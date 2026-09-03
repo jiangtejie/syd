@@ -1645,3 +1645,13 @@
 .gip-fold-btn:hover {
   background: var(--bg-hover);
 }
+
+/* 跟进中(琥珀)与跟进超时状态徽标 */
+.gip-st.is-follow {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.gip-stat.is-follow {
+  color: var(--warn-text);
+}

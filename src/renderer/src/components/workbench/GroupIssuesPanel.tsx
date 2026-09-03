@@ -125,8 +125,12 @@ function IssueTimeline({
         </button>
         <span className="gip-sync">
           {cur.autoDone && cur.status === 'done'
-            ? '系统检测到客服已回复，自动关闭（可重新打开复核）'
-            : '处理结果与看板「问题反馈」同步'}
+            ? '系统判定已闭环，自动关闭（可重新打开复核）'
+            : cur.status === 'open' && cur.followUp
+              ? cur.followUpOverdue
+                ? '客服回复已超 12 小时未闭环，建议主动跟进'
+                : '客服已介入回复，客户未确认闭环 —— 确认处理后请标记已解决'
+              : '处理结果与看板「问题反馈」同步'}
         </span>
       </div>
     </div>
@@ -212,8 +216,15 @@ function GroupIssuesPanel(): React.JSX.Element {
       {rows.map((it) => {
         const expanded = expandedId === it.id
         const detail = activeDetail && activeDetail.id === it.id ? activeDetail : null
-        const stLabel =
-          it.status === 'done' && it.autoDone
+        // 状态文案：open 区分 待处理/跟进中/跟进超时；done+autoDone=自动解决
+        const isOpen = it.status === 'open'
+        const stLabel = isOpen
+          ? it.followUp
+            ? it.followUpOverdue
+              ? '跟进超时'
+              : '跟进中'
+            : '待处理'
+          : it.status === 'done' && it.autoDone
             ? '自动解决'
             : (STATUS_LABEL[it.status] ?? it.status)
         return (
@@ -230,7 +241,11 @@ function GroupIssuesPanel(): React.JSX.Element {
                 }
               }}
             >
-              <span className={`gip-cell-st gip-st is-${it.status}`}>{stLabel}</span>
+              <span
+                className={`gip-cell-st gip-st ${isOpen && it.followUp ? 'is-follow' : `is-${it.status}`}`}
+              >
+                {stLabel}
+              </span>
               <span className="gip-cell-main">
                 <span className="gip-title-line">
                   <i className={`gip-type t-${it.type}`}>{it.type}</i>
@@ -300,7 +315,12 @@ function GroupIssuesPanel(): React.JSX.Element {
 
       {/* 统计 */}
       <div className="gip-stats">
-        <span className="gip-stat is-open">待处理 {groups.open.length}</span>
+        <span className="gip-stat is-open">
+          待处理 {issues.filter((i) => i.status === 'open' && !i.followUp).length}
+        </span>
+        <span className="gip-stat is-follow">
+          跟进中 {issues.filter((i) => i.status === 'open' && i.followUp).length}
+        </span>
         <span className="gip-stat is-done">
           已解决 {issues.filter((i) => i.status === 'done').length}
         </span>
