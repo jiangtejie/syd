@@ -12,6 +12,8 @@ export interface CustomerProfile {
   name: string
   remark: string
   nickname: string
+  /** 微信号别名（部分联系人存在） */
+  alias: string
   /** 实时行为状态标签（可多标签，用于列表筛选与画像展示） */
   statusTags: string[]
   /** 最近一条消息时间（毫秒） */
@@ -20,6 +22,14 @@ export interface CustomerProfile {
   summary: string
   isGroup: boolean
   session: SessionSummary
+}
+
+/** 客户名单行的副行文本：备注≠昵称时显示真实微信昵称，否则回退微信号别名，避免与主名重复 */
+export function secondaryLabel(c: CustomerProfile): string {
+  if (c.remark && c.nickname && c.nickname !== c.remark) return c.nickname
+  if (c.remark && c.alias && c.alias !== c.remark) return `微信号 ${c.alias}`
+  if (!c.remark && c.alias && c.alias !== c.nickname) return `微信号 ${c.alias}`
+  return ''
 }
 
 const MINUTE_MS = 60_000
@@ -75,6 +85,7 @@ export function deriveCustomers(sessions: SessionSummary[], now: number): Custom
         name: s.displayName || s.username,
         remark: s.remark || '',
         nickname: s.nickname || '',
+        alias: s.alias || '',
         statusTags: statusTagsOf(s, now),
         lastActive: s.lastTimestamp,
         unreadCount: s.unreadCount,

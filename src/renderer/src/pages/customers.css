@@ -14,9 +14,11 @@
   border: 1px solid #dfe2e7;
   border-radius: 8px;
   font-size: 13px;
+  color: #1f2329;
   outline: none;
   user-select: text;
   background: #fff;
+  transition: border-color 0.15s ease;
 }
 
 .cu-search:focus {
@@ -37,12 +39,27 @@
   font-size: 12px;
   color: #555;
   cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .cu-filter.is-active {
+  background: #07c160;
   border-color: #07c160;
-  color: #07c160;
-  background: #f0fbf4;
+  color: #fff;
+  font-weight: 500;
+}
+
+.cu-filter-clear {
+  color: #fa5151;
+  border-color: #f5c2c2;
+  background: #fff;
+}
+
+.cu-filter-clear:hover {
+  background: #fdecec;
 }
 
 .cu-list {
@@ -57,6 +74,7 @@
   gap: 10px;
   padding: 10px 16px;
   font-size: 13px;
+  color: #1f2329;
   cursor: pointer;
   border-bottom: 1px solid #f0f1f3;
 }
@@ -101,30 +119,65 @@
   font-size: 17px;
 }
 
+.cu-avatar-img {
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.cu-avatar.lg.cu-avatar-img {
+  border-radius: 10px;
+}
+
+.cu-name-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+
 .cu-name-text {
-  font-weight: 500;
+  font-weight: 600;
+  color: #1f2329;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.cu-name-sub {
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .cu-tag-chip {
   font-size: 11px;
-  color: #4b6bff;
-  background: #eef2ff;
+  color: #089f5c;
+  background: #e9f9f0;
+  border: 1px solid #d2f2e0;
   padding: 1px 7px;
   border-radius: 9px;
   white-space: nowrap;
 }
 
 .cu-tag-chip.is-group {
-  color: #07c160;
-  background: #e6f9ee;
+  color: #fff;
+  background: #07c160;
+  border-color: #07c160;
 }
 
 .cu-cell-kind {
   font-size: 12px;
   white-space: nowrap;
+}
+
+.cu-cell-kind.is-group {
+  color: #07c160;
+  font-weight: 500;
 }
 
 .cu-cell-tags {
@@ -183,6 +236,7 @@
   width: 340px;
   height: 100%;
   background: #fff;
+  color: #1f2329;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
   padding: 20px;
   display: flex;

@@ -1,51 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { avatarColor, formatSessionTime, previewSummary } from '../../lib/ui'
+import { useSessionAvatar } from '../../lib/sessionAvatar'
 import type { SessionSummary } from '../../../../shared/types'
 
-/** 会话头像兜底：contact 无 URL，或远程 URL 加载失败时，走 IPC 取 head_image 本地头像（失败后 localOnly 强制本地，避免拿到同一个坏链接） */
-const avatarCache = new Map<string, string | null>()
-function useSessionAvatar(session: SessionSummary): { avatarUrl?: string; markUrlFailed: () => void } {
-  const wxid = useWorkbenchStore((s) => s.wxid)
-  const source = useWorkbenchStore((s) => s.source)
-  const [localFallback, setLocalFallback] = useState<string | null>(null)
-  const [remoteFailed, setRemoteFailed] = useState(false)
-  const hasUrl = !!session.avatarUrl && /^(https?:|data:image)/.test(session.avatarUrl)
-
-  // 换会话/换头像后重置远程加载失败状态
-  useEffect(() => setRemoteFailed(false), [session.username, session.avatarUrl])
-
-  // 无 URL 或远程 URL 失败 -> 查 head_image 本地头像；localOnly 防止远程失败后又返回同一个 URL
-  const needLocal = !hasUrl || remoteFailed
-  useEffect(() => {
-    let alive = true
-    if (!needLocal || source !== 'wx' || !wxid || !session.username) return
-    const cacheKey = remoteFailed ? `${session.username}::local` : session.username
-    if (avatarCache.has(cacheKey)) {
-      setLocalFallback(avatarCache.get(cacheKey) ?? null)
-      return
-    }
-    window.api?.cs?.wx
-      ?.getAvatar?.(wxid, session.username, remoteFailed)
-      .then((res) => {
-        if (!alive) return
-        const u = res?.ok && res.url ? res.url : null
-        avatarCache.set(cacheKey, u)
-        setLocalFallback(u)
-      })
-      .catch(() => {
-        if (alive) avatarCache.set(cacheKey, null)
-      })
-    return () => {
-      alive = false
-    }
-  }, [needLocal, remoteFailed, session.username, wxid, source])
-
-  const avatarUrl = hasUrl && !remoteFailed ? session.avatarUrl : (localFallback ?? undefined)
-  return { avatarUrl, markUrlFailed: () => setRemoteFailed(true) }
-}
-
-function SessionItem({ session, active, isChild, onSelect }: {
+function SessionItem({
+  session,
+  active,
+  isChild,
+  onSelect
+}: {
   session: SessionSummary
   active: boolean
   isChild?: boolean
@@ -53,9 +17,9 @@ function SessionItem({ session, active, isChild, onSelect }: {
 }): React.JSX.Element {
   const name = session.displayName || session.username
   const { avatarUrl, markUrlFailed } = useSessionAvatar(session)
-  const [imgFailed, setImgFailed] = useState(false)
-  const showImg = !!avatarUrl && /^(https?:|data:image)/.test(avatarUrl) && !imgFailed
-  useEffect(() => setImgFailed(false), [avatarUrl])
+  // 仅屏蔽当前 URL 的加载失败；头像源变更（如本地兜底）后可自动重试
+  const [broken, setBroken] = useState<string | null>(null)
+  const showImg = !!avatarUrl && /^(https?:|data:image)/.test(avatarUrl) && broken !== avatarUrl
   const summaryText = previewSummary(session.summary)
   const sessionTime = session.lastTimestamp || session.sortTimestamp
   return (
@@ -70,7 +34,7 @@ function SessionItem({ session, active, isChild, onSelect }: {
           alt={name.slice(0, 1)}
           referrerPolicy="no-referrer"
           onError={() => {
-            setImgFailed(true)
+            setBroken(avatarUrl ?? null)
             markUrlFailed()
           }}
         />
@@ -91,7 +55,9 @@ function SessionItem({ session, active, isChild, onSelect }: {
         <div className="wb-session-bottom">
           <span className="wb-session-summary">{summaryText || '暂无消息'}</span>
           {session.unreadCount > 0 && (
-            <span className="wb-session-unread">{session.unreadCount > 99 ? '99+' : session.unreadCount}</span>
+            <span className="wb-session-unread">
+              {session.unreadCount > 99 ? '99+' : session.unreadCount}
+            </span>
           )}
         </div>
       </div>
@@ -114,7 +80,10 @@ function FoldGroupItem({
   onToggle: () => void
 }): React.JSX.Element {
   return (
-    <div className={`wb-session wb-session-foldgroup ${expanded ? 'is-expanded' : ''}`} onClick={onToggle}>
+    <div
+      className={`wb-session wb-session-foldgroup ${expanded ? 'is-expanded' : ''}`}
+      onClick={onToggle}
+    >
       <div className="wb-session-avatar wb-session-foldicon">🗂️</div>
       <div className="wb-session-body">
         <div className="wb-session-top">
@@ -157,7 +126,8 @@ function SessionList(): React.JSX.Element {
     const kw = keyword.trim().toLowerCase()
     if (!kw) return sessions
     return sessions.filter((s) => {
-      const hay = `${s.displayName} ${s.nickname ?? ''} ${s.remark ?? ''} ${s.alias ?? ''} ${s.summary}`.toLowerCase()
+      const hay =
+        `${s.displayName} ${s.nickname ?? ''} ${s.remark ?? ''} ${s.alias ?? ''} ${s.summary}`.toLowerCase()
       return hay.includes(kw)
     })
   }, [sessions, keyword])

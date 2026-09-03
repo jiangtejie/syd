@@ -1,13 +1,47 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import { avatarColor, formatSessionTime } from '../lib/ui'
-import { deriveCustomers, TAG_ORDER, type CustomerProfile } from '../lib/customers'
+import { useSessionAvatar } from '../lib/sessionAvatar'
+import { deriveCustomers, secondaryLabel, TAG_ORDER, type CustomerProfile } from '../lib/customers'
 import './customers.css'
 
 /**
  * 客户页：私域客户列表（状态标签筛选）+ 画像抽屉。
  * 列表与标签全部来自微信真实会话数据（未读/最后消息时间/会话类型/置顶），无示例算法。
  */
+
+/** 真实头像：会话自带 URL 优先，失败/缺失时经 IPC 取本地 head_image，最后回退首字块 */
+function CustomerAvatar({
+  profile,
+  size
+}: {
+  profile: CustomerProfile
+  size?: 'lg'
+}): React.JSX.Element {
+  const { avatarUrl, markUrlFailed } = useSessionAvatar(profile.session)
+  // 仅屏蔽当前 URL 的加载失败；头像源变更（如本地兜底）后可自动重试
+  const [broken, setBroken] = useState<string | null>(null)
+  const cls = size === 'lg' ? 'cu-avatar lg' : 'cu-avatar'
+  if (avatarUrl && /^(https?:|data:image)/.test(avatarUrl) && broken !== avatarUrl) {
+    return (
+      <img
+        className={`${cls} cu-avatar-img`}
+        src={avatarUrl}
+        alt={profile.name.slice(0, 1)}
+        referrerPolicy="no-referrer"
+        onError={() => {
+          setBroken(avatarUrl ?? null)
+          markUrlFailed()
+        }}
+      />
+    )
+  }
+  return (
+    <div className={cls} style={{ background: avatarColor(profile.name) }}>
+      {profile.name.slice(0, 1)}
+    </div>
+  )
+}
 
 function ProfileDrawer({
   customer,
@@ -30,9 +64,7 @@ function ProfileDrawer({
     <div className="cu-drawer-mask" onClick={onClose}>
       <div className="cu-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="cu-drawer-head">
-          <div className="cu-avatar lg" style={{ background: avatarColor(customer.name) }}>
-            {customer.name.slice(0, 1)}
-          </div>
+          <CustomerAvatar profile={customer} size="lg" />
           <div className="cu-drawer-title">
             <div className="cu-name-row">
               <span className="cu-name">{customer.name}</span>
@@ -141,11 +173,14 @@ function CustomersPage(): React.JSX.Element {
     return m
   }, [customers])
   const tagOptions = useMemo(() => TAG_ORDER.filter((t) => tagCounts.has(t)), [tagCounts])
+  // 已选标签若已从可选集合消失（时间窗口/会话更新导致），按未筛选处理，避免残留空筛选
+  const effectiveTag = tagFilter !== null && tagOptions.includes(tagFilter) ? tagFilter : null
+  const hasFilters = keyword.trim() !== '' || effectiveTag !== null
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase()
     return customers.filter((c) => {
-      if (tagFilter && !c.statusTags.includes(tagFilter)) return false
+      if (effectiveTag && !c.statusTags.includes(effectiveTag)) return false
       if (!kw) return true
       return (
         c.name.toLowerCase().includes(kw) ||
@@ -155,7 +190,7 @@ function CustomersPage(): React.JSX.Element {
         c.statusTags.some((t) => t.includes(kw))
       )
     })
-  }, [customers, tagFilter, keyword])
+  }, [customers, effectiveTag, keyword])
 
   const replyCount = tagCounts.get('待回复') ?? 0
 
@@ -176,7 +211,7 @@ function CustomersPage(): React.JSX.Element {
         <div className="cu-filters">
           <button
             type="button"
-            className={`cu-filter${tagFilter === null ? ' is-active' : ''}`}
+            className={`cu-filter${effectiveTag === null ? ' is-active' : ''}`}
             onClick={() => setTagFilter(null)}
           >
             全部
@@ -185,12 +220,24 @@ function CustomersPage(): React.JSX.Element {
             <button
               key={t}
               type="button"
-              className={`cu-filter${tagFilter === t ? ' is-active' : ''}`}
-              onClick={() => setTagFilter(tagFilter === t ? null : t)}
+              className={`cu-filter${effectiveTag === t ? ' is-active' : ''}`}
+              onClick={() => setTagFilter(effectiveTag === t ? null : t)}
             >
               {t} {tagCounts.get(t)}
             </button>
           ))}
+          {hasFilters && (
+            <button
+              type="button"
+              className="cu-filter cu-filter-clear"
+              onClick={() => {
+                setKeyword('')
+                setTagFilter(null)
+              }}
+            >
+              ✕ 清空条件
+            </button>
+          )}
         </div>
       </div>
 
@@ -206,12 +253,15 @@ function CustomersPage(): React.JSX.Element {
         {filtered.map((c) => (
           <div key={c.wxid} className="cu-row" onClick={() => setSelected(c)}>
             <span className="cu-cell-name">
-              <span className="cu-avatar" style={{ background: avatarColor(c.name) }}>
-                {c.name.slice(0, 1)}
+              <CustomerAvatar profile={c} />
+              <span className="cu-name-stack">
+                <span className="cu-name-text">{c.name}</span>
+                {secondaryLabel(c) && <span className="cu-name-sub">{secondaryLabel(c)}</span>}
               </span>
-              <span className="cu-name-text">{c.name}</span>
             </span>
-            <span className="cu-muted cu-cell-kind">{c.isGroup ? '群聊' : '个人'}</span>
+            <span className={`cu-muted cu-cell-kind${c.isGroup ? ' is-group' : ''}`}>
+              {c.isGroup ? '群聊' : '个人'}
+            </span>
             <span className="cu-cell-tags">
               {c.statusTags.slice(0, 2).map((t) => (
                 <span key={t} className="cu-tag-chip">
@@ -235,7 +285,11 @@ function CustomersPage(): React.JSX.Element {
         ))}
         {filtered.length === 0 && (
           <div className="cu-empty">
-            {keyword || tagFilter ? '没有匹配的客户' : '暂无客户数据，请先连接微信'}
+            {hasFilters
+              ? `没有符合条件${
+                  effectiveTag ? `（标签：${effectiveTag}）` : ''
+                }的客户，可点击「清空条件」重新筛选`
+              : '暂无客户数据，请先连接微信'}
           </div>
         )}
       </div>
