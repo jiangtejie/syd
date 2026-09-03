@@ -68,6 +68,10 @@ interface WorkbenchState {
   /** 展开中的问题详情（证据消息时间线） */
   groupActiveDetail: FeedbackIssueDetail | null
   groupDetailLoading: boolean
+  /** 各群 open 问题计数（会话列表徽标） */
+  groupBadges: Record<string, number>
+  /** 定位提示：滚动消息区到指定时间附近（{sessionId, targetMs, nonce}） */
+  scrollHint: { sessionId: string; targetMs: number; nonce: number } | null
 
   /** 发送（T8） */
   sending: boolean
@@ -96,6 +100,12 @@ interface WorkbenchState {
   setGroupIssueStatus: (id: number, status: FeedbackIssueStatus) => Promise<void>
   /** 清理群问题状态（切到非群会话/换账号时） */
   resetGroupState: () => void
+  /** 刷新各群 open 计数（会话列表徽标） */
+  refreshGroupBadges: () => Promise<void>
+  /** 把指定成员标记/取消为团队客服（本地即时生效，重载消息后持久一致） */
+  setMsgSenderTeam: (username: string, on: boolean) => Promise<void>
+  /** 定位到某问题发生时间附近：切群 + 加载历史直到覆盖目标时间 + 提示消息区滚动 */
+  locateIssueAt: (sessionId: string, targetMs: number) => Promise<void>
   /** 页面导航 */
   setPage: (page: WorkbenchPage) => void
   /** 从客户页/看板跳转到指定会话（切到对话页并选中） */
@@ -141,6 +151,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   groupDays: 2,
   groupActiveDetail: null,
   groupDetailLoading: false,
+  groupBadges: {},
+  scrollHint: null,
 
   sending: false,
   sendResult: null,
@@ -157,6 +169,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
             fallbackReason: null,
             loading: false
           })
+          void get().refreshGroupBadges()
           return
         }
         set({
@@ -205,6 +218,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       console.error('[workbench] load messages failed', e)
       set({ messages: [], loading: false, messagesHasMore: false, nextCursor: null })
     }
+    void get().refreshGroupBadges()
   },
 
   refreshSessions: async () => {
@@ -213,6 +227,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const res = await wxApi.getSessions(wxid)
     if (res.ok && res.sessions) {
       set({ sessions: res.sessions })
+      void get().refreshGroupBadges()
     }
   },
 
@@ -314,6 +329,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const res = await issueApi?.listGroup(wxid, activeSessionId).catch(() => null)
     if (get().activeSessionId !== activeSessionId) return
     if (res?.ok && res.issues) set({ groupIssues: res.issues as FeedbackIssue[] })
+    void get().refreshGroupBadges()
   },
 
   openGroupIssue: async (id: number | null) => {
@@ -359,6 +375,51 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       groupActiveDetail: null,
       groupDetailLoading: false
     })
+  },
+
+  refreshGroupBadges: async () => {
+    const { wxid, source } = get()
+    if (source !== 'wx' || !wxid || !issueApi) return
+    const res = await issueApi.groupBadges(wxid).catch(() => null)
+    if (res?.ok && res.badges) set({ groupBadges: res.badges })
+  },
+
+  setMsgSenderTeam: async (username: string, on: boolean) => {
+    const { wxid } = get()
+    if (!wxid || !username) return
+    const teamApi = window.api?.cs?.team
+    const res = on
+      ? await teamApi?.save(wxid, username).catch(() => null)
+      : await teamApi?.remove(wxid, username).catch(() => null)
+    if (!res?.ok) {
+      toast.error(res?.error || '操作失败')
+      return
+    }
+    // 本地即时生效；下次会话加载（enrich）后全量一致
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.senderUsername === username ? { ...m, senderIsTeam: on } : m
+      )
+    }))
+    toast.success(on ? '已标记为团队客服（全局生效）' : '已移出团队客服')
+  },
+
+  locateIssueAt: async (sessionId: string, targetMs: number) => {
+    const { wxid, page } = get()
+    if (!wxid) return
+    if (page !== 'chat' || get().activeSessionId !== sessionId) {
+      await get().selectSession(sessionId)
+      get().setPage('chat')
+    }
+    // 逐页加载更早消息，直到最旧消息不晚于目标时间（上限 15 页防爆）
+    for (let i = 0; i < 15; i++) {
+      const { messages, messagesHasMore, nextCursor, loadingOlder } = get()
+      if (messages.length === 0) break
+      if (messages[0].createTime <= targetMs) break
+      if (!messagesHasMore || !nextCursor || loadingOlder) break
+      await get().loadOlder()
+    }
+    set({ scrollHint: { sessionId, targetMs, nonce: Date.now() } })
   },
 
   loadOlder: async () => {

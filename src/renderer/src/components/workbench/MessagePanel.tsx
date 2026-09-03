@@ -197,7 +197,11 @@ const MessageBubble = memo(function MessageBubble({
   sessionName: string
   sessionUsername: string
   onOpenAttachment: (att: Attachment) => void
-  onContextMenu: (e: React.MouseEvent, text: string) => void
+  onContextMenu: (
+    e: React.MouseEvent,
+    text: string,
+    sender?: { username: string; isTeam: boolean }
+  ) => void
 }): React.JSX.Element {
   const isImage = message.localType === 3
   const isEmoji = message.localType === 47 && !!message.emojiCdnUrl
@@ -310,7 +314,15 @@ const MessageBubble = memo(function MessageBubble({
   return (
     <div
       className={`wb-msg ${message.isSend ? 'is-send' : 'is-recv'}`}
-      onContextMenu={(e) => onContextMenu(e, copyText)}
+      onContextMenu={(e) =>
+        onContextMenu(
+          e,
+          copyText,
+          !message.isSend && message.senderUsername
+            ? { username: message.senderUsername, isTeam: !!message.senderIsTeam }
+            : undefined
+        )
+      }
     >
       <Avatar
         name={avatarName}
@@ -319,7 +331,12 @@ const MessageBubble = memo(function MessageBubble({
         onUrlError={isRecv ? () => setRecvUrlFailed(true) : undefined}
       />
       <div className="wb-msg-main">
-        {showSenderName && <div className="wb-msg-sender">{message.senderNickname}</div>}
+        {showSenderName && (
+          <div className="wb-msg-sender">
+            {message.senderNickname}
+            {message.senderIsTeam && <em className="wb-msg-sender-team">团队客服</em>}
+          </div>
+        )}
         <div className="wb-msg-bubble">
           {message.quotedContent && (
             <div className="wb-msg-quote">
@@ -452,11 +469,24 @@ function MessagePanel(): React.JSX.Element {
 
   const activeSession = sessions.find((s) => s.username === activeSessionId) || null
 
-  const handleContextMenu = useCallback((e: React.MouseEvent, text: string): void => {
-    if (!text) return
-    e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY, text })
-  }, [])
+  const handleContextMenu = useCallback(
+    (
+      e: React.MouseEvent,
+      text: string,
+      sender?: { username: string; isTeam: boolean }
+    ): void => {
+      if (!text && !sender) return
+      e.preventDefault()
+      setCtxMenu({
+        x: e.clientX,
+        y: e.clientY,
+        text,
+        senderUsername: sender?.username,
+        senderIsTeam: sender?.isTeam
+      })
+    },
+    []
+  )
 
   // 切换会话：清空草稿 + 标记“消息加载完成后滚到底部”（消息是异步加载，此刻滚动无意义）
   useEffect(() => {
@@ -479,6 +509,33 @@ function MessagePanel(): React.JSX.Element {
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
     if (nearBottom) el.scrollTop = el.scrollHeight
   }, [messages])
+
+  // 「在聊天中定位」：滚动到目标时间对应消息并短暂高亮
+  const scrollHint = useWorkbenchStore((s) => s.scrollHint)
+  useEffect(() => {
+    if (!scrollHint) return
+    if (activeSessionId !== scrollHint.sessionId) return
+    const el = bodyRef.current
+    if (!el || messages.length === 0) {
+      useWorkbenchStore.setState({ scrollHint: null })
+      return
+    }
+    const items = el.querySelectorAll<HTMLElement>('.wb-msg')
+    let lastIdx = -1
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].createTime <= scrollHint.targetMs) lastIdx = i
+      else break
+    }
+    const target = lastIdx >= 0 ? Math.min(lastIdx + 1, items.length - 1) : 0
+    const node = items[target]
+    if (node) {
+      node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      node.classList.add('wb-msg-flash')
+      window.setTimeout(() => node.classList.remove('wb-msg-flash'), 2400)
+    }
+    useWorkbenchStore.setState({ scrollHint: null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollHint, activeSessionId, messages])
 
   const handleSend = (): void => {
     const text = draft.trim()

@@ -1579,3 +1579,69 @@
   font-size: 11px;
   color: var(--text-3);
 }
+
+/* 会话列表「待办问题」徽标（群） */
+.wb-issue-badge {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: var(--r-pill);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+/* 气泡发送人「团队客服」标记 */
+.wb-msg-sender-team {
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 13px;
+  padding: 0 5px;
+  margin-left: 5px;
+  border-radius: var(--r-pill);
+  background: var(--success-soft);
+  color: var(--success-strong);
+  vertical-align: 1px;
+}
+
+/* 定位消息短暂高亮 */
+.wb-msg-flash {
+  animation: wb-flash 2.2s ease-out;
+}
+
+@keyframes wb-flash {
+  0%,
+  30% {
+    background: var(--warn-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* 群问题折叠分组 */
+.gip-fold {
+  margin-top: 6px;
+}
+
+.gip-fold-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--bg);
+  border: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.gip-fold-btn:hover {
+  background: var(--bg-hover);
+}

@@ -9,8 +9,9 @@ import type {
 /**
  * 群问题面板（右栏「群问题」视图，仅群会话展示）。
  * 数据：issue_feedback（与看板同源同状态）。
- * 交互：表格列出该群待运营问题 → 点行展开「证据消息时间线」（首现 → 最新）
- *       → 状态流转 open/done/stalled（已解决可重新打开），处理结果与看板同步。
+ * 结构：待处理(open) 为主列表；已处理(done/stalled) 与 已忽略/归档(archived) 各自折叠收纳。
+ * 交互：点行展开证据时间线（首现→最新）；处理/重开/搁置/误报忽略；自动闭环(检测到客服回复)有徽标；
+ *      可从展开区一键「在聊天中定位」。
  */
 
 const STATUS_LABEL: Record<FeedbackIssueStatus, string> = {
@@ -21,6 +22,7 @@ const STATUS_LABEL: Record<FeedbackIssueStatus, string> = {
 }
 
 const DAYS_OPTIONS = [1, 2, 3, 7]
+const DAYS_KEY = 'cs.gipDays'
 
 function fmtTime(ts: number): string {
   const d = new Date(ts)
@@ -34,30 +36,34 @@ function fmtTime(ts: number): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${hhmm}`
 }
 
-/** 面板头部动作按钮（展开区内） */
-function StatusActions({
-  issue,
-  compact
-}: {
-  issue: FeedbackIssue | FeedbackIssueDetail
-  compact?: boolean
-}): React.JSX.Element {
+/** 展开区状态操作 */
+function StatusActions({ issue }: { issue: FeedbackIssue | FeedbackIssueDetail }): React.JSX.Element {
   const setStatus = useWorkbenchStore((s) => s.setGroupIssueStatus)
   const st = issue.status
   const act = (status: FeedbackIssueStatus): void => {
     void setStatus(issue.id, status)
   }
   return (
-    <div className={`gip-actions${compact ? ' is-compact' : ''}`}>
+    <div className="gip-actions">
       {(st === 'open' || st === 'stalled') && (
         <button type="button" className="gip-btn primary" onClick={() => act('done')}>
           ✓ 标记已解决
         </button>
       )}
       {st === 'open' && (
-        <button type="button" className="gip-btn" onClick={() => act('stalled')}>
-          暂搁置
-        </button>
+        <>
+          <button type="button" className="gip-btn" onClick={() => act('stalled')}>
+            暂搁置
+          </button>
+          <button
+            type="button"
+            className="gip-btn ghost"
+            title="误报/无需处理：归档后同一问题不再提醒"
+            onClick={() => act('archived')}
+          >
+            不是问题
+          </button>
+        </>
       )}
       {(st === 'done' || st === 'stalled' || st === 'archived') && (
         <button type="button" className="gip-btn" onClick={() => act('open')}>
@@ -68,31 +74,36 @@ function StatusActions({
   )
 }
 
-/** 展开详情：摘要 + 证据消息时间线（问题从始至终） */
+/** 展开详情：摘要 + 证据时间线 + 状态说明与操作 */
 function IssueTimeline({
   detail,
-  issue
+  issue,
+  onLocate
 }: {
   detail: FeedbackIssueDetail | null
   issue: FeedbackIssue
+  onLocate: (ts: number) => void
 }): React.JSX.Element {
   const msgs = detail?.related ?? []
+  const cur = detail ?? issue
   return (
     <div className="gip-detail">
-      {issue.summary && <div className="gip-summary">{issue.summary}</div>}
+      {cur.summary && <div className="gip-summary">{cur.summary}</div>}
       <div className="gip-tl-caption">
         问题过程 · {msgs.length} 条消息
-        <span className="gip-method">{issue.method === 'llm' ? 'AI 提炼' : '规则匹配'}</span>
-        {issue.occurAt ? <span className="gip-when">首现 {fmtTime(issue.occurAt)}</span> : null}
+        <span className="gip-method">{cur.method === 'llm' ? 'AI 提炼' : '规则匹配'}</span>
+        {cur.occurAt ? <span className="gip-when">首现 {fmtTime(cur.occurAt)}</span> : null}
       </div>
       <div className="gip-tl">
         {msgs.length === 0 && <div className="gip-empty">无关联消息记录</div>}
         {msgs.map((m, i) => (
-          <div key={i} className={`gip-tl-item${m.isSend ? ' is-my' : ''}`}>
+          <div key={i} className={`gip-tl-item${m.isSend || m.senderIsTeam ? ' is-my' : ''}`}>
             <span className="gip-tl-dot" />
             <div className="gip-tl-body">
               <div className="gip-tl-head">
-                <b>{m.isSend ? `我方 · ${m.senderName}` : m.senderName}</b>
+                <b>
+                  {m.isSend ? `我方 · ${m.senderName}` : m.senderIsTeam ? `团队 · ${m.senderName}` : m.senderName}
+                </b>
                 <time>{fmtTime(m.time)}</time>
                 {i === 0 && <em className="gip-tag-mark">首现</em>}
                 {i === msgs.length - 1 && msgs.length > 1 && <em className="gip-tag-mark">最新</em>}
@@ -103,8 +114,20 @@ function IssueTimeline({
         ))}
       </div>
       <div className="gip-detail-foot">
-        <StatusActions issue={detail ?? issue} />
-        <span className="gip-sync">处理结果与看板「问题反馈」同步</span>
+        <StatusActions issue={cur} />
+        <button
+          type="button"
+          className="gip-btn ghost"
+          onClick={() => onLocate(cur.occurAt)}
+          title="切到该群聊天并滚动到问题发生时间附近"
+        >
+          ◎ 在聊天中定位
+        </button>
+        <span className="gip-sync">
+          {cur.autoDone && cur.status === 'done'
+            ? '系统检测到客服已回复，自动关闭（可重新打开复核）'
+            : '处理结果与看板「问题反馈」同步'}
+        </span>
       </div>
     </div>
   )
@@ -122,20 +145,43 @@ function GroupIssuesPanel(): React.JSX.Element {
   const detailLoading = useWorkbenchStore((s) => s.groupDetailLoading)
   const analyzeNow = useWorkbenchStore((s) => s.analyzeGroupNow)
   const openDetail = useWorkbenchStore((s) => s.openGroupIssue)
+  const locateIssueAt = useWorkbenchStore((s) => s.locateIssueAt)
+  const activeSessionId = useWorkbenchStore((s) => s.activeSessionId)
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [collapsed, setCollapsed] = useState<{ history: boolean; ignored: boolean }>({
+    history: true,
+    ignored: true
+  })
 
   // 切换会话时收起展开态（防旧展开行错位到新群）
-  const activeSessionId = useWorkbenchStore((s) => s.activeSessionId)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话切换时同步复位 UI（全仓同款模式）
     setExpandedId(null)
   }, [activeSessionId])
 
-  const counts = useMemo(() => {
-    const open = issues.filter((i) => i.status === 'open').length
-    const done = issues.filter((i) => i.status === 'done').length
-    const stalled = issues.filter((i) => i.status === 'stalled').length
-    return { open, done, stalled, all: issues.length }
+  // 记忆分析窗口（localStorage），首次挂载与已记忆值不同步时生效
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(DAYS_KEY))
+      if (Number.isInteger(saved) && saved >= 1 && saved <= 7 && saved !== days) {
+        setDays(saved)
+      }
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const groups = useMemo(() => {
+    const open: FeedbackIssue[] = []
+    const history: FeedbackIssue[] = []
+    const ignored: FeedbackIssue[] = []
+    for (const it of issues) {
+      if (it.status === 'open') open.push(it)
+      else if (it.status === 'archived') ignored.push(it)
+      else history.push(it)
+    }
+    return { open, history, ignored }
   }, [issues])
 
   const toggle = (id: number): void => {
@@ -145,11 +191,72 @@ function GroupIssuesPanel(): React.JSX.Element {
     else void openDetail(null)
   }
 
+  const locate = (ts: number): void => {
+    if (activeSessionId) void locateIssueAt(activeSessionId, ts)
+  }
+
   const methodHint = issues.find((i) => i.method === 'llm')
     ? 'AI 提炼'
     : issues.find((i) => i.method === 'rule')
       ? '规则匹配'
       : ''
+
+  /** 单组问题列表（行 + 展开详情） */
+  const renderList = (rows: FeedbackIssue[], stateLabel: string): React.JSX.Element => (
+    <div className="gip-table">
+      <div className="gip-tr gip-th">
+        <span className="gip-cell-st">{stateLabel}</span>
+        <span className="gip-cell-main">问题（点击展开完整过程）</span>
+        <span className="gip-cell-x">展开</span>
+      </div>
+      {rows.map((it) => {
+        const expanded = expandedId === it.id
+        const detail = activeDetail && activeDetail.id === it.id ? activeDetail : null
+        const stLabel =
+          it.status === 'done' && it.autoDone
+            ? '自动解决'
+            : (STATUS_LABEL[it.status] ?? it.status)
+        return (
+          <div key={it.id}>
+            <div
+              className={`gip-tr gip-row${expanded ? ' is-expanded' : ''}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => toggle(it.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  toggle(it.id)
+                }
+              }}
+            >
+              <span className={`gip-cell-st gip-st is-${it.status}`}>{stLabel}</span>
+              <span className="gip-cell-main">
+                <span className="gip-title-line">
+                  <i className={`gip-type t-${it.type}`}>{it.type}</i>
+                  <b>{it.title}</b>
+                </span>
+                <span className="gip-sub-line">
+                  首现 {fmtTime(it.occurAt)} · 证据 {it.msgCount} 条
+                  {it.method === 'llm' ? ' · AI 提炼' : ' · 规则'}
+                </span>
+              </span>
+              <span className="gip-cell-x gip-caret">{expanded ? '▾' : '▸'}</span>
+            </div>
+            {expanded && (
+              <div className="gip-detail-wrap">
+                {detailLoading && !detail ? (
+                  <div className="gip-empty-box">加载证据中…</div>
+                ) : (
+                  <IssueTimeline detail={detail} issue={it} onLocate={locate} />
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
 
   return (
     <div className="gip">
@@ -164,7 +271,15 @@ function GroupIssuesPanel(): React.JSX.Element {
             className="gip-select"
             value={days}
             title="分析窗口（自然日）：切窗后立即按新窗口重新分析"
-            onChange={(e) => setDays(Number(e.target.value))}
+            onChange={(e) => {
+              const d = Number(e.target.value)
+              setDays(d)
+              try {
+                localStorage.setItem(DAYS_KEY, String(d))
+              } catch {
+                /* ignore */
+              }
+            }}
           >
             {DAYS_OPTIONS.map((d) => (
               <option key={d} value={d}>
@@ -185,10 +300,15 @@ function GroupIssuesPanel(): React.JSX.Element {
 
       {/* 统计 */}
       <div className="gip-stats">
-        <span className="gip-stat is-open">待处理 {counts.open}</span>
-        <span className="gip-stat is-done">已解决 {counts.done}</span>
-        {counts.stalled > 0 && <span className="gip-stat is-stalled">已搁置 {counts.stalled}</span>}
-        <span className="gip-stat">共 {counts.all}</span>
+        <span className="gip-stat is-open">待处理 {groups.open.length}</span>
+        <span className="gip-stat is-done">
+          已解决 {issues.filter((i) => i.status === 'done').length}
+        </span>
+        {groups.history.some((i) => i.status === 'stalled') && (
+          <span className="gip-stat is-stalled">
+            已搁置 {groups.history.filter((i) => i.status === 'stalled').length}
+          </span>
+        )}
         {(analyzedAt || methodHint) && (
           <span className="gip-meta">
             {analyzedAt ? `${fmtTime(analyzedAt)} · ` : ''}
@@ -218,58 +338,38 @@ function GroupIssuesPanel(): React.JSX.Element {
         </div>
       )}
 
-      {/* 问题表格 */}
-      {issues.length > 0 && (
-        <div className="gip-table">
-          <div className="gip-tr gip-th">
-            <span className="gip-cell-st">状态</span>
-            <span className="gip-cell-main">问题（点击展开完整过程）</span>
-            <span className="gip-cell-x">展开</span>
-          </div>
-          {issues.map((it) => {
-            const expanded = expandedId === it.id
-            const detail = activeDetail && activeDetail.id === it.id ? activeDetail : null
-            return (
-              <div key={it.id}>
-                <div
-                  className={`gip-tr gip-row${expanded ? ' is-expanded' : ''}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => toggle(it.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      toggle(it.id)
-                    }
-                  }}
-                >
-                  <span className={`gip-cell-st gip-st is-${it.status}`}>
-                    {STATUS_LABEL[it.status] ?? it.status}
-                  </span>
-                  <span className="gip-cell-main">
-                    <span className="gip-title-line">
-                      <i className={`gip-type t-${it.type}`}>{it.type}</i>
-                      <b>{it.title}</b>
-                    </span>
-                    <span className="gip-sub-line">
-                      首现 {fmtTime(it.occurAt)} · 证据 {it.msgCount} 条
-                      {it.method === 'llm' ? ' · AI 提炼' : ' · 规则'}
-                    </span>
-                  </span>
-                  <span className="gip-cell-x gip-caret">{expanded ? '▾' : '▸'}</span>
-                </div>
-                {expanded && (
-                  <div className="gip-detail-wrap">
-                    {detailLoading && !detail ? (
-                      <div className="gip-empty-box">加载证据中…</div>
-                    ) : (
-                      <IssueTimeline detail={detail} issue={it} />
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+      {/* 待处理组 */}
+      {groups.open.length > 0 && renderList(groups.open, '状态')}
+
+      {/* 已处理（折叠） */}
+      {groups.history.length > 0 && (
+        <div className="gip-fold">
+          <button
+            type="button"
+            className="gip-fold-btn"
+            onClick={() => setCollapsed((c) => ({ ...c, history: !c.history }))}
+          >
+            <span>
+              已处理（{groups.history.length}）
+            </span>
+            <span className="gip-caret">{collapsed.history ? '▸' : '▾'}</span>
+          </button>
+          {!collapsed.history && renderList(groups.history, '状态')}
+        </div>
+      )}
+
+      {/* 已忽略/归档（折叠） */}
+      {groups.ignored.length > 0 && (
+        <div className="gip-fold">
+          <button
+            type="button"
+            className="gip-fold-btn"
+            onClick={() => setCollapsed((c) => ({ ...c, ignored: !c.ignored }))}
+          >
+            <span>已忽略 / 归档（{groups.ignored.length}）</span>
+            <span className="gip-caret">{collapsed.ignored ? '▸' : '▾'}</span>
+          </button>
+          {!collapsed.ignored && renderList(groups.ignored, '状态')}
         </div>
       )}
 

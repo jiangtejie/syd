@@ -56,6 +56,10 @@ const SessionItem = memo(function SessionItem({
 }): React.JSX.Element {
   const name = session.displayName || session.username
   const { avatarUrl, markUrlFailed } = useSessionAvatar(session)
+  // 群会话「待运营问题」计数（右栏群问题分析的 open 问题）
+  const issueOpen = useWorkbenchStore((s) =>
+    session.isGroup ? (s.groupBadges[session.username] ?? 0) : 0
+  )
   // 仅屏蔽当前 URL 的加载失败；头像源变更（如本地兜底）后可自动重试
   const [broken, setBroken] = useState<string | null>(null)
   const showImg = !!avatarUrl && /^(https?:|data:image)/.test(avatarUrl) && broken !== avatarUrl
@@ -100,6 +104,14 @@ const SessionItem = memo(function SessionItem({
             )}
             {session.isGroup && <span className="wb-group-tag">群</span>}
             {name}
+            {issueOpen > 0 && (
+              <span
+                className="wb-issue-badge"
+                title={`${issueOpen} 个问题待运营处理（点击进入，右侧「群问题」查看）`}
+              >
+                {issueOpen > 99 ? '99+' : issueOpen} 待办
+              </span>
+            )}
           </span>
           <span className="wb-session-time">{formatSessionTime(sessionTime)}</span>
         </div>
