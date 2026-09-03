@@ -1,9 +1,11 @@
 import { getConfig } from '../../db/repos/config'
+import { openSecret } from '../secrets'
 
 /**
  * LLM Provider 抽象（T7，方案 §4.4 AI 生成层）。
  * 支持任意 OpenAI 兼容接口（/chat/completions），配置存 app_config：
  *   ai.baseUrl  ai.apiKey  ai.model  ai.enabled
+ * ai.apiKey 落库为 safeStorage 密文（enc1: 前缀），读取时在此统一解密；明文形态兼容。
  */
 
 export interface AiProvider {
@@ -21,7 +23,7 @@ export interface ProviderConfig {
 
 export function readProviderConfig(): ProviderConfig {
   const baseUrl = (getConfig('ai.baseUrl') || 'https://api.openai.com/v1').replace(/\/+$/, '')
-  const apiKey = getConfig('ai.apiKey') || ''
+  const apiKey = openSecret(getConfig('ai.apiKey'))
   const model = getConfig('ai.model') || 'gpt-4o-mini'
   const enabled = getConfig('ai.enabled') === '1' || getConfig('ai.enabled') === 'true'
   return { baseUrl, apiKey, model, enabled }

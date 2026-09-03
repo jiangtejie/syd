@@ -18,6 +18,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getDb, closeDb } from './db/database'
 import { getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
+import { migrateStoredSecrets } from './services/secrets'
 import { listTables } from './db/schema'
 import { getConfigBoolean } from './db/repos/config'
 import { registerKeyStoreHandlers } from './ipc/keyStoreHandlers'
@@ -90,7 +91,7 @@ function registerMediaProtocol(): void {
       if (seg.length !== 2) return new Response('Not found', { status: 404 })
       const wxid = decodeURIComponent(seg[0])
       const name = decodeURIComponent(seg[1])
-      if (!/^[a-zA-Z0-9_@.\-]+$/.test(wxid)) return new Response('Forbidden', { status: 403 })
+      if (!/^[a-zA-Z0-9_@.-]+$/.test(wxid)) return new Response('Forbidden', { status: 403 })
       if (!/^[0-9a-f]{32}_[a-z0-9]+\.(jpe?g|png|gif|webp|mp4|mkv|avi|mov|m4v)$/i.test(name)) {
         return new Response('Forbidden', { status: 403 })
       }
@@ -283,6 +284,9 @@ if (!app.requestSingleInstanceLock()) {
 
     // 缓存目录规范化：迁移历史 wx-plain → db（幂等，启动时执行一次）
     migrateLegacyCacheLayout()
+
+    // 敏感配置迁移：存量明文 ai.apiKey 加封为 safeStorage 密文（幂等）
+    migrateStoredSecrets(['ai.apiKey'])
 
     // 注册 IPC handlers
     registerKeyStoreHandlers()
