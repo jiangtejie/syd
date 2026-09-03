@@ -477,3 +477,11 @@ select.st-input {
   color: var(--text-4);
   text-align: center;
 }
+
+/* 智能体增强行内说明 */
+.st-agent-row .st-hint-inline {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.5;
+  margin-left: 6px;
+}

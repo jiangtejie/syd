@@ -57,11 +57,19 @@ const api = {
     },
     ai: {
       generateReply: (
+        wxid: string,
+        sessionId: string,
         sessionName: string,
         messages: ChatMessage[],
         opts?: AiGenOptions
-      ): Promise<{ ok: boolean; candidates?: ReplyCandidate[]; llm?: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:ai:generateReply', sessionName, messages, opts),
+      ): Promise<{
+        ok: boolean
+        candidates?: ReplyCandidate[]
+        llm?: boolean
+        error?: string
+        toolsUsed?: string[]
+      }> =>
+        ipcRenderer.invoke('cs:ai:generateReply', wxid, sessionId, sessionName, messages, opts),
       test: (input?: {
         baseUrl?: string
         apiKey?: string

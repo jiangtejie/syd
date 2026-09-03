@@ -7,13 +7,18 @@ import type {
 } from '../../../shared/types'
 import { createAiProvider, type AiProvider } from './provider'
 import { getAgentById, getDefaultAgent } from '../../db/repos/agentRepo'
+import { getConfig } from '../../db/repos/config'
+import { runSuggestionAgent, toolsInstructionText } from './agentLoop'
+import { collectLocalFacts } from './agentTools'
 
 /**
  * AI 建议生成（T7，方案 §4.4）。
- * 输入：会话上下文（最近消息）→ 输出 1~3 条候选（ai_free，由 LLM 通道生成）。
- * 仅依赖 LLM：AI 未启用 / 未配置 Key / 生成失败时不产出任何候选，返回提示由 UI 引导，
- * 不再返回内置固定话术（原 kb_direct 示例模板与兜底底稿已随「去除模拟数据」移除，
- * 真实知识库命中待 knowledge_item 接入后另行实现）。
+ * 输入：会话上下文（最近消息）+ 智能体人设 + 本地事实背景（群问题/团队客服）→ 输出 1~3 条候选。
+ *
+ * Agent 增强（默认开，ai.agent=0 可关）：
+ * - 本地已知背景直接注入（零额外调用）；
+ * - 模型认为需要时可用只读工具（读本群问题/搜历史问题/团队名单）再出候选（多一轮往返）；
+ * - 工具面全只读、轮数封顶；AI 未启用/未配置 Key/生成失败时不产出候选并返回提示（不返回内置话术）。
  */
 
 /** 风格映射：提示 LLM 的话术要求 */
@@ -29,7 +34,7 @@ const CONTEXT_TAIL = 30
 export function buildContextText(messages: ChatMessage[], sessionName: string): string {
   const tail = messages.slice(-CONTEXT_TAIL)
   const lines = tail.map((m) => {
-    const who = m.isSend ? '我方' : m.senderUsername === sessionName ? '客户' : m.senderUsername
+    const who = m.isSend ? '我方' : m.senderNickname || m.senderUsername || sessionName
     const content = m.parsedContent || m.rawContent
     return `${who}: ${content}`
   })
@@ -77,11 +82,40 @@ function parseCandidates(raw: string): ReplyCandidate[] | null {
   }
 }
 
+/** 组装用户提示词（会话对象 + 本地事实背景 + 聊天记录 + 输出要求） */
+function buildUserPrompt(
+  sessionName: string,
+  messages: ChatMessage[],
+  style: AiStyle,
+  agent: AiAgent | undefined,
+  facts: string,
+  withTools: boolean
+): string {
+  const context = buildContextText(messages, sessionName)
+  const parts = [
+    `会话对象：${sessionName}`,
+    agent ? '' : `话术风格：${STYLE_PROMPT[style]}`,
+    facts ? `本地已知背景（已为你查好，无需重复调用工具）：\n${facts}` : '',
+    '以下是最近聊天记录（我方为客服方；群里「我方同事」的发言也是我方人员，不应视为客户诉求）：',
+    '```',
+    context,
+    '```',
+    '请基于最后一条客户消息生成回复候选。',
+    withTools
+      ? '若背景或聊天记录不足以判断（例如需要查该客户/该群历史问题），可先请求工具：\n' +
+        toolsInstructionText()
+      : '直接输出候选 JSON 数组。'
+  ]
+  return parts.filter((x) => x !== '').join('\n')
+}
+
 export async function generateSuggestions(
+  wxid: string,
+  sessionId: string,
   sessionName: string,
   messages: ChatMessage[],
   opts: AiGenOptions = {}
-): Promise<{ candidates: ReplyCandidate[]; llm: boolean; error?: string }> {
+): Promise<{ candidates: ReplyCandidate[]; llm: boolean; error?: string; toolsUsed?: string[] }> {
   const style = opts.style ?? 'warm'
   // 智能体解析：指定 id → 无效回退默认；未指定也使用默认（人设应全局生效）
   const agent = (opts.agentId ? getAgentById(opts.agentId) : undefined) ?? getDefaultAgent()
@@ -104,27 +138,45 @@ export async function generateSuggestions(
     return { candidates: [], llm: false }
   }
 
-  const context = buildContextText(messages, sessionName)
-  // agent 已带风格时不再重复注入风格行
-  const userPrompt = [
-    `会话对象：${sessionName}`,
-    agent ? '' : `话术风格：${STYLE_PROMPT[style]}`,
-    '以下是最近聊天记录（我方为客服方）：',
-    '```',
-    context,
-    '```',
-    '请基于最后一条客户消息生成回复候选，输出 JSON 数组。'
-  ]
-    .filter((x) => x !== '')
-    .join('\n')
   const system = agent ? buildSystemForAgent(agent) : SYSTEM_PROMPT
+  const agentEnabled = getConfig('ai.agent') !== '0'
+  // 本地已知背景（零 LLM 成本：群 open 问题 + 团队客服名单）
+  const facts = agentEnabled ? collectLocalFacts({ wxid, sessionId }) : ''
+  const userPrompt = buildUserPrompt(sessionName, messages, style, agent, facts, agentEnabled)
+
+  if (!agentEnabled) {
+    try {
+      const raw = await provider.complete(system, userPrompt, { maxTokens: 1024 })
+      const ai = parseCandidates(raw)
+      if (ai && ai.length > 0) return { candidates: ai, llm: true }
+      return { candidates: [], llm: true, error: 'AI 未返回有效候选，请点击重新生成或稍后重试' }
+    } catch (e) {
+      console.warn('[ai] llm generate failed', e)
+      const detail = e instanceof Error ? e.message : String(e)
+      return { candidates: [], llm: false, error: `AI 生成失败：${detail}` }
+    }
+  }
+
+  // Agent 增强：可选只读工具轮
   try {
-    const raw = await provider.complete(system, userPrompt, { maxTokens: 1024 })
-    const ai = parseCandidates(raw)
-    if (ai && ai.length > 0) return { candidates: ai, llm: true }
-    return { candidates: [], llm: true, error: 'AI 未返回有效候选，请点击重新生成或稍后重试' }
+    const run = await runSuggestionAgent({
+      ctx: { wxid, sessionId },
+      system,
+      userPrompt,
+      complete: (s, u, o) => provider.complete(s, u, o),
+      onEvent: (evt) => console.info('[ai] agent tool:', evt.name)
+    })
+    const ai = parseCandidates(run.text)
+    if (ai && ai.length > 0) {
+      return { candidates: ai, llm: true, toolsUsed: run.toolsUsed }
+    }
+    return {
+      candidates: [],
+      llm: true,
+      error: 'AI 未返回有效候选，请点击重新生成或稍后重试'
+    }
   } catch (e) {
-    console.warn('[ai] llm generate failed', e)
+    console.warn('[ai] agent generate failed', e)
     const detail = e instanceof Error ? e.message : String(e)
     return { candidates: [], llm: false, error: `AI 生成失败：${detail}` }
   }

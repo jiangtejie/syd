@@ -447,14 +447,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   generateSuggestions: async () => {
-    const { activeSessionId, sessions, messages, agentId } = get()
-    if (!activeSessionId || messages.length === 0) return
+    const { wxid, activeSessionId, sessions, messages, agentId } = get()
+    if (!wxid || !activeSessionId || messages.length === 0) return
     const session = sessions.find((s) => s.username === activeSessionId)
     const sessionName = session?.displayName || session?.nickname || session?.remark || activeSessionId
     set({ suggestLoading: true, suggestError: null, chosenText: null })
     try {
       if (aiApi) {
-        const res = await aiApi.generateReply(sessionName, messages, {
+        const res = await aiApi.generateReply(wxid, activeSessionId, sessionName, messages, {
           agentId: agentId ?? undefined
         })
         // 防竞态：生成期间用户切走了会话则丢弃结果

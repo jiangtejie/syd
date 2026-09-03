@@ -33,6 +33,7 @@ type AiReplyResult = {
   candidates?: ReplyCandidate[]
   llm?: boolean
   error?: string
+  toolsUsed?: string[]
 }
 
 declare global {
@@ -87,6 +88,8 @@ declare global {
         }
         ai: {
           generateReply: (
+            wxid: string,
+            sessionId: string,
             sessionName: string,
             messages: ChatMessage[],
             opts?: AiGenOptions

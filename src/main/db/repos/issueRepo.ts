@@ -219,8 +219,7 @@ export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }
 }
 
 /** 按群列出问题（工作台「群问题」视图；open 优先，其次发生时间倒序） */
-export function listIssuesByGroup(wxid: string, groupUsername: string): FeedbackIssue[] {
-  const rows = getDb()
+export function listIssuesByGroup(wxid: string, groupUsername: string): FeedbackIssue[] {  const rows = getDb()
     .prepare(
       `SELECT * FROM issue_feedback WHERE wxid = ? AND group_username = ?
        ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'stalled' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
@@ -282,4 +281,29 @@ export function countByStatus(wxid: string): Partial<Record<FeedbackIssueStatus,
   const out: Partial<Record<FeedbackIssueStatus, number>> = {}
   for (const r of rows) out[r.status as FeedbackIssueStatus] = r.n
   return out
+}
+
+/** 跨群关键词搜索客户问题（标题/摘要 LIKE；排除已归档），供建议 Agent 判断客户历史诉求 */
+export function searchIssues(
+  wxid: string,
+  q: string,
+  limit = 5
+): FeedbackIssue[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM issue_feedback
+       WHERE wxid = ? AND status != 'archived'
+         AND (title LIKE ? OR summary LIKE ?)
+       ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'stalled' THEN 1 ELSE 2 END, occur_at DESC
+       LIMIT ?`
+    )
+    .all(wxid, `%${q}%`, `%${q}%`, limit) as IssueRow[]
+  const msgCountStmt = getDb().prepare(
+    `SELECT COUNT(*) AS n FROM issue_feedback_msg WHERE issue_id = ?`
+  )
+  return rows.map((r) => {
+    const issue = rowToIssue(r)
+    issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
+    return issue
+  })
 }

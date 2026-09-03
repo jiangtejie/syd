@@ -5,18 +5,38 @@ import { listRemoteModels, readProviderConfig, testAiConnection } from '../servi
 
 /**
  * AI 建议生成 IPC（T7）。
- * cs:ai:generateReply(sessionName, messages, opts) → Result<{ candidates, llm, error? }>
- * 消息上下文由渲染端传入，AI 层不依赖微信库；未启用/未配置通道时 candidates 为空且 error 携带引导文案。
+ * cs:ai:generateReply(wxid, sessionId, sessionName, messages, opts) → Result<{ candidates, llm, error? }>
+ * 消息上下文由渲染端传入；wxid/sessionId 供 Agent 增强读取本地事实（群问题/团队名单，全只读）。
+ * 未启用/未配置通道时 candidates 为空且 error 携带引导文案。
  * cs:ai:test({ baseUrl?, apiKey?, model? }) → 用传入/已保存参数测试 OpenAI 兼容通道连通性
  */
 export function registerAiHandlers(): void {
   ipcMain.handle(
     'cs:ai:generateReply',
-    async (_e, sessionName: string, messages: ChatMessage[], opts?: AiGenOptions) => {
+    async (
+      _e,
+      wxid: string,
+      sessionId: string,
+      sessionName: string,
+      messages: ChatMessage[],
+      opts?: AiGenOptions
+    ) => {
       try {
         const list = Array.isArray(messages) ? messages : []
-        const res = await generateSuggestions(sessionName ?? '', list, opts ?? {})
-        return { ok: true, candidates: res.candidates, llm: res.llm, error: res.error } as const
+        const res = await generateSuggestions(
+          wxid ?? '',
+          sessionId ?? '',
+          sessionName ?? '',
+          list,
+          opts ?? {}
+        )
+        return {
+          ok: true,
+          candidates: res.candidates,
+          llm: res.llm,
+          error: res.error,
+          toolsUsed: res.toolsUsed
+        } as const
       } catch (e) {
         console.error('[ai] generateReply failed', e)
         return {

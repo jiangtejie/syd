@@ -16,6 +16,7 @@ interface FormState {
   'ai.baseUrl': string
   'ai.apiKey': string
   'ai.model': string
+  'ai.agent': string
   'send.dailyLimit': string
   'send.humanizeDelay': string
   'inject.enabled': string
@@ -83,6 +84,7 @@ const DEFAULTS: FormState = {
   'ai.baseUrl': 'https://api.openai.com/v1',
   'ai.apiKey': '',
   'ai.model': '',
+  'ai.agent': '1',
   'send.dailyLimit': '200',
   'send.humanizeDelay': '1',
   'inject.enabled': '1',
@@ -500,13 +502,25 @@ function SettingsPage(): React.JSX.Element {
                 'ai.provider',
                 'ai.baseUrl',
                 'ai.apiKey',
-                'ai.model'
+                'ai.model',
+                'ai.agent'
               ])
             }
           >
             保存 AI 配置
           </button>
         </div>
+        <label className="st-row st-agent-row">
+          <span className="st-label">智能体增强</span>
+          <input
+            type="checkbox"
+            checked={boolVal(form['ai.agent'])}
+            onChange={(e) => patch('ai.agent', boolStr(e.target.checked))}
+          />
+          <span className="st-hint-inline">
+            生成建议时自动带上本群待处理问题与团队客服背景；模型必要时可调用只读工具(查历史问题/团队名单)再作答。关闭则仅用聊天记录。
+          </span>
+        </label>
         <div className="st-ai-test">
           {aiTestRes &&
             (aiTestRes.ok ? (
