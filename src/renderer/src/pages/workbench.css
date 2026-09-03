@@ -139,7 +139,7 @@
 }
 
 .wb-session.is-active {
-  background: #e3e8f0;
+  background: #e9f6ee;
   border-left-color: #07c160;
 }
 
@@ -272,10 +272,15 @@
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: #eef2ff;
-  color: #4b6bff;
+  background: #f1f3f5;
+  color: #57606e;
   font-weight: 400;
   flex-shrink: 0;
+}
+
+.wb-tag-danger {
+  background: #fdecec;
+  color: #e5484d;
 }
 
 /* 消息滚动区：flex:1 + min-height:0 才能出现滚动条 */

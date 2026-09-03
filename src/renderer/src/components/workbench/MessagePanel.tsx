@@ -15,7 +15,9 @@ function useAvatar(username?: string, localOnly = false): string | null {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const source = useWorkbenchStore((s) => s.source)
   const cacheKey = username ? (localOnly ? `${username}::local` : username) : ''
-  const [url, setUrl] = useState<string | null>(username ? (avatarCache.get(cacheKey) ?? null) : null)
+  const [url, setUrl] = useState<string | null>(
+    username ? (avatarCache.get(cacheKey) ?? null) : null
+  )
   useEffect(() => {
     let alive = true
     if (!username || source !== 'wx' || !wxid) {
@@ -51,8 +53,14 @@ function useMyAvatar(): string | null {
 }
 
 // 红包状态缓存：会话内一次查询，30s 内复用（对齐 CipherTalk useRedEnvelopeStatus）
-const redEnvelopeCache = new Map<string, { at: number; promise: Promise<Map<string, RedEnvelopeStatus>> }>()
-function loadRedEnvelopeStatuses(wxid: string, sessionId: string): Promise<Map<string, RedEnvelopeStatus>> {
+const redEnvelopeCache = new Map<
+  string,
+  { at: number; promise: Promise<Map<string, RedEnvelopeStatus>> }
+>()
+function loadRedEnvelopeStatuses(
+  wxid: string,
+  sessionId: string
+): Promise<Map<string, RedEnvelopeStatus>> {
   const key = `${wxid}::${sessionId}`
   const hit = redEnvelopeCache.get(key)
   if (hit && Date.now() - hit.at < 30_000) return hit.promise
@@ -67,7 +75,10 @@ function loadRedEnvelopeStatuses(wxid: string, sessionId: string): Promise<Map<s
 }
 
 /** 按 sendId 取红包本地状态（会话内一次查询，30s 缓存） */
-function useRedEnvelopeStatus(sessionId: string, sendId: string | undefined): RedEnvelopeStatus | null {
+function useRedEnvelopeStatus(
+  sessionId: string,
+  sendId: string | undefined
+): RedEnvelopeStatus | null {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const source = useWorkbenchStore((s) => s.source)
   const [status, setStatus] = useState<RedEnvelopeStatus | null>(null)
@@ -101,7 +112,12 @@ function chatRecordText(item: ChatRecordItem): string {
   const body = item.datadesc || item.datatitle
   if (body) return name + body
   const labels: Record<number, string> = {
-    1: '[文本]', 3: '[图片]', 34: '[语音]', 43: '[视频]', 47: '[表情]', 49: '[链接]'
+    1: '[文本]',
+    3: '[图片]',
+    34: '[语音]',
+    43: '[视频]',
+    47: '[表情]',
+    49: '[链接]'
   }
   return name + (labels[item.datatype] || '[消息]')
 }
@@ -174,28 +190,45 @@ function MessageBubble({
   const copyText = isFile ? message.fileName || '' : message.parsedContent
   const { url: imgUrl } = useDecryptImage(isImage ? message.imageMd5 : undefined, 'thumb')
   const [emojiFailed, setEmojiFailed] = useState(false)
-  const redEnvelopeStatus = useRedEnvelopeStatus(sessionUsername, isRedEnvelope ? message.redEnvelopeSendId : undefined)
+  const redEnvelopeStatus = useRedEnvelopeStatus(
+    sessionUsername,
+    isRedEnvelope ? message.redEnvelopeSendId : undefined
+  )
 
   const isRecv = !message.isSend
   const myAvatar = useMyAvatar()
 
   // 接收方身份：群聊=发送人 senderUsername；私聊=会话对方（sessionUsername）
-  const recvIdentity: string | null = isRecv ? (isGroup ? message.senderUsername ?? null : sessionUsername) : null
+  const recvIdentity: string | null = isRecv
+    ? isGroup
+      ? (message.senderUsername ?? null)
+      : sessionUsername
+    : null
   // 群聊发送人 enrich 头像 / 私聊会话头像（可能是远程 URL，失败后走本地 head_image 兜底）
-  const enrichedRecvUrl = isRecv ? (isGroup ? message.senderAvatarUrl : sessionAvatarUrl) : undefined
+  const enrichedRecvUrl = isRecv
+    ? isGroup
+      ? message.senderAvatarUrl
+      : sessionAvatarUrl
+    : undefined
   const [recvUrlFailed, setRecvUrlFailed] = useState(false)
   // 无 enrich URL 时按需 IPC 取（contact URL → head_image）；远程 URL 失败后强制 localOnly 取本地
   const directRecvUrl = useAvatar(recvIdentity && !enrichedRecvUrl ? recvIdentity : undefined)
-  const localRecvUrl = useAvatar(recvIdentity && (!enrichedRecvUrl || recvUrlFailed) ? recvIdentity : undefined, true)
+  const localRecvUrl = useAvatar(
+    recvIdentity && (!enrichedRecvUrl || recvUrlFailed) ? recvIdentity : undefined,
+    true
+  )
 
   // 换消息/换发送人/换会话头像后重置失败标记
-  useEffect(() => setRecvUrlFailed(false), [
-    message.localId,
-    message.senderUsername,
-    message.senderAvatarUrl,
-    sessionAvatarUrl,
-    sessionUsername
-  ])
+  useEffect(
+    () => setRecvUrlFailed(false),
+    [
+      message.localId,
+      message.senderUsername,
+      message.senderAvatarUrl,
+      sessionAvatarUrl,
+      sessionUsername
+    ]
+  )
 
   // 头像与昵称：群聊且接收 → 发送人昵称/头像；私聊接收 → 会话头像/名；发送 → “我”
   const avatarName = isRecv
@@ -292,7 +325,9 @@ function MessageBubble({
             >
               <span className="wb-msg-video-icon">🎬</span>
               {message.videoDuration !== undefined && (
-                <span className="wb-msg-video-dur">{formatVideoDuration(message.videoDuration)}</span>
+                <span className="wb-msg-video-dur">
+                  {formatVideoDuration(message.videoDuration)}
+                </span>
               )}
             </div>
           ) : isChatHistory ? (
@@ -304,7 +339,9 @@ function MessageBubble({
                 </div>
               ))}
               {message.chatRecordList!.length > 4 && (
-                <div className="wb-msg-chathistory-more">… 共 {message.chatRecordList!.length} 条</div>
+                <div className="wb-msg-chathistory-more">
+                  … 共 {message.chatRecordList!.length} 条
+                </div>
               )}
             </div>
           ) : isFile ? (
@@ -416,7 +453,9 @@ function MessagePanel(): React.JSX.Element {
         <span className="wb-chat-name">{activeSession.displayName || activeSession.username}</span>
         {activeSession.isWeCom && <span className="wb-tag">企微</span>}
         {activeSession.isOfficialAccount && <span className="wb-tag">公众号</span>}
-        {activeSession.unreadCount > 0 && <span className="wb-tag">{activeSession.unreadCount} 条未读</span>}
+        {activeSession.unreadCount > 0 && (
+          <span className="wb-tag wb-tag-danger">{activeSession.unreadCount} 条未读</span>
+        )}
       </div>
       <div className="wb-chat-body" ref={bodyRef}>
         {loading && messages.length === 0 ? (
@@ -440,7 +479,9 @@ function MessagePanel(): React.JSX.Element {
               const showDivider = !prev || needTimeDivider(prev.createTime, m.createTime)
               return (
                 <div key={m.localId || `${m.serverSeq}-${m.sortSeq}`}>
-                  {showDivider && <div className="wb-time-divider">{formatTimeDivider(m.createTime)}</div>}
+                  {showDivider && (
+                    <div className="wb-time-divider">{formatTimeDivider(m.createTime)}</div>
+                  )}
                   <MessageBubble
                     message={m}
                     isGroup={activeSession.isGroup}

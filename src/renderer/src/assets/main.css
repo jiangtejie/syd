@@ -15,6 +15,7 @@ body,
 body {
   overflow: hidden;
   user-select: none;
+  color: #1f2329;
   background: #f5f6f7;
   font-family:
     system-ui,
@@ -25,4 +26,13 @@ body {
     'PingFang SC',
     'Microsoft YaHei',
     sans-serif;
+}
+
+/* 浅色 UI 的正文基调；深色区（如左侧导航）各自显式覆盖文字色 */
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
 }
