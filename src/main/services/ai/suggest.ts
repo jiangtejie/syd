@@ -119,7 +119,7 @@ export async function generateSuggestions(
     .join('\n')
   const system = agent ? buildSystemForAgent(agent) : SYSTEM_PROMPT
   try {
-    const raw = await provider.complete(system, userPrompt, { maxTokens: 500 })
+    const raw = await provider.complete(system, userPrompt, { maxTokens: 1024 })
     const ai = parseCandidates(raw)
     if (ai && ai.length > 0) return { candidates: ai, llm: true }
     return { candidates: [], llm: true, error: 'AI 未返回有效候选，请点击重新生成或稍后重试' }

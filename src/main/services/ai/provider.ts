@@ -39,10 +39,11 @@ class OpenAiCompatProvider implements AiProvider {
       { role: 'system', content: system },
       { role: 'user', content: user }
     ]
-    const maxTokens = opts?.maxTokens ?? 600
-    // 部分推理模型（DeepSeek Reasoner/GLM 思考等）不接受 temperature 参数；
-    // 先带 temperature 请求，若 400 且提示不支持该参数，则去掉后重试一次
-    const doFetch = (withTemp: boolean): Promise<Response> =>
+    // 思考型模型（DeepSeek Reasoner/R1 等）的 reasoning 可能占用输出预算；
+    // 预算截断（finish_reason=length 且正文为空）时自动放大重试，上限 8192
+    let maxTokens = opts?.maxTokens ?? 600
+
+    const post = (withTemp: boolean): Promise<Response> =>
       fetch(`${this.cfg.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -56,37 +57,51 @@ class OpenAiCompatProvider implements AiProvider {
           max_tokens: maxTokens
         })
       })
-    let res = await doFetch(true)
+
+    const ensureOk = async (res: Response): Promise<void> => {
+      if (!res.ok) {
+        throw new Error(`LLM 调用失败 HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+      }
+    }
+
+    // 首次带 temperature 请求；推理模型 400 拒绝该参数时去掉后重试
+    let res = await post(true)
     if (res.status === 400) {
       const errText = await res.text()
       if (/temperature/i.test(errText) && /not support|unsupported|unexpected|invalid|不支持|不允许/i.test(errText)) {
-        res = await doFetch(false)
+        res = await post(false)
       } else {
         throw new Error(`LLM 调用失败 HTTP ${res.status}: ${errText.slice(0, 200)}`)
       }
     }
-    if (!res.ok) {
-      throw new Error(`LLM 调用失败 HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
-    }
-    const data = (await res.json()) as {
-      choices?: Array<{
-        message?: { content?: string | null; reasoning_content?: string | null }
-        finish_reason?: string
-      }>
-    }
-    const content = data.choices?.[0]?.message?.content?.trim()
-    if (!content) {
-      // 思考型模型（DeepSeek Reasoner / GLM 思考等）预算可能全耗在 reasoning 上 → 给出可诊断信息
+    await ensureOk(res)
+
+    // 最多两轮：解析正文；截断且正文为空 → 放大预算重试一次
+    for (let round = 0; ; round++) {
+      const data = (await res.json()) as {
+        choices?: Array<{
+          message?: { content?: string | null; reasoning_content?: string | null }
+          finish_reason?: string
+        }>
+      }
+      const content = data.choices?.[0]?.message?.content?.trim()
+      if (content) return content
       const msg = data.choices?.[0]?.message
       const reasoning = msg?.reasoning_content
       const finishedByLength = data.choices?.[0]?.finish_reason === 'length'
+      if (finishedByLength && round === 0 && maxTokens < 8192) {
+        maxTokens = Math.min(maxTokens * 4, 8192)
+        res = await post(false) // 思考型模型通常不接受 temperature，放大预算后不带该参数
+        await ensureOk(res)
+        continue
+      }
+      // 放大重试仍空 → 给出可诊断信息（思考型模型预算仍不足，或响应结构异常）
       throw new Error(
         reasoning || finishedByLength
           ? '模型思考过长耗尽输出预算、未生成正文（可重试或改用非思考模型）'
           : 'LLM 返回为空（响应结构异常或无内容）'
       )
     }
-    return content
   }
 }
 
