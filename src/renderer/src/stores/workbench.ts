@@ -88,8 +88,8 @@ interface WorkbenchState {
   sendText: (text: string, source?: string) => Promise<void>
   /** 群问题视图：读取该群问题列表并自动触发窗口分析（主进程侧节流） */
   loadGroupIssues: (sessionId: string) => Promise<void>
-  /** 手动强制重新分析当前群 */
-  analyzeGroupNow: () => Promise<void>
+  /** 手动强制重新分析当前群;reset=true 先清空本群待处理/跟进中记录再重扫(历史已解决/归档保留) */
+  analyzeGroupNow: (opts?: { reset?: boolean }) => Promise<void>
   /** 切换分析窗口天数；当前为群时立即以新窗口强制重析 */
   setGroupDays: (days: number) => void
   /** 仅重新拉取当前群问题列表（分析后/状态变更后刷新） */
@@ -291,7 +291,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (an?.ok && !an.skipped) await get().refreshGroupIssues()
   },
 
-  analyzeGroupNow: async () => {
+  analyzeGroupNow: async (opts?: { reset?: boolean }) => {
     const { wxid, activeSessionId } = get()
     if (!wxid || !activeSessionId) return
     const session = get().sessions.find((s) => s.username === activeSessionId)
@@ -301,7 +301,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const an = await issueApi
       ?.analyzeGroup(wxid, activeSessionId, groupName || undefined, {
         force: true,
-        days: get().groupDays
+        days: get().groupDays,
+        reset: opts?.reset
       })
       .catch(() => null)
     if (get().activeSessionId !== activeSessionId) return

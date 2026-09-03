@@ -34,7 +34,7 @@ export function registerIssueHandlers(): void {
     return analyzeIssues(wxid)
   })
 
-  // 单群窗口分析（工作台「群问题」视图）：days 自然日窗口、自动触发带节流
+  // 单群窗口分析（工作台「群问题」视图）：days 自然日窗口、自动触发带节流;reset=先清空该群待处理再重扫
   ipcMain.handle(
     'cs:issue:analyzeGroup',
     async (
@@ -42,7 +42,7 @@ export function registerIssueHandlers(): void {
       wxid: string,
       groupUsername: string,
       groupName?: string,
-      opts?: { days?: number; force?: boolean }
+      opts?: { days?: number; force?: boolean; reset?: boolean }
     ) => {
       if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
       return analyzeGroupIssues(wxid, groupUsername, groupName ?? '', opts ?? {})

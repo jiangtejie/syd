@@ -195,6 +195,21 @@ function GroupIssuesPanel(): React.JSX.Element {
     else void openDetail(null)
   }
 
+  /** 「重新分析」= 重算本群:有待处理时先确认是否清空重建(避免旧结果累加) */
+  const onReanalyze = (): void => {
+    if (analyzing) return
+    const openCount = issues.filter((i) => i.status === 'open').length
+    if (openCount > 0) {
+      const ok = window.confirm(
+        `将先清空本群 ${openCount} 条待处理/跟进中记录(含证据),再按近 ${days} 天重新提取。\n已解决、已搁置与已归档的历史记录会保留。继续?`
+      )
+      if (!ok) return
+      void analyzeNow({ reset: true })
+    } else {
+      void analyzeNow()
+    }
+  }
+
   const locate = (ts: number): void => {
     if (activeSessionId) void locateIssueAt(activeSessionId, ts)
   }
@@ -306,7 +321,8 @@ function GroupIssuesPanel(): React.JSX.Element {
             type="button"
             className="gip-btn ghost"
             disabled={analyzing}
-            onClick={() => void analyzeNow()}
+            onClick={onReanalyze}
+            title="重算本群问题:清空待处理记录后按当前窗口重新分析(历史已解决/归档保留)"
           >
             {analyzing ? '分析中…' : '重新分析'}
           </button>

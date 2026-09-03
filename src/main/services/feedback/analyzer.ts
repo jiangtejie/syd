@@ -11,6 +11,7 @@ import {
   findIssueByKey,
   openIssueEvidenceTimes,
   openIssuesForGroup,
+  clearOpenIssuesByGroup,
   type NewIssue
 } from '../../db/repos/issueRepo'
 import { getConfig, setConfig } from '../../db/repos/config'
@@ -653,11 +654,12 @@ export async function analyzeGroupIssues(
   wxid: string,
   groupUsername: string,
   groupName = '',
-  opts: { days?: number; force?: boolean } = {}
+  opts: { days?: number; force?: boolean; reset?: boolean } = {}
 ): Promise<AnalyzeGroupResult> {
   if (!wxid || !groupUsername) return { ok: false, error: '缺少账号或群标识' }
   const days = Math.min(Math.max(Math.floor(opts.days ?? 2), 1), 30)
-  const force = !!opts.force
+  const reset = !!opts.reset
+  const force = !!opts.force || reset // 重算模式必然全量,避免「只清不扫」
 
   const stamp = readGroupStamp(wxid, groupUsername)
   if (!force && stamp && Date.now() - stamp.at < GROUP_AUTO_REANALYZE_MS) {
@@ -696,6 +698,10 @@ export async function analyzeGroupIssues(
   const run = (async (): Promise<AnalyzeGroupResult> => {
     const startedAt = Date.now()
     try {
+      // 0) 重算模式:清空该群 open(待处理/跟进中)与其证据,再重新提取(已解决/归档保留)
+      if (reset) {
+        clearOpenIssuesByGroup(wxid, groupUsername)
+      }
       // 1) 水位判定：增量模式且水位后无新消息 → 跳过（不重复解读）
       const wm = readWm(wxid, groupUsername)
       let incremental = false

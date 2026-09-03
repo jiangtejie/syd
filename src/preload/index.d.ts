@@ -160,7 +160,7 @@ declare global {
             wxid: string,
             groupUsername: string,
             groupName?: string,
-            opts?: { days?: number; force?: boolean }
+            opts?: { days?: number; force?: boolean; reset?: boolean }
           ) => Promise<{
             ok: boolean
             error?: string

@@ -206,6 +206,23 @@ export function listOpenUnrepliedByGroup(
   return rows.map((r) => ({ id: r.id, key: r.key, occurAt: r.occur_at }))
 }
 
+/** 清空某群 open(待处理/跟进中)记录与其证据——「重新分析」前重算用;已解决/搁置/归档历史保留 */
+export function clearOpenIssuesByGroup(wxid: string, groupUsername: string): number {
+  const db = getDb()
+  db.prepare(
+    `DELETE FROM issue_feedback_msg
+     WHERE issue_id IN (SELECT id FROM issue_feedback
+                        WHERE wxid = ? AND group_username = ? AND status = 'open')`
+  ).run(wxid, groupUsername)
+  const info = db
+    .prepare(
+      `DELETE FROM issue_feedback
+       WHERE wxid = ? AND group_username = ? AND status = 'open'`
+    )
+    .run(wxid, groupUsername)
+  return info.changes
+}
+
 /** 按群聚合 open 计数（工作台会话列表徽标） */
 export function countOpenByGroup(wxid: string): Record<string, number> {
   const rows = getDb()
