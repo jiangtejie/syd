@@ -1,67 +1,93 @@
-:root {
-  --ev-c-white: #ffffff;
-  --ev-c-white-soft: #f8f8f8;
-  --ev-c-white-mute: #f2f2f2;
-
-  --ev-c-black: #1b1b1f;
-  --ev-c-black-soft: #222222;
-  --ev-c-black-mute: #282828;
-
-  --ev-c-gray-1: #515c67;
-  --ev-c-gray-2: #414853;
-  --ev-c-gray-3: #32363f;
-
-  --ev-c-text-1: rgba(255, 255, 245, 0.86);
-  --ev-c-text-2: rgba(235, 235, 245, 0.6);
-  --ev-c-text-3: rgba(235, 235, 245, 0.38);
-
-  --ev-button-alt-border: transparent;
-  --ev-button-alt-text: var(--ev-c-text-1);
-  --ev-button-alt-bg: var(--ev-c-gray-3);
-  --ev-button-alt-hover-border: transparent;
-  --ev-button-alt-hover-text: var(--ev-c-text-1);
-  --ev-button-alt-hover-bg: var(--ev-c-gray-2);
-}
+/**
+ * 全局设计 token（浅色主题）。
+ * 统一品牌色 / 状态色 / 中性色 / 圆角 / 阴影。业务 CSS 一律引用这些变量，禁止再出现
+ * 与 token 语义重复的硬编码（如 #3c82f6、#089f5c、#dfe2e7 等）。
+ */
 
 :root {
-  --color-background: var(--ev-c-black);
-  --color-background-soft: var(--ev-c-black-soft);
-  --color-background-mute: var(--ev-c-black-mute);
+  /* ── 品牌（微信绿） ── */
+  --brand: #07c160;
+  --brand-hover: #06ad56;
+  --brand-soft: rgba(7, 193, 96, 0.1);
+  --brand-line: rgba(7, 193, 96, 0.5);
+  --on-brand: #fff;
 
-  --color-text: var(--ev-c-text-1);
+  /* ── 状态色 ── */
+  --success: #07a63f;
+  --success-soft: #e9f9ef;
+  --success-strong: #089f5c;
+  --success-line: #d2f2e0;
+  --danger: #fa5151;
+  --danger-hover: #e5484d;
+  --danger-soft: #fdecec;
+  --danger-line: #f5c2c2;
+  --warn: #f5a623;
+  --warn-soft: #fff8e1;
+  --warn-line: #f5d78e;
+  --warn-text: #8a6d1a;
+  --info: #3c82f6;
+  --info-soft: #eef4ff;
+
+  /* ── 中性色（文字 / 边框 / 背景） ── */
+  --text-1: #1f2329;
+  --text-2: #555;
+  --text-3: #999;
+  --text-4: #bbb;
+  --border: #e4e6eb;
+  --border-light: #eef0f3;
+  --bg: #f5f6f7;
+  --bg-panel: #fff;
+  --bg-hover: #f7f9fb;
+  --bg-mask: rgba(0, 0, 0, 0.32);
+
+  /* 兼容旧命名（历史 CSS 用 var(--muted/--panel/--line/--st-muted) 作降级取色） */
+  --muted: #777;
+  --st-muted: #888;
+  --panel: #fff;
+  --line: rgba(128, 128, 128, 0.25);
+
+  /* ── 圆角刻度 ── */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+
+  /* ── 阴影 ── */
+  --shadow-card: 0 1px 2px rgba(31, 35, 41, 0.04);
+  --shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.14);
+  --shadow-toast: 0 4px 16px rgba(0, 0, 0, 0.16);
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  font-weight: normal;
+/* 键盘可达性：仅键盘触发时显示焦点环，避免鼠标点击后残留 */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+  border-radius: var(--r-sm);
 }
 
-ul {
-  list-style: none;
+/* ── 全局细滚动条（Firefox 走 scrollbar-width/color 双写） ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c9cdd4 transparent;
 }
-
-body {
-  min-height: 100vh;
-  color: var(--color-text);
-  background: var(--color-background);
-  line-height: 1.6;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
-    sans-serif;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c9cdd4;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #aab0ba;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

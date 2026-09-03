@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import { avatarColor } from '../lib/ui'
 import EChart from '../components/EChart'
+import ConfirmDialog from '../components/ConfirmDialog'
 import type { EChartsOption } from 'echarts'
 import type {
   SendOverview,
@@ -585,13 +586,16 @@ function DashboardPage(): React.JSX.Element {
     setFbBusy(false)
   }, [issueApi, wxid, fbBusy])
 
-  // 清空当前账号问题数据（需确认；清空后点「重新分析」重新提取）
-  const clearFb = useCallback((): void => {
+  // 清空当前账号问题数据（先弹自绘确认框，确认后再执行；清空后点「重新分析」重新提取）
+  const [fbConfirmOpen, setFbConfirmOpen] = useState(false)
+  const openClearConfirm = useCallback((): void => {
     if (!issueApi || !wxid || fbBusy) return
-    if (
-      !window.confirm('确定清空当前账号的全部问题反馈记录？\n清空后需点击「重新分析」，从近 7 天群消息重新提取。')
-    )
-      return
+    setFbConfirmOpen(true)
+  }, [issueApi, wxid, fbBusy])
+
+  const doClearFb = useCallback((): void => {
+    if (!issueApi || !wxid || fbBusy) return
+    setFbConfirmOpen(false)
     setFbBusy(true)
     setFbClearing(true)
     setFbError(null)
@@ -753,7 +757,15 @@ function DashboardPage(): React.JSX.Element {
                   <div
                     key={s.username}
                     className="db-q-item"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => source === 'wx' && gotoSession(s.username)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        if (source === 'wx') gotoSession(s.username)
+                      }
+                    }}
                   >
                     <span className="cu-avatar" style={{ background: avatarColor(s.displayName) }}>
                       {s.displayName.slice(0, 1)}
@@ -830,7 +842,7 @@ function DashboardPage(): React.JSX.Element {
               type="button"
               className="db-fb-run db-fb-clear"
               disabled={fbBusy || source !== 'wx'}
-              onClick={clearFb}
+              onClick={openClearConfirm}
             >
               {fbClearing ? '清空中…' : '清空数据'}
             </button>
@@ -1234,6 +1246,21 @@ function DashboardPage(): React.JSX.Element {
         口径：待回复=有未读且最后一条为客户消息（不含公众号/折叠）；超时未回=有未读且最后消息距今超 2
         小时；今日互动=今日有消息的会话；沉睡=近 7~30 天未联系的个人会话。
       </div>
+
+      <ConfirmDialog
+        options={
+          fbConfirmOpen
+            ? {
+                title: '清空问题反馈记录？',
+                message: '确定清空当前账号的全部问题反馈记录？\n清空后需点击「重新分析」，从近 7 天群消息重新提取。',
+                confirmText: '清空',
+                danger: true,
+                onConfirm: doClearFb
+              }
+            : null
+        }
+        onClose={() => setFbConfirmOpen(false)}
+      />
     </div>
   )
 }

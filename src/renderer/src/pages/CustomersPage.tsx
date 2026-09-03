@@ -276,7 +276,19 @@ function CustomersPage(): React.JSX.Element {
           <span>未读</span>
         </div>
         {pageItems.map((c) => (
-          <div key={c.wxid} className="cu-row" onClick={() => setSelected(c)}>
+          <div
+            key={c.wxid}
+            className="cu-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => setSelected(c)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setSelected(c)
+              }
+            }}
+          >
             <span className="cu-cell-name">
               <CustomerAvatar profile={c} />
               <span className="cu-name-stack">

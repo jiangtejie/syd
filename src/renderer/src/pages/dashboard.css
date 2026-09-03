@@ -1,11 +1,11 @@
 /* 数据看板 */
 
 .db-alert {
-  background: #fdecec;
+  background: var(--danger-soft);
   border: 1px solid #f5c2c2;
   color: #c92a2a;
   font-size: 13px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: 10px 14px;
   margin-bottom: 14px;
 }
@@ -32,12 +32,12 @@
 }
 
 .db-card-num.warn {
-  color: #fa5151;
+  color: var(--danger);
 }
 
 .db-card-label {
   font-size: 12px;
-  color: #999;
+  color: var(--text-3);
   margin-top: 4px;
 }
 
@@ -70,7 +70,7 @@
   color: #b8860b;
   background: #fdf3d7;
   padding: 1px 7px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 
 /* 柱状图 */
@@ -110,7 +110,7 @@
   right: 0;
   text-align: center;
   font-size: 11px;
-  color: #999;
+  color: var(--text-3);
   line-height: 15px;
 }
 
@@ -121,7 +121,7 @@
   right: 0;
   text-align: center;
   font-size: 11px;
-  color: #999;
+  color: var(--text-3);
   line-height: 18px;
 }
 
@@ -146,24 +146,24 @@
 
 .db-bar.out,
 .db-bar.sent {
-  background: #07c160;
+  background: var(--brand);
 }
 
 .db-bar.fail {
-  background: #fa5151;
+  background: var(--danger);
 }
 
 /* 圆角按位置而非段类型：顶段上圆角、底段下圆角、仅一段时全圆角 */
 .db-bar-stack > .db-bar:first-child {
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
 }
 
 .db-bar-stack > .db-bar:last-child {
-  border-radius: 0 0 4px 4px;
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
 }
 
 .db-bar-stack > .db-bar:only-child {
-  border-radius: 4px;
+  border-radius: var(--r-sm);
 }
 
 /* 环形图 */
@@ -188,7 +188,7 @@
   width: 78px;
   height: 78px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--bg-panel);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -202,13 +202,13 @@
 .db-donut-hole small {
   font-size: 10px;
   font-weight: 500;
-  color: #999;
+  color: var(--text-3);
 }
 
 /* 会话构成附加说明（置顶/折叠） */
 .db-comp-note {
   font-size: 12px;
-  color: #999;
+  color: var(--text-3);
 }
 
 /* 面板内空态 */
@@ -225,7 +225,7 @@
 /* 面板内小节标题（失败原因 Top） */
 .db-panel-sub {
   font-size: 12px;
-  color: #999;
+  color: var(--text-3);
   margin: 14px 0 4px;
 }
 
@@ -239,20 +239,20 @@
 
 .db-chip {
   font-size: 12px;
-  color: #555;
-  background: #f2f4f7;
+  color: var(--text-2);
+  background: var(--border-light);
   border-radius: 10px;
   padding: 2px 10px;
 }
 
 .db-chip-sent {
-  color: #07c160;
-  background: #e6f9ee;
+  color: var(--brand);
+  background: var(--success-soft);
 }
 
 .db-chip-failed {
-  color: #fa5151;
-  background: #fdecec;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .db-chip-rejected {
@@ -262,7 +262,7 @@
 
 .db-chip-halted {
   color: #c92a2a;
-  background: #fdecec;
+  background: var(--danger-soft);
 }
 
 /* 失败原因列表 */
@@ -277,13 +277,13 @@
   align-items: center;
   gap: 10px;
   font-size: 13px;
-  color: #555;
+  color: var(--text-2);
   padding: 6px 4px;
   border-radius: 6px;
 }
 
 .db-reason:hover {
-  background: #f7f9fb;
+  background: var(--bg-hover);
 }
 
 .db-reason-name {
@@ -297,7 +297,7 @@
 .db-reason-count {
   font-size: 12px;
   font-weight: 600;
-  color: #fa5151;
+  color: var(--danger);
 }
 
 /* 跟进队列 */
@@ -310,15 +310,15 @@
   padding: 0 6px;
   margin-left: 8px;
   border-radius: 9px;
-  background: #fa5151;
-  color: #fff;
+  background: var(--danger);
+  color: var(--on-brand);
   font-size: 11px;
   font-weight: 600;
   vertical-align: middle;
 }
 
 .db-count-badge.is-sleep {
-  background: #07c160;
+  background: var(--brand);
 }
 
 .db-q-scroll {
@@ -333,23 +333,23 @@
   align-items: center;
   gap: 10px;
   padding: 8px 6px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   cursor: pointer;
 }
 
 .db-q-item:hover {
-  background: #f7f9fb;
+  background: var(--bg-hover);
 }
 
 .db-q-item .cu-avatar {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--on-brand);
   font-size: 15px;
   font-weight: 600;
 }
@@ -383,16 +383,16 @@
   min-width: 16px;
   height: 16px;
   padding: 0 5px;
-  border-radius: 8px;
-  background: #fa5151;
-  color: #fff;
+  border-radius: var(--r-md);
+  background: var(--danger);
+  color: var(--on-brand);
   font-size: 10px;
   font-weight: 600;
 }
 
 .db-q-sub {
   font-size: 12px;
-  color: #999;
+  color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -406,13 +406,13 @@
 }
 
 .db-q-time.is-overdue {
-  color: #fa5151;
+  color: var(--danger);
   font-weight: 600;
 }
 
 .db-q-more {
   font-size: 12px;
-  color: #999;
+  color: var(--text-3);
   padding: 8px 6px 4px;
 }
 
@@ -421,7 +421,7 @@
   flex-direction: column;
   gap: 8px;
   font-size: 13px;
-  color: #555;
+  color: var(--text-2);
 }
 
 .db-panel > .db-legend {
@@ -445,11 +445,11 @@
 }
 
 .db-dot.sent {
-  background: #07c160;
+  background: var(--brand);
 }
 
 .db-dot.fail {
-  background: #fa5151;
+  background: var(--danger);
 }
 
 /* 发送频控 */
@@ -463,24 +463,24 @@
   display: flex;
   justify-content: space-between;
   font-size: 13px;
-  color: #555;
+  color: var(--text-2);
 }
 
 .db-freq-bar {
   height: 8px;
-  border-radius: 4px;
-  background: #eef0f3;
+  border-radius: var(--r-sm);
+  background: var(--border-light);
   overflow: hidden;
 }
 
 .db-freq-fill {
   height: 100%;
-  border-radius: 4px;
-  background: linear-gradient(90deg, #34d17b, #07c160);
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, #34d17b, var(--brand));
 }
 
 .db-freq-fill.is-high {
-  background: linear-gradient(90deg, #f0b429, #fa5151);
+  background: linear-gradient(90deg, #f0b429, var(--danger));
 }
 
 .db-freq-note {
@@ -505,7 +505,7 @@
 }
 
 .db-top-item:hover {
-  background: #f7f9fb;
+  background: var(--bg-hover);
 }
 
 .db-top-rank {
@@ -534,12 +534,12 @@
 
 .db-top-score {
   font-size: 12px;
-  color: #07c160;
+  color: var(--brand);
   font-weight: 600;
 }
 
 .db-top-score.fail {
-  color: #fa5151;
+  color: var(--danger);
   font-weight: 500;
 }
 
@@ -548,7 +548,7 @@
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  color: #fff;
+  color: var(--on-brand);
   font-size: 12px;
   display: inline-flex;
   align-items: center;
@@ -578,15 +578,15 @@
 
 .db-seg {
   display: inline-flex;
-  border: 1px solid #e4e6eb;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
   overflow: hidden;
 }
 
 .db-seg-btn {
   border: none;
-  background: #f7f8fa;
-  color: #888;
+  background: var(--bg-hover);
+  color: var(--text-3);
   font-size: 12px;
   padding: 5px 12px;
   cursor: pointer;
@@ -594,24 +594,24 @@
 }
 
 .db-seg-btn + .db-seg-btn {
-  border-left: 1px solid #e4e6eb;
+  border-left: 1px solid var(--border);
 }
 
 .db-seg-btn.on {
-  background: #07c160;
-  color: #fff;
+  background: var(--brand);
+  color: var(--on-brand);
   font-weight: 600;
 }
 
 .db-footnote {
   font-size: 11px;
   font-weight: 400;
-  color: #999;
+  color: var(--text-3);
   margin-left: 6px;
 }
 
 .db-text-warn {
-  color: #fa5151;
+  color: var(--danger);
   font-weight: 600;
 }
 
@@ -621,7 +621,7 @@
 }
 
 .db-dot.out {
-  background: #07c160;
+  background: var(--brand);
 }
 
 /* 24 小时时段（紧凑列） */
@@ -670,7 +670,7 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #555;
+  color: var(--text-2);
 }
 
 .db-type-name {
@@ -685,8 +685,8 @@
 .db-type-bar {
   flex: 1;
   height: 8px;
-  border-radius: 4px;
-  background: #eef0f3;
+  border-radius: var(--r-sm);
+  background: var(--border-light);
   overflow: hidden;
   min-width: 0;
 }
@@ -694,8 +694,8 @@
 .db-type-bar i {
   display: block;
   height: 100%;
-  border-radius: 4px;
-  background: linear-gradient(90deg, #5b8ff9, #07c160);
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, #5b8ff9, var(--brand));
 }
 
 .db-type-count {

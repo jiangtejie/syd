@@ -12,10 +12,20 @@ export interface Attachment {
   fileSize?: number
 }
 
-/** 图片占位/降级图（仅查看大图时兜底；列表气泡不加载外网占位图，避免并发外链） */
-export const PLACEHOLDER_IMAGE_URL = `https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=${encodeURIComponent(
-  '商务聊天中发送的产品图片'
-)}&image_size=portrait_4_3`
+/**
+ * 图片占位/降级图（仅查看大图时兜底；列表气泡不加载占位图，避免并发外链）。
+ * 早期版本使用外网 text_to_image API，离线/失败时白屏；改成本地内联 SVG（data URI），任何环境即时可用。
+ */
+const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="480" viewBox="0 0 360 480">
+<rect width="360" height="480" fill="#f2f4f7"/>
+<g fill="none" stroke="#b7bdc7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+<rect x="138" y="150" width="84" height="66" rx="6"/>
+<circle cx="164" cy="170" r="4.5"/>
+<path d="M138 202l26-28 18 18 16-20 24 30"/>
+</g>
+<text x="180" y="258" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#9aa0a6">图片暂时无法预览</text>
+</svg>`
+export const PLACEHOLDER_IMAGE_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(PLACEHOLDER_SVG)}`
 
 /**
  * 解密请求缓存 + 进行中去重：同一 (wxid, md5, kind) 只发一次 IPC，

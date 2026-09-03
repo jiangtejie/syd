@@ -37,8 +37,8 @@
 
 .db-fb-run {
   padding: 5px 14px;
-  background: #07c160;
-  color: #fff;
+  background: var(--brand);
+  color: var(--on-brand);
   border: none;
   border-radius: 6px;
   font-size: 12px;
@@ -46,7 +46,7 @@
 }
 
 .db-fb-run:hover {
-  background: #06ad56;
+  background: var(--brand-hover);
 }
 
 .db-fb-run:disabled {
@@ -65,12 +65,12 @@
   align-items: center;
   gap: 12px;
   padding: 9px 12px;
-  border-top: 1px solid #f0f2f5;
+  border-top: 1px solid var(--border-light);
   min-height: 42px;
 }
 
 .fb-row-head {
-  background: #f7f8fa;
+  background: var(--bg-hover);
   color: #7a8189;
   font-size: 12px;
   border-top: none;
@@ -131,7 +131,7 @@
 
 .fb-group-name {
   font-size: 13px;
-  color: #1f2329;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -141,7 +141,7 @@
 .fb-title {
   font-size: 13px;
   font-weight: 600;
-  color: #1f2329;
+  color: var(--text-1);
   line-height: 1.45;
 }
 
@@ -158,16 +158,16 @@
   display: inline-flex;
   align-items: center;
   padding: 2px 9px;
-  border-radius: 999px;
-  color: #fff;
+  border-radius: var(--r-pill);
+  color: var(--on-brand);
   font-size: 11px;
   white-space: nowrap;
 }
 
 /* 相关消息按钮 */
 .fb-rel-btn {
-  border: 1px solid #e2e5ea;
-  background: #fff;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
   border-radius: 6px;
   padding: 3px 8px;
   font-size: 12px;
@@ -178,8 +178,8 @@
 
 .fb-rel-btn:hover,
 .fb-rel-btn.on {
-  color: #07c160;
-  border-color: #07c160;
+  color: var(--brand);
+  border-color: var(--brand);
 }
 
 /* 状态 chip */
@@ -187,7 +187,7 @@
   display: inline-flex;
   align-items: center;
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -198,24 +198,24 @@
 }
 
 .fb-st-done {
-  background: #e6f9ef;
-  color: #07a653;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .fb-st-stalled {
-  background: #eef1f5;
+  background: var(--border-light);
   color: #7a8189;
 }
 
 .fb-st-archived {
-  background: #f1f3f5;
+  background: var(--border-light);
   color: #a6adb6;
 }
 
 /* 操作按钮 */
 .fb-op {
-  border: 1px solid #dfe3ea;
-  background: #fff;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
   padding: 2px 9px;
   border-radius: 6px;
   font-size: 12px;
@@ -225,15 +225,15 @@
 }
 
 .fb-op:hover {
-  border-color: #07c160;
-  color: #07c160;
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 /* 展开的相关消息区 */
 .fb-detail {
-  background: #fafbfc;
-  border-left: 3px solid #07c160;
-  border-radius: 0 8px 8px 0;
+  background: var(--bg-hover);
+  border-left: 3px solid var(--brand);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
   padding: 10px 14px 12px;
   margin: 2px 10px 10px 10px;
   display: flex;
@@ -274,7 +274,7 @@
 }
 
 .fb-msg-sender.is-send {
-  color: #07c160;
+  color: var(--brand);
 }
 
 .fb-msg-text {
@@ -292,13 +292,13 @@
 .db-fb-clear {
   background: transparent;
   color: #5b6770;
-  border: 1px solid #dfe3ea;
+  border: 1px solid var(--border);
 }
 
 .db-fb-clear:hover:not(:disabled) {
-  color: #e5484d;
-  border-color: #e5484d;
-  background: #fff5f5;
+  color: var(--danger-hover);
+  border-color: var(--danger-hover);
+  background: var(--danger-soft);
 }
 
 /* ── 问题反馈表格分页器 ── */
@@ -322,9 +322,9 @@
 
 .fb-pager-select {
   height: 26px;
-  border: 1px solid #e2e5ea;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--bg-panel);
   color: #3b434c;
   font-size: 12px;
   padding: 0 4px;
@@ -333,8 +333,8 @@
 .fb-pager-btn {
   height: 26px;
   padding: 0 10px;
-  border: 1px solid #e2e5ea;
-  background: #fff;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
   border-radius: 6px;
   font-size: 12px;
   color: #3b434c;
@@ -343,8 +343,8 @@
 }
 
 .fb-pager-btn:hover:not(:disabled) {
-  border-color: #07c160;
-  color: #07c160;
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .fb-pager-btn:disabled {
@@ -365,10 +365,10 @@
 .fb-pager-jump-input {
   width: 64px;
   height: 26px;
-  border: 1px solid #e2e5ea;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 12px;
   padding: 0 6px;
-  background: #fff;
-  color: #1f2329;
+  background: var(--bg-panel);
+  color: var(--text-1);
 }

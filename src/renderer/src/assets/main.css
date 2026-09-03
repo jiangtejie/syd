@@ -15,8 +15,8 @@ body,
 body {
   overflow: hidden;
   user-select: none;
-  color: #1f2329;
-  background: #f5f6f7;
+  color: var(--text-1);
+  background: var(--bg);
   font-family:
     system-ui,
     -apple-system,

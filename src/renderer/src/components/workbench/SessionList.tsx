@@ -4,6 +4,45 @@ import { avatarColor, formatSessionTime, previewSummary } from '../../lib/ui'
 import { useSessionAvatar } from '../../lib/sessionAvatar'
 import type { SessionSummary } from '../../../../shared/types'
 
+/** 线性置顶图标（替换 emoji 📌，跟随 currentColor） */
+function PinIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+    </svg>
+  )
+}
+
+/** 折叠夹图标（替换 emoji 🗂️） */
+function FolderIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+    </svg>
+  )
+}
+
 const SessionItem = memo(function SessionItem({
   session,
   active,
@@ -25,7 +64,15 @@ const SessionItem = memo(function SessionItem({
   return (
     <div
       className={`wb-session ${active ? 'is-active' : ''} ${isChild ? 'is-child' : ''}`}
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(session.username)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect(session.username)
+        }
+      }}
     >
       {showImg ? (
         <img
@@ -46,7 +93,11 @@ const SessionItem = memo(function SessionItem({
       <div className="wb-session-body">
         <div className="wb-session-top">
           <span className="wb-session-name">
-            {session.isPinned && <span className="wb-pin">📌</span>}
+            {session.isPinned && (
+              <span className="wb-pin">
+                <PinIcon />
+              </span>
+            )}
             {session.isGroup && <span className="wb-group-tag">群</span>}
             {name}
           </span>
@@ -82,9 +133,19 @@ const FoldGroupItem = memo(function FoldGroupItem({
   return (
     <div
       className={`wb-session wb-session-foldgroup ${expanded ? 'is-expanded' : ''}`}
+      role="button"
+      tabIndex={0}
       onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onToggle()
+        }
+      }}
     >
-      <div className="wb-session-avatar wb-session-foldicon">🗂️</div>
+      <div className="wb-session-avatar wb-session-foldicon">
+        <FolderIcon />
+      </div>
       <div className="wb-session-body">
         <div className="wb-session-top">
           <span className="wb-session-name">
