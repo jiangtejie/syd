@@ -9,6 +9,8 @@ import {
   upsertIssue,
   listOpenUnrepliedByGroup,
   findIssueByKey,
+  openIssueEvidenceTimes,
+  openIssuesForGroup,
   type NewIssue
 } from '../../db/repos/issueRepo'
 import { getConfig, setConfig } from '../../db/repos/config'
@@ -308,12 +310,21 @@ function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] {
   return issues
 }
 
-/** 归一化：规则结果补全账号/群；LLM 结果把行号映射回消息 */
+/** LLM 输入行解析器：主区行号 < 主区长度；附录行号 ≥ APX_BASE(1000) */
+export interface LlmLineRef {
+  msg: ChatMessage
+  senderName: string
+  /** 行文本（含时间前缀） */
+  text: string
+}
+export type LlmLineResolver = (idx: number) => LlmLineRef | undefined
+
+/** 归一化：规则结果补全账号/群；LLM 结果把行号（含附录偏移）映射回消息 */
 function normalizeIssues(
   wxid: string,
   groupUsername: string,
   groupName: string,
-  source: ChatMessage[] | Array<{ line: string; msg: ChatMessage; senderName: string }>,
+  resolver: LlmLineResolver | null,
   extracted: unknown[],
   method: 'llm' | 'rule'
 ): NewIssue[] {
@@ -327,17 +338,22 @@ function normalizeIssues(
       groupName
     }))
   }
-  const lines = source as Array<{ line: string; msg: ChatMessage; senderName: string }>
   const issues: NewIssue[] = []
+  if (!resolver) return issues
   const seenKeys = new Set<string>()
   for (const raw of extracted as LlmIssue[]) {
     // evidence 按行号升序归一：key 锚定最早一条证据，模型证据顺序变化也不会导致 key 漂移
     const evidenceIdx = (raw.evidence ?? [])
-      .filter((i) => Number.isInteger(i) && i >= 0 && i < lines.length)
+      .filter((i) => Number.isInteger(i) && i >= 0 && resolver)
+      .map((i) => ({ i, ref: resolver!(i) }))
+      .filter((x): x is { i: number; ref: LlmLineRef } => !!x.ref)
+      .map((x) => x.i)
       .sort((a, b) => a - b)
       .slice(0, 16)
     if (evidenceIdx.length === 0) continue
-    const first = lines[evidenceIdx[0]].msg
+    const firstRef = resolver!(evidenceIdx[0])
+    if (!firstRef) continue
+    const first = firstRef.msg
     const key = `llm:${wxid}:${groupUsername}:${first.createTime}:${first.localId}`
     if (seenKeys.has(key)) continue // 同一问题被模型拆成多条时只保留首条
     seenKeys.add(key)
@@ -359,7 +375,7 @@ function normalizeIssues(
       followUp,
       resolved,
       msgs: evidenceIdx.map((i) => {
-        const it = lines[i]
+        const it = resolver(i)!
         return msgToSummaryMsg(it.msg, it.senderName)
       })
     })
@@ -372,7 +388,7 @@ const SEGMENT_GAP_MS = 15 * 60_000
 
 /** 输入行（过滤后）按时间切段，供 LLM 以「段」为单位整体理解 */
 function segmentizeLines(
-  lines: Array<{ line: string; msg: ChatMessage; senderName: string }>
+  lines: Array<{ msg: ChatMessage }>
 ): Array<{ start: number; end: number }> {
   const segs: Array<{ start: number; end: number }> = []
   let s = 0
@@ -388,39 +404,53 @@ function segmentizeLines(
   return segs
 }
 
-/** 单群分析：收集消息 -> 议题级整合（LLM 段输入）或规则 -> issues（LLM 失败自动降级到该群规则） */
-async function analyzeGroup(
+/** 附录行号起点：主区行号 < LLM_LINES_CAP(220)，附录行号从该值起，evidence 可引用 */
+const APX_BASE = 1000
+const APX_MAX = 80
+/** 增量模式的尾巴保留行数（上次分析点前未成议题的对话，作为新进展的上下文） */
+const INCR_TAIL_ROWS = 40
+
+interface LlmRow {
+  msg: ChatMessage
+  senderName: string
+  text: string
+}
+
+function fmtRow(m: ChatMessage, team: Set<string>): LlmRow {
+  return {
+    msg: m,
+    senderName: senderLabel(m, team),
+    text: `${new Date(m.createTime).toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    })} ${senderLabel(m, team)}: ${msgToText(m)}`
+  }
+}
+
+/**
+ * 议题级 LLM 分析（主区 = 本次新增/窗口内消息，按段排版；
+ * 附录 = 历史/上下文行，行号 ≥ APX_BASE，供模型理解延续议题与闭环判断）。
+ * openHints：本群现存待办议题标题（抑制重复建与标题漂移）。
+ */
+async function analyzeLlmIssues(
   wxid: string,
   groupUsername: string,
   groupName: string,
-  msgs: ChatMessage[],
-  team: Set<string>
+  mainRows: LlmRow[],
+  apxRows: LlmRow[],
+  openHints: string[]
 ): Promise<NewIssue[]> {
-  if (msgs.length === 0) return []
-  const provider = createAiProvider()
-  if (!provider) {
-    return normalizeIssues(wxid, groupUsername, groupName, msgs, ruleExtract(msgs, team), 'rule')
-  }
-  // LLM 模式：文本相关行编号后送入（截最新，控制 token），按段排版便于整体理解
-  const lines = msgs
-    .filter((m) => isTextLike(m) || m.localType === 3)
-    .map((m) => ({
-      line: `${new Date(m.createTime).toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      })} ${senderLabel(m, team)}: ${msgToText(m)}`,
-      msg: m,
-      senderName: senderLabel(m, team)
-    }))
-    .slice(-LLM_LINES_CAP)
-  if (lines.length === 0) return []
-  const segs = segmentizeLines(lines)
+  const main = mainRows.length > LLM_LINES_CAP ? mainRows.slice(mainRows.length - LLM_LINES_CAP) : mainRows
+  const apx = apxRows.length > APX_MAX ? apxRows.slice(apxRows.length - APX_MAX) : apxRows
+  if (main.length === 0 && apx.length === 0) return []
+
   const parts: string[] = []
+  const segs = segmentizeLines(main)
   for (const seg of segs) {
     const names = new Set<string>()
-    for (let i = seg.start; i < seg.end; i++) names.add(lines[i].senderName)
-    const from = new Date(lines[seg.start].msg.createTime)
+    for (let i = seg.start; i < seg.end; i++) names.add(main[i].senderName)
+    const from = new Date(main[seg.start].msg.createTime)
     parts.push(
       `[段 ${parts.length + 1} | ${from.getMonth() + 1}月${from.getDate()}日 ${String(
         from.getHours()
@@ -428,39 +458,55 @@ async function analyzeGroup(
         names
       ).join('、')}]`
     )
-    for (let i = seg.start; i < seg.end; i++) parts.push(`[${i}] ${lines[i].line}`)
+    for (let i = seg.start; i < seg.end; i++) parts.push(`[${i}] ${main[i].text}`)
+  }
+  if (apx.length > 0) {
+    parts.push('')
+    parts.push('[附录：历史/背景行（行号 ≥ 1000）。仅用于理解延续中的议题与判断是否已闭环；新进展都在主区。]')
+    apx.forEach((r, k) => parts.push(`[${APX_BASE + k}] ${r.text}`))
   }
   const body = parts.join('\n')
 
   const system = [
     '你是资深微信客服运营分析员。用户会给出一段客户服务群聊天记录，',
-    '记录已按时间切成若干【会话段】（沉默分隔），每段开头有 [段 n | 时间 | 参与人] 标注，段内行形如 [i] HH:mm 发送者: 内容。',
-    '其中“我方客服”和“我方同事（xxx）”都是我们这边的人，其余是客户/群友；团队客服名单在背景中给出时不可将同事发言视为客户诉求。',
+    '主区记录按时间切成若干【会话段】（沉默分隔），每段开头有 [段 n | 时间 | 参与人] 标注，段内行形如 [i] HH:mm 发送者: 内容。',
+    '其中“我方客服”和“我方同事（xxx）”都是我们这边的人，其余是客户/群友。',
+    ...(openHints.length > 0
+      ? ['', '本群当前待办议题（仅作防重复参考；若你识别的议题与下列是同一条，请把 evidence 含其最早行、沿用其主题，不要另起一条）:', ...openHints.map((h, i) => `- 待办${i + 1}: ${h}`)]
+      : []),
     '',
     '工作方法（先整体理解，再逐议题提炼）：',
-    '1. 先按段整体阅读，识别正在进行的“议题”（同一件事的起因、多人附和、客服介入、追问与结果可以跨行跨段，合并为一个议题）；',
-    '   同一位客户围绕同一件事的多条消息必须串成一条议题，禁止一条消息单独成问题；',
+    '1. 先整体阅读，识别“议题”（起因、多人附和、客服介入、追问与结果可跨行跨段合并为一条）；',
+    '   同一客户围绕同一件事的多条消息必须串成一条议题，禁止一条消息单独成问题；',
     '2. 对每个议题判断：谁在抱怨/咨询（customers）、客服/团队是否已介入、客户是否已收尾；',
-    '3. 只需提取仍需要运营处理或值得记录的议题。已被我方明确解答且客户致谢/确认满意的不要输出；纯闲聊、广告、表情、与运营无关的不输出。',
+    '3. 只需提取仍需要运营处理或值得记录的议题。已明确解答且客户致谢/确认满意的不要输出；纯闲聊、广告、表情、与运营无关的不输出。',
     '',
     '只输出严格 JSON 数组（不要 markdown、不要额外文字）：',
-    '[{"type":"客诉|售后|物流|价格|咨询|建议|其他","title":"不超过24字的概括","summary":"不超过70字的现象与进展","customers":["客户昵称1","客户昵称2"],"status":"未处理|跟进中|已解决","need_action":true,"evidence":[行号1,行号2]}]',
+    '[{"type":"客诉|售后|物流|价格|咨询|建议|其他","title":"不超过24字的概括","summary":"不超过70字的现象与进展","customers":["客户昵称"],"status":"未处理|跟进中|已解决","need_action":true,"evidence":[行号1,行号2]}]',
     '字段约束：',
-    '- evidence 给该议题全部关键行（可跨段，1~12 个），行号必须是记录中真实存在的 [i]；',
+    '- evidence 给该议题全部关键行（可跨段、可含 ≥1000 的附录行，1~12 个），行号必须真实存在；',
     '- status=已解决 或 need_action=false：已闭环/无需运营，不会出现在待办里；',
     '- status=跟进中：客服已回复但客户未确认闭环（如“查一下回复您”后无下文、客户仍不满）；',
     '- status=未处理：无人回复或明显遗漏；',
     '- 宁可少而准，不要虚构与拆分。'
   ].join('\n')
 
-  try {
-    const raw = await provider.complete(system, body, { maxTokens: 1800 })
-    const parsed = parseLlmJson(raw)
-    return normalizeIssues(wxid, groupUsername, groupName, lines, parsed, 'llm')
-  } catch {
-    // LLM 失败：本群降级规则兜底，保证看板有数据
-    return normalizeIssues(wxid, groupUsername, groupName, msgs, ruleExtract(msgs, team), 'rule')
+  const provider = createAiProvider()
+  if (!provider) return []
+  const raw = await provider.complete(system, body, { maxTokens: 1800 })
+  const parsed = parseLlmJson(raw)
+  const resolver = (idx: number): LlmLineRef | undefined => {
+    if (idx >= 0 && idx < main.length) {
+      const r = main[idx]
+      return { msg: r.msg, senderName: r.senderName, text: r.text }
+    }
+    if (idx >= APX_BASE && idx - APX_BASE < apx.length) {
+      const r = apx[idx - APX_BASE]
+      return { msg: r.msg, senderName: r.senderName, text: r.text }
+    }
+    return undefined
   }
+  return normalizeIssues(wxid, groupUsername, groupName, resolver, parsed, 'llm')
 }
 
 /** 自动闭环回溯上限：锚点早于该时限的问题不再回溯读取，直接视为超期 */
@@ -511,43 +557,6 @@ function autoCloseUnreplied(
   return closed
 }
 
-/** 单群分析（含写库）：读窗口消息 → LLM/规则提炼 → upsert + unreplied 自动闭环，返回写入条数 */
-async function analyzeOneGroup(
-  wxid: string,
-  groupUsername: string,
-  groupName: string,
-  windowStartMs: number
-): Promise<number> {
-  const team = getTeamUsernamesCached(wxid)
-  // 读取窗口向现存 open unreplied 的最早锚点扩展（自动闭环需要看到锚点后的回复；上限 14 天）
-  let start = windowStartMs
-  const pend = listOpenUnrepliedByGroup(wxid, groupUsername)
-  const oldestAllowed = Date.now() - AUTO_CLOSE_MAX_AGE_MS
-  for (const p of pend) {
-    const cand = Math.max(p.occurAt - 1, oldestAllowed)
-    if (cand < start) start = cand
-  }
-  const msgs = readGroupMessages(wxid, groupUsername, start)
-  // 分析仅用请求窗口内的消息（扩展段只服务自动闭环）
-  const windowMsgs = msgs.filter((m) => m.createTime >= windowStartMs)
-  const issues = await analyzeGroup(wxid, groupUsername, groupName, windowMsgs, team)
-  let n = 0
-  for (const issue of issues) {
-    if (issue.resolved) {
-      // 已解决/无需运营：不新建；同 key 已存在 open（上次仍待办）→ 自动闭环为已解决
-      const existing = findIssueByKey(issue.key)
-      if (existing && existing.status === 'open') {
-        setIssueStatus(existing.id, 'done', true)
-      }
-      continue
-    }
-    upsertIssue(issue)
-    n++
-  }
-  if (pend.length > 0) autoCloseUnreplied(wxid, groupUsername, msgs, team)
-  return n
-}
-
 /** 读取某群最近一次分析尝试记录（成功或失败；失败携带 error 供 UI 透传） */
 function readGroupStamp(
   wxid: string,
@@ -585,12 +594,60 @@ export interface AnalyzeGroupResult {
   lastAt?: number
 }
 
+// ── 增量水位（防重复解读/防漏读）──
+
+/** 增量尾巴回看时长：新进展的上下文（结合 INCR_TAIL_ROWS 行数共同生效） */
+const INCR_TAIL_MS = 3 * 3600_000
+const wmKey = (wxid: string, group: string): string => `issue.wm:${wxid}:${group}`
+
+function readWm(wxid: string, groupUsername: string): { at: number; msgTime: number } | null {
+  const raw = getConfig(wmKey(wxid, groupUsername))
+  if (!raw) return null
+  try {
+    const p = JSON.parse(raw) as { at?: number; msgTime?: number }
+    if (typeof p.at === 'number' && typeof p.msgTime === 'number') {
+      return { at: p.at, msgTime: p.msgTime }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+/** 群消息库当前最新一条消息时间（peek 一页；读失败返回 null 表示不拦截） */
+function peekLatestMsgTime(wxid: string, groupUsername: string): number | null {
+  try {
+    const res = wxService.getMessages(wxid, groupUsername, 80)
+    if (!res.ok || !res.messages || res.messages.length === 0) return null
+    return res.messages[res.messages.length - 1].createTime
+  } catch {
+    return null
+  }
+}
+
+/** 全部读取消息 → LLM 文本行 */
+function buildRows(msgs: ChatMessage[], team: Set<string>): LlmRow[] {
+  return msgs.filter((m) => isTextLike(m) || m.localType === 3).map((m) => fmtRow(m, team))
+}
+
+/** LLM 不可用/失败时：规则全量（读取范围内，幂等） */
+function fallbackRuleIssues(
+  wxid: string,
+  groupUsername: string,
+  groupName: string,
+  msgs: ChatMessage[],
+  team: Set<string>
+): NewIssue[] {
+  return normalizeIssues(wxid, groupUsername, groupName, null, ruleExtract(msgs, team), 'rule')
+}
+
 /**
- * 单群窗口分析（工作台「群问题」入口）。
- * - days 为自然日窗口（默认 2：今天 + 昨天，与看板口径一致）；
- * - 自动触发节流：距上次尝试（含失败）不足 GROUP_AUTO_REANALYZE_MS 直接 skipped（force 忽略）；
- * - 按群 in-flight 防重；失败也落尝试记录，避免反复切群触发失败重试轰炸。
- * - 与看板全量分析共用同一存储（稳定 key 以消息为锚点），两入口不产生重复行。
+ * 单群分析（工作台「群问题」入口）—— 增量水位 SOP。
+ * - 首次/force：全量（自然日窗口 days，并向前扩展到本群 open 议题最早证据与 unreplied 锚点，上限 14 天）；
+ * - 增量（有水位且非 force）：先 peek 最新消息，水位后无新消息 → skipped（0 LLM，不重复解读）；
+ *   有新消息 → 主区=水位后新行，附录=尾巴(3h/40 行)+open 议题证据行，上下文不截断；
+ * - 分析成功推进水位（单调），失败不推进（下次补读，防漏）。
+ * - 自动触发节流 2 分钟兜底；按群 in-flight 防重；与看板全量共用存储（key 消息锚定不重复建行）。
  */
 export async function analyzeGroupIssues(
   wxid: string,
@@ -626,7 +683,10 @@ export async function analyzeGroupIssues(
     return { ok: true, skipped: true, method: last?.method, count: last?.count, lastAt: last?.at }
   }
 
-  const stampNow = (at: number, extra: { method?: 'llm' | 'rule'; count?: number; error?: string }): void => {
+  const stampNow = (
+    at: number,
+    extra: { method?: 'llm' | 'rule'; count?: number; error?: string }
+  ): void => {
     setConfig(
       groupStampKey(wxid, groupUsername),
       JSON.stringify({ at, method: extra.method, count: extra.count, error: extra.error ?? '' })
@@ -636,15 +696,113 @@ export async function analyzeGroupIssues(
   const run = (async (): Promise<AnalyzeGroupResult> => {
     const startedAt = Date.now()
     try {
+      // 1) 水位判定：增量模式且水位后无新消息 → 跳过（不重复解读）
+      const wm = readWm(wxid, groupUsername)
+      let incremental = false
+      if (!force && wm) {
+        const latest = peekLatestMsgTime(wxid, groupUsername)
+        if (latest !== null && latest <= wm.msgTime) {
+          return { ok: true, skipped: true, lastAt: wm.at }
+        }
+        incremental = true
+      }
+
+      // 2) 读取窗口：主分析起点 + 向前扩展（open 议题证据 / unreplied 锚，上限 14 天）
       const today = new Date(startedAt)
       today.setHours(0, 0, 0, 0)
-      const windowStart = today.getTime() - (days - 1) * 24 * 3600_000
-      const count = await analyzeOneGroup(wxid, groupUsername, groupName, windowStart)
-      // 0 条时无法从结果推断方式：以是否配好 provider 判定（与全量分析口径一致）
+      const base = today.getTime() - (days - 1) * 24 * 3600_000
+      const oldestAllowed = Date.now() - AUTO_CLOSE_MAX_AGE_MS
+      const pend = listOpenUnrepliedByGroup(wxid, groupUsername)
+      const openTimes = openIssueEvidenceTimes(wxid, groupUsername)
+      let extendMs: number | null = null
+      const consider = (t: number): void => {
+        const cand = Math.max(t - 1, oldestAllowed)
+        if (extendMs === null || cand < extendMs) extendMs = cand
+      }
+      for (const p of pend) consider(p.occurAt)
+      for (const t of openTimes) consider(t)
+
+      const focusStart = incremental ? wm!.msgTime : base
+      let readStart = incremental ? Math.max(wm!.msgTime - INCR_TAIL_MS, oldestAllowed) : base
+      if (extendMs !== null && extendMs < readStart) readStart = extendMs
+      readStart = Math.max(readStart, oldestAllowed)
+
+      const msgs = readGroupMessages(wxid, groupUsername, readStart)
+      const team = getTeamUsernamesCached(wxid)
       const provider = createAiProvider()
-      const method: 'llm' | 'rule' = provider ? 'llm' : 'rule'
-      stampNow(Date.now(), { method, count })
-      return { ok: true, method, count, lastAt: Date.now() }
+      if (msgs.length === 0) {
+        const method: 'llm' | 'rule' = provider ? 'llm' : 'rule'
+        stampNow(Date.now(), { method, count: 0 })
+        return { ok: true, method, count: 0, lastAt: Date.now() }
+      }
+      const latestMsgTime = msgs[msgs.length - 1].createTime
+
+      // 3) 主区/附录划分
+      const allRows = buildRows(msgs, team)
+      const mainRows: LlmRow[] = []
+      const apxRows: LlmRow[] = []
+      const preRows = allRows.filter((r) => r.msg.createTime < focusStart)
+      const tailSet = new Set(
+        preRows.slice(-INCR_TAIL_ROWS).map((r) => r.msg.createTime)
+      )
+      for (const r of allRows) {
+        if (r.msg.createTime >= focusStart) mainRows.push(r)
+        else if (openTimes.has(r.msg.createTime) || tailSet.has(r.msg.createTime)) {
+          apxRows.push(r)
+        }
+      }
+      // 兜底：主区为空（极端窗位）→ 全部当主区处理，避免漏读
+      if (mainRows.length === 0 && allRows.length > 0) {
+        mainRows.push(...allRows)
+        apxRows.length = 0
+      }
+
+      // 4) LLM（议题级，含附录上下文）或规则降级
+      let issues: NewIssue[] = []
+      let method: 'llm' | 'rule' = 'rule'
+      if (provider && mainRows.length > 0) {
+        try {
+          const openHints = openIssuesForGroup(wxid, groupUsername, 6).map(
+            (i) => `[${i.type}] ${i.title}${i.followUp ? '（跟进中）' : ''}`
+          )
+          issues = await analyzeLlmIssues(
+            wxid,
+            groupUsername,
+            groupName,
+            mainRows,
+            apxRows,
+            openHints
+          )
+          method = 'llm'
+        } catch {
+          issues = fallbackRuleIssues(wxid, groupUsername, groupName, msgs, team)
+        }
+      } else if (msgs.length > 0) {
+        issues = fallbackRuleIssues(wxid, groupUsername, groupName, msgs, team)
+      }
+
+      // 5) 落库 + resolved 自动闭环 + unreplied 自动闭环
+      let n = 0
+      for (const issue of issues) {
+        if (issue.resolved) {
+          const existing = findIssueByKey(issue.key)
+          if (existing && existing.status === 'open') {
+            setIssueStatus(existing.id, 'done', true)
+          }
+          continue
+        }
+        upsertIssue(issue)
+        n++
+      }
+      if (pend.length > 0) autoCloseUnreplied(wxid, groupUsername, msgs, team)
+
+      // 6) 成功推进水位（单调；失败不推进，下次自动补读）
+      const prevWm = readWm(wxid, groupUsername)
+      if (!prevWm || latestMsgTime > prevWm.msgTime) {
+        setConfig(wmKey(wxid, groupUsername), JSON.stringify({ at: Date.now(), msgTime: latestMsgTime }))
+      }
+      stampNow(Date.now(), { method, count: n })
+      return { ok: true, method, count: n, lastAt: Date.now() }
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e)
       stampNow(Date.now(), { error })

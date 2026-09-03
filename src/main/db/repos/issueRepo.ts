@@ -228,6 +228,43 @@ export function clearIssues(wxid: string): void {
   db.prepare(`DELETE FROM issue_feedback WHERE wxid = ?`).run(wxid)
 }
 
+/** 本群 open 议题的最早证据时间与标题摘要（增量分析的上下文保护与 LLM 稳定性提示用） */
+export function openIssuesForGroup(
+  wxid: string,
+  groupUsername: string,
+  limit = 8
+): FeedbackIssue[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM issue_feedback WHERE wxid = ? AND group_username = ? AND status = 'open'
+       ORDER BY occur_at ASC LIMIT ?`
+    )
+    .all(wxid, groupUsername, limit) as IssueRow[]
+  const msgCountStmt = getDb().prepare(
+    `SELECT COUNT(*) AS n FROM issue_feedback_msg WHERE issue_id = ?`
+  )
+  return rows.map((r) => {
+    const issue = rowToIssue(r)
+    issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
+    return issue
+  })
+}
+
+/** open 议题证据消息时间集合（LLM 输入截断时的保底行） */
+export function openIssueEvidenceTimes(
+  wxid: string,
+  groupUsername: string
+): Set<number> {
+  const rows = getDb()
+    .prepare(
+      `SELECT m.msg_time FROM issue_feedback_msg m
+       JOIN issue_feedback f ON f.id = m.issue_id
+       WHERE f.wxid = ? AND f.group_username = ? AND f.status = 'open'`
+    )
+    .all(wxid, groupUsername) as Array<{ msg_time: number }>
+  return new Set(rows.map((r) => r.msg_time))
+}
+
 export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }): FeedbackIssue[] {
   const rows = (
     opts?.status
