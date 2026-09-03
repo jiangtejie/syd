@@ -1006,27 +1006,83 @@
 .wb-att-dialog {
   background: var(--bg-panel);
   border-radius: 10px;
-  padding: 20px;
-  max-width: 80vw;
-  max-height: 80vh;
+  padding: 10px 12px 12px;
+  max-width: 94vw;
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   position: relative;
 }
 
-.wb-att-image {
-  max-width: 70vw;
-  max-height: 65vh;
-  border-radius: 6px;
-}
-
 .wb-att-video {
-  max-width: 70vw;
-  max-height: 65vh;
+  max-width: 90vw;
+  max-height: 80vh;
   border-radius: 6px;
   background: #000;
+}
+
+/* 可缩放图片预览 */
+.wb-img-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 92vw;
+}
+
+.wb-img-box {
+  max-width: 92vw;
+  max-height: 80vh;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    repeating-conic-gradient(#f0f2f5 0% 25%, var(--bg-panel) 0% 50%) 0 0 / 20px 20px;
+  border-radius: 6px;
+  cursor: zoom-in;
+  user-select: none;
+}
+
+.wb-img-el {
+  display: block;
+  flex: none;
+}
+
+.wb-img-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.wb-img-btn {
+  min-width: 26px;
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.wb-img-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.wb-img-pct {
+  min-width: 56px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-2);
+  border: none;
+  background: none;
+  cursor: pointer;
 }
 
 .wb-att-video-hint {

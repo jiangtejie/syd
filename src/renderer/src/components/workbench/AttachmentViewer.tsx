@@ -265,6 +265,106 @@ function VideoPlayer({ videoMd5 }: { videoMd5?: string }): React.JSX.Element {
   return <video className="wb-att-video" src={url} controls autoPlay />
 }
 
+const MIN_SCALE = 0.2
+const MAX_SCALE = 5
+const STEP = 0.1
+const FIT_MAX = 2.6 // 小图自动放大上限(避免过度虚化)
+
+/**
+ * 可缩放图片预览：大图按窗口 contain 铺满；小于窗口的图自动放大到合适尺寸(≤2.6x)。
+ * 交互:滚轮 = 缩放(Ctrl+滚轮同),双击 = 切换 100%/自适应,顶部显示缩放比例并可重置。
+ */
+function ImagePreviewer({ src }: { src: string }): React.JSX.Element {
+  const [scale, setScale] = useState(1)
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null)
+  const [mode, setMode] = useState<'fit' | 'actual'>('fit')
+
+  // 按容器与原始尺寸计算自适应缩放(小图放大、大图缩到窗口)
+  const fitScale = (nat: { w: number; h: number }): number => {
+    const maxW = window.innerWidth * 0.9
+    const maxH = window.innerHeight * 0.82
+    const s = Math.min(maxW / nat.w, maxH / nat.h)
+    if (s >= 1) return Math.min(s, FIT_MAX) // 原图小于容器:放大
+    return s // 原图大于容器:缩小至刚好铺满
+  }
+
+  const applyFit = (nat: { w: number; h: number }): void => {
+    const f = fitScale(nat)
+    setScale(f)
+    setMode(f >= 1 ? 'fit' : 'actual')
+  }
+
+  const zoom = (delta: number): void => {
+    setScale((prev) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, prev + delta)))
+    setMode('actual')
+  }
+
+  const displayW = natural ? Math.round(natural.w * scale) : undefined
+  const displayH = natural ? Math.round(natural.h * scale) : undefined
+  const pct = Math.round(scale * 100)
+
+  return (
+    <div className="wb-img-preview">
+      <div
+        className="wb-img-box"
+        onWheel={(e) => {
+          // Ctrl+滚轮 或 直接滚轮 都缩放;Shift?普通滚动在内部滚动条可用?采用滚轮=缩放(预览聚焦缩放更顺手)
+          e.preventDefault()
+          zoom(e.deltaY < 0 ? STEP : -STEP)
+        }}
+        onDoubleClick={() => {
+          if (natural) {
+            if (mode === 'fit' || scale === 1) {
+              // 双击切回实际大小 100%
+              setScale(1)
+              setMode('actual')
+            } else {
+              applyFit(natural)
+            }
+          }
+        }}
+      >
+        {displayW ? (
+          <img
+            className="wb-img-el"
+            src={src}
+            alt="图片预览"
+            style={{ width: displayW, height: displayH }}
+            onWheel={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <img
+            className="wb-img-el"
+            src={src}
+            alt="图片预览"
+            onLoad={(e) => {
+              const img = e.currentTarget
+              const nat = { w: img.naturalWidth || 800, h: img.naturalHeight || 600 }
+              setNatural(nat)
+              applyFit(nat)
+            }}
+            onWheel={(e) => e.stopPropagation()}
+          />
+        )}
+      </div>
+      <div className="wb-img-toolbar">
+        <button type="button" className="wb-img-btn" onClick={() => zoom(-STEP * 2)} title="缩小">
+          −
+        </button>
+        <button type="button" className="wb-img-pct" onClick={() => natural && applyFit(natural)} title="双击图片或点击回到自适应">
+          {pct}%
+        </button>
+        <button type="button" className="wb-img-btn" onClick={() => zoom(STEP * 2)} title="放大">
+          +
+        </button>
+        <button type="button" className="wb-img-btn" onClick={() => natural && applyFit(natural)} title="适应窗口">
+          ⤢ 适应
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /**
  * 附件查看弹层（T6）。
  * image：展示图片预览；file：展示文件信息（打开/导出待 M3 接入媒体解密）。
@@ -293,7 +393,7 @@ function AttachmentViewer({
     <div className="wb-att-overlay" onClick={onClose}>
       <div className="wb-att-dialog" onClick={(e) => e.stopPropagation()}>
         {attachment.kind === 'image' ? (
-          <img className="wb-att-image" src={src} alt="图片预览" />
+          <ImagePreviewer src={src} />
         ) : attachment.kind === 'video' ? (
           <VideoPlayer videoMd5={attachment.videoMd5} />
         ) : (
