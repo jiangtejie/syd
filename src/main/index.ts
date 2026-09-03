@@ -32,6 +32,7 @@ import { registerMediaHandlers } from './ipc/mediaHandlers'
 import { registerIssueHandlers } from './ipc/issueHandlers'
 import { registerAgentHandlers } from './ipc/agentHandlers'
 import { registerTeamHandlers } from './ipc/teamHandlers'
+import { registerExportHandlers } from './ipc/exportHandlers'
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
 import { stopSending } from './services/send/sendService'
 
@@ -302,6 +303,7 @@ if (!app.requestSingleInstanceLock()) {
     registerIssueHandlers()
     registerAgentHandlers()
     registerTeamHandlers()
+    registerExportHandlers()
     registerMediaProtocol()
 
     // 微信库变更 → 新消息提醒（节流 + 聚焦抑制）

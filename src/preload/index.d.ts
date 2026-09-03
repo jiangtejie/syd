@@ -194,6 +194,35 @@ declare global {
           ) => Promise<{ ok: boolean; error?: string }>
           remove: (accountWxid: string, username: string) => Promise<{ ok: boolean; error?: string }>
         }
+        export: {
+          chat: (
+            wxid: string,
+            opts: {
+              targets: Array<{ username: string; displayName: string }>
+              startMs?: number
+              endMs?: number
+              format: 'txt' | 'html' | 'json'
+              folder: string
+            }
+          ) => Promise<{
+            ok: boolean
+            folder?: string
+            files?: Array<{ name: string; msgCount: number }>
+            error?: string
+          }>
+          business: (
+            wxid: string,
+            folder: string
+          ) => Promise<{ ok: boolean; folder?: string; name?: string; error?: string }>
+          openFolder: (folder: string) => Promise<{ ok: boolean; error?: string }>
+          onProgress: (callback: (evt: {
+            phase: string
+            current: number
+            total: number
+            name: string
+            detail: string
+          }) => void) => () => void
+        }
         agent: {
           list: () => Promise<Result<{ agents?: AiAgent[]; defaultId?: string | null }>>
           save: (input: AiAgentInput) => Promise<Result<{ agent?: AiAgent }>>

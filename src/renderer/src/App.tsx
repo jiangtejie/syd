@@ -3,6 +3,7 @@ import { useWorkbenchStore, type WorkbenchPage } from './stores/workbench'
 import Workbench from './pages/Workbench'
 import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
+import ExportPage from './pages/ExportPage'
 import SettingsPage from './pages/SettingsPage'
 import TitleBar from './components/TitleBar'
 import ToastHost from './components/ToastHost'
@@ -14,7 +15,7 @@ import './pages/shell.css'
  * 对话页（Workbench）始终保持挂载（隐藏不卸载），切页不丢滚动位置与输入状态。
  */
 
-type NavIconName = 'chat' | 'customers' | 'dashboard' | 'settings'
+type NavIconName = 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -60,6 +61,14 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       )
+    case 'export':
+      return (
+        <svg {...attrs}>
+          <path d="M12 3v12" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M5 21h14" />
+        </svg>
+      )
   }
 }
 
@@ -67,6 +76,7 @@ const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }>
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
   { key: 'customers', icon: 'customers', label: '客户' },
+  { key: 'export', icon: 'export', label: '数据导出' },
   { key: 'settings', icon: 'settings', label: '设置' }
 ]
 
@@ -192,6 +202,11 @@ function App(): React.JSX.Element {
             {page === 'customers' && (
               <div className="app-page">
                 <CustomersPage />
+              </div>
+            )}
+            {page === 'export' && (
+              <div className="app-page">
+                <ExportPage />
               </div>
             )}
             {page === 'dashboard' && (

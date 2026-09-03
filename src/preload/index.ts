@@ -195,6 +195,35 @@ const api = {
       remove: (accountWxid: string, username: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:team:remove', accountWxid, username)
     },
+    export: {
+      chat: (
+        wxid: string,
+        opts: {
+          targets: Array<{ username: string; displayName: string }>
+          startMs?: number
+          endMs?: number
+          format: 'txt' | 'html' | 'json'
+          folder: string
+        }
+      ): Promise<{
+        ok: boolean
+        folder?: string
+        files?: Array<{ name: string; msgCount: number }>
+        error?: string
+      }> => ipcRenderer.invoke('cs:export:chat', wxid, opts),
+      business: (
+        wxid: string,
+        folder: string
+      ): Promise<{ ok: boolean; folder?: string; name?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:export:business', wxid, folder),
+      openFolder: (folder: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:export:openFolder', folder),
+      onProgress: (callback: (evt: unknown) => void): (() => void) => {
+        const listener = (_e: Electron.IpcRendererEvent, evt: unknown): void => callback(evt)
+        ipcRenderer.on('cs:export:progress', listener)
+        return () => ipcRenderer.removeListener('cs:export:progress', listener)
+      }
+    },
     agent: {
       list: (): Promise<{ ok: boolean; agents?: AiAgent[]; defaultId?: string | null; error?: string }> =>
         ipcRenderer.invoke('cs:agent:list'),
