@@ -79,6 +79,8 @@ export interface ChatMessage {
   senderAvatarUrl?: string
   /** 是否群聊会话（冗余，渲染端便于判断） */
   isGroup?: boolean
+  /** 发送人是否为已全局标记的团队客服成员（我方同事；用于展示与分析判定） */
+  senderIsTeam?: boolean
   parsedContent: string
   rawContent: string
   imageMd5?: string
@@ -344,6 +346,8 @@ export interface FeedbackIssueMsg {
   time: number
   senderName: string
   isSend: boolean
+  /** 是否团队客服成员（我方同事） */
+  senderIsTeam?: boolean
   text: string
   imageMd5?: string
   localType?: number
@@ -361,6 +365,8 @@ export interface FeedbackIssue {
   occurAt: number
   status: FeedbackIssueStatus
   method: FeedbackIssueMethod
+  /** 是否由引擎自动闭环（unreplied 问题检测到客服已回复后自动 done） */
+  autoDone?: boolean
   createdAt: number
   updatedAt: number
   /** 关联消息数（展开时才拉明细） */
@@ -385,4 +391,12 @@ export interface FeedbackTypeCount {
   type: FeedbackIssueType
   count: number
 }
+
+/** 团队客服成员（全局标识，按微信账号作用域） */
+export interface TeamMemberInfo {
+  username: string
+  /** 自定义备注（如「店长-小张」），展示用 */
+  label?: string
+}
+
 

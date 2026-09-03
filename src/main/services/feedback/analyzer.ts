@@ -1,11 +1,13 @@
 import * as wxService from '../wechat/wxService'
 import { createAiProvider } from '../ai/provider'
+import { getTeamUsernamesCached } from '../../db/repos/teamRepo'
 import {
   clearIssues,
   listIssues,
   setIssueStatus,
   typeCounts,
   upsertIssue,
+  listOpenUnrepliedByGroup,
   type NewIssue
 } from '../../db/repos/issueRepo'
 import { getConfig, setConfig } from '../../db/repos/config'
@@ -19,18 +21,19 @@ import type {
 } from '../../../shared/types'
 
 /**
- * 群问题反馈分析器（看板）。
- * - 窗口：近 7 天（自然日）内活跃的群会话；
+ * 群问题反馈分析器（看板 + 工作台）。
+ * - 窗口：近 N 天（自然日）内活跃的群会话；
  * - 方式：OpenAI 兼容 LLM 分类提取；未配置/失败时按群回退本地规则（关键词 + 末尾未回复）；
- * - 落库策略：稳定 key upsert，重复分析不重置人工处理状态；
- * - 每次全量重扫该窗口，不删除历史行（归档等人工状态不因窗口滑动丢失）。
+ * - 「已跟进」判定为会话语义：客户消息之后、下一条客户消息之前出现我方/团队客服消息即视为已回复，
+ *   不设固定时间窗（隔夜/超 30 分钟回复不再误报）；
+ * - 团队客服成员（手动全局标识）的消息视同我方；
+ * - unreplied 问题自动闭环：后续分析检测到锚点消息后有客服回复 → 自动 done（autoDone 标记）；
+ * - 落库策略：稳定 key upsert，重复分析不重置人工处理状态。
  */
 
 const WINDOW_DAYS = 7
 /** 单群扫描消息上限（窗口内消息超限时保留最新） */
 const MAX_GROUP_MSGS = 800
-/** 客户消息在此时间内获客服回复视为已跟进，规则模式不再重复建问题 */
-const REPLY_WINDOW_MS = 30 * 60_000
 /** LLM 每群输入行数上限（超窗截断取最新，避免超长） */
 const LLM_LINES_CAP = 220
 /** 分析的群数上限（按活跃度取最新） */
@@ -107,14 +110,41 @@ function msgToSummaryMsg(m: ChatMessage, senderName: string): FeedbackIssueMsg {
   }
 }
 
-/** 归一化发送者名：我方消息显示固定名，客户取昵称（群内昵称优先） */
-function senderLabel(m: ChatMessage): string {
+/** 归一化发送者名：我方消息固定名；团队客服同事标注；客户取昵称 */
+function senderLabel(m: ChatMessage, team?: Set<string>): string {
   if (m.isSend) return '我方客服'
-  return m.senderNickname || m.senderUsername || '客户'
+  const u = m.senderUsername
+  if (team && u && team.has(u)) {
+    const nick = m.senderNickname || u
+    return nick === u ? '我方同事' : `我方同事（${nick}）`
+  }
+  return m.senderNickname || u || '客户'
 }
 
+/** LLM 上下文行消息过滤（真文本 + 带摘要的 appmsg + 图片） */
 function isTextLike(m: ChatMessage): boolean {
   return m.localType === 1 || m.localType === 49
+}
+
+/** 规则模式只吃真文本（type 1）；49 型摘要（[链接]/[文件]/[聊天记录]/[转账]）会引入假关键词，不参与匹配 */
+function isRuleText(m: ChatMessage): boolean {
+  return m.localType === 1
+}
+
+/**
+ * 会话语义「已跟进」判定：消息 idx 之后、下一条客户（非我方/非团队）消息之前，
+ * 是否存在我方或团队客服消息。不再使用固定 30 分钟窗（隔夜/迟回复不误报）。
+ */
+function hasStaffReplyAfter(msgs: ChatMessage[], idx: number, team: Set<string>): boolean {
+  for (let j = idx + 1; j < msgs.length; j++) {
+    const x = msgs[j]
+    const isStaff = x.isSend || (!!x.senderUsername && team.has(x.senderUsername))
+    if (isStaff) return true
+    // 系统消息等非客户对象不影响回合判定；遇到下一条客户消息仍未回复 → 视为未跟进
+    if (!x.isSend && !x.senderUsername) continue
+    if (!x.isSend) return false
+  }
+  return false
 }
 
 /** 收敛 LLM 输出类型到枚举 */
@@ -164,17 +194,16 @@ function readGroupMessages(wxid: string, groupUsername: string, windowStartMs: n
   return all.length > MAX_GROUP_MSGS ? all.slice(all.length - MAX_GROUP_MSGS) : all
 }
 
-/** 本地规则提取：未回复关键词命中（同一条消息取优先级最高一类）+ 末尾未回复兜底 */
-function ruleExtract(msgs: ChatMessage[]): NewIssue[] {
+/** 本地规则提取：客户真文本关键词命中（未获客服/团队跟进）+ 末尾未回复兜底（会话语义） */
+function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] {
   const issues: NewIssue[] = []
-  for (const m of msgs) {
-    if (m.isSend || !isTextLike(m)) continue
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i]
+    const u = m.senderUsername
+    if (m.isSend || (u && team.has(u)) || !isRuleText(m)) continue
     const text = msgToText(m)
-    // 已获客服回复（REPLY_WINDOW_MS 内）视为已跟进，不再重复生成问题
-    const replied = msgs.some(
-      (x) => x.isSend && x.createTime > m.createTime && x.createTime - m.createTime <= REPLY_WINDOW_MS
-    )
-    if (replied) continue
+    // 已跟进：其后至下一条客户消息前存在我方/团队客服回复
+    if (hasStaffReplyAfter(msgs, i, team)) continue
     // 同一条消息只按 RULE_KEYWORDS 顺序取优先级最高的一个类型，避免一词多类型重复行
     const rule = RULE_KEYWORDS.find((r) => r.keywords.some((k) => text.includes(k)))
     if (!rule) continue
@@ -184,34 +213,40 @@ function ruleExtract(msgs: ChatMessage[]): NewIssue[] {
       groupUsername: '',
       groupName: '',
       type: rule.type,
-      title: `${senderLabel(m)}：${text.slice(0, 24)}`,
+      title: `${senderLabel(m, team)}：${text.slice(0, 24)}`,
       summary: text.slice(0, 80),
       occurAt: m.createTime,
       method: 'rule',
-      msgs: [msgToSummaryMsg(m, senderLabel(m))]
+      msgs: [msgToSummaryMsg(m, senderLabel(m, team))]
     })
   }
-  // 末尾「客户提问未被回复」：窗内最后是客户文本、无后续我方消息、距今超 30 分钟；
-  // 若该消息已命中关键词生成问题则不再重复追加
-  const last = msgs[msgs.length - 1]
+  // 末尾「客户留言无回复」：窗内最后一条客户真文本消息仍无任何我方/团队回复 → 待回复提示
+  let tailIdx = -1
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    const u = m.senderUsername
+    if (!m.isSend && !(u && team.has(u)) && isRuleText(m)) {
+      tailIdx = i
+      break
+    }
+  }
+  const tail = tailIdx >= 0 ? msgs[tailIdx] : undefined
   if (
-    last &&
-    !last.isSend &&
-    isTextLike(last) &&
-    Date.now() - last.createTime > REPLY_WINDOW_MS &&
-    !issues.some((it) => it.occurAt === last.createTime)
+    tail &&
+    !hasStaffReplyAfter(msgs, tailIdx, team) &&
+    !issues.some((it) => it.occurAt === tail.createTime)
   ) {
     issues.push({
-      key: `unreplied:${last.createTime}`,
+      key: `unreplied:${tail.createTime}`,
       wxid: '',
       groupUsername: '',
       groupName: '',
       type: '咨询',
-      title: `${senderLabel(last)}：${msgToText(last).slice(0, 24)}`,
-      summary: '客户最后一条消息，30 分钟内未见客服回复',
-      occurAt: last.createTime,
+      title: `${senderLabel(tail, team)}：${msgToText(tail).slice(0, 24)}`,
+      summary: '客户留言后未见客服（或团队）回复',
+      occurAt: tail.createTime,
       method: 'rule',
-      msgs: [msgToSummaryMsg(last, senderLabel(last))]
+      msgs: [msgToSummaryMsg(tail, senderLabel(tail, team))]
     })
   }
   return issues
@@ -273,12 +308,13 @@ async function analyzeGroup(
   wxid: string,
   groupUsername: string,
   groupName: string,
-  msgs: ChatMessage[]
+  msgs: ChatMessage[],
+  team: Set<string>
 ): Promise<NewIssue[]> {
   if (msgs.length === 0) return []
   const provider = createAiProvider()
   if (!provider) {
-    return normalizeIssues(wxid, groupUsername, groupName, msgs, ruleExtract(msgs), 'rule')
+    return normalizeIssues(wxid, groupUsername, groupName, msgs, ruleExtract(msgs, team), 'rule')
   }
   // LLM 模式：文本相关行编号后送入（截最新，控制 token）
   const lines = msgs
@@ -288,9 +324,9 @@ async function analyzeGroup(
         hour: '2-digit',
         minute: '2-digit',
         hour12: false
-      })} ${senderLabel(m)}: ${msgToText(m)}`,
+      })} ${senderLabel(m, team)}: ${msgToText(m)}`,
       msg: m,
-      senderName: senderLabel(m)
+      senderName: senderLabel(m, team)
     }))
     .slice(-LLM_LINES_CAP)
   if (lines.length === 0) return []
@@ -298,9 +334,11 @@ async function analyzeGroup(
 
   const system = [
     '你是资深微信客服运营分析员。用户会给出一段客户服务群聊天记录，',
-    '每行形如：[i] HH:mm 发送者: 内容，其中“我方客服”之外的都是客户/普通群友发言。',
-    '请找出其中的客户问题/反馈/诉求（如客诉、售后、物流、价格、咨询、建议等），',
+    '每行形如：[i] HH:mm 发送者: 内容，其中“我方客服”和“我方同事（xxx）”都是我们这边的人，',
+    '其余的是客户/普通群友。',
+    '请找出仍需运营关注的客户问题/反馈/诉求（如客诉、售后、物流、价格、咨询、建议等），',
     '忽略客服内部说明、广告、表情图与寒暄。',
+    '已被我方明确解答、客户已致谢收尾或确认满意的诉求不要提取；拿不准宁可不提取。',
     '只输出严格 JSON 数组（不要 markdown、不要额外文字）：',
     '[{"type":"客诉|售后|物流|价格|咨询|建议|其他","title":"不超过24字的概括","summary":"不超过60字的现象说明","evidence":[至少1个最多4个行号]}]',
     'evidence 必须是记录中的行号 i；同问题的多句发言（含客服答复）都作为 evidence；宁可少而准，不要虚构。'
@@ -312,24 +350,84 @@ async function analyzeGroup(
     return normalizeIssues(wxid, groupUsername, groupName, lines, parsed, 'llm')
   } catch {
     // LLM 失败：本群降级规则兜底，保证看板有数据
-    return normalizeIssues(wxid, groupUsername, groupName, msgs, ruleExtract(msgs), 'rule')
+    return normalizeIssues(wxid, groupUsername, groupName, msgs, ruleExtract(msgs, team), 'rule')
   }
 }
 
-/** 单群分析（含写库）：读窗口消息 → LLM/规则提炼 → upsert，返回写入条数 */
+/** 自动闭环回溯上限：锚点早于该时限的问题不再回溯读取，直接视为超期 */
+const AUTO_CLOSE_MAX_AGE_MS = 14 * 24 * 3600_000
+
+/**
+ * 自动闭环：对仍 open 的 unreplied 问题检查锚点消息后是否已出现客服/团队回复，
+ * 有则自动 done（autoDone 标记，UI 区分「自动解决」）。
+ * 锚点早于回溯上限（无法在读取范围内找到）时视为超期未跟进 → 自动搁置。
+ * msgs 需覆盖锚点（analyzeOneGroup 会扩展读取窗口）。
+ */
+function autoCloseUnreplied(
+  wxid: string,
+  groupUsername: string,
+  msgs: ChatMessage[],
+  team: Set<string>
+): number {
+  const pend = listOpenUnrepliedByGroup(wxid, groupUsername)
+  const now = Date.now()
+  let closed = 0
+  for (const p of pend) {
+    // 锚消息 = 该时间点的客户消息（±1s 容差，防库时间精度差异）
+    let anchorIdx = -1
+    for (let i = 0; i < msgs.length; i++) {
+      const m = msgs[i]
+      if (m.isSend) continue
+      if (Math.abs(m.createTime - p.occurAt) <= 1000 && isRuleText(m)) {
+        anchorIdx = i
+        break
+      }
+    }
+    if (anchorIdx < 0) {
+      // 超出回溯范围仍未跟进：超期自动搁置（不再打扰，也不谎报"已回复"）
+      if (now - p.occurAt > AUTO_CLOSE_MAX_AGE_MS) {
+        setIssueStatus(p.id, 'stalled', true)
+        closed++
+      }
+      continue
+    }
+    const staffLater = msgs
+      .slice(anchorIdx + 1)
+      .some((x) => x.isSend || (!!x.senderUsername && team.has(x.senderUsername)))
+    if (staffLater) {
+      setIssueStatus(p.id, 'done', true)
+      closed++
+    }
+  }
+  return closed
+}
+
+/** 单群分析（含写库）：读窗口消息 → LLM/规则提炼 → upsert + unreplied 自动闭环，返回写入条数 */
 async function analyzeOneGroup(
   wxid: string,
   groupUsername: string,
   groupName: string,
   windowStartMs: number
 ): Promise<number> {
-  const msgs = readGroupMessages(wxid, groupUsername, windowStartMs)
-  const issues = await analyzeGroup(wxid, groupUsername, groupName, msgs)
+  const team = getTeamUsernamesCached(wxid)
+  // 读取窗口向现存 open unreplied 的最早锚点扩展（自动闭环需要看到锚点后的回复；上限 14 天）
+  let start = windowStartMs
+  const pend = listOpenUnrepliedByGroup(wxid, groupUsername)
+  const oldestAllowed = Date.now() - AUTO_CLOSE_MAX_AGE_MS
+  for (const p of pend) {
+    const cand = Math.max(p.occurAt - 1, oldestAllowed)
+    if (cand < start) start = cand
+  }
+  const msgs = readGroupMessages(wxid, groupUsername, start)
+  // 分析仅用请求窗口内的消息（扩展段只服务自动闭环）
+  const windowMsgs = msgs.filter((m) => m.createTime >= windowStartMs)
+  const issues = await analyzeGroup(wxid, groupUsername, groupName, windowMsgs, team)
   let n = 0
   for (const issue of issues) {
     upsertIssue(issue)
     n++
   }
+  if (pend.length > 0) autoCloseUnreplied(wxid, groupUsername, msgs, team)
   return n
 }
 
@@ -484,9 +582,13 @@ export async function analyzeIssues(
       .slice(0, MAX_GROUPS)
 
     let upserted = 0
+    // 逐群走 analyzeGroupIssues（force）：统一按群锁、自动闭环，避免与工作台单群分析并发撞车
     for (const g of groups) {
-      const n = await analyzeOneGroup(wxid, g.username, g.displayName, windowStart)
-      upserted += n
+      const r = await analyzeGroupIssues(wxid, g.username, g.displayName, {
+        days: WINDOW_DAYS,
+        force: true
+      })
+      if (r.ok && r.count) upserted += r.count
     }
 
     const payload = { at: Date.now(), method, count: upserted }

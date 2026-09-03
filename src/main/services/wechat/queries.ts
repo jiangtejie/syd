@@ -30,6 +30,7 @@ import {
   parseTransferUsernames
 } from './content'
 import { resolveOpenimDisplayName } from './weCom'
+import { getTeamUsernamesCached } from '../../db/repos/teamRepo'
 import type {
   ChatMessage,
   MessageCursor,
@@ -987,6 +988,12 @@ export function enrichMessagesWithSenders(
 
       const contactMap = queryContactsByUsernames(db, contactTable, senderIds)
       const myVariants = myWxidVariants(ctx.wxid)
+      // 团队客服成员（全局手动标识）：消息发送人标记 senderIsTeam，供展示与分析判定
+      const teamSet = getTeamUsernamesCached(ctx.wxid)
+      for (const m of messages) {
+        if (m.isSend || !m.senderUsername) continue
+        if (teamSet.has(m.senderUsername)) m.senderIsTeam = true
+      }
       // 群昵称映射（同会话一次性加载，缓存 10 分钟）
       const groupNick = isGroup ? loadGroupNicknames(ctx, sessionId!) : undefined
 

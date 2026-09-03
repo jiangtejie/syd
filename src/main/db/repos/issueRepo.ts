@@ -26,6 +26,7 @@ interface IssueRow {
   occur_at: number
   status: string
   method: string
+  auto_done?: number | null
   created_at: number
   updated_at: number
 }
@@ -68,6 +69,7 @@ function rowToIssue(r: IssueRow): FeedbackIssue {
     occurAt: r.occur_at,
     status: r.status as FeedbackIssueStatus,
     method: (r.method === 'llm' ? 'llm' : 'rule') as FeedbackIssue['method'],
+    autoDone: r.auto_done === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     msgCount: 0
@@ -129,10 +131,56 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
   return { id: row.id, created }
 }
 
-export function setIssueStatus(id: number, status: FeedbackIssueStatus): void {
-  getDb()
-    .prepare(`UPDATE issue_feedback SET status = ?, updated_at = ? WHERE id = ?`)
-    .run(status, Date.now(), id)
+/** 人工/自动状态流转。auto=true 表示引擎自动闭环（unreplied 检测到回复），auto_done 标记保留供 UI 区分 */
+export function setIssueStatus(
+  id: number,
+  status: FeedbackIssueStatus,
+  auto = false
+): void {
+  if (auto && status === 'done') {
+    getDb()
+      .prepare(`UPDATE issue_feedback SET status = ?, updated_at = ?, auto_done = 1 WHERE id = ?`)
+      .run(status, Date.now(), id)
+  } else if (auto) {
+    getDb()
+      .prepare(`UPDATE issue_feedback SET status = ?, updated_at = ? WHERE id = ?`)
+      .run(status, Date.now(), id)
+  } else {
+    // 人工操作：清除自动闭环标记（人工重新打开/处理即不再展示“自动解决”）
+    getDb()
+      .prepare(
+        `UPDATE issue_feedback SET status = ?, updated_at = ?, auto_done = 0 WHERE id = ?`
+      )
+      .run(status, Date.now(), id)
+  }
+}
+
+/** 某群待自动闭环的 open 问题（rule 型 unreplied，key 含 :unreplied:），返回 id + 锚时间 */
+export function listOpenUnrepliedByGroup(
+  wxid: string,
+  groupUsername: string
+): Array<{ id: number; key: string; occurAt: number }> {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, key, occur_at FROM issue_feedback
+       WHERE wxid = ? AND group_username = ? AND status = 'open' AND method = 'rule'
+         AND key LIKE '%:unreplied:%'`
+    )
+    .all(wxid, groupUsername) as Array<{ id: number; key: string; occur_at: number }>
+  return rows.map((r) => ({ id: r.id, key: r.key, occurAt: r.occur_at }))
+}
+
+/** 按群聚合 open 计数（工作台会话列表徽标） */
+export function countOpenByGroup(wxid: string): Record<string, number> {
+  const rows = getDb()
+    .prepare(
+      `SELECT group_username, COUNT(*) AS n FROM issue_feedback
+       WHERE wxid = ? AND status = 'open' GROUP BY group_username`
+    )
+    .all(wxid) as Array<{ group_username: string; n: number }>
+  const out: Record<string, number> = {}
+  for (const r of rows) out[r.group_username] = r.n
+  return out
 }
 
 /** 清空某账号的全部问题与关联消息（含人工状态，用于重新开始） */

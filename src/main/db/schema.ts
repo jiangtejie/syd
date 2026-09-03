@@ -138,12 +138,41 @@ const TABLES: string[] = [
     prompt TEXT DEFAULT '',
     created_at INTEGER,
     updated_at INTEGER
+  )`,
+
+  // 团队客服成员（全局标识）：某账号视角下的“我方同事”联系人，分析/建议时视同己方
+  `CREATE TABLE IF NOT EXISTS team_member (
+    id INTEGER PRIMARY KEY,
+    account_wxid TEXT NOT NULL,
+    username TEXT NOT NULL,
+    label TEXT DEFAULT '',
+    created_at INTEGER,
+    UNIQUE (account_wxid, username)
   )`
 ]
 
 export function migrate(db: Database.Database): void {
   for (const sql of TABLES) db.exec(sql)
+  // 增量列迁移：issue_feedback.auto_done（自动闭环标记：unreplied 问题检测到回复后自动关闭）
+  ensureColumn(db, 'issue_feedback', 'auto_done', 'INTEGER NOT NULL DEFAULT 0')
   db.pragma(`user_version = ${SCHEMA_VERSION}`)
+}
+
+/** 旧库补列（CREATE TABLE IF NOT EXISTS 不会加列）：探测后 ALTER */
+function ensureColumn(
+  db: Database.Database,
+  table: string,
+  column: string,
+  ddl: string
+): void {
+  try {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+    if (!cols.some((c) => c.name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`)
+    }
+  } catch {
+    /* 表不存在等：交由建表 SQL 兜底 */
+  }
 }
 
 export function listTables(db: Database.Database): string[] {

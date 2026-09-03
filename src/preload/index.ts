@@ -167,7 +167,25 @@ const api = {
       detail: (id: number): Promise<{ ok: boolean; issue?: unknown; error?: string }> =>
         ipcRenderer.invoke('cs:issue:detail', id),
       typeCounts: (wxid: string): Promise<{ ok: boolean; counts?: unknown[]; error?: string }> =>
-        ipcRenderer.invoke('cs:issue:typeCounts', wxid)
+        ipcRenderer.invoke('cs:issue:typeCounts', wxid),
+      groupBadges: (
+        wxid: string
+      ): Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:groupBadges', wxid)
+    },
+    team: {
+      list: (
+        accountWxid: string
+      ): Promise<{ ok: boolean; members?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:team:list', accountWxid),
+      save: (
+        accountWxid: string,
+        username: string,
+        label?: string
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:team:save', accountWxid, username, label),
+      remove: (accountWxid: string, username: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:team:remove', accountWxid, username)
     },
     agent: {
       list: (): Promise<{ ok: boolean; agents?: AiAgent[]; defaultId?: string | null; error?: string }> =>

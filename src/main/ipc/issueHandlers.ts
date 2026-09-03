@@ -8,7 +8,7 @@ import {
   updateIssueStatus,
   issueTypeCounts
 } from '../services/feedback/analyzer'
-import { getIssueDetail, listIssuesByGroup } from '../db/repos/issueRepo'
+import { getIssueDetail, listIssuesByGroup, countOpenByGroup } from '../db/repos/issueRepo'
 import type { FeedbackIssueStatus } from '../../shared/types'
 
 /**
@@ -102,5 +102,18 @@ export function registerIssueHandlers(): void {
   ipcMain.handle('cs:issue:typeCounts', (_e, wxid: string) => {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
     return { ok: true as const, counts: issueTypeCounts(wxid) }
+  })
+
+  // 按群聚合 open 计数（工作台会话列表「待处理」徽标）
+  ipcMain.handle('cs:issue:groupBadges', (_e, wxid: string) => {
+    if (!wxid) return { ok: false as const, error: '缺少账号' }
+    try {
+      return { ok: true as const, badges: countOpenByGroup(wxid) }
+    } catch (err) {
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err)
+      }
+    }
   })
 }

@@ -16,7 +16,9 @@ import type {
   SendOverview,
   OpsStats,
   MessageCursor,
-  RedEnvelopeStatus
+  RedEnvelopeStatus,
+  FeedbackTypeCount,
+  TeamMemberInfo
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -176,6 +178,18 @@ declare global {
           ) => Promise<{ ok: boolean; error?: string }>
           detail: (id: number) => Promise<Result<{ issue?: FeedbackIssueDetail }>>
           typeCounts: (wxid: string) => Promise<Result<{ counts?: FeedbackTypeCount[] }>>
+          groupBadges: (
+            wxid: string
+          ) => Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }>
+        }
+        team: {
+          list: (accountWxid: string) => Promise<Result<{ members?: TeamMemberInfo[] }>>
+          save: (
+            accountWxid: string,
+            username: string,
+            label?: string
+          ) => Promise<{ ok: boolean; error?: string }>
+          remove: (accountWxid: string, username: string) => Promise<{ ok: boolean; error?: string }>
         }
         agent: {
           list: () => Promise<Result<{ agents?: AiAgent[]; defaultId?: string | null }>>
