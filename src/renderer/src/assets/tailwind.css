@@ -1,0 +1,9 @@
+/*
+ * TailwindCSS v4 + HeroUI v3 底座。
+ * - 必须先于 main.css 引入：Tailwind 的 theme/base(preflight)/utilities 都落在 @layer 里，
+ *   而存量页面的手写 CSS 是「无 layer」样式 —— 级联时无 layer 样式优先级更高，
+ *   因此 preflight 不会破坏存量页面；新增页面直接用 Tailwind 工具类 + HeroUI 组件。
+ * - @heroui/styles 需在 tailwindcss 之后引入（官方要求 import 顺序）。
+ */
+@import 'tailwindcss';
+@import '@heroui/styles';

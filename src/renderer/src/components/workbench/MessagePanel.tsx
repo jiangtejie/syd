@@ -1,16 +1,42 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { avatarColor, formatTimeDivider, needTimeDivider } from '../../lib/ui'
 import type { ChatMessage, ChatRecordItem, RedEnvelopeStatus } from '../../../../shared/types'
-import AttachmentViewer, {
-  PLACEHOLDER_IMAGE_URL,
-  useDecryptImage,
-  type Attachment
-} from './AttachmentViewer'
+import AttachmentViewer, { BubbleImage, type Attachment } from './AttachmentViewer'
 import MessageContextMenu, { type ContextMenuState } from './MessageContextMenu'
 
-/** 按需取头像（contact URL / head_image 本地 BLOB），带简单缓存；localOnly=远程 URL 已失败，强制取本地 */
+/** 按需取头像（contact URL / head_image 本地 BLOB），带简单缓存与进行中去重；localOnly=远程 URL 已失败，强制取本地 */
 const avatarCache = new Map<string, string | null>()
+const avatarPending = new Map<string, Promise<string | null>>()
+function fetchAvatarUrl(
+  wxid: string,
+  username: string,
+  localOnly: boolean
+): Promise<string | null> {
+  const cacheKey = localOnly ? `${username}::local` : username
+  if (avatarCache.has(cacheKey)) return Promise.resolve(avatarCache.get(cacheKey) ?? null)
+  let p = avatarPending.get(cacheKey)
+  if (!p) {
+    p = (
+      window.api?.cs?.wx?.getAvatar?.(wxid, username, localOnly) ??
+      Promise.resolve({ ok: false as const })
+    )
+      .then((res) => {
+        const u = res?.ok && res.url ? res.url : null
+        avatarCache.set(cacheKey, u)
+        return u
+      })
+      .catch(() => {
+        avatarCache.set(cacheKey, null)
+        return null
+      })
+      .finally(() => {
+        avatarPending.delete(cacheKey)
+      })
+    avatarPending.set(cacheKey, p)
+  }
+  return p
+}
 function useAvatar(username?: string, localOnly = false): string | null {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const source = useWorkbenchStore((s) => s.source)
@@ -28,17 +54,9 @@ function useAvatar(username?: string, localOnly = false): string | null {
       setUrl(avatarCache.get(cacheKey) ?? null)
       return
     }
-    window.api?.cs?.wx
-      ?.getAvatar?.(wxid, username, localOnly)
-      .then((res) => {
-        if (!alive) return
-        const u = res?.ok && res.url ? res.url : null
-        avatarCache.set(cacheKey, u)
-        setUrl(u)
-      })
-      .catch(() => {
-        if (alive) avatarCache.set(cacheKey, null)
-      })
+    void fetchAvatarUrl(wxid, username, localOnly).then((u) => {
+      if (alive) setUrl(u)
+    })
     return () => {
       alive = false
     }
@@ -164,7 +182,7 @@ function Avatar({
   )
 }
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
   isGroup,
   sessionAvatarUrl,
@@ -188,7 +206,6 @@ function MessageBubble({
   const isFile = message.localType === 49 && !!message.fileName && !isChatHistory
   const isRedEnvelope = message.localType === 49 && !!message.redEnvelopeSendId
   const copyText = isFile ? message.fileName || '' : message.parsedContent
-  const { url: imgUrl } = useDecryptImage(isImage ? message.imageMd5 : undefined, 'thumb')
   const [emojiFailed, setEmojiFailed] = useState(false)
   const redEnvelopeStatus = useRedEnvelopeStatus(
     sessionUsername,
@@ -295,21 +312,16 @@ function MessageBubble({
             </div>
           )}
           {isImage ? (
-            <div className="wb-msg-image-wrap">
-              <img
-                className="wb-msg-image"
-                src={imgUrl || PLACEHOLDER_IMAGE_URL}
-                alt="图片消息"
-                onClick={() =>
-                  onOpenAttachment({
-                    kind: 'image',
-                    url: imgUrl ?? undefined,
-                    imageMd5: message.imageMd5
-                  })
-                }
-              />
-              {message.isLivePhoto && <span className="wb-msg-live">LIVE</span>}
-            </div>
+            <BubbleImage
+              imageMd5={message.imageMd5}
+              isLivePhoto={message.isLivePhoto}
+              onOpen={() =>
+                onOpenAttachment({
+                  kind: 'image',
+                  imageMd5: message.imageMd5
+                })
+              }
+            />
           ) : isEmoji && !emojiFailed ? (
             <img
               className="wb-msg-emoji"
@@ -382,7 +394,7 @@ function MessageBubble({
       </div>
     </div>
   )
-}
+})
 
 function MessagePanel(): React.JSX.Element {
   const activeSessionId = useWorkbenchStore((s) => s.activeSessionId)
@@ -403,11 +415,11 @@ function MessagePanel(): React.JSX.Element {
 
   const activeSession = sessions.find((s) => s.username === activeSessionId) || null
 
-  const handleContextMenu = (e: React.MouseEvent, text: string): void => {
+  const handleContextMenu = useCallback((e: React.MouseEvent, text: string): void => {
     if (!text) return
     e.preventDefault()
     setCtxMenu({ x: e.clientX, y: e.clientY, text })
-  }
+  }, [])
 
   // 切换会话：清空草稿 + 标记“消息加载完成后滚到底部”（消息是异步加载，此刻滚动无意义）
   useEffect(() => {

@@ -17,7 +17,6 @@ interface FormState {
   'send.dailyLimit': string
   'send.humanizeDelay': string
   'inject.enabled': string
-  'cache.path': string
   'notify.enabled': string
 }
 
@@ -29,7 +28,6 @@ const DEFAULTS: FormState = {
   'send.dailyLimit': '200',
   'send.humanizeDelay': '1',
   'inject.enabled': '1',
-  'cache.path': '',
   'notify.enabled': '1'
 }
 
@@ -49,7 +47,11 @@ function SettingsPage(): React.JSX.Element {
   const [loaded, setLoaded] = useState(false)
   const [savedTip, setSavedTip] = useState('')
   const [sendStatus, setSendStatus] = useState<SendStatusInfo | null>(null)
-  const [cacheEffective, setCacheEffective] = useState<{ path: string; defaultPath: string } | null>(null)
+  const [cacheEffective, setCacheEffective] = useState<{
+    path: string
+    defaultPath: string
+    isDefault: boolean
+  } | null>(null)
   const [autoLaunch, setAutoLaunch] = useState(false)
   const [dataStats, setDataStats] = useState<{ dbBytes: number; cacheBytes: number } | null>(null)
   const [clearArmed, setClearArmed] = useState(false)
@@ -67,11 +69,7 @@ function SettingsPage(): React.JSX.Element {
       setLoaded(true)
     })
     void replyApi?.getSendStatus().then(setSendStatus).catch(() => undefined)
-    void configApi?.cachePath().then((r) => {
-      if (r?.ok && r.path && r.defaultPath) {
-        setCacheEffective({ path: r.path, defaultPath: r.defaultPath })
-      }
-    })
+    void refreshCachePath()
     void appApi?.getAutoLaunch().then((r) => setAutoLaunch(!!r?.enabled))
     void appApi?.info().then((r) => setVersion(r?.version ?? ''))
     void refreshDataStats()
@@ -82,6 +80,39 @@ function SettingsPage(): React.JSX.Element {
     if (r?.ok && r.dbBytes !== undefined && r.cacheBytes !== undefined) {
       setDataStats({ dbBytes: r.dbBytes, cacheBytes: r.cacheBytes })
     }
+  }
+
+  const refreshCachePath = async (): Promise<void> => {
+    const r = await configApi?.cachePath().catch(() => null)
+    if (r?.ok && r.path && r.defaultPath) {
+      setCacheEffective({ path: r.path, defaultPath: r.defaultPath, isDefault: !!r.isDefault })
+    }
+  }
+
+  /** 路径是否相同（忽略末尾分隔符与大小写，Windows 路径不区分大小写） */
+  const samePath = (a: string, b: string): boolean =>
+    a.replace(/\\+$/, '').toLowerCase() === b.replace(/\\+$/, '').toLowerCase()
+
+  /** 应用缓存目录配置并刷新状态：对话框选完/恢复默认后即保存生效 */
+  const applyCachePath = async (dir: string): Promise<void> => {
+    const dir2 = dir.trim()
+    // 恰好选回默认目录时归一化为空配置，保持「默认目录」展示
+    const final =
+      dir2 && cacheEffective && samePath(dir2, cacheEffective.defaultPath) ? '' : dir2
+    if (cacheEffective && !cacheEffective.isDefault && samePath(final, cacheEffective.path)) return
+    await configApi?.set('cache.path', final)
+    await refreshCachePath()
+    toast.success(final ? '缓存目录已更新' : '已恢复默认缓存目录')
+  }
+
+  /** 浏览：对话框从当前生效缓存目录定位（不存在时主进程向上回退） */
+  const browseCachePath = async (): Promise<void> => {
+    const r = await window.api?.cs?.dialog?.pickDirectory('选择数据缓存目录', cacheEffective?.path)
+    if (r?.ok && r.path) void applyCachePath(r.path)
+  }
+
+  const resetCachePath = async (): Promise<void> => {
+    await applyCachePath('')
   }
 
   const toggleAutoLaunch = async (enabled: boolean): Promise<void> => {
@@ -123,21 +154,6 @@ function SettingsPage(): React.JSX.Element {
     await replyApi?.resetCircuit()
     const s = await replyApi?.getSendStatus().catch(() => null)
     setSendStatus(s ?? null)
-  }
-
-  const browseCachePath = async (): Promise<void> => {
-    const r = await window.api?.cs?.dialog?.pickDirectory('选择数据缓存目录')
-    if (r?.ok && r.path) patch('cache.path', r.path)
-  }
-
-  const saveCachePath = async (): Promise<void> => {
-    await configApi?.set('cache.path', form['cache.path'].trim())
-    const r = await configApi?.cachePath().catch(() => null)
-    if (r?.ok && r.path && r.defaultPath) {
-      setCacheEffective({ path: r.path, defaultPath: r.defaultPath })
-    }
-    setSavedTip('已保存')
-    setTimeout(() => setSavedTip(''), 2000)
   }
 
   const boolVal = (v: string): boolean => v === '1' || v === 'true'
@@ -283,49 +299,40 @@ function SettingsPage(): React.JSX.Element {
       {/* 数据缓存目录 */}
       <div className="page-card st-section">
         <div className="st-title">数据与缓存</div>
-        <label className="st-row">
-          <span className="st-label">缓存目录</span>
-          <input
-            className="st-input"
-            value={form['cache.path']}
-            onChange={(e) => patch('cache.path', e.target.value)}
-            placeholder={cacheEffective ? `默认：${cacheEffective.defaultPath}` : '默认：应用数据目录/cache'}
-          />
-          <button type="button" className="st-btn ghost" onClick={() => void browseCachePath()}>
-            浏览…
-          </button>
-        </label>
-        <div className="st-actions">
-          <button type="button" className="st-btn" onClick={() => void saveCachePath()}>
-            保存缓存配置
-          </button>
-          <button
-            type="button"
-            className="st-btn ghost"
-            onClick={() => {
-              patch('cache.path', '')
-              void configApi?.set('cache.path', '').then(() => {
-                void configApi?.cachePath().then((r) => {
-                  if (r?.ok && r.path && r.defaultPath) {
-                    setCacheEffective({ path: r.path, defaultPath: r.defaultPath })
-                  }
-                })
-              })
-            }}
-          >
-            恢复默认
-          </button>
-        </div>
-        {cacheEffective && (
-          <div className="st-kv st-cache-effective">
-            <span>当前生效</span>
-            <span className="st-path">{cacheEffective.path}</span>
+        <div
+          className="st-cache-pick"
+          role="button"
+          tabIndex={0}
+          title="点击选择新的缓存目录"
+          onClick={() => void browseCachePath()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              void browseCachePath()
+            }
+          }}
+        >
+          <div className="st-cache-main">
+            <span className={`st-cache-tag${cacheEffective?.isDefault === false ? ' custom' : ''}`}>
+              {cacheEffective?.isDefault === false ? '自定义目录' : '默认目录'}
+            </span>
+            <span className="st-cache-dir">{cacheEffective ? cacheEffective.path : '加载中…'}</span>
           </div>
-        )}
+          <span className="st-cache-change">选择…</span>
+        </div>
+        <div className="st-actions">
+          {cacheEffective?.isDefault === false && (
+            <button type="button" className="st-btn ghost" onClick={() => void resetCachePath()}>
+              恢复默认
+            </button>
+          )}
+          <span className="st-hint">
+            选择目录后立即生效；切换目录后仅新缓存/导出写入新位置，旧目录内容需手动迁移
+          </span>
+        </div>
         <div className="st-hint st-cache-hint">
-          用于解密图片/附件缓存、导出文件等（媒体解密与导出接入后写入）；
-          默认目录优先取非系统盘（无可用盘符时回退应用数据目录）；
-          本地数据库（cs.db）固定存于应用数据目录，不随此项迁移。留空即使用默认目录。
+          用于解密图片/附件缓存与导出文件。默认优先取非系统盘（无可用盘符时回退应用数据目录）；
+          本地数据库 cs.db 固定存于应用数据目录，不随此项迁移。
         </div>
       </div>
 

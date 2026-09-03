@@ -318,6 +318,90 @@ export function enrichSessionsWithContacts(
   }
 }
 
+/** keyset 时间倒序比较：a 是否比 b 新（对齐 listMessages 的分页排序） */
+function cursorNewerThan(
+  a: { sortSeq: number; createTime: number; localId: number },
+  b: { sortSeq: number; createTime: number; localId: number }
+): boolean {
+  if (a.sortSeq !== b.sortSeq) return a.sortSeq > b.sortSeq
+  if (a.createTime !== b.createTime) return a.createTime > b.createTime
+  return a.localId > b.localId
+}
+
+interface LastSenderProbe {
+  session: SessionSummary
+  cursor: { sortSeq: number; createTime: number; localId: number } | null
+  row: Record<string, any> | null
+  cols: MessageTableColumns | null
+  nameId: NameIdMap | null
+}
+
+/**
+ * 给"有未读的可跟进会话"标注 lastMsgIsSend（最后一条是否本人发出）。
+ * 供前端把"最后一条是自己发的"会话从待回复队列剔除（微信未读可能尚未清零）。
+ * 逐库打开消息文件，只取各目标表最新一行做发送人判定；找不到消息库/表时保持 undefined（未知，不误剔）。
+ */
+export function annotateUnreadLastSender(sessions: SessionSummary[], ctx: WxReaderContext): void {
+  const candidates = sessions.filter(
+    (s) => s.unreadCount > 0 && !s.isOfficialAccount && !s.isFoldGroup && !s.isWeCom
+  )
+  if (candidates.length === 0) return
+  const paths = locateWeChatDbs(ctx.dbPath, ctx.wxid)
+  if (!paths.dbStoragePath || paths.msgDbFiles.length === 0) return
+
+  const probes = new Map<string, LastSenderProbe>()
+  for (const c of candidates) {
+    probes.set(messageTableHash(c.username), { session: c, cursor: null, row: null, cols: null, nameId: null })
+  }
+
+  for (const file of paths.msgDbFiles) {
+    const opened = openWxDbFile(file, ctx.hexKey)
+    if (!opened.db) continue
+    const db = opened.db
+    try {
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND lower(name) LIKE 'msg_%'")
+        .all() as { name: string }[]
+      const nameId = loadNameIdMap(db, ctx.wxid)
+      for (const t of tables) {
+        const hash = t.name.toLowerCase().match(/^msg_([0-9a-f]{32})$/)
+        if (!hash || !probes.has(hash[1])) continue
+        const cols = getMessageTableColumns(db, t.name)
+        // 无法判定发送人的表（无 sender/real_sender_id/is_send）跳过
+        if (!cols.senderColumn && !cols.hasRealSenderId && !cols.hasIsSend) continue
+        const row = db
+          .prepare(`SELECT * FROM "${t.name}" ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT 1`)
+          .get() as Record<string, any> | undefined
+        if (!row) continue
+        const probe = probes.get(hash[1])!
+        const cursor = rawMessageCursor(row)
+        if (!probe.cursor || cursorNewerThan(cursor, probe.cursor)) {
+          probe.cursor = cursor
+          probe.row = row
+          probe.cols = cols
+          probe.nameId = nameId
+        }
+      }
+    } catch {
+      /* 单个消息库读取失败则跳过 */
+    } finally {
+      db.close()
+    }
+  }
+
+  for (const probe of probes.values()) {
+    if (!probe.row || !probe.cols || !probe.nameId) continue
+    const sender = resolveRowSender(probe.row, probe.cols, probe.nameId)
+    probe.session.lastMsgIsSend = resolveRowIsSend(
+      probe.row,
+      probe.cols,
+      probe.nameId,
+      ctx.wxid,
+      sender
+    )
+  }
+}
+
 /** 按 username 批量查 contact 行（每 400 个一批），返回 username -> 行 */
 function queryContactsByUsernames(
   db: Database.Database,
@@ -428,6 +512,42 @@ export function loadNameIdMap(db: Database.Database, myWxid: string): NameIdMap 
   return { idToName, myRowId }
 }
 
+/** 解析消息发送人：real_sender_id → Name2Id.user_name（真实 wxid）；无则回退 sender 列 */
+function resolveRowSender(
+  row: Record<string, any>,
+  cols: MessageTableColumns,
+  nameId: NameIdMap
+): { realSenderId: number; senderUsername: string | null } {
+  const realSenderId = toNumber(getRowField(row, ['real_sender_id', 'realSenderId']), -1)
+  let senderUsername: string | null =
+    realSenderId >= 0 ? nameId.idToName.get(realSenderId) || null : null
+  if (!senderUsername) {
+    senderUsername = toString(getRowField(row, [cols.senderColumn || 'sender'])) || null
+  }
+  return { realSenderId, senderUsername }
+}
+
+/**
+ * 消息是否本人发出（对齐 CipherTalk 三重判定）：
+ * 1) Name2Id 命中：real_sender_id == 我的 rowid（权威）
+ * 2) 无 Name2Id：发送人 wxid 与 myWxid 归一化匹配
+ * 3) 兜底：is_send 列（旧版兼容）
+ */
+function resolveRowIsSend(
+  row: Record<string, any>,
+  cols: MessageTableColumns,
+  nameId: NameIdMap,
+  myWxid: string,
+  sender?: { realSenderId: number; senderUsername: string | null }
+): boolean {
+  const s = sender ?? resolveRowSender(row, cols, nameId)
+  if (nameId.myRowId !== null && s.realSenderId >= 0) {
+    return s.realSenderId === nameId.myRowId
+  }
+  if (isOwnSender(s.senderUsername, myWxid)) return true
+  return toNumber(getRowField(row, ['is_send', 'isSend', 'is_sender']), 0) === 1
+}
+
 function rowToMessage(
   row: Record<string, any>,
   cols: MessageTableColumns,
@@ -438,26 +558,9 @@ function rowToMessage(
   const content = decodeMessageContent(getRowField(row, [cols.contentColumn || 'message_content']))
   const localType = toNumber(getRowField(row, ['local_type', 'localType', 'type']), 1)
 
-  // 发送人：real_sender_id -> Name2Id.user_name（真实 wxid）
-  const realSenderId = toNumber(getRowField(row, ['real_sender_id', 'realSenderId']), -1)
-  let senderUsername: string | null =
-    realSenderId >= 0 ? nameId.idToName.get(realSenderId) || null : null
-  if (!senderUsername) {
-    senderUsername = toString(getRowField(row, [cols.senderColumn || 'sender'])) || null
-  }
-
-  // 是否我发的（对齐 CipherTalk 三重判定）：
-  // 1) Name2Id 命中：real_sender_id == 我的 rowid（权威）
-  // 2) 无 Name2Id：发送人 wxid 与 myWxid 归一化匹配
-  // 3) 兜底：is_send 列（旧版兼容）
-  let isSend = false
-  if (nameId.myRowId !== null && realSenderId >= 0) {
-    isSend = realSenderId === nameId.myRowId
-  } else if (isOwnSender(senderUsername, myWxid)) {
-    isSend = true
-  } else {
-    isSend = toNumber(getRowField(row, ['is_send', 'isSend', 'is_sender']), 0) === 1
-  }
+  const sender = resolveRowSender(row, cols, nameId)
+  const senderUsername = sender.senderUsername
+  const isSend = resolveRowIsSend(row, cols, nameId, myWxid, sender)
 
   const parsed = parseMessageContent(content, localType)
   // 图片文件名 md5 优先取 packed_info_data（本地 .dat 命名），XML 的 md5 是 CDN md5 对不上本地文件

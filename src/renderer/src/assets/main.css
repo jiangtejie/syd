@@ -28,11 +28,15 @@ body {
     sans-serif;
 }
 
-/* 浅色 UI 的正文基调；深色区（如左侧导航）各自显式覆盖文字色 */
-button,
-input,
-textarea,
-select {
-  font: inherit;
-  color: inherit;
+/* 浅色 UI 的正文基调；深色区（如左侧导航）各自显式覆盖文字色。
+ * 放入 @layer base：避免「无 layer 样式」压过 HeroUI 组件（@layer components）里
+ * button/input 的前景色，否则如 .button--primary 的白字会被下面 color:inherit 覆盖。 */
+@layer base {
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
 }

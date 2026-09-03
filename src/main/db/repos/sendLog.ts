@@ -110,29 +110,13 @@ export function sendOverview(days = 7): { ok: true; data: SendOverview } {
     .all(since) as Array<{ reason: string; n: number }>
   const failReasons = failRows.map((r) => ({ reason: r.reason, count: r.n }))
 
-  // 发送对象 Top5（成功优先、失败其次）
-  const targetRows = db
-    .prepare(
-      `SELECT session_id AS sessionId,
-              SUM(CASE WHEN result = 'sent' THEN 1 ELSE 0 END) AS sent,
-              SUM(CASE WHEN result = 'failed' THEN 1 ELSE 0 END) AS failed
-       FROM send_log WHERE created_at >= ? AND session_id IS NOT NULL AND session_id <> ''
-       GROUP BY session_id ORDER BY sent DESC, failed DESC LIMIT 5`
-    )
-    .all(since) as Array<{ sessionId: string; sent: number; failed: number }>
-
   return {
     ok: true,
     data: {
       days,
       totals,
       verifiedRate,
-      failReasons,
-      topTargets: targetRows.map((r) => ({
-        sessionId: r.sessionId,
-        sent: r.sent,
-        failed: r.failed
-      }))
+      failReasons
     }
   }
 }

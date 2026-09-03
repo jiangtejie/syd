@@ -57,6 +57,8 @@ export interface SessionSummary {
   isWeCom: boolean
   /** 是否群聊（username 含 @chatroom） */
   isGroup: boolean
+  /** 会话最后一条消息是否本人发出（待回复判定用；消息库不可读时为 undefined 未知） */
+  lastMsgIsSend?: boolean
 }
 
 export type MessageLocalType = number
@@ -228,8 +230,6 @@ export interface SendOverview {
   verifiedRate: number | null
   /** 失败原因 Top（result=failed 且 error_reason 非空），按次数倒序 */
   failReasons: Array<{ reason: string; count: number }>
-  /** 发送对象 Top（按成功条数倒序） */
-  topTargets: Array<{ sessionId: string; sent: number; failed: number }>
 }
 
 /** 消息级运营统计（看板用，基于微信消息库聚合） */
@@ -274,14 +274,6 @@ export interface OpsStats {
   hours: OpsHourPoint[]
   /** 消息类型分布（含 49 型子类细分），按次数倒序 */
   typeDist: OpsTypeCount[]
-  redPackets: {
-    /** 我发出的红包条数 */
-    sent: number
-    /** 我收到的红包条数 */
-    received: number
-    /** 领取回执数（系统消息"红包已被领取"） */
-    claimReceipts: number
-  }
   /** 响应时效：以一条回复结算其最近一条未回客户消息 */
   response: {
     /** 有效回复样本数 */
@@ -296,3 +288,69 @@ export interface OpsStats {
     medianMinutes: number | null
   }
 }
+
+// ── 群问题反馈（看板 · 智能提取 + 人工处理）──
+
+/** 问题类型（LLM 输出与规则词典都收敛到该枚举） */
+export type FeedbackIssueType =
+  | '客诉'
+  | '售后'
+  | '物流'
+  | '价格'
+  | '咨询'
+  | '建议'
+  | '其他'
+
+/** 处理状态：open 待处理 / done 已处理 / stalled 已搁置 / archived 已归档 */
+export type FeedbackIssueStatus = 'open' | 'done' | 'stalled' | 'archived'
+
+/** 提取方式：llm=OpenAI 兼容模型 / rule=本地关键词+未回复兜底 */
+export type FeedbackIssueMethod = 'llm' | 'rule'
+
+/** 问题关联的单条消息（摘要级，供"相关消息"展开与缩略展示） */
+export interface FeedbackIssueMsg {
+  time: number
+  senderName: string
+  isSend: boolean
+  text: string
+  imageMd5?: string
+  localType?: number
+}
+
+export interface FeedbackIssue {
+  id: number
+  wxid: string
+  groupUsername: string
+  groupName: string
+  type: FeedbackIssueType
+  title: string
+  summary?: string
+  /** 首次出现时间（首条证据消息） */
+  occurAt: number
+  status: FeedbackIssueStatus
+  method: FeedbackIssueMethod
+  createdAt: number
+  updatedAt: number
+  /** 关联消息数（展开时才拉明细） */
+  msgCount: number
+}
+
+export interface FeedbackIssueDetail extends FeedbackIssue {
+  related: FeedbackIssueMsg[]
+}
+
+/** 分析任务运行态（看板按钮与提示用） */
+export interface FeedbackAnalysisState {
+  running: boolean
+  wxid?: string
+  method?: FeedbackIssueMethod
+  error?: string
+  lastAt?: number
+  issueCount?: number
+}
+
+export interface FeedbackTypeCount {
+  type: FeedbackIssueType
+  count: number
+}
+

@@ -430,6 +430,23 @@
   display: block;
 }
 
+/* 图片占位块（懒加载：未进入视口不解密 / 解密中 / 解密失败均使用，不加载外网占位图） */
+.wb-msg-image-ph {
+  width: 200px;
+  height: 200px;
+  max-width: 220px;
+  max-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: #f2f4f7;
+  color: #b0b6bf;
+  font-size: 12px;
+  cursor: zoom-in;
+  user-select: none;
+}
+
 .wb-msg-image-wrap {
   position: relative;
   display: inline-block;

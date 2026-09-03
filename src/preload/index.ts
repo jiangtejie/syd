@@ -89,8 +89,8 @@ const api = {
       }> => ipcRenderer.invoke('cs:config:cachePath')
     },
     dialog: {
-      pickDirectory: (title?: string): Promise<{ ok: boolean; path?: string }> =>
-        ipcRenderer.invoke('cs:dialog:pickDirectory', title)
+      pickDirectory: (title?: string, defaultPath?: string): Promise<{ ok: boolean; path?: string }> =>
+        ipcRenderer.invoke('cs:dialog:pickDirectory', title, defaultPath)
     },
     media: {
       decryptImage: (opts: {
@@ -111,6 +111,25 @@ const api = {
         dbPath?: string
       ): Promise<{ ok: boolean; url?: string; ext?: string; error?: string }> =>
         ipcRenderer.invoke('cs:media:testImageDecrypt', wxid, dbPath)
+    },
+    issue: {
+      list: (wxid: string): Promise<{ ok: boolean; issues?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:list', wxid),
+      analyze: (wxid: string): Promise<{ ok: boolean; error?: string; state?: unknown }> =>
+        ipcRenderer.invoke('cs:issue:analyze', wxid),
+      state: (wxid: string): Promise<{ ok: boolean; state?: unknown }> =>
+        ipcRenderer.invoke('cs:issue:state', wxid),
+      clear: (wxid: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:clear', wxid),
+      setStatus: (
+        id: number,
+        status: string
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:setStatus', id, status),
+      detail: (id: number): Promise<{ ok: boolean; issue?: unknown; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:detail', id),
+      typeCounts: (wxid: string): Promise<{ ok: boolean; counts?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:typeCounts', wxid)
     },
     app: {
       /** 菜单/托盘等触发的页面导航（如 Ctrl+, 打开设置） */

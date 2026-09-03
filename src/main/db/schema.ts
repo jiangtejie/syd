@@ -98,6 +98,35 @@ const TABLES: string[] = [
     verified INTEGER DEFAULT 0,
     verified_at INTEGER,
     created_at INTEGER
+  )`,
+
+  // 群问题反馈（看板：LLM/规则从群消息提取 + 人工处理状态）
+  `CREATE TABLE IF NOT EXISTS issue_feedback (
+    id INTEGER PRIMARY KEY,
+    key TEXT UNIQUE,
+    wxid TEXT,
+    group_username TEXT,
+    group_name TEXT,
+    type TEXT DEFAULT '其他',
+    title TEXT,
+    summary TEXT,
+    occur_at INTEGER,
+    status TEXT DEFAULT 'open',
+    method TEXT DEFAULT 'rule',
+    created_at INTEGER,
+    updated_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS issue_feedback_msg (
+    id INTEGER PRIMARY KEY,
+    issue_id INTEGER NOT NULL,
+    seq INTEGER,
+    msg_time INTEGER,
+    sender_name TEXT,
+    is_send INTEGER DEFAULT 0,
+    text TEXT,
+    image_md5 TEXT,
+    local_type INTEGER,
+    FOREIGN KEY (issue_id) REFERENCES issue_feedback(id) ON DELETE CASCADE
   )`
 ]
 

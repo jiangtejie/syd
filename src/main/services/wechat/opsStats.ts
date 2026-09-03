@@ -98,21 +98,12 @@ function categorizeContent(decoded: string | null, localType: number): string {
   return '其他'
 }
 
-/** 是否存在"红包已被领取"回执（对齐系统消息常见文案） */
-function isClaimReceipt(decoded: string | null): boolean {
-  if (!decoded) return false
-  const text = parseMessageContent(decoded, 10000)
-  if (!/红包/.test(text)) return false
-  return /(已领取|被领取|已领取了|领取了)/.test(text)
-}
-
 interface AggResult {
   buckets: Map<string, { in: number; out: number }>
   days: Array<{ key: string; label: string }>
   hours: OpsHourPoint[]
   totals: { total: number; inbound: number; outbound: number; group: number; privateChat: number }
   types: Map<string, number>
-  redPackets: { sent: number; received: number; claimReceipts: number }
   sessionEvents: Map<string, Array<{ t: number; out: boolean }>>
 }
 
@@ -141,7 +132,6 @@ export function computeOpsStats(ctx: WxReaderContext, range = 7): OpsStats {
     hours: Array.from({ length: 24 }, (_, hour) => ({ hour, inbound: 0, outbound: 0 })),
     totals: { total: 0, inbound: 0, outbound: 0, group: 0, privateChat: 0 },
     types: new Map(),
-    redPackets: { sent: 0, received: 0, claimReceipts: 0 },
     sessionEvents: new Map()
   }
 
@@ -247,13 +237,8 @@ export function computeOpsStats(ctx: WxReaderContext, range = 7): OpsStats {
                 localType === 49
                   ? categorizeContent(decoded, 49)
                   : BASE_TYPE_LABELS[10000] || '系统消息'
-              if (localType === 10000 && isClaimReceipt(decoded)) agg.redPackets.claimReceipts++
             } else {
               category = BASE_TYPE_LABELS[localType] || '其他'
-            }
-            if (category === '红包') {
-              if (out) agg.redPackets.sent++
-              else agg.redPackets.received++
             }
             agg.types.set(category, (agg.types.get(category) ?? 0) + 1)
 
@@ -318,7 +303,6 @@ export function computeOpsStats(ctx: WxReaderContext, range = 7): OpsStats {
     trend,
     hours: agg.hours,
     typeDist,
-    redPackets: { ...agg.redPackets },
     response: { samples: gapSamples.length, within30Min, within2h, noResponse, medianMinutes }
   }
   cache.set(cacheKey, { computedAt: now, stats })

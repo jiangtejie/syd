@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { avatarColor, formatSessionTime, previewSummary } from '../../lib/ui'
 import { useSessionAvatar } from '../../lib/sessionAvatar'
 import type { SessionSummary } from '../../../../shared/types'
 
-function SessionItem({
+const SessionItem = memo(function SessionItem({
   session,
   active,
   isChild,
@@ -63,10 +63,10 @@ function SessionItem({
       </div>
     </div>
   )
-}
+})
 
 /** 折叠夹虚拟项（@placeholder_foldgroup）：显示聚合未读 + 最新子会话摘要 + 展开箭头 */
-function FoldGroupItem({
+const FoldGroupItem = memo(function FoldGroupItem({
   session,
   expanded,
   unreadTotal,
@@ -104,7 +104,7 @@ function FoldGroupItem({
       </div>
     </div>
   )
-}
+})
 
 function SessionList(): React.JSX.Element {
   const sessions = useWorkbenchStore((s) => s.sessions)
@@ -113,6 +113,10 @@ function SessionList(): React.JSX.Element {
   const refreshSessions = useWorkbenchStore((s) => s.refreshSessions)
   const [keyword, setKeyword] = useState('')
   const [foldExpanded, setFoldExpanded] = useState(false)
+
+  // 稳定回调（配合行组件 memo：非目标行的 active/session 未变时不重渲染）
+  const handleSelect = useCallback((id: string) => void selectSession(id), [selectSession])
+  const handleFoldToggle = useCallback(() => setFoldExpanded((v) => !v), [])
 
   // 订阅微信库变化：会话库变化时刷新列表（T5 监控桥）
   useEffect(() => {
@@ -186,7 +190,7 @@ function SessionList(): React.JSX.Element {
         expanded={foldExpanded}
         unreadTotal={foldUnreadTotal}
         summary={foldSummary}
-        onToggle={() => setFoldExpanded((v) => !v)}
+        onToggle={handleFoldToggle}
       />
     ]
     if (foldExpanded) {
@@ -197,7 +201,7 @@ function SessionList(): React.JSX.Element {
             session={c}
             isChild
             active={c.username === activeSessionId}
-            onSelect={(id) => void selectSession(id)}
+            onSelect={handleSelect}
           />
         )
       }
@@ -210,7 +214,7 @@ function SessionList(): React.JSX.Element {
       key={s.username}
       session={s}
       active={s.username === activeSessionId}
-      onSelect={(id) => void selectSession(id)}
+      onSelect={handleSelect}
     />
   )
 

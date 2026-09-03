@@ -10,6 +10,9 @@ import './customers.css'
  * 列表与标签全部来自微信真实会话数据（未读/最后消息时间/会话类型/置顶），无示例算法。
  */
 
+/** 每页条数选项 */
+const PAGE_SIZES = [10, 20, 50, 100]
+
 /** 真实头像：会话自带 URL 优先，失败/缺失时经 IPC 取本地 head_image，最后回退首字块 */
 function CustomerAvatar({
   profile,
@@ -142,6 +145,9 @@ function CustomersPage(): React.JSX.Element {
   const refreshSessions = useWorkbenchStore((s) => s.refreshSessions)
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [keyword, setKeyword] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [jumpValue, setJumpValue] = useState('')
   const [selected, setSelected] = useState<CustomerProfile | null>(null)
   /** 当前时间（mount 后异步测量 + 每分钟校准，避免渲染期取 Date.now） */
   const [nowMs, setNowMs] = useState<number>(0)
@@ -191,6 +197,25 @@ function CustomersPage(): React.JSX.Element {
       )
     })
   }, [customers, effectiveTag, keyword])
+
+  // 筛选/搜索/每页条数变化时回到第 1 页；数据增减导致当前页超界时自动收敛到最后一页
+  useEffect(() => {
+    setPage(1)
+    setJumpValue('')
+  }, [effectiveTag, keyword, pageSize])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const curPage = Math.min(page, totalPages)
+  const pageItems = useMemo(
+    () => filtered.slice((curPage - 1) * pageSize, curPage * pageSize),
+    [filtered, curPage, pageSize]
+  )
+  const goPage = (p: number): void => setPage(Math.min(Math.max(p, 1), totalPages))
+  const applyJump = (): void => {
+    const n = Number.parseInt(jumpValue, 10)
+    if (!Number.isNaN(n) && n >= 1) goPage(n)
+    setJumpValue('')
+  }
 
   const replyCount = tagCounts.get('待回复') ?? 0
 
@@ -250,7 +275,7 @@ function CustomersPage(): React.JSX.Element {
           <span>最近活跃</span>
           <span>未读</span>
         </div>
-        {filtered.map((c) => (
+        {pageItems.map((c) => (
           <div key={c.wxid} className="cu-row" onClick={() => setSelected(c)}>
             <span className="cu-cell-name">
               <CustomerAvatar profile={c} />
@@ -290,6 +315,64 @@ function CustomersPage(): React.JSX.Element {
                   effectiveTag ? `（标签：${effectiveTag}）` : ''
                 }的客户，可点击「清空条件」重新筛选`
               : '暂无客户数据，请先连接微信'}
+          </div>
+        )}
+        {totalPages > 1 && (
+          <div className="cu-pager">
+            <span className="cu-pager-info">共 {filtered.length} 条</span>
+            <div className="cu-pager-ctrl">
+              <select
+                className="cu-pager-select"
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                aria-label="每页条数"
+              >
+                {PAGE_SIZES.map((n) => (
+                  <option key={n} value={n}>
+                    {n} 条/页
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="cu-pager-btn"
+                disabled={curPage <= 1}
+                onClick={() => goPage(curPage - 1)}
+              >
+                ‹ 上一页
+              </button>
+              <span className="cu-pager-now">
+                第 {curPage} / {totalPages} 页
+              </span>
+              <button
+                type="button"
+                className="cu-pager-btn"
+                disabled={curPage >= totalPages}
+                onClick={() => goPage(curPage + 1)}
+              >
+                下一页 ›
+              </button>
+              <div className="cu-pager-jump">
+                <input
+                  className="cu-pager-jump-input"
+                  placeholder={`跳至 ${curPage}`}
+                  value={jumpValue}
+                  inputMode="numeric"
+                  onChange={(e) => setJumpValue(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') applyJump()
+                  }}
+                />
+                <button
+                  type="button"
+                  className="cu-pager-btn"
+                  disabled={jumpValue === ''}
+                  onClick={applyJump}
+                >
+                  跳转
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -112,7 +112,7 @@ declare global {
           }>
         }
         dialog: {
-          pickDirectory: (title?: string) => Promise<{ ok: boolean; path?: string }>
+          pickDirectory: (title?: string, defaultPath?: string) => Promise<{ ok: boolean; path?: string }>
         }
         media: {
           decryptImage: (opts: {
@@ -130,6 +130,18 @@ declare global {
             wxid: string,
             dbPath?: string
           ) => Promise<{ ok: boolean; url?: string; ext?: string; error?: string }>
+        }
+        issue: {
+          list: (wxid: string) => Promise<Result<{ issues?: FeedbackIssue[] }>>
+          analyze: (wxid: string) => Promise<{ ok: boolean; state?: FeedbackAnalysisState; error?: string }>
+          state: (wxid: string) => Promise<{ ok: boolean; state?: FeedbackAnalysisState }>
+          clear: (wxid: string) => Promise<{ ok: boolean; error?: string }>
+          setStatus: (
+            id: number,
+            status: FeedbackIssueStatus
+          ) => Promise<{ ok: boolean; error?: string }>
+          detail: (id: number) => Promise<Result<{ issue?: FeedbackIssueDetail }>>
+          typeCounts: (wxid: string) => Promise<Result<{ counts?: FeedbackTypeCount[] }>>
         }
         app: {
           onNavigate: (callback: (page: string) => void) => () => void

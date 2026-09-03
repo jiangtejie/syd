@@ -5,6 +5,7 @@ import {
   listMessages,
   listMessagesSince,
   enrichSessionsWithContacts,
+  annotateUnreadLastSender,
   getAvatar,
   getRedEnvelopeStatuses as queryRedEnvelopeStatuses
 } from './queries'
@@ -63,6 +64,8 @@ export function getSessions(wxid: string) {
   }
   if (!result.ok || !result.sessions) return result
   const sessions = enrichSessionsWithContacts(result.sessions, session)
+  // 有未读的会话标注"最后一条是否本人发出"，供待回复队列剔除已由本人收尾的会话
+  annotateUnreadLastSender(sessions, session)
   return { ok: true as const, sessions }
 }
 

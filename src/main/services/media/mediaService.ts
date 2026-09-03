@@ -53,6 +53,22 @@ export function toMediaUrl(wxid: string, fileName: string): string {
   return `${MEDIA_URL_BASE}/${encodeURIComponent(wxid)}/${encodeURIComponent(fileName)}`
 }
 
+/** 缓存目录快照：查找已解出的 <md5>_<kind>.* 文件（命中即跳过重新扫描/解密，返回文件名） */
+function findCachedMedia(wxid: string, md5: string, kind: 'orig' | 'thumb' | 'hd'): string | null {
+  const cacheDir = join(getCachePath(), 'media', wxid)
+  let entries: string[]
+  try {
+    entries = readdirSync(cacheDir)
+  } catch {
+    return null
+  }
+  const prefix = `${md5}_${kind}.`
+  for (const name of entries) {
+    if (name.toLowerCase().startsWith(prefix)) return name
+  }
+  return null
+}
+
 /**
  * 解析外部 ffmpeg：app_config(media.ffmpegPath) > 环境变量 WECHAT_CS_FFMPEG > PATH 上的 ffmpeg。
  * 找不到可用二进制时返回 'ffmpeg'（交给 spawn 报 ENOENT 自然失败）。
@@ -159,6 +175,12 @@ export async function decryptImage(opts: DecryptImageOptions): Promise<DecryptIm
   let lastMiss = ''
   let lastFail = ''
   for (const k of order) {
+    // 缓存快路径：已解出过则直接返回，避免每次打开会话都重扫目录树 + 重解密
+    const cached = findCachedMedia(wxid, md5, k)
+    if (cached) {
+      const ext = extname(cached).slice(1)
+      return { ok: true, url: toMediaUrl(wxid, cached), ext, source: 'cache' }
+    }
     const datPath = findDatByMd5(attachRoot, md5, suffixFor(k))
     if (!datPath) {
       lastMiss = lastMiss || `未找到 ${md5}${suffixFor(k)}.dat`
