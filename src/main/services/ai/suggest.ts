@@ -1,4 +1,5 @@
 import type {
+  AiAgent,
   AiGenOptions,
   AiStyle,
   ChatMessage,
@@ -6,6 +7,7 @@ import type {
 } from '../../../shared/types'
 import { createAiProvider, type AiProvider } from './provider'
 import { buildTemplateCandidates } from './templates'
+import { getAgentById, getDefaultAgent } from '../../db/repos/agentRepo'
 
 /**
  * AI 建议生成（T7，方案 §4.4）。
@@ -42,13 +44,28 @@ function lastCustomerText(messages: ChatMessage[]): string {
   return ''
 }
 
-const SYSTEM_PROMPT = [
-  '你是一名微信私域智能客服，正在协助真人客服为个人微信好友撰写回复。',
+/** 输出协议（必须严格遵守，防止非法 JSON 破坏候选解析） */
+const OUTPUT_PROTOCOL = [
   '要求：',
   '1. 只输出 JSON 数组，形如 [{"text": "回复内容"}]，不要输出任何其他文字或 Markdown 代码块；',
   '2. 生成 1~3 条候选回复，作为不同语气/侧重的选择；',
   '3. 回复要符合企业客服规范，不承诺法律/资金类内容，不确定的引导转人工。'
 ].join('\n')
+
+/** 按智能体组装系统提示词：人设由 名称+角色设定+自定义守则+风格 动态生成 */
+function buildSystemForAgent(agent: AiAgent): string {
+  return [
+    `你是一名${agent.name}，正在协助真人客服为个人微信好友撰写回复。`,
+    agent.description ? `角色设定：${agent.description}` : '',
+    agent.prompt ? `工作守则（务必遵守）：${agent.prompt}` : '',
+    `话术风格：${STYLE_PROMPT[agent.style ?? 'warm']}`,
+    OUTPUT_PROTOCOL
+  ]
+    .filter((x) => x !== '')
+    .join('\n')
+}
+
+const SYSTEM_PROMPT = `你是一名微信私域智能客服，正在协助真人客服为个人微信好友撰写回复。\n${OUTPUT_PROTOCOL}`
 
 function parseCandidates(raw: string): ReplyCandidate[] | null {
   const trimmed = raw.trim()
@@ -74,6 +91,8 @@ export async function generateSuggestions(
   opts: AiGenOptions = {}
 ): Promise<{ candidates: ReplyCandidate[]; llm: boolean; error?: string }> {
   const style = opts.style ?? 'warm'
+  // 智能体解析：指定 id → 无效回退默认；未指定也使用默认（人设应全局生效）
+  const agent = (opts.agentId ? getAgentById(opts.agentId) : undefined) ?? getDefaultAgent()
   const lastText = lastCustomerText(messages)
 
   // 1) 模板命中优先（kb_direct，M1 阶段主要产出）
@@ -95,16 +114,20 @@ export async function generateSuggestions(
   if (provider && messages.length > 0) {
     try {
       const context = buildContextText(messages, sessionName)
+      // agent 已带风格时不再重复注入风格行
       const userPrompt = [
         `会话对象：${sessionName}`,
-        `话术风格：${STYLE_PROMPT[style]}`,
+        agent ? '' : `话术风格：${STYLE_PROMPT[style]}`,
         '以下是最近聊天记录（我方为客服方）：',
         '```',
         context,
         '```',
         '请基于最后一条客户消息生成回复候选，输出 JSON 数组。'
-      ].join('\n')
-      const raw = await provider.complete(SYSTEM_PROMPT, userPrompt, { maxTokens: 500 })
+      ]
+        .filter((x) => x !== '')
+        .join('\n')
+      const system = agent ? buildSystemForAgent(agent) : SYSTEM_PROMPT
+      const raw = await provider.complete(system, userPrompt, { maxTokens: 500 })
       const ai = parseCandidates(raw)
       if (ai && ai.length > 0) return { candidates: ai, llm: true }
     } catch (e) {

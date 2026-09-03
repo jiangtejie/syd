@@ -9,6 +9,8 @@ import type {
   DbChangedPayload,
   AiGenOptions,
   ReplyCandidate,
+  AiAgent,
+  AiAgentInput,
   SendResult,
   SendStatusInfo,
   SendOverview,
@@ -93,6 +95,11 @@ declare global {
             model?: string
             timeoutMs?: number
           }) => Promise<{ ok: boolean; latencyMs?: number; error?: string }>
+          models: (input?: {
+            baseUrl?: string
+            apiKey?: string
+            timeoutMs?: number
+          }) => Promise<{ ok: boolean; models?: string[]; error?: string }>
         }
         reply: {
           sendText: (args: {
@@ -148,6 +155,12 @@ declare global {
           ) => Promise<{ ok: boolean; error?: string }>
           detail: (id: number) => Promise<Result<{ issue?: FeedbackIssueDetail }>>
           typeCounts: (wxid: string) => Promise<Result<{ counts?: FeedbackTypeCount[] }>>
+        }
+        agent: {
+          list: () => Promise<Result<{ agents?: AiAgent[]; defaultId?: string | null }>>
+          save: (input: AiAgentInput) => Promise<Result<{ agent?: AiAgent }>>
+          remove: (id: string) => Promise<{ ok: boolean; error?: string }>
+          setDefault: (id: string) => Promise<{ ok: boolean; error?: string }>
         }
         app: {
           onNavigate: (callback: (page: string) => void) => () => void

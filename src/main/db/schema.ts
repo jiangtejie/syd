@@ -127,6 +127,17 @@ const TABLES: string[] = [
     image_md5 TEXT,
     local_type INTEGER,
     FOREIGN KEY (issue_id) REFERENCES issue_feedback(id) ON DELETE CASCADE
+  )`,
+
+  // 智能体（客服人设）：名称/描述/风格/自定义提示词，供回复建议 LLM 动态使用
+  `CREATE TABLE IF NOT EXISTS ai_agent (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    style TEXT DEFAULT 'warm',
+    prompt TEXT DEFAULT '',
+    created_at INTEGER,
+    updated_at INTEGER
   )`
 ]
 

@@ -17,7 +17,7 @@ import { existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getDb, closeDb } from './db/database'
-import { getCachePath } from './services/paths'
+import { getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
 import { listTables } from './db/schema'
 import { getConfigBoolean } from './db/repos/config'
 import { registerKeyStoreHandlers } from './ipc/keyStoreHandlers'
@@ -29,6 +29,7 @@ import { registerDialogHandlers } from './ipc/dialogHandlers'
 import { registerAppHandlers } from './ipc/appHandlers'
 import { registerMediaHandlers } from './ipc/mediaHandlers'
 import { registerIssueHandlers } from './ipc/issueHandlers'
+import { registerAgentHandlers } from './ipc/agentHandlers'
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
 import { stopSending } from './services/send/sendService'
 
@@ -93,7 +94,7 @@ function registerMediaProtocol(): void {
       if (!/^[0-9a-f]{32}_[a-z0-9]+\.(jpe?g|png|gif|webp|mp4|mkv|avi|mov|m4v)$/i.test(name)) {
         return new Response('Forbidden', { status: 403 })
       }
-      const base = resolve(getCachePath(), 'media')
+      const base = getMediaRootDir() // 规范结构：<cache>/media（ct-media 协议映射根）
       const file = resolve(base, wxid, name)
       if (!file.startsWith(base + sep) || !existsSync(file)) {
         return new Response('Not found', { status: 404 })
@@ -280,6 +281,9 @@ if (!app.requestSingleInstanceLock()) {
     const tables = listTables(getDb())
     console.log('[db] ready, tables:', tables.join(', '))
 
+    // 缓存目录规范化：迁移历史 wx-plain → db（幂等，启动时执行一次）
+    migrateLegacyCacheLayout()
+
     // 注册 IPC handlers
     registerKeyStoreHandlers()
     registerWechatHandlers()
@@ -290,6 +294,7 @@ if (!app.requestSingleInstanceLock()) {
     registerAppHandlers()
     registerMediaHandlers()
     registerIssueHandlers()
+    registerAgentHandlers()
     registerMediaProtocol()
 
     // 微信库变更 → 新消息提醒（节流 + 聚焦抑制）

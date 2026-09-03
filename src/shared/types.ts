@@ -179,6 +179,29 @@ export type SuggestionSource = 'kb_direct' | 'ai_free'
 /** 话术风格预设 */
 export type AiStyle = 'formal' | 'warm' | 'brief'
 
+/** 智能体（客服人设）：LLM 以何种身份/规则代为撰写回复 */
+export interface AiAgent {
+  id: string
+  /** 显示名（如「热情糖水客服」） */
+  name: string
+  /** 一句话角色设定（追加进系统提示词） */
+  description: string
+  style: AiStyle
+  /** 自定义人设/规则提示词；留空则按内置模板 + 名称/描述/风格自动组装 */
+  prompt: string
+  createdAt?: number
+  updatedAt?: number
+}
+
+/** 保存智能体的入参（id 省略=新建） */
+export interface AiAgentInput {
+  id?: string
+  name: string
+  description: string
+  style: AiStyle
+  prompt: string
+}
+
 export interface ReplyCandidate {
   text: string
   source: SuggestionSource
@@ -187,7 +210,10 @@ export interface ReplyCandidate {
 }
 
 export interface AiGenOptions {
+  /** 兼容旧调用：直接指定话术风格（仅在未指定智能体时生效） */
   style?: AiStyle
+  /** 使用的智能体 id；缺省/无效时回退到默认智能体 */
+  agentId?: string
 }
 
 export interface AiSuggestResult {

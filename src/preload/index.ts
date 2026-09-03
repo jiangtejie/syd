@@ -4,6 +4,8 @@ import type {
   KeySource,
   DbChangedPayload,
   AiGenOptions,
+  AiAgent,
+  AiAgentInput,
   ChatMessage,
   ReplyCandidate,
   SendResult,
@@ -66,7 +68,13 @@ const api = {
         model?: string
         timeoutMs?: number
       }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> =>
-        ipcRenderer.invoke('cs:ai:test', input)
+        ipcRenderer.invoke('cs:ai:test', input),
+      models: (input?: {
+        baseUrl?: string
+        apiKey?: string
+        timeoutMs?: number
+      }): Promise<{ ok: boolean; models?: string[]; error?: string }> =>
+        ipcRenderer.invoke('cs:ai:models', input)
     },
     reply: {
       sendText: (args: {
@@ -137,6 +145,16 @@ const api = {
         ipcRenderer.invoke('cs:issue:detail', id),
       typeCounts: (wxid: string): Promise<{ ok: boolean; counts?: unknown[]; error?: string }> =>
         ipcRenderer.invoke('cs:issue:typeCounts', wxid)
+    },
+    agent: {
+      list: (): Promise<{ ok: boolean; agents?: AiAgent[]; defaultId?: string | null; error?: string }> =>
+        ipcRenderer.invoke('cs:agent:list'),
+      save: (input: AiAgentInput): Promise<{ ok: boolean; agent?: AiAgent; error?: string }> =>
+        ipcRenderer.invoke('cs:agent:save', input),
+      remove: (id: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:agent:remove', id),
+      setDefault: (id: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:agent:setDefault', id)
     },
     app: {
       /** 菜单/托盘等触发的页面导航（如 Ctrl+, 打开设置） */

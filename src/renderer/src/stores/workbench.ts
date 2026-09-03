@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type {
+  AiAgent,
   ChatMessage,
   MessageCursor,
   ReplyCandidate,
@@ -47,6 +48,12 @@ interface WorkbenchState {
   /** 已选中的建议文本（T8 发送入口用） */
   chosenText: string | null
 
+  /** 智能体（客服人设）：当前使用的智能体 id（跨会话保留；首次进入取全局默认，默认可在设置页修改） */
+  agents: AiAgent[]
+  agentId: string | null
+  /** 全局默认智能体 id（仅作展示用，标注“默认”） */
+  defaultAgentId: string | null
+
   /** 发送（T8） */
   sending: boolean
   sendResult: { ok: boolean; error?: string; status?: string; verified?: boolean } | null
@@ -55,6 +62,8 @@ interface WorkbenchState {
   selectSession: (sessionId: string) => Promise<void>
   refreshSessions: () => Promise<void>
   loadOlder: () => Promise<void>
+  loadAgents: () => Promise<void>
+  setAgentId: (id: string | null) => void
   generateSuggestions: () => Promise<void>
   adoptSuggestion: (text: string) => void
   sendText: (text: string, source?: string) => Promise<void>
@@ -67,6 +76,7 @@ interface WorkbenchState {
 const wxApi = window.api?.cs?.wx
 const aiApi = window.api?.cs?.ai
 const replyApi = window.api?.cs?.reply
+const agentApi = window.api?.cs?.agent
 
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   page: 'dashboard',
@@ -86,6 +96,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   suggestError: null,
   suggestLlm: false,
   chosenText: null,
+
+  agents: [],
+  agentId: null,
+  defaultAgentId: null,
 
   sending: false,
   sendResult: null,
@@ -125,6 +139,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   selectSession: async (sessionId: string) => {
     set({ activeSessionId: sessionId, loading: true, nextCursor: null, messagesHasMore: false })
+    void get().loadAgents()
     const { wxid, source } = get()
     try {
       if (source === 'wx' && wxid && wxApi) {
@@ -156,6 +171,29 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
   },
 
+  loadAgents: async () => {
+    const { agentId } = get()
+    if (!agentApi) return
+    try {
+      const res = await agentApi.list()
+      if (res.ok && res.agents && res.agents.length > 0) {
+        set({ agents: res.agents, defaultAgentId: res.defaultId ?? res.agents[0].id })
+        // 当前选择失效（被删除等）时回退默认智能体；有效则保留用户的全局选择
+        const valid = agentId && res.agents.some((a) => a.id === agentId)
+        if (!valid) set({ agentId: res.defaultId ?? res.agents[0].id })
+      }
+    } catch (e) {
+      console.error('[workbench] load agents failed', e)
+    }
+  },
+
+  setAgentId: (id: string | null) => {
+    set({ agentId: id })
+    // 切换智能体即用新角色重出建议（无会话时静默）
+    const { activeSessionId, messages } = get()
+    if (id && activeSessionId && messages.length > 0) void get().generateSuggestions()
+  },
+
   loadOlder: async () => {
     const { wxid, activeSessionId, nextCursor, loadingOlder, source } = get()
     if (source !== 'wx' || !wxid || !activeSessionId || !nextCursor || loadingOlder || !wxApi) return
@@ -181,14 +219,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   generateSuggestions: async () => {
-    const { activeSessionId, sessions, messages } = get()
+    const { activeSessionId, sessions, messages, agentId } = get()
     if (!activeSessionId || messages.length === 0) return
     const session = sessions.find((s) => s.username === activeSessionId)
     const sessionName = session?.displayName || session?.nickname || session?.remark || activeSessionId
     set({ suggestLoading: true, suggestError: null, chosenText: null })
     try {
       if (aiApi) {
-        const res = await aiApi.generateReply(sessionName, messages)
+        const res = await aiApi.generateReply(sessionName, messages, {
+          agentId: agentId ?? undefined
+        })
         // 防竞态：生成期间用户切走了会话则丢弃结果
         if (get().activeSessionId !== activeSessionId) return
         if (res.ok && res.candidates && res.candidates.length > 0) {
