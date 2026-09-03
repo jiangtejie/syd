@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import { avatarColor } from '../lib/ui'
 import EChart from '../components/EChart'
-import ConfirmDialog from '../components/ConfirmDialog'
 import type { EChartsOption } from 'echarts'
 import type {
   SendOverview,
@@ -11,15 +10,9 @@ import type {
   OpsStats,
   OpsDayPoint,
   OpsHourPoint,
-  OpsTypeCount,
-  FeedbackIssue,
-  FeedbackIssueDetail,
-  FeedbackIssueStatus,
-  FeedbackIssueType,
-  FeedbackAnalysisState
+  OpsTypeCount
 } from '../../../shared/types'
 import './dashboard.css'
-import './dashboard-feedback.css'
 
 /**
  * 私域运营看板：顶部运营指标带 + 跟进队列（待回复/沉睡召回）+ 会话与发送审计。
@@ -37,27 +30,6 @@ interface DayStat {
 const OVERDUE_MS = 2 * 3600_000
 /** 队列单列表格最大展示条数 */
 const QUEUE_SHOW = 12
-
-// ── 问题反馈：类型配色 / 状态文案 / 表格展示上限 ──
-const FB_TYPE_COLORS: Record<FeedbackIssueType, string> = {
-  客诉: '#fa5151',
-  售后: '#fa8c16',
-  物流: '#9d5bfa',
-  价格: '#eb2f96',
-  咨询: '#5b8ff9',
-  建议: '#07c160',
-  其他: '#9aa3ad'
-}
-const FB_STATUS_LABEL: Record<FeedbackIssueStatus, string> = {
-  open: '待处理',
-  done: '已处理',
-  stalled: '已搁置',
-  archived: '已归档'
-}
-const FB_TAB_ORDER: Array<FeedbackIssueStatus | 'all'> = ['open', 'done', 'stalled', 'archived', 'all']
-const FB_TAB_LABEL: Record<string, string> = { ...FB_STATUS_LABEL, all: '全部' }
-/** 问题反馈表格每页条数选项 */
-const FB_PAGE_SIZES = [10, 20, 50, 100]
 
 /** 会话构成片段（真实分类，来自 SessionSummary 的类型标记） */
 interface CompSegment {
@@ -524,184 +496,6 @@ function DashboardPage(): React.JSX.Element {
     ? Math.min(100, Math.round((sendStatus.todayCount / Math.max(sendStatus.dailyLimit, 1)) * 100))
     : 0
 
-  // ── 群问题反馈（LLM/规则从近 7 天群消息智能提取，独立整行表格）──
-  const issueApi = window.api?.cs?.issue
-  const [fbIssues, setFbIssues] = useState<FeedbackIssue[]>([])
-  const [fbState, setFbState] = useState<FeedbackAnalysisState | null>(null)
-  const [fbTab, setFbTab] = useState<FeedbackIssueStatus | 'all'>('open')
-  const [fbBusy, setFbBusy] = useState(false)
-  const [fbDetailId, setFbDetailId] = useState<number | null>(null)
-  const [fbDetail, setFbDetail] = useState<FeedbackIssueDetail | null>(null)
-  const [fbError, setFbError] = useState<string | null>(null)
-  const [fbPageSize, setFbPageSize] = useState(10)
-  const [fbPage, setFbPage] = useState(1)
-  const [fbJump, setFbJump] = useState('')
-  const [fbClearing, setFbClearing] = useState(false)
-
-  const loadFb = useCallback((): void => {
-    if (!issueApi || !wxid) return
-    void issueApi
-      .list(wxid)
-      .then((res) => {
-        if (res.ok && Array.isArray(res.issues)) setFbIssues(res.issues as FeedbackIssue[])
-      })
-      .catch(() => undefined)
-    void issueApi
-      .state(wxid)
-      .then((res) => {
-        if (res.ok && res.state) {
-          const s = res.state as FeedbackAnalysisState
-          setFbState(s)
-          if (s.error) setFbError(s.error)
-        }
-      })
-      .catch(() => undefined)
-  }, [issueApi, wxid])
-
-  useEffect(() => {
-    if (source !== 'wx' || !issueApi) return
-    loadFb()
-    const unsubscribe = window.api?.cs?.wx?.onDbChanged?.((payload) => {
-      if (payload.wxid === wxid) loadFb()
-    })
-    return unsubscribe
-  }, [source, issueApi, wxid, loadFb])
-
-  const runFbAnalyze = useCallback(async (): Promise<void> => {
-    if (!issueApi || !wxid || fbBusy) return
-    setFbBusy(true)
-    setFbError(null)
-    try {
-      const res = await issueApi.analyze(wxid)
-      if (!res.ok && res.error) setFbError(res.error)
-    } catch {
-      setFbError('分析过程异常')
-    }
-    const stateRes = await issueApi.state(wxid)
-    if (stateRes.ok && stateRes.state) setFbState(stateRes.state as FeedbackAnalysisState)
-    const listRes = await issueApi.list(wxid)
-    if (listRes.ok && Array.isArray(listRes.issues)) {
-      setFbIssues(listRes.issues as FeedbackIssue[])
-    }
-    setFbBusy(false)
-  }, [issueApi, wxid, fbBusy])
-
-  // 清空当前账号问题数据（先弹自绘确认框，确认后再执行；清空后点「重新分析」重新提取）
-  const [fbConfirmOpen, setFbConfirmOpen] = useState(false)
-  const openClearConfirm = useCallback((): void => {
-    if (!issueApi || !wxid || fbBusy) return
-    setFbConfirmOpen(true)
-  }, [issueApi, wxid, fbBusy])
-
-  const doClearFb = useCallback((): void => {
-    if (!issueApi || !wxid || fbBusy) return
-    setFbConfirmOpen(false)
-    setFbBusy(true)
-    setFbClearing(true)
-    setFbError(null)
-    void issueApi
-      .clear(wxid)
-      .then((res) => {
-        if (!res.ok) setFbError(res.error ?? '清空失败')
-      })
-      .catch(() => setFbError('清空过程异常'))
-      .finally(() => {
-        setFbClearing(false)
-        setFbBusy(false)
-        setFbDetailId(null)
-        setFbDetail(null)
-        setFbPage(1)
-        setFbTab('open')
-        loadFb()
-      })
-  }, [issueApi, wxid, fbBusy, loadFb])
-
-  const fbStatusCount = useMemo(() => {
-    const m: Record<string, number> = { open: 0, done: 0, stalled: 0, archived: 0 }
-    for (const i of fbIssues) m[i.status] = (m[i.status] ?? 0) + 1
-    return m
-  }, [fbIssues])
-  const fbTabIssues = useMemo(
-    () => (fbTab === 'all' ? fbIssues : fbIssues.filter((i) => i.status === fbTab)),
-    [fbIssues, fbTab]
-  )
-  // 表格分页（数据已全量加载，按当前筛选结果切页）
-  const fbTotalPages = Math.max(1, Math.ceil(fbTabIssues.length / fbPageSize))
-  const fbCurPage = Math.min(fbPage, fbTotalPages)
-  const fbPageItems = useMemo(
-    () => fbTabIssues.slice((fbCurPage - 1) * fbPageSize, fbCurPage * fbPageSize),
-    [fbTabIssues, fbCurPage, fbPageSize]
-  )
-  const goFbPage = useCallback(
-    (p: number): void => setFbPage(Math.min(Math.max(p, 1), fbTotalPages)),
-    [fbTotalPages]
-  )
-  const applyFbJump = useCallback((): void => {
-    const n = Number.parseInt(fbJump, 10)
-    if (!Number.isNaN(n)) goFbPage(n)
-    setFbJump('')
-  }, [fbJump, goFbPage])
-  // 切换筛选或每页条数时回到第 1 页
-  useEffect(() => {
-    setFbPage(1)
-    setFbJump('')
-  }, [fbTab, fbPageSize])
-  const fbTypeCount = useMemo(() => {
-    const m = new Map<FeedbackIssueType, number>()
-    for (const i of fbIssues) {
-      if (i.status === 'archived') continue
-      m.set(i.type, (m.get(i.type) ?? 0) + 1)
-    }
-    return [...m.entries()].sort((a, b) => b[1] - a[1])
-  }, [fbIssues])
-  const fbTypeTotal = fbTypeCount.reduce((sum, [, n]) => sum + n, 0)
-  const fbTypeDonut = useMemo<EChartsOption | null>(() => {
-    if (fbTypeTotal === 0) return null
-    return donutOption(
-      fbTypeCount.map(([t, n]) => ({
-        name: `${t} ${n}`,
-        value: n,
-        color: FB_TYPE_COLORS[t] ?? '#9aa3ad'
-      })),
-      String(fbTypeTotal),
-      '未归档'
-    )
-  }, [fbTypeCount, fbTypeTotal])
-
-  const toggleFbDetail = useCallback(
-    (id: number): void => {
-      if (fbDetailId === id) {
-        setFbDetailId(null)
-        setFbDetail(null)
-        return
-      }
-      setFbDetailId(id)
-      setFbDetail(null)
-      void issueApi
-        ?.detail(id)
-        .then((res) => {
-          if (res.ok && res.issue) setFbDetail(res.issue as FeedbackIssueDetail)
-        })
-        .catch(() => undefined)
-    },
-    [issueApi, fbDetailId]
-  )
-
-  const setFbStatus = useCallback(
-    (id: number, status: FeedbackIssueStatus): void => {
-      setFbIssues((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)))
-      void issueApi
-        ?.setStatus(id, status)
-        .then((res) => {
-          if (!res.ok) loadFb()
-        })
-        .catch(() => {
-          loadFb()
-        })
-    },
-    [issueApi, loadFb]
-  )
-
   return (
     <div className="page-scroll">
       <h2 className="page-title">数据看板</h2>
@@ -740,292 +534,53 @@ function DashboardPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* 跟进队列 + 问题类型分布 */}
-      <div className="db-grid db-queue-grid">
-        <div className="page-card db-panel">
-          <div className="db-panel-title">
-            待回复队列
-            {needReply > 0 && <span className="db-count-badge">{needReply}</span>}
-          </div>
-          {followUps.length === 0 ? (
-            <div className="db-empty">暂无待回复会话，全部跟进完毕</div>
-          ) : (
-            <div className="db-q-scroll">
-              {followUps.slice(0, QUEUE_SHOW).map((s) => {
-                const overdue = nowMs > 0 && nowMs - s.lastTimestamp > OVERDUE_MS
-                return (
-                  <div
-                    key={s.username}
-                    className="db-q-item"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => source === 'wx' && gotoSession(s.username)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        if (source === 'wx') gotoSession(s.username)
-                      }
-                    }}
-                  >
-                    <span className="cu-avatar" style={{ background: avatarColor(s.displayName) }}>
-                      {s.displayName.slice(0, 1)}
-                    </span>
-                    <div className="db-q-main">
-                      <div className="db-q-name">
-                        <span className="db-q-name-text">{s.displayName}</span>
-                        {s.unreadCount > 0 && <span className="db-q-badge">{s.unreadCount}</span>}
-                      </div>
-                      <div className="db-q-sub">{s.summary}</div>
-                    </div>
-                    <span className={`db-q-time${overdue ? ' is-overdue' : ''}`}>
-                      {fmtAge(nowMs, s.lastTimestamp)}
-                    </span>
-                  </div>
-                )
-              })}
-              {followUps.length > QUEUE_SHOW && (
-                <div className="db-q-more">
-                  另有 {followUps.length - QUEUE_SHOW} 个会话，请在对话页处理
-                </div>
-              )}
-            </div>
-          )}
+      <div className="page-card db-panel">
+        <div className="db-panel-title">
+          待回复队列
+          {needReply > 0 && <span className="db-count-badge">{needReply}</span>}
         </div>
-
-        <div className="page-card db-panel">
-          <div className="db-panel-title">
-            问题类型分布
-            {fbTypeTotal > 0 && <span className="db-count-badge">{fbTypeTotal}</span>}
-          </div>
-          {source !== 'wx' ? (
-            <div className="db-empty">连接微信数据后，点击「重新分析」提取近 7 天群消息中的问题</div>
-          ) : fbTypeTotal === 0 ? (
-            <div className="db-empty">
-              {fbBusy
-                ? '正在从近 7 天群消息中提取问题…'
-                : '暂无问题数据，可点击下方「重新分析」开始提取'}
-            </div>
-          ) : (
-            <>
-              {fbTypeDonut && <EChart option={fbTypeDonut} height={178} />}
-              <div className="db-panel-sub">口径：近 7 天群消息 · 未归档问题</div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* 问题反馈（近 7 天群消息智能提取 · 独立整行） */}
-      <div className="page-card db-panel db-fb">
-        <div className="db-fb-head">
-          <div className="db-fb-title-group">
-            <span className="db-panel-title">问题反馈</span>
-            <span className="db-panel-hint">
-              近 7 天群消息 · {fbState?.method === 'llm' ? 'AI 模型提取' : '本地规则提取'} ·
-              人工状态持久保存
-            </span>
-          </div>
-          <div className="db-fb-actions">
-            <span className="db-seg">
-              {FB_TAB_ORDER.map((t) => (
-                <button
-                  type="button"
-                  key={t}
-                  className={`db-seg-btn${fbTab === t ? ' on' : ''}`}
-                  onClick={() => setFbTab(t)}
-                >
-                  {FB_TAB_LABEL[t]}
-                  {t !== 'all' && (fbStatusCount[t] ?? 0) > 0 ? ` ${fbStatusCount[t] ?? 0}` : ''}
-                </button>
-              ))}
-            </span>
-            <button
-              type="button"
-              className="db-fb-run db-fb-clear"
-              disabled={fbBusy || source !== 'wx'}
-              onClick={openClearConfirm}
-            >
-              {fbClearing ? '清空中…' : '清空数据'}
-            </button>
-            <button
-              type="button"
-              className="db-fb-run"
-              disabled={fbBusy || source !== 'wx'}
-              onClick={() => void runFbAnalyze()}
-            >
-              {fbBusy && !fbClearing ? '分析中…' : '重新分析'}
-            </button>
-          </div>
-        </div>
-
-        {fbError && <div className="db-alert">问题分析失败：{fbError}（未配置模型时使用本地规则）</div>}
-        {fbTabIssues.length === 0 ? (
-          <div className="db-empty">
-            {source !== 'wx'
-              ? '连接微信数据后，点击「重新分析」提取群内客户问题/反馈'
-              : fbBusy
-                ? '正在扫描近 7 天群消息并提取问题…'
-                : '当前筛选下暂无问题。可点击「重新分析」从近 7 天群消息中提取'}
-          </div>
+        {followUps.length === 0 ? (
+          <div className="db-empty">暂无待回复会话，全部跟进完毕</div>
         ) : (
-          <>
-            <div className="fb-table">
-              <div className="fb-row fb-row-head">
-                <span className="fb-col-group">群来源</span>
-                <span className="fb-col-content">问题内容（图文）</span>
-                <span className="fb-col-type">类型</span>
-                <span className="fb-col-msg">相关消息</span>
-                <span className="fb-col-time">最近发生</span>
-                <span className="fb-col-status">状态</span>
-                <span className="fb-col-ops">操作</span>
-              </div>
-              {fbPageItems.map((it) => (
-                <div className="fb-item" key={it.id}>
-                  <div className="fb-row">
-                    <span className="fb-col-group">
-                      <span className="fb-group">
-                        <span
-                          className="cu-avatar"
-                          style={{ background: avatarColor(it.groupName || it.groupUsername) }}
-                        >
-                          {(it.groupName || it.groupUsername).slice(0, 1)}
-                        </span>
-                        <span className="fb-group-name" title={it.groupName}>
-                          {it.groupName || it.groupUsername}
-                        </span>
-                      </span>
-                    </span>
-                    <span className="fb-col-content">
-                      <span className="fb-title" title={it.summary}>
-                        {it.title}
-                      </span>
-                      {it.summary && <span className="fb-summary">{it.summary}</span>}
-                    </span>
-                    <span className="fb-col-type">
-                      <span className="fb-type" style={{ background: FB_TYPE_COLORS[it.type] }}>
-                        {it.type}
-                      </span>
-                    </span>
-                    <span className="fb-col-msg">
-                      <button
-                        type="button"
-                        className={`fb-rel-btn${fbDetailId === it.id ? ' on' : ''}`}
-                        onClick={() => void toggleFbDetail(it.id)}
-                      >
-                        {it.msgCount} 条 {fbDetailId === it.id ? '▲' : '▼'}
-                      </button>
-                    </span>
-                    <span className="fb-col-time">{fmtAge(nowMs, it.occurAt)}</span>
-                    <span className="fb-col-status">
-                      <span className={`fb-st fb-st-${it.status}`}>
-                        {FB_STATUS_LABEL[it.status]}
-                      </span>
-                    </span>
-                    <span className="fb-col-ops">
-                      {it.status !== 'done' && (
-                        <button type="button" className="fb-op" onClick={() => setFbStatus(it.id, 'done')}>
-                          已处理
-                        </button>
-                      )}
-                      {it.status !== 'stalled' && it.status !== 'archived' && (
-                        <button type="button" className="fb-op" onClick={() => setFbStatus(it.id, 'stalled')}>
-                          搁置
-                        </button>
-                      )}
-                      {it.status === 'archived' ? (
-                        <button type="button" className="fb-op" onClick={() => setFbStatus(it.id, 'open')}>
-                          恢复
-                        </button>
-                      ) : (
-                        <button type="button" className="fb-op" onClick={() => setFbStatus(it.id, 'archived')}>
-                          归档
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                  {fbDetailId === it.id && fbDetail?.id === it.id && (
-                    <div className="fb-detail">
-                      <div className="fb-detail-title">相关消息（智能关联的原始上下文）</div>
-                      {fbDetail.related.length === 0 ? (
-                        <div className="fb-detail-empty">暂无消息明细</div>
-                      ) : (
-                        fbDetail.related.map((m, idx) => (
-                          <div className="fb-msg" key={idx}>
-                            <span className="fb-msg-time">{fmtAge(nowMs, m.time)}</span>
-                            <span className={`fb-msg-sender${m.isSend ? ' is-send' : ''}`}>
-                              {m.isSend ? '我方客服' : m.senderName || '群成员'}
-                            </span>
-                            {m.imageMd5 ? (
-                              <span className="fb-msg-img">[图片]</span>
-                            ) : (
-                              <span className="fb-msg-text">{m.text || '(非文本消息)'}</span>
-                            )}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {fbTotalPages > 1 && (
-              <div className="fb-pager">
-                <span className="fb-pager-info">共 {fbTabIssues.length} 条</span>
-                <div className="fb-pager-ctrl">
-                  <select
-                    className="fb-pager-select"
-                    value={fbPageSize}
-                    onChange={(e) => setFbPageSize(Number(e.target.value))}
-                    aria-label="每页条数"
-                  >
-                    {FB_PAGE_SIZES.map((n) => (
-                      <option key={n} value={n}>
-                        {n} 条/页
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="fb-pager-btn"
-                    disabled={fbCurPage <= 1}
-                    onClick={() => goFbPage(fbCurPage - 1)}
-                  >
-                    ‹ 上一页
-                  </button>
-                  <span className="fb-pager-now">
-                    第 {fbCurPage} / {fbTotalPages} 页
+          <div className="db-q-scroll">
+            {followUps.slice(0, QUEUE_SHOW).map((s) => {
+              const overdue = nowMs > 0 && nowMs - s.lastTimestamp > OVERDUE_MS
+              return (
+                <div
+                  key={s.username}
+                  className="db-q-item"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => source === 'wx' && gotoSession(s.username)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      if (source === 'wx') gotoSession(s.username)
+                    }
+                  }}
+                >
+                  <span className="cu-avatar" style={{ background: avatarColor(s.displayName) }}>
+                    {s.displayName.slice(0, 1)}
                   </span>
-                  <button
-                    type="button"
-                    className="fb-pager-btn"
-                    disabled={fbCurPage >= fbTotalPages}
-                    onClick={() => goFbPage(fbCurPage + 1)}
-                  >
-                    下一页 ›
-                  </button>
-                  <div className="fb-pager-jump">
-                    <input
-                      className="fb-pager-jump-input"
-                      placeholder={`跳至 ${fbCurPage}`}
-                      value={fbJump}
-                      inputMode="numeric"
-                      onChange={(e) => setFbJump(e.target.value.replace(/\D/g, ''))}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') applyFbJump()
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="fb-pager-btn"
-                      disabled={fbJump === ''}
-                      onClick={applyFbJump}
-                    >
-                      跳转
-                    </button>
+                  <div className="db-q-main">
+                    <div className="db-q-name">
+                      <span className="db-q-name-text">{s.displayName}</span>
+                      {s.unreadCount > 0 && <span className="db-q-badge">{s.unreadCount}</span>}
+                    </div>
+                    <div className="db-q-sub">{s.summary}</div>
                   </div>
+                  <span className={`db-q-time${overdue ? ' is-overdue' : ''}`}>
+                    {fmtAge(nowMs, s.lastTimestamp)}
+                  </span>
                 </div>
+              )
+            })}
+            {followUps.length > QUEUE_SHOW && (
+              <div className="db-q-more">
+                另有 {followUps.length - QUEUE_SHOW} 个会话，请在对话页处理
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
 
@@ -1075,7 +630,6 @@ function DashboardPage(): React.JSX.Element {
             <SendBarChart stats={sendStats} />
           )}
         </div>
-
       </div>
 
       {/* 消息运营洞察（真实微信消息库聚合） */}
@@ -1243,24 +797,9 @@ function DashboardPage(): React.JSX.Element {
       </div>
 
       <div className="page-subtitle db-footnote">
-        口径：待回复=有未读且最后一条为客户消息（不含公众号/折叠）；超时未回=有未读且最后消息距今超 2
-        小时；今日互动=今日有消息的会话；沉睡=近 7~30 天未联系的个人会话。
+        口径：待回复=有未读且最后一条为客户消息（不含公众号/折叠）；超时未回=有未读且最后消息距今超
+        2 小时；今日互动=今日有消息的会话；沉睡=近 7~30 天未联系的个人会话。
       </div>
-
-      <ConfirmDialog
-        options={
-          fbConfirmOpen
-            ? {
-                title: '清空问题反馈记录？',
-                message: '确定清空当前账号的全部问题反馈记录？\n清空后需点击「重新分析」，从近 7 天群消息重新提取。',
-                confirmText: '清空',
-                danger: true,
-                onConfirm: doClearFb
-              }
-            : null
-        }
-        onClose={() => setFbConfirmOpen(false)}
-      />
     </div>
   )
 }
