@@ -615,6 +615,12 @@ function readWm(wxid: string, groupUsername: string): { at: number; msgTime: num
   return null
 }
 
+/** 清除某群分析状态(水位+节流标记):清空/重算后调用,保证下次进入走全量而不是被旧水位跳过 */
+export function clearGroupRunState(wxid: string, groupUsername: string): void {
+  setConfig(wmKey(wxid, groupUsername), '')
+  setConfig(groupStampKey(wxid, groupUsername), '')
+}
+
 /** 群消息库当前最新一条消息时间（peek 一页；读失败返回 null 表示不拦截） */
 function peekLatestMsgTime(wxid: string, groupUsername: string): number | null {
   try {
@@ -698,9 +704,10 @@ export async function analyzeGroupIssues(
   const run = (async (): Promise<AnalyzeGroupResult> => {
     const startedAt = Date.now()
     try {
-      // 0) 重算模式:清空该群 open(待处理/跟进中)与其证据,再重新提取(已解决/归档保留)
+      // 0) 重算/清空模式:清 open(重置语义)并复位分析状态(水位+节流),再重新提取(历史保留)
       if (reset) {
         clearOpenIssuesByGroup(wxid, groupUsername)
+        clearGroupRunState(wxid, groupUsername)
       }
       // 1) 水位判定：增量模式且水位后无新消息 → 跳过（不重复解读）
       const wm = readWm(wxid, groupUsername)
@@ -928,11 +935,14 @@ export function updateIssueStatus(id: number, status: FeedbackIssueStatus): void
   setIssueStatus(id, status)
 }
 
-/** 清空某账号的问题数据并复位分析/失败标记（下次分析从真实群消息重新提取） */
+/** 清空某账号的问题数据并复位分析/失败标记与各群水位/节流（下次自动分析从真实群消息全量重新提取） */
 export function clearFeedbackIssues(wxid: string): void {
+  // 先收集该账号出现过的群,逐一清除增量水位与节流标记,避免清空后被旧水位跳过
+  const groups = new Set(listIssues(wxid).map((i) => i.groupUsername))
   clearIssues(wxid)
   setConfig(stateConfigKey(wxid), '')
   setConfig(failConfigKey(wxid), '')
+  for (const g of groups) clearGroupRunState(wxid, g)
 }
 
 export function issueTypeCounts(wxid: string) {

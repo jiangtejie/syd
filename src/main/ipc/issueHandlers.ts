@@ -3,6 +3,7 @@ import {
   analyzeGroupIssues,
   analyzeIssues,
   clearFeedbackIssues,
+  clearGroupRunState,
   listFeedbackIssues,
   readState,
   updateIssueStatus,
@@ -62,11 +63,12 @@ export function registerIssueHandlers(): void {
     }
   })
 
-  // 清空某群全部记录(含历史/证据)——「从零开始」,不可恢复
+  // 清空某群全部记录(含历史/证据)并复位该群分析状态——「从零开始」,不可恢复
   ipcMain.handle('cs:issue:clearGroup', (_e, wxid: string, groupUsername: string) => {
     if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
     try {
       clearIssuesByGroup(wxid, groupUsername)
+      clearGroupRunState(wxid, groupUsername)
       return { ok: true as const }
     } catch (err) {
       return {

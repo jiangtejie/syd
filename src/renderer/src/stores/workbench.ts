@@ -395,7 +395,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       groupDetailLoading: false,
       groupAnalyzedAt: null
     })
-    toast.success('已清空本群全部问题记录,可点「重新分析」重新提取')
+    // 闭环:清空即按当前窗口从零重新提取(主进程侧已复位该群水位,失败也可手动重试)
+    await get().analyzeGroupNow()
     void get().refreshGroupBadges()
   },
 

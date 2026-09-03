@@ -211,11 +211,11 @@ function GroupIssuesPanel(): React.JSX.Element {
     }
   }
 
-  /** 「清空本群」:删除该群全部记录(含历史,不可恢复) */
+  /** 「清空本群」:删除该群全部记录并自动重新提取(含历史,不可恢复) */
   const onClearAll = (): void => {
     if (analyzing) return
     const ok = window.confirm(
-      `将删除本群全部问题记录(共 ${issues.length} 条,含已解决/已归档与证据消息),此操作不可恢复。\n之后可点「重新分析」从零提取。确认删除?`
+      `将删除本群全部问题记录(共 ${issues.length} 条,含已解决/已归档与证据消息),此操作不可恢复。\n确认后将立即按近 ${days} 天从零重新分析提取。确认?`
     )
     if (ok) void clearGroupAll()
   }
@@ -341,9 +341,9 @@ function GroupIssuesPanel(): React.JSX.Element {
             className="gip-btn danger"
             disabled={analyzing || issues.length === 0}
             onClick={onClearAll}
-            title="删除本群全部问题记录(含历史/证据,不可恢复),适合从零开始"
+            title="删除本群全部问题记录(含历史/证据)并立即重新提取,不可恢复"
           >
-            清空本群
+            清空重析
           </button>
         </div>
       </div>
