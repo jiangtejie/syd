@@ -84,7 +84,7 @@ const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }>
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
   { key: 'customers', icon: 'customers', label: '客户' },
-  { key: 'export', icon: 'export', label: '数据导出' },
+  { key: 'export', icon: 'export', label: '数据' },
   { key: 'settings', icon: 'settings', label: '设置' }
 ]
 
