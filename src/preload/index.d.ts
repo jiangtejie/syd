@@ -87,6 +87,12 @@ declare global {
             messages: ChatMessage[],
             opts?: AiGenOptions
           ) => Promise<AiReplyResult>
+          test: (input?: {
+            baseUrl?: string
+            apiKey?: string
+            model?: string
+            timeoutMs?: number
+          }) => Promise<{ ok: boolean; latencyMs?: number; error?: string }>
         }
         reply: {
           sendText: (args: {

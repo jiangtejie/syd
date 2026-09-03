@@ -11,6 +11,7 @@ import './settings.css'
 
 interface FormState {
   'ai.enabled': string
+  'ai.provider': string
   'ai.baseUrl': string
   'ai.apiKey': string
   'ai.model': string
@@ -20,8 +21,84 @@ interface FormState {
   'notify.enabled': string
 }
 
+/** AI 通道预设（OpenAI 兼容 chat/completions），选择后自动填充地址与示例模型，仍可手动修改 */
+interface AiPreset {
+  id: string
+  label: string
+  baseUrl: string
+  model: string
+  models: string[]
+}
+
+const AI_PRESETS: AiPreset[] = [
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1']
+  },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek（深度求索）',
+    baseUrl: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+    models: ['deepseek-chat', 'deepseek-reasoner']
+  },
+  {
+    id: 'dashscope',
+    label: '阿里云百炼（通义千问）',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-plus',
+    models: ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen-long']
+  },
+  {
+    id: 'zhipu',
+    label: '智谱 AI（GLM）',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4-flash',
+    models: ['glm-4-flash', 'glm-4-air', 'glm-4-plus', 'glm-4-long']
+  },
+  {
+    id: 'moonshot',
+    label: 'Moonshot（Kimi）',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    model: 'kimi-latest',
+    models: ['kimi-latest', 'moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']
+  },
+  {
+    id: 'siliconflow',
+    label: '硅基流动 SiliconFlow',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    model: 'Qwen/Qwen2.5-7B-Instruct',
+    models: ['Qwen/Qwen2.5-7B-Instruct', 'deepseek-ai/DeepSeek-V3', 'THUDM/glm-4-9b-chat']
+  },
+  {
+    id: 'volcengine',
+    label: '火山方舟（豆包）',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    model: 'ep-xxxxxxxx（推理接入点 ID）',
+    models: ['doubao-pro-32k', 'doubao-lite-32k']
+  },
+  {
+    id: 'ollama',
+    label: 'Ollama（本地）',
+    baseUrl: 'http://localhost:11434/v1',
+    model: 'qwen2.5',
+    models: ['qwen2.5', 'llama3.1', 'deepseek-r1']
+  },
+  {
+    id: 'custom',
+    label: '自定义（OpenAI 兼容）',
+    baseUrl: '',
+    model: '',
+    models: []
+  }
+]
+
 const DEFAULTS: FormState = {
   'ai.enabled': '0',
+  'ai.provider': 'openai',
   'ai.baseUrl': 'https://api.openai.com/v1',
   'ai.apiKey': '',
   'ai.model': 'gpt-4o-mini',
@@ -34,6 +111,7 @@ const DEFAULTS: FormState = {
 const configApi = window.api?.cs?.config
 const replyApi = window.api?.cs?.reply
 const appApi = window.api?.cs?.app
+const aiApi = window.api?.cs?.ai
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -47,6 +125,10 @@ function SettingsPage(): React.JSX.Element {
   const [loaded, setLoaded] = useState(false)
   const [savedTip, setSavedTip] = useState('')
   const [sendStatus, setSendStatus] = useState<SendStatusInfo | null>(null)
+  const [aiTesting, setAiTesting] = useState(false)
+  const [aiTestRes, setAiTestRes] = useState<{ ok: boolean; latencyMs?: number; error?: string } | null>(
+    null
+  )
   const [cacheEffective, setCacheEffective] = useState<{
     path: string
     defaultPath: string
@@ -63,6 +145,12 @@ function SettingsPage(): React.JSX.Element {
         const next = { ...prev }
         for (const k of Object.keys(next) as Array<keyof FormState>) {
           if (cfg[k] !== undefined && cfg[k] !== '') next[k] = cfg[k]
+        }
+        // 旧配置没有 ai.provider 时按已存 baseUrl 反推通道，避免下拉与地址不一致
+        if (cfg['ai.provider'] === undefined && cfg['ai.baseUrl']) {
+          const saved = cfg['ai.baseUrl'].trim().replace(/\/+$/, '')
+          const hit = AI_PRESETS.find((p) => p.baseUrl === saved)
+          if (hit) next['ai.provider'] = hit.id
         }
         return next
       })
@@ -156,6 +244,37 @@ function SettingsPage(): React.JSX.Element {
     setSendStatus(s ?? null)
   }
 
+  /** 选择通道预设：除「自定义」外自动填充地址与示例模型（之后仍可手动改） */
+  const pickAiProvider = (id: string): void => {
+    patch('ai.provider', id)
+    if (id !== 'custom') {
+      const preset = AI_PRESETS.find((p) => p.id === id)
+      if (preset) {
+        patch('ai.baseUrl', preset.baseUrl)
+        patch('ai.model', preset.model)
+      }
+    }
+  }
+
+  /** 用当前表单值（无需先保存）测试 OpenAI 兼容通道 */
+  const testAi = async (): Promise<void> => {
+    if (!aiApi) return
+    setAiTesting(true)
+    setAiTestRes(null)
+    try {
+      const r = await aiApi.test({
+        baseUrl: form['ai.baseUrl'].trim(),
+        apiKey: form['ai.apiKey'].trim(),
+        model: form['ai.model'].trim()
+      })
+      setAiTestRes(r ?? { ok: false, error: '测试调用失败' })
+    } catch (e) {
+      setAiTestRes({ ok: false, error: e instanceof Error ? e.message : '测试调用失败' })
+    } finally {
+      setAiTesting(false)
+    }
+  }
+
   const boolVal = (v: string): boolean => v === '1' || v === 'true'
   const boolStr = (b: boolean): string => (b ? '1' : '0')
 
@@ -173,10 +292,10 @@ function SettingsPage(): React.JSX.Element {
       {/* 其余配置两列紧凑排列 */}
       <div className="st-grid">
         {/* AI 通道 */}
-        <div className="page-card st-section">
-          <div className="st-title">AI 建议通道</div>
+      <div className="page-card st-section">
+        <div className="st-title">AI 通道配置（OpenAI 兼容）</div>
         <label className="st-row">
-          <span className="st-label">启用 LLM 生成</span>
+          <span className="st-label">启用 AI 调用</span>
           <input
             type="checkbox"
             checked={boolVal(form['ai.enabled'])}
@@ -184,7 +303,21 @@ function SettingsPage(): React.JSX.Element {
           />
         </label>
         <label className="st-row">
-          <span className="st-label">接口地址（OpenAI 兼容）</span>
+          <span className="st-label">通道</span>
+          <select
+            className="st-input"
+            value={form['ai.provider']}
+            onChange={(e) => pickAiProvider(e.target.value)}
+          >
+            {AI_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="st-row">
+          <span className="st-label">接口地址（Base URL）</span>
           <input
             className="st-input"
             value={form['ai.baseUrl']}
@@ -203,23 +336,58 @@ function SettingsPage(): React.JSX.Element {
           />
         </label>
         <label className="st-row">
-          <span className="st-label">模型</span>
+          <span className="st-label">模型名称</span>
           <input
             className="st-input"
             value={form['ai.model']}
             onChange={(e) => patch('ai.model', e.target.value)}
+            placeholder="gpt-4o-mini"
+            list="ai-preset-models"
           />
+          <datalist id="ai-preset-models">
+            {AI_PRESETS.filter((p) => p.id === form['ai.provider'])[0]?.models.map((m, i) => (
+              <option key={`${form['ai.provider']}-${i}-${m}`} value={m} />
+            ))}
+          </datalist>
         </label>
         <div className="st-actions">
           <button
             type="button"
+            className="st-btn ghost"
+            disabled={aiTesting}
+            onClick={() => void testAi()}
+          >
+            {aiTesting ? '测试中…' : '测试连接'}
+          </button>
+          <button
+            type="button"
             className="st-btn"
-            onClick={() => void save(['ai.enabled', 'ai.baseUrl', 'ai.apiKey', 'ai.model'])}
+            onClick={() =>
+              void save([
+                'ai.enabled',
+                'ai.provider',
+                'ai.baseUrl',
+                'ai.apiKey',
+                'ai.model'
+              ])
+            }
           >
             保存 AI 配置
           </button>
-          <span className="st-hint">未启用或未配置 Key 时，建议条自动降级为知识库模板话术</span>
         </div>
+        <div className="st-ai-test">
+          {aiTestRes &&
+            (aiTestRes.ok ? (
+              <span className="st-ok">✓ 连接成功 · {aiTestRes.latencyMs} ms</span>
+            ) : (
+              <span className="st-bad">✗ {aiTestRes.error}</span>
+            ))}
+        </div>
+        <span className="st-hint">
+          选择通道会自动填充官方地址与常用模型（火山方舟需在控制台创建推理接入点后填入
+          ep-xxx），地址与模型可手动修改。建议先「测试连接」通过后再保存；未启用或未配置 Key
+          时自动降级：回复建议回退模板话术、问题反馈走本地规则提取。
+        </span>
       </div>
 
       {/* 发送频控 */}

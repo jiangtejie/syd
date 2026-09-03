@@ -154,6 +154,14 @@ select.st-input {
   font-weight: 600;
 }
 
+/* AI 测试连接结果行 */
+.st-ai-test {
+  min-height: 18px;
+  margin-top: 8px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
 /* 次级按钮 */
 .st-btn.ghost {
   background: #fff;

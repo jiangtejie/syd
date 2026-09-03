@@ -59,7 +59,14 @@ const api = {
         messages: ChatMessage[],
         opts?: AiGenOptions
       ): Promise<{ ok: boolean; candidates?: ReplyCandidate[]; llm?: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:ai:generateReply', sessionName, messages, opts)
+        ipcRenderer.invoke('cs:ai:generateReply', sessionName, messages, opts),
+      test: (input?: {
+        baseUrl?: string
+        apiKey?: string
+        model?: string
+        timeoutMs?: number
+      }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:ai:test', input)
     },
     reply: {
       sendText: (args: {
