@@ -25,6 +25,7 @@
 
 .cu-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -51,7 +52,7 @@
 
 .cu-row {
   display: grid;
-  grid-template-columns: 1.6fr 0.7fr 1.6fr 1.2fr 0.9fr 0.5fr;
+  grid-template-columns: 1.5fr 0.5fr 1.5fr 1.4fr 1fr 0.5fr;
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
@@ -107,22 +108,22 @@
   text-overflow: ellipsis;
 }
 
-.cu-tier {
-  font-size: 10px;
-  font-weight: 700;
-  color: #b8860b;
-  background: #fdf3d7;
-  border: 1px solid #f0dfa8;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
 .cu-tag-chip {
   font-size: 11px;
   color: #4b6bff;
   background: #eef2ff;
   padding: 1px 7px;
   border-radius: 9px;
+  white-space: nowrap;
+}
+
+.cu-tag-chip.is-group {
+  color: #07c160;
+  background: #e6f9ee;
+}
+
+.cu-cell-kind {
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -134,27 +135,13 @@
   overflow: hidden;
 }
 
-.cu-score-bar {
-  display: inline-block;
-  width: 56px;
-  height: 6px;
-  border-radius: 3px;
-  background: #eef0f3;
-  overflow: hidden;
-  vertical-align: middle;
-  margin-right: 6px;
-}
-
-.cu-score-fill {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: linear-gradient(90deg, #34d17b, #07c160);
-}
-
-.cu-score-num {
+.cu-cell-sum {
   font-size: 12px;
-  color: #555;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .cu-unread {

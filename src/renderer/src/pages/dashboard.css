@@ -34,10 +34,6 @@
   color: #fa5151;
 }
 
-.db-card-num.vip {
-  color: #b8860b;
-}
-
 .db-card-label {
   font-size: 12px;
   color: #999;
@@ -421,14 +417,6 @@
   display: inline-block;
 }
 
-.db-dot.vip {
-  background: #f0b429;
-}
-
-.db-dot.normal {
-  background: #e4e6eb;
-}
-
 .db-dot.sent {
   background: #07c160;
 }
@@ -535,16 +523,6 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-}
-
-.db-top-item .cu-tier {
-  font-size: 10px;
-  font-weight: 700;
-  color: #b8860b;
-  background: #fdf3d7;
-  border: 1px solid #f0dfa8;
-  padding: 1px 6px;
-  border-radius: 4px;
 }
 
 /* ── 消息运营洞察（L2/L3）── */
