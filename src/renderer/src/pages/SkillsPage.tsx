@@ -11,8 +11,17 @@ import './skills.css'
 
 const skillApi = window.api?.cs?.skill
 
+interface SoftwareCapRow {
+  name: string
+  oneLine: string
+  when: string
+  needsWx: boolean
+  disabled: boolean
+}
+
 export default function SkillsPage(): React.JSX.Element {
   const [skills, setSkills] = useState<SkillPackageItem[] | null>(null)
+  const [softCaps, setSoftCaps] = useState<SoftwareCapRow[] | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
   const [installing, setInstalling] = useState(false)
   const [pending, setPending] = useState<SkillInstallInfo | null>(null)
@@ -24,9 +33,20 @@ export default function SkillsPage(): React.JSX.Element {
     else setSkills([])
   }
 
+  const loadSoftCaps = async (): Promise<void> => {
+    const res = await window.api?.cs?.cap?.software().catch(() => null)
+    if (res?.ok && res.caps) setSoftCaps(res.caps as SoftwareCapRow[])
+    else setSoftCaps([])
+  }
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取技能列表(全仓同款模式)
     void load()
+  }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取内置软件能力(全仓同款模式)
+    void loadSoftCaps()
   }, [])
 
   const active = useMemo(() => skills?.find((s) => s.id === selected) ?? null, [skills, selected])
@@ -77,6 +97,18 @@ export default function SkillsPage(): React.JSX.Element {
     }
   }
 
+  const toggleSoftCap = async (c: SoftwareCapRow): Promise<void> => {
+    const next = !c.disabled
+    const res = await window.api?.cs?.cap?.setSoftware(c.name, next).catch(() => null)
+    if (res?.ok) {
+      setSoftCaps((prev) =>
+        (prev ?? []).map((x) => (x.name === c.name ? { ...x, disabled: !next } : x))
+      )
+    } else {
+      toast.error((res as { error?: string } | null)?.error || '操作失败')
+    }
+  }
+
   const remove = async (s: SkillPackageItem): Promise<void> => {
     if (!window.confirm(`卸载技能「${s.name}」v${s.version}?`)) return
     const res = await skillApi?.remove(s.id).catch(() => null)
@@ -103,9 +135,45 @@ export default function SkillsPage(): React.JSX.Element {
         </button>
       </div>
       <p className="skills-intro">
-        第三方声明式技能包:tool 类 = HTTP 白名单执行器(每次调用需人工确认);knowledge 类 =
-        受控知识注入对话上下文。仅接受 manifest,不含可执行代码,请只安装可信来源。
+        能力分三层渐进式加载:核心(L0,目录/挂载)与已启用技能常驻;内置软件能力(L2)与
+        MCP/第三方(L3)默认不常驻,模型按需「挂载」进当前会话(见下)。第三方声明式技能包: tool 类 =
+        HTTP 白名单执行器(每次调用需人工确认);knowledge 类 = 受控知识注入。仅接受
+        manifest,不含可执行代码,请只安装可信来源。
       </p>
+
+      {softCaps !== null && (
+        <div className="skills-tier">
+          <div className="skills-tier-title">内置软件能力(L2 · 只读 · 按需挂载)</div>
+          <p className="skills-tier-hint">
+            AI 在对话中通过 list_capabilities 查看目录、mount_capability 挂载后使用;停用后目录
+            不再出现该能力。绑定微信账号的会话可挂载「需账号」项,外部 IM 会话不可用。
+          </p>
+          <div className="skills-tier-list">
+            {softCaps.map((c) => (
+              <div key={c.name} className="skills-tier-row">
+                <div className="skills-tier-main">
+                  <b>{c.name}</b>
+                  <span className={`skill-kind ${c.disabled ? 'off' : ''}`}>
+                    {c.disabled ? '已停用' : '可用'}
+                  </span>
+                  {c.needsWx && <span className="skill-kind">需账号</span>}
+                  <span className="skill-desc">
+                    {c.oneLine}
+                    {c.when ? ` · ${c.when}` : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="st-btn ghost sm"
+                  onClick={() => void toggleSoftCap(c)}
+                >
+                  {c.disabled ? '启用' : '停用'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {pending && (
         <div className="skills-pending">
@@ -199,7 +267,8 @@ export default function SkillsPage(): React.JSX.Element {
                 <span>{new Date(active.createdAt).toLocaleString()}</span>
               </div>
               <div className="skills-detail-hint">
-                变更即时生效:新对话会加载该技能(工具技能出现在可用工具中;知识技能自动注入上下文)。
+                变更即时生效:新对话会把已启用的第三方技能加入「默认挂载」(工具技能可被直接调用;
+                知识技能注入上下文)。挂载集为会话级,可在对话中让 AI 查看能力目录、挂载或卸载。
               </div>
             </>
           ) : (

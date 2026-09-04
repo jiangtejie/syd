@@ -37,6 +37,7 @@ import { registerMcpHandlers } from './ipc/mcpHandlers'
 import { registerCustomToolHandlers } from './ipc/customToolHandlers'
 import { registerMemoryHandlers } from './ipc/memoryHandlers'
 import { registerSkillHandlers } from './ipc/skillsHandlers'
+import { registerCapHandlers } from './ipc/capHandlers'
 import { registerImHandlers, bootImAccounts, stopAllIm } from './ipc/imHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
@@ -316,6 +317,7 @@ if (!app.requestSingleInstanceLock()) {
     registerCustomToolHandlers()
     registerMemoryHandlers()
     registerSkillHandlers()
+    registerCapHandlers()
     registerImHandlers()
     registerExportHandlers()
     registerMediaProtocol()

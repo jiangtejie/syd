@@ -296,6 +296,12 @@ const api = {
       toggle: (id: number, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:skill:toggle', id, enabled)
     },
+    cap: {
+      software: (): Promise<{ ok: boolean; caps?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:cap:software'),
+      setSoftware: (name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:cap:setSoftware', name, enabled)
+    },
     im: {
       list: (): Promise<{ ok: boolean; accounts?: unknown[]; error?: string }> =>
         ipcRenderer.invoke('cs:im:list'),

@@ -266,6 +266,8 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'issue_feedback', 'reopened_from', 'INTEGER')
   // 增量列迁移：customers（涉及的客户昵称 JSON 数组，供复发/统计归一）
   ensureColumn(db, 'issue_feedback', 'customers', 'TEXT')
+  // 增量列迁移：chat_session.caps（能力分层挂载集合 JSON：{v:1,names:[...]}，会话级渐进式工具可见性）
+  ensureColumn(db, 'chat_session', 'caps', 'TEXT')
   db.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
 

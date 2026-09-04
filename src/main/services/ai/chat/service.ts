@@ -16,30 +16,22 @@ import {
   setChatAgent,
   touchChat
 } from '../../../db/repos/chatRepo'
-import {
-  ALL_TOOLS,
-  findTool,
-  schemaFromParams,
-  toolInstructionsText,
-  type ToolCtx,
-  type ToolDef
-} from './skills'
-import { findMcpTool, mcpToolInstructionText, mcpToolNames } from './mcp'
-import { customToolInstructionText, findCustomTool, listCustomToolDefs } from './customTools'
-import {
-  findPackTool,
-  listPackToolDefs,
-  packKnowledgeText,
-  packToolInstructionText,
-  packToolNames
-} from './skillsPack'
+import { findTool, schemaFromParams, type ToolCtx, type ToolDef } from './skills'
+import { findMcpTool } from './mcp'
+import { findCustomTool } from './customTools'
+import { findPackTool } from './skillsPack'
+import { findSoftwareTool } from '../cap/software'
+import { expandMounted, capNameOfDef, isCapDisabled } from '../cap/registry'
+import { beginTurn, isMounted, markUsed, mountedNames, MOUNT_TEXT_BUDGET } from '../cap/mounts'
+import { metaToolDefs, runMetaTool } from '../cap/meta'
 import type { AiChatEvent, AiStyle, ChatMsgItem, ChatTurn } from '../../../../shared/types'
 
 /**
- * AI 助手会话 Runner(docs/ai-assistant-design.md §5/6/7)。
- * 单条发送流程:追加用户消息 → 上下文构建(人设 system + 历史裁剪) →
- *   (工具意图判定:JSON 工具请求,最多 4 轮,逐轮本地/MCP 执行并回填) → 最终正文流式输出。
- * 事件统一 webContents.send('ai:chat', AiChatEvent);runId 确认机制服务高危工具。
+ * AI 助手会话 Runner(docs/skills-layered-loading-design.md;分层渐进式能力加载已启用)。
+ * - 能力分层:L0 核心(元技能常驻) / L1 微信业务(绑定账号默认挂载) / L2 软件与自定义 / L3 外部与知识;
+ * - 每轮 system 只包含:人设+状态块+协议 + 本会话已挂载能力的说明(预算上限),不再全量注入;
+ * - 未挂载能力经 list_capabilities 目录发现 → mount_capability 挂载(会话级持久化),空闲自动卸载;
+ * - 事件统一 webContents.send('ai:chat', AiChatEvent);runId 确认机制服务高危工具。
  */
 
 const MAX_TOOL_ROUNDS = 4
@@ -83,30 +75,116 @@ const STYLE_DESC: Record<AiStyle, string> = {
   brief: '语气简洁干练,少客套'
 }
 
-/** 人设 + 内置 skill + 自定义工具 + MCP 工具的 system 组装(async:MCP 需惰性握手) */
-async function buildSystem(agentId?: string | null): Promise<string> {
-  const base = agentSystemText(agentId)
-  let mcpText = ''
-  try {
-    mcpText = await mcpToolInstructionText()
-  } catch {
-    /* MCP 不可用不阻塞对话 */
-  }
-  const sections = [
-    toolInstructionsText(),
-    customToolInstructionText(),
-    packToolInstructionText(),
-    mcpText
-  ].filter((s) => s.trim().length > 0)
-  if (sections.length === 0) return `${base}\n\n直接回答用户问题。`
-  return [
-    base,
-    '可用工具(仅当需要业务数据时调用;工具请求必须是独立 JSON,不要夹带其它文字):',
-    sections.join('\n\n'),
-    '如果不需要工具,直接输出最终回答。'
-  ].join('\n\n')
+function boundOf(wxid: string): boolean {
+  return (wxid || '').trim().length > 0
 }
 
+/** 知识注入总量上限(挂载的知识包裁剪到该值内) */
+const KNOWLEDGE_TEXT_BUDGET = 1500
+
+/** JSON 文本协议:分层渐进式目录/挂载使用规范(L0 常驻,不随工具规模膨胀) */
+const JSON_PROTOCOL = [
+  '工作方式(ReAct 思考循环):',
+  '1. 判断:能直接回答就输出正文;需要本软件数据/外部能力时,先查目录再挂载:',
+  '   - list_capabilities(scope=all|wechat|software|external) 查看可用能力(未挂载的不会出现在可用工具里);',
+  '   - 目标能力未挂载时,先调用 mount_capability({"name":"能力名","why":"用途"}),其返回会说明如何继续;',
+  '2. 工具请求必须以一行「思考:」开头(≤80 字,说明为什么需要工具),随后单独输出 JSON:{"tool":"工具名","args":{...}},不要夹带其它文字;',
+  '3. 工具结果以 [工具结果] 回填:先判断是否足够——不足则继续调用/换工具/修正参数,足够则直接输出最终回答;',
+  '4. 不再需要的能力用 unmount_capability 卸载,释放上下文预算。',
+  '注意:当前可用的工具只有“已挂载能力”列表中的项与上述三个元技能;直接调用未挂载工具会被拒绝。'
+].join('\n')
+
+/** 会话状态权威块(每轮注入;不猜账号与挂载状态) */
+function stateBlockText(
+  bound: boolean,
+  names: string[],
+  dropped: string[],
+  errors: string[]
+): string {
+  const lines = [
+    '# 会话状态(权威数据,请以此为准)',
+    `账号:${bound ? '已绑定微信账号' : '未绑定(外部 IM/通用会话)'}`,
+    `已挂载能力:${names.length > 0 ? names.join('、') : '(仅核心,先 list_capabilities 看目录)'}`
+  ]
+  if (dropped.length > 0) lines.push(`已自动卸载(连续未用,释放预算):${dropped.join('、')}`)
+  if (errors.length > 0) lines.push(`挂载异常:${errors.join(';')}`)
+  return lines.join('\n')
+}
+
+/**
+ * 分层 system 组装(JSON 文本协议):人设+记忆 → 会话状态块 → 协议 → 挂载的工具/知识。
+ * L1-L3 能力只有“已挂载”才进文本,预算 = MOUNT_TEXT_BUDGET(超出截断并提示卸载)。
+ */
+async function assembleTurnSystem(opts: {
+  agentId?: string | null
+  wxid: string
+  sessionId: number
+  native: boolean
+}): Promise<string> {
+  const bound = boundOf(opts.wxid)
+  const { dropped } = beginTurn(opts.sessionId, bound)
+  const names = mountedNames(opts.sessionId, bound)
+  const { defs, knowledge, errors } = await expandMounted(names, { bound })
+
+  const chunks: string[] = [agentSystemText(opts.agentId ?? null)]
+  chunks.push(stateBlockText(bound, names, dropped, errors))
+
+  // 挂载的知识(总量 ≤1500)
+  if (knowledge.length > 0) {
+    const items: string[] = []
+    let sum = 0
+    for (const k of knowledge) {
+      if (sum + k.length > KNOWLEDGE_TEXT_BUDGET) break
+      items.push(k)
+      sum += k.length
+    }
+    if (items.length > 0) {
+      chunks.push(`已挂载技能知识(仅相关内容时使用,不要向用户复述列表):\n- ${items.join('\n- ')}`)
+    }
+  }
+
+  if (opts.native) {
+    // 原生 function-calling:工具由 schemas 提供,无需文本工具段
+    chunks.push(nativeRuleText())
+    return chunks.join('\n\n')
+  }
+
+  chunks.push(JSON_PROTOCOL)
+
+  // 已挂载工具说明(预算内)
+  if (defs.length > 0) {
+    const lines: string[] = []
+    let sum = 0
+    let trimmed = false
+    for (const d of defs) {
+      const line = `- ${d.name}:${d.description}`
+      if (sum + line.length > MOUNT_TEXT_BUDGET) {
+        trimmed = true
+        break
+      }
+      lines.push(line)
+      sum += line.length
+    }
+    if (trimmed) {
+      lines.push(`(工具说明已达预算上限,未全部列出;可 unmount_capability 卸载不用的能力后重试)`)
+    }
+    chunks.push(
+      `可用工具(已挂载;仅当需要数据/能力时调用,请求必须是独立 JSON):\n${lines.join('\n')}`
+    )
+  }
+  return chunks.join('\n\n')
+}
+
+/** 原生通道规则文本 */
+function nativeRuleText(): string {
+  return (
+    '工作方式:调用工具前先在内心想清楚“是否需要数据/如何调用”,逐步推进;' +
+    '工具结果返回后先判断是否足够,再决定继续调用或输出最终回答。' +
+    '可用工具由系统原生提供(schemas);若需要的能力不在其中,先调用 mount_capability 挂载后继续。'
+  )
+}
+
+/** 人设 + 记忆的 system 基座(知识类由“已挂载知识”注入,不再内置全量) */
 function agentSystemText(agentId: string | null | undefined): string {
   const agent = agentId ? getAgentById(agentId) : getDefaultAgent()
   if (!agent) return SYSTEM_FALLBACK
@@ -122,10 +200,18 @@ function agentSystemText(agentId: string | null | undefined): string {
     const block = memories.join('\n- ').slice(0, 1400)
     parts.push(`常驻上下文(记忆;仅在相关内容时使用,不要向用户复述列表):\n- ${block}`)
   }
-  // 第三方技能知识(受控注入)
-  const packKnowledge = packKnowledgeText()
-  if (packKnowledge) parts.push(packKnowledge)
   return parts.join('\n')
+}
+
+/** 统一工具解析链:内置 → 软件能力 → MCP → 自定义 → 第三方技能 */
+function resolveToolDef(name: string): ToolDef | undefined {
+  return (
+    findTool(name) ??
+    findSoftwareTool(name) ??
+    findMcpTool(name) ??
+    findCustomTool(name) ??
+    findPackTool(name)
+  )
 }
 
 /** 事件 sink:IM 等无窗口通道可注册,把某会话的事件同时投递过去(随 turn 结束自动移除) */
@@ -320,12 +406,13 @@ async function runTurn(opts: {
   }
   running.set(key, handle)
   const signal = handle.controller.signal
+  const bound = boundOf(wxid)
   try {
     if (opts.appendUserRow) appendChatMessage(sessionId, 'user', 'text', userText)
     const agentId = opts.agentId ?? undefined
     const ctx = await loadHistoryCtx(sessionId)
     const system =
-      (await buildSystem(agentId)) +
+      (await assembleTurnSystem({ agentId, wxid, sessionId, native: false })) +
       (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '') +
       imChannelNote(wxid)
     const turns = historyToTurns(ctx.rowsTail)
@@ -355,28 +442,60 @@ async function runTurn(opts: {
       const thought = extractThought(decision)
       const intent = parseToolIntent(decision)
       if (!intent) break
-      const def =
-        findTool(intent.tool) ??
-        findMcpTool(intent.tool) ??
-        findCustomTool(intent.tool) ??
-        findPackTool(intent.tool)
-      if (!def) {
-        // 未知工具:回填可用列表让模型修正
-        const names = [
-          ...ALL_TOOLS.map((t) => t.name),
-          ...mcpToolNames(),
-          ...listCustomToolDefs().map((t) => t.name),
-          ...packToolNames()
-        ]
-        const err = `工具 ${intent.tool} 不存在。可用工具:${names.join('、')}`
-        appendChatMessage(sessionId, 'user', 'tool_result', err)
+      const argsClip = JSON.stringify(intent.args ?? {}).slice(0, 300)
+
+      // L0 元技能(目录/挂载/卸载):只读会话状态操作,结果直接回填(不落历史,省预算)
+      const metaRes = await runMetaTool(sessionId, bound, intent.tool, intent.args ?? {})
+      if (metaRes) {
+        sendEvent(wxid, {
+          type: 'tool',
+          chatId: sessionId,
+          tool: intent.tool,
+          toolStatus: 'start',
+          args: argsClip,
+          thought
+        })
+        sendEvent(wxid, {
+          type: 'tool',
+          chatId: sessionId,
+          tool: intent.tool,
+          toolStatus: 'done',
+          resultClip: metaRes.full.slice(0, 400)
+        })
         turns.push({
           role: 'user',
-          content: `[工具结果]\n${err}\n(请修正后重试或换用其它工具,或直接输出最终回答)`
+          content: `[工具结果]\n${metaRes.full}\n(判断是否满足:需要继续则直接调用对应工具;不需要则输出最终回答。)`
         })
         continue
       }
-      const argsClip = JSON.stringify(intent.args ?? {}).slice(0, 300)
+
+      const def = resolveToolDef(intent.tool)
+      if (!def) {
+        const err = `工具 ${intent.tool} 不存在或未挂载。可用工具以 system 中“可用工具/已挂载能力”为准;查看全部能力请调用 list_capabilities,需要时先 mount_capability。`
+        appendChatMessage(sessionId, 'user', 'tool_result', err)
+        turns.push({
+          role: 'user',
+          content: `[工具结果]\n${err}\n(请修正后重试或直接输出最终回答)`
+        })
+        continue
+      }
+      // 渐进式守卫:未挂载或被停用的能力即使名字可解析也不执行
+      const defCap = capNameOfDef(def.name)
+      if (defCap && (!isMounted(sessionId, defCap, bound) || isCapDisabled(defCap))) {
+        const reason = isCapDisabled(defCap) ? '已在 技能 页停用' : '尚未挂载到本会话'
+        const msg = `工具 ${def.name} ${reason}。请先调用 list_capabilities 查看目录;可用时用 mount_capability({"name":"${defCap}"}) 挂载后再使用。`
+        sendEvent(wxid, {
+          type: 'tool',
+          chatId: sessionId,
+          tool: def.name,
+          toolStatus: 'fail',
+          args: argsClip,
+          resultClip: msg,
+          thought
+        })
+        turns.push({ role: 'user', content: `[工具结果]\n${msg}` })
+        continue
+      }
       sendEvent(wxid, {
         type: 'tool',
         chatId: sessionId,
@@ -421,6 +540,7 @@ async function runTurn(opts: {
 
       const ctx: ToolCtx = { wxid }
       const result = await executeToolDef(def, ctx, intent.args)
+      if (defCap) markUsed(sessionId, defCap, bound)
       appendChatMessage(sessionId, 'assistant', 'tool_call', JSON.stringify(intent.args), {
         tool: def.name
       })
@@ -507,11 +627,6 @@ function shouldUseNativeTools(): boolean {
   return true
 }
 
-/** 原生轮 system:保留能力说明,但禁止文本 JSON 工具请求(工具由原生机制提供) */
-function nativeSystemText(base: string): string {
-  return `${base}\n\n工作方式:调用工具前先在内心想清楚“是否需要数据/如何调用”,逐步推进;工具结果返回后先判断是否足够,再决定继续调用或输出最终回答。工具由系统原生提供,不要输出 JSON 格式的工具请求。`
-}
-
 /** 工具参数 schema:有 params 声明生成精确 schema,否则宽松 object */
 function schemaOf(tool: {
   name: string
@@ -530,7 +645,14 @@ function isToolCapabilityError(e: unknown): boolean {
   return /tool|function|parameters/i.test(m)
 }
 
-/** 原生工具轮执行(与 JSON 协议同一套 def/确认/落库/事件) */
+/** 原生通道 schemas:核心元技能 + 本会话已挂载能力的工具(挂载变更后每轮重建) */
+async function nativeSchemas(sessionId: number, bound: boolean): Promise<ToolSchema[]> {
+  const names = mountedNames(sessionId, bound)
+  const { defs } = await expandMounted(names, { bound })
+  return [...metaToolDefs().map(schemaOf), ...defs.map(schemaOf)]
+}
+
+/** 原生工具轮执行(与 JSON 协议同一套 def/确认/落库/事件;L0 元技能在此拦截) */
 async function executeNativeToolCalls(opts: {
   wxid: string
   sessionId: number
@@ -538,6 +660,7 @@ async function executeNativeToolCalls(opts: {
   wire: WireMsg[]
 }): Promise<void> {
   const { wxid, sessionId, calls, wire } = opts
+  const bound = boundOf(wxid)
   const wireCalls: WireMsg[] = [
     {
       role: 'assistant',
@@ -551,11 +674,6 @@ async function executeNativeToolCalls(opts: {
   ]
   wire.push(...wireCalls)
   for (const call of calls) {
-    const def =
-      findTool(call.name) ??
-      findMcpTool(call.name) ??
-      findCustomTool(call.name) ??
-      findPackTool(call.name)
     const argsClip = call.arguments.slice(0, 300)
     sendEvent(wxid, {
       type: 'tool',
@@ -564,15 +682,29 @@ async function executeNativeToolCalls(opts: {
       toolStatus: 'start',
       args: argsClip
     })
+    // 元技能:目录/挂载/卸载(结果回填 wire,不落历史,省预算)
+    let parsedArgs: Record<string, unknown> = {}
+    try {
+      const j = JSON.parse(call.arguments || '{}') as unknown
+      if (j && typeof j === 'object' && !Array.isArray(j)) parsedArgs = j as Record<string, unknown>
+    } catch {
+      parsedArgs = {}
+    }
+    const metaRes = await runMetaTool(sessionId, bound, call.name, parsedArgs)
+    if (metaRes) {
+      wire.push({ role: 'tool', tool_call_id: call.id ?? `tc_0`, content: metaRes.full })
+      sendEvent(wxid, {
+        type: 'tool',
+        chatId: sessionId,
+        tool: call.name,
+        toolStatus: 'done',
+        resultClip: metaRes.full.slice(0, 400)
+      })
+      continue
+    }
+    const def = resolveToolDef(call.name)
     if (!def) {
-      const names = [
-        ...ALL_TOOLS.map((t) => t.name),
-        ...mcpToolNames(),
-        ...listCustomToolDefs().map((t) => t.name),
-        ...packToolNames()
-      ]
-      const err = `工具 ${call.name} 不存在。可用工具:${names.join('、')}`
-      appendChatMessage(sessionId, 'user', 'tool_result', err, { tool: call.name })
+      const err = `工具 ${call.name} 不存在或未挂载。先调用 list_capabilities 查目录,需要时 mount_capability 挂载。`
       wire.push({ role: 'tool', tool_call_id: call.id ?? `tc_0`, content: err })
       sendEvent(wxid, {
         type: 'tool',
@@ -580,6 +712,20 @@ async function executeNativeToolCalls(opts: {
         tool: call.name,
         toolStatus: 'fail',
         resultClip: err
+      })
+      continue
+    }
+    const defCap = capNameOfDef(def.name)
+    if (defCap && (!isMounted(sessionId, defCap, bound) || isCapDisabled(defCap))) {
+      const reason = isCapDisabled(defCap) ? '已在 技能 页停用' : '尚未挂载到本会话'
+      const msg = `工具 ${def.name} ${reason}。先调用 list_capabilities 查目录,可用时用 mount_capability({"name":"${defCap}"}) 挂载。`
+      wire.push({ role: 'tool', tool_call_id: call.id ?? `tc_0`, content: msg })
+      sendEvent(wxid, {
+        type: 'tool',
+        chatId: sessionId,
+        tool: def.name,
+        toolStatus: 'fail',
+        resultClip: msg
       })
       continue
     }
@@ -602,7 +748,6 @@ async function executeNativeToolCalls(opts: {
       })
       if (!ok) {
         const msg = `工具 ${def.name} 未获确认,已跳过。`
-        appendChatMessage(sessionId, 'user', 'tool_result', msg, { tool: def.name })
         wire.push({ role: 'tool', tool_call_id: call.id ?? `tc_0`, content: msg })
         sendEvent(wxid, {
           type: 'tool',
@@ -614,16 +759,10 @@ async function executeNativeToolCalls(opts: {
         continue
       }
     }
-    let args: Record<string, unknown> = {}
-    try {
-      args = JSON.parse(call.arguments || '{}') as Record<string, unknown>
-      if (!args || typeof args !== 'object' || Array.isArray(args)) args = {}
-    } catch {
-      args = {}
-    }
-    const result = await executeToolDef(def, { wxid }, args).catch(
+    const result = await executeToolDef(def, { wxid }, parsedArgs).catch(
       (e: unknown) => `工具执行失败:${e instanceof Error ? e.message : String(e)}`
     )
+    if (defCap) markUsed(sessionId, defCap, bound)
     appendChatMessage(sessionId, 'assistant', 'tool_call', call.arguments, { tool: call.name })
     appendChatMessage(sessionId, 'user', 'tool_result', result, { tool: call.name })
     wire.push({ role: 'tool', tool_call_id: call.id ?? `tc_0`, content: result })
@@ -657,24 +796,16 @@ async function runTurnNative(opts: {
   }
   running.set(key, handle)
   const signal = handle.controller.signal
+  const bound = boundOf(wxid)
   try {
     if (opts.appendUserRow) appendChatMessage(sessionId, 'user', 'text', userText)
     const agentId = opts.agentId ?? undefined
     const ctx = await loadHistoryCtx(sessionId)
     const system =
-      nativeSystemText(agentSystemText(agentId)) +
+      (await assembleTurnSystem({ agentId, wxid, sessionId, native: true })) +
       (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '') +
       imChannelNote(wxid)
-    // 无微信账号(外部 IM)时不向模型暴露微信业务工具
-    const isBound = (wxid || '').trim().length > 0
-    const defs = [
-      ...ALL_TOOLS,
-      ...listCustomToolDefs(),
-      ...listPackToolDefs(),
-      // MCP 工具已就绪时才纳入(由 buildSystem 预握手触发)
-      ...mcpToolNames().map((n) => findMcpTool(n)!)
-    ]
-    const schemas = (isBound ? defs : defs.filter((d) => !d.needsWx)).map(schemaOf)
+    let schemas = await nativeSchemas(sessionId, bound)
 
     const wire: WireMsg[] = [{ role: 'system', content: system }]
     for (const t of historyToTurns(ctx.rowsTail)) {
@@ -716,6 +847,8 @@ async function runTurnNative(opts: {
         return
       }
       await executeNativeToolCalls({ wxid, sessionId, calls: res.toolCalls, wire })
+      // 元技能可能在本轮挂载了新能力 → 下一轮刷新 schemas
+      schemas = await nativeSchemas(sessionId, bound)
     }
     const msg = '工具轮数超限仍未完成。'
     appendChatMessage(sessionId, 'assistant', 'error', msg)

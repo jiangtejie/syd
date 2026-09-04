@@ -127,3 +127,30 @@ export function lastUserMessage(sessionId: number): string | null {
     .get(sessionId) as { content: string } | undefined
   return row?.content ?? null
 }
+
+/** 会话挂载能力集合(JSON {v:1,names:string[]});无记录返回空数组 */
+export function getChatCaps(sessionId: number): string[] {
+  const row = getDb().prepare(`SELECT caps FROM chat_session WHERE id = ?`).get(sessionId) as
+    { caps: string | null } | undefined
+  if (!row?.caps) return []
+  try {
+    const parsed = JSON.parse(row.caps) as { names?: unknown }
+    if (!Array.isArray(parsed.names)) return []
+    return parsed.names.filter((n): n is string => typeof n === 'string')
+  } catch {
+    return []
+  }
+}
+
+export function setChatCaps(sessionId: number, names: string[]): void {
+  getDb()
+    .prepare(`UPDATE chat_session SET caps = ?, updated_at = ? WHERE id = ?`)
+    .run(JSON.stringify({ v: 1, names: [...new Set(names)] }), Date.now(), sessionId)
+}
+
+/** caps 是否已持久化过(NULL 视为从未;[] 视为用户清空,不再回默认挂载集) */
+export function chatCapsPersisted(sessionId: number): boolean {
+  const row = getDb().prepare(`SELECT caps FROM chat_session WHERE id = ?`).get(sessionId) as
+    { caps: string | null } | undefined
+  return !!row && row.caps !== null
+}

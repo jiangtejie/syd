@@ -239,14 +239,41 @@ export async function ensureAllServers(): Promise<void> {
 
 /** 已就绪服务器的工具说明文本(拼入 system;无需等待全部失败) */
 export async function mcpToolInstructionText(): Promise<string> {
-  await ensureAllServers()
   const lines: string[] = []
-  registeredDefs.clear()
-  for (const h of handles.values()) {
-    if (!h.ready && h.server.kind !== 'http') continue
-    for (const t of h.toolList) {
-      const name = `mcp_${h.server.id}_${safeName(t.name)}`
-      const def: ToolDef = {
+  for (const s of listMcpServers().filter((x) => x.enabled)) {
+    try {
+      const defs = await serverToolDefs(s.id)
+      for (const d of defs) lines.push(`- ${d.name}:${d.description}`)
+    } catch {
+      /* 单个服务器失败不阻塞 */
+    }
+  }
+  return lines.length > 0 ? `MCP 外部工具(执行前通常需要人工确认):\n${lines.join('\n')}` : ''
+}
+
+/** 挂载粒度:MCP 服务器组能力(mcp@服务器名)→ 懒加载其全部工具 def(注册进全局表) */
+export async function defsOfServerCap(capName: string): Promise<ToolDef[]> {
+  const srvName = capName.startsWith('mcp@') ? capName.slice('mcp@'.length) : ''
+  const server = listMcpServers().find((x) => x.enabled && x.name === srvName)
+  if (!server) return []
+  try {
+    return await serverToolDefs(server.id)
+  } catch {
+    return []
+  }
+}
+
+/** 组能力注册到全局表的核心实现:ensure 就绪后为该服务器每个工具注册 def */
+async function serverToolDefs(serverId: number): Promise<ToolDef[]> {
+  await ensureReady(serverId)
+  const h = handles.get(serverId)
+  if (!h) return []
+  const out: ToolDef[] = []
+  for (const t of h.toolList) {
+    const name = `mcp_${h.server.id}_${safeName(t.name)}`
+    let def = registeredDefs.get(name)
+    if (!def) {
+      def = {
         name,
         kind: 'mcp',
         description: `(MCP 服务器:${h.server.name}) ${t.description || '外部工具'} args 按该工具 schema 提供`,
@@ -284,10 +311,10 @@ export async function mcpToolInstructionText(): Promise<string> {
         }
       }
       registeredDefs.set(name, def)
-      lines.push(`- ${name}:${def.description}`)
     }
+    out.push(def)
   }
-  return lines.length > 0 ? `MCP 外部工具(执行前通常需要人工确认):\n${lines.join('\n')}` : ''
+  return out
 }
 
 export function findMcpTool(name: string): ToolDef | undefined {

@@ -280,6 +280,20 @@ declare global {
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
           toggle: (id: number, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
         }
+        cap: {
+          software: () => Promise<
+            Result<{
+              caps?: Array<{
+                name: string
+                oneLine: string
+                when: string
+                needsWx: boolean
+                disabled: boolean
+              }>
+            }>
+          >
+          setSoftware: (name: string, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+        }
         im: {
           list: () => Promise<Result<{ accounts?: ImChannelAccount[] }>>
           save: (
