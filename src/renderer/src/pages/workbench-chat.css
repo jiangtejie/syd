@@ -1,0 +1,399 @@
+/* ══════════ AI 工作台页(接入产品能力) ══════════ */
+
+.wb-page {
+  display: flex;
+  height: 100%;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+/* ── 侧栏 ── */
+.wb-side {
+  width: 232px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-light);
+  background: var(--bg-hover);
+  padding: 10px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wb-new {
+  width: 100%;
+}
+
+.wb-side-tip {
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--bg-panel);
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+  line-height: 1.5;
+}
+
+.wb-side-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-empty {
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px 4px;
+}
+
+.wb-side-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.wb-side-item:hover {
+  background: var(--bg-panel);
+  border-color: var(--border-light);
+}
+
+.wb-side-item.is-active {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+}
+
+.wb-side-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-side-ops {
+  flex: none;
+  display: none;
+  gap: 4px;
+}
+
+.wb-side-item:hover .wb-side-ops {
+  display: flex;
+}
+
+.wb-side-ops button {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 3px;
+}
+
+.wb-side-ops button:hover {
+  color: var(--brand);
+}
+
+/* ── 主区 ── */
+.wb-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.wb-head-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.wb-head-title b {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-head-sub {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.wb-head-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* ── 消息 ── */
+.wb-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 8px;
+}
+
+.wb-welcome {
+  max-width: 520px;
+  margin: 12vh auto 0;
+  text-align: center;
+}
+
+.wb-welcome-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.wb-welcome-sub {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  line-height: 1.7;
+}
+
+.wb-loading {
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 8px 2px;
+}
+
+.wb-row {
+  display: flex;
+  margin: 4px 0 10px;
+}
+
+.wb-row.is-user {
+  justify-content: flex-end;
+}
+
+.wb-bubble {
+  max-width: min(920px, 92%);
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  font-size: 13.5px;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.wb-row.is-user .wb-bubble {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+  white-space: pre-wrap;
+}
+
+.wb-row.is-error .wb-bubble {
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+}
+
+.wb-error-text {
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+
+.wb-plain {
+  white-space: pre-wrap;
+}
+
+.wb-bubble p {
+  margin: 0 0 6px;
+}
+
+.wb-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.wb-bubble h1,
+.wb-bubble h2,
+.wb-bubble h3 {
+  font-size: 15px;
+  margin: 8px 0 4px;
+}
+
+.wb-bubble ul,
+.wb-bubble ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.wb-bubble code {
+  background: var(--bg-hover);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 12px;
+}
+
+.wb-bubble pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.wb-bubble pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.wb-bubble blockquote {
+  border-left: 3px solid var(--brand-line);
+  margin: 4px 0;
+  padding-left: 10px;
+  color: var(--text-2);
+}
+
+.wb-caret {
+  display: inline-block;
+  width: 2px;
+  height: 15px;
+  background: var(--brand);
+  vertical-align: -2px;
+  margin-left: 2px;
+  animation: wb-blink 1s steps(2) infinite;
+}
+
+@keyframes wb-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ── 工具卡与审批 ── */
+.wb-toolcards,
+.wb-approvals {
+  margin: 2px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wb-toolcard,
+.wb-approval {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  padding: 6px 10px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-toolcard.is-done {
+  border-color: var(--success-line, var(--border));
+}
+
+.wb-toolcard.is-fail {
+  border-color: var(--danger-line);
+}
+
+.wb-toolcard-name {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.wb-toolcard-args {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.wb-toolcard-result {
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--bg-panel);
+  border-radius: 4px;
+  padding: 4px 6px;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.wb-approval-title {
+  font-weight: 600;
+  color: var(--warn-text);
+}
+
+.wb-approval-ops {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ── 错误条与输入 ── */
+.wb-error {
+  margin: 0 16px 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+.wb-composer {
+  flex: none;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wb-textarea {
+  width: 100%;
+  min-height: 60px;
+  max-height: 220px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  padding: 9px 11px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  outline: none;
+  font-family: inherit;
+}
+
+.wb-textarea:focus {
+  border-color: var(--brand);
+}
+
+.wb-composer-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.wb-hint {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--text-4);
+}
