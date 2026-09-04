@@ -120,10 +120,10 @@ function registerMediaProtocol(): void {
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
-    height: 800,
+    height: 900,
     // 右栏(群问题/回复建议)加宽至 520px 后,消息区仍需保有可用宽度
     minWidth: 1240,
-    minHeight: 680,
+    minHeight: 720,
     show: false,
     autoHideMenuBar: true,
     // 隐藏原生标题栏，保留原生窗控按钮（overlay），渲染端自绘 36px 拖拽标题栏
