@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useWorkbenchStore, type WorkbenchPage } from './stores/workbench'
 import Workbench from './pages/Workbench'
-import AiChatPage from './pages/AiChatPage'
-import SkillsPage from './pages/SkillsPage'
 import ImPage from './pages/ImPage'
 import MonitorPage from './pages/MonitorPage'
 import CustomersPage from './pages/CustomersPage'
@@ -19,8 +17,7 @@ import './pages/shell.css'
  * 对话页（Workbench）始终保持挂载（隐藏不卸载），切页不丢滚动位置与输入状态。
  */
 
-type NavIconName =
-  'ai' | 'skills' | 'im' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
+type NavIconName = 'im' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -35,21 +32,6 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
     strokeLinejoin: 'round' as const
   }
   switch (name) {
-    case 'ai':
-      return (
-        <svg {...attrs}>
-          <path d="M12 2.5 14 9l6.5 2-6.5 2-2 6.5L10 13l-6.5-2L10 9z" />
-        </svg>
-      )
-    case 'skills':
-      return (
-        <svg {...attrs}>
-          <rect x="3.5" y="3.5" width="7" height="7" rx="1.2" />
-          <rect x="13.5" y="3.5" width="7" height="7" rx="1.2" />
-          <rect x="3.5" y="13.5" width="7" height="7" rx="1.2" />
-          <rect x="13.5" y="13.5" width="7" height="7" rx="1.2" />
-        </svg>
-      )
     case 'im':
       return (
         <svg {...attrs}>
@@ -107,8 +89,6 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
 }
 
 const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }> = [
-  { key: 'ai', icon: 'ai', label: 'AI' },
-  { key: 'skills', icon: 'skills', label: '技能' },
   { key: 'im', icon: 'im', label: 'IM' },
   { key: 'monitor', icon: 'monitor', label: '监控' },
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
@@ -270,16 +250,6 @@ function App(): React.JSX.Element {
             {page === 'export' && (
               <div className="app-page">
                 <ExportPage />
-              </div>
-            )}
-            {page === 'ai' && (
-              <div className="app-page">
-                <AiChatPage />
-              </div>
-            )}
-            {page === 'skills' && (
-              <div className="app-page">
-                <SkillsPage />
               </div>
             )}
             {page === 'im' && (

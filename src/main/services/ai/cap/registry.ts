@@ -1,39 +1,29 @@
 import { getConfig } from '../../../db/repos/config'
-import { listMcpServers } from '../../../db/repos/mcpRepo'
-import { listEnabledSkills } from '../../../db/repos/skillsRepo'
 import { findTool } from '../chat/skills'
-import { findCustomTool, listCustomToolDefs } from '../chat/customTools'
-import { findPackTool } from '../chat/skillsPack'
-import { defsOfServerCap } from '../chat/mcp'
 import { findSoftwareTool } from './software'
 import type { ToolDef } from '../chat/skills'
 
 /**
- * 能力注册表(分层渐进式加载的“目录”):统一元数据/优先级/开关/挂载展开。
+ * 能力注册表(会话工具装配;第三方技能/知识/MCP/自定义工具已下线)。
  *
- * 分层:
+ * 分层(现仅三组):
  *  - tier 0 核心:元技能(目录/挂载/卸载)恒在,任何会话可用,不占挂载预算;
  *  - tier 1 微信业务:内置 needsWx 工具,绑定账号的会话“默认挂载”;
- *  - tier 2 软件/自定义:软件自身能力与自定义 HTTP 工具,默认挂载(可卸载)或按需挂载;
- *  - tier 3 外部:第三方技能包(tool/knowledge)与 MCP,目录可见,按需挂载。
+ *  - tier 2 软件能力:软件自身只读信息(software_status/data_scope 等),按需挂载。
  *
- * 名称唯一性与优先级(同名冲突时靠前胜出,与历史执行链一致):
- *   内置 → 软件能力 → MCP → 自定义工具 → 第三方技能包
- * 挂载粒度为“能力名”:单工具能力=工具名;MCP 服务器为组能力(mcp@名称,挂载时展开其全部工具);
- * knowledge 技能为知识能力(knowledge:包名,挂载后注入知识文本,不注册工具)。
+ * 名称唯一性:内置 → 软件能力(冲突时靠前胜出)。挂载粒度为“能力名”。
  */
 
-export type CapGroup = 'core' | 'wechat' | 'software' | 'custom' | 'skill' | 'mcp'
+export type CapGroup = 'core' | 'wechat' | 'software'
 
 export interface CapInfo {
   /** 能力名(挂载/卸载/目录使用) */
   name: string
-  /** 0=核心常驻,1=微信业务,2=软件/自定义,3=外部 */
-  tier: 0 | 1 | 2 | 3
+  /** 0=核心常驻,1=微信业务,2=软件能力 */
+  tier: 0 | 1 | 2
   group: CapGroup
-  kind: 'tool' | 'group' | 'knowledge'
+  kind: 'tool'
   readOnly: boolean
-  confirm?: boolean
   /** 依赖已绑定微信账号(仅 wxid 非空会话可挂载/执行) */
   needsWx?: boolean
   /** 目录行:一句话用途 */
@@ -42,20 +32,15 @@ export interface CapInfo {
   when: string
   /** 是否被用户停用(config cap.disable 逗号列表) */
   disabled: boolean
-  /** 组能力可解析出的工具数(仅展示,不触发握手) */
-  childCount?: number
 }
 
 const TIER_TEXT: Record<CapGroup, string> = {
   core: '核心',
   wechat: '微信业务',
-  software: '软件能力',
-  custom: '自定义工具',
-  skill: '第三方技能',
-  mcp: 'MCP'
+  software: '软件能力'
 }
 
-const TIER_NO: Record<number, string> = { 0: 'L0', 1: 'L1', 2: 'L2', 3: 'L3' }
+const TIER_NO: Record<number, string> = { 0: 'L0', 1: 'L1', 2: 'L2' }
 
 /** 用户停用集合(config cap.disable = 'a,b') */
 function disabledNames(): Set<string> {
@@ -136,8 +121,8 @@ export const SOFTWARE_CAPS: Array<{
   {
     name: 'memory_view',
     needsWx: false,
-    oneLine: '查看智能体常驻记忆清单(只读)',
-    when: '用户问“你记得什么、记忆里有什么”时'
+    oneLine: '查看当前可用的长期上下文来源(只读)',
+    when: '用户问“你记得什么、有哪些上下文可用”时'
   },
   {
     name: 'export_preview',
@@ -147,7 +132,7 @@ export const SOFTWARE_CAPS: Array<{
   }
 ]
 
-/** 全部能力清单(每次实时聚合;mcp 工具数量不握手,按服务器静态行展示) */
+/** 全部能力清单(实时聚合) */
 export function listCaps(): CapInfo[] {
   const disabled = disabledNames()
   const out: CapInfo[] = []
@@ -156,24 +141,20 @@ export function listCaps(): CapInfo[] {
     name: string,
     tier: CapInfo['tier'],
     group: CapGroup,
-    kind: CapInfo['kind'],
     needsWx: boolean,
     oneLine: string,
-    when: string,
-    opts: { readOnly?: boolean; confirm?: boolean; childCount?: number } = {}
+    when: string
   ): void => {
     out.push({
       name,
       tier,
       group,
-      kind,
-      readOnly: opts.readOnly ?? kind !== 'group',
-      confirm: opts.confirm,
+      kind: 'tool',
+      readOnly: true,
       needsWx,
       oneLine,
       when,
-      disabled: disabled.has(name),
-      childCount: opts.childCount
+      disabled: disabled.has(name)
     })
   }
 
@@ -182,7 +163,6 @@ export function listCaps(): CapInfo[] {
     'list_capabilities',
     0,
     'core',
-    'tool',
     false,
     '查看能力目录(按需列出全部可挂载能力)',
     '不确定当前可用什么能力、或要查某类能力是否存在时'
@@ -191,16 +171,14 @@ export function listCaps(): CapInfo[] {
     'mount_capability',
     0,
     'core',
-    'tool',
     false,
-    '把某项 L1-L3 能力挂载进当前会话',
+    '把某项能力挂载进当前会话',
     '确认任务需要某项未挂载能力时,先看目录再挂载'
   )
   push(
     'unmount_capability',
     0,
     'core',
-    'tool',
     false,
     '从当前会话卸载某项已挂载能力',
     '某能力不再需要时,或需要腾出上下文预算时'
@@ -222,7 +200,6 @@ export function listCaps(): CapInfo[] {
       def.name,
       1,
       'wechat',
-      'tool',
       true,
       hint?.oneLine ?? def.description.slice(0, 60),
       hint?.when ?? '微信业务问题相关时'
@@ -231,66 +208,7 @@ export function listCaps(): CapInfo[] {
 
   // L2 软件能力
   for (const c of SOFTWARE_CAPS) {
-    push(c.name, 2, 'software', 'tool', c.needsWx, c.oneLine, c.when, { readOnly: true })
-  }
-
-  // L2 自定义 HTTP 工具
-  for (const d of listCustomToolDefs()) {
-    push(
-      d.name,
-      2,
-      'custom',
-      'tool',
-      false,
-      d.description.slice(0, 90),
-      '用户配置的自定义 HTTP 工具对应场景',
-      {
-        readOnly: !d.confirm,
-        confirm: d.confirm
-      }
-    )
-  }
-
-  // L3 第三方技能包
-  for (const { name: pkgName, manifest } of listEnabledSkills()) {
-    const capName = manifest.name || pkgName
-    if (manifest.kind === 'knowledge' && manifest.knowledge?.trim()) {
-      const cap = `knowledge:${capName}`
-      push(
-        cap,
-        3,
-        'skill',
-        'knowledge',
-        false,
-        `知识「${capName}」:${manifest.description.slice(0, 60)}`,
-        `问及「${capName}」相关内容、制度/话术/操作规范时`
-      )
-    } else if (manifest.kind === 'tool' && manifest.tool?.url) {
-      push(
-        capName,
-        3,
-        'skill',
-        'tool',
-        false,
-        manifest.description.slice(0, 90),
-        `第三方技能「${capName}」声明的场景`,
-        { readOnly: false, confirm: true }
-      )
-    }
-  }
-
-  // L3 MCP 服务器(组能力;挂载时才握手展开工具)
-  for (const s of listMcpServers().filter((x) => x.enabled)) {
-    push(
-      `mcp@${s.name}`,
-      3,
-      'mcp',
-      'group',
-      false,
-      `MCP 服务器「${s.name}」(启用后懒加载其工具)`,
-      `需要 ${s.name} 提供的${s.name.includes('数据库') || s.name.includes('DB') ? '数据查询' : '外部能力'}时`,
-      { readOnly: false, confirm: !!s.confirm }
-    )
+    push(c.name, 2, 'software', c.needsWx, c.oneLine, c.when)
   }
 
   return out
@@ -307,7 +225,7 @@ export function isCapDisabled(name: string): boolean {
 }
 
 export function tierTag(tier: CapInfo['tier']): string {
-  return TIER_NO[tier] ?? 'L3'
+  return TIER_NO[tier] ?? 'L2'
 }
 
 export function groupText(group: CapGroup): string {
@@ -316,16 +234,8 @@ export function groupText(group: CapGroup): string {
 
 /** 工具 def 名 → 归属能力名(挂载校验/使用标记用);核心元技能返回 undefined */
 export function capNameOfDef(defName: string): string | undefined {
-  const caps = listCaps()
-  const direct = caps.find((c) => c.kind === 'tool' && c.name === defName)
-  if (direct) return direct.tier === 0 ? undefined : direct.name
-  // MCP 组能力工具:mcp_{serverId}_{safeName}
-  const m = /^mcp_(\d+)_/.exec(defName)
-  if (m) {
-    const srv = listMcpServers().find((s) => s.enabled && String(s.id) === m[1])
-    if (srv) return `mcp@${srv.name}`
-  }
-  return undefined
+  const cap = listCaps().find((c) => c.name === defName)
+  return cap ? (cap.tier === 0 ? undefined : cap.name) : undefined
 }
 
 /** 能力是否核心常驻(不可卸载/不占预算) */
@@ -342,15 +252,13 @@ export function catalogText(opts: {
   const { mounted, bound, scope = 'all' } = opts
   const rows: string[] = []
   const pushRow = (c: CapInfo): void => {
-    const state = c.tier === 0 ? '常驻' : mounted.has(c.name) ? '●已挂载' : bound ? '○未挂载' : '○'
-    const needWx = c.needsWx && !bound ? ' [需绑定账号]' : c.needsWx ? ' [账号数据]' : ''
-    const ro = c.readOnly ? ' [只读]' : ' [可执行]'
-    const confirm = c.confirm ? ' [需确认]' : ''
+    const state = c.tier === 0 ? '常驻' : mounted.has(c.name) ? '●已挂载' : '○未挂载'
+    const needWx = c.needsWx && !bound ? ' [需绑定账号]' : ''
     rows.push(
-      `- ${c.name}(${tierTag(c.tier)}·${groupText(c.group)}${state})${needWx}${ro}${confirm} ${c.oneLine};适用:${c.when}`
+      `- ${c.name}(${tierTag(c.tier)}·${groupText(c.group)}${state})${needWx} ${c.oneLine};适用:${c.when}`
     )
   }
-  const groups: CapGroup[] = ['core', 'wechat', 'software', 'custom', 'skill', 'mcp']
+  const groups: CapGroup[] = ['core', 'wechat', 'software']
   const wanted =
     scope === 'mounted'
       ? 'mounted'
@@ -358,19 +266,14 @@ export function catalogText(opts: {
         ? 'software'
         : scope === 'wechat'
           ? 'wechat'
-          : scope === 'external'
-            ? 'external'
-            : 'all'
+          : 'all'
   for (const g of groups) {
     const caps = listCaps().filter((c) => c.group === g && !c.disabled)
     if (caps.length === 0) continue
     let seg: CapInfo[]
     if (wanted === 'mounted') seg = caps.filter((c) => c.tier === 0 || mounted.has(c.name))
-    else if (wanted === 'software')
-      seg = caps.filter((c) => c.tier >= 2 && (c.group === 'software' || c.group === 'custom'))
+    else if (wanted === 'software') seg = caps.filter((c) => c.group === 'software')
     else if (wanted === 'wechat') seg = caps.filter((c) => c.group === 'wechat')
-    else if (wanted === 'external')
-      seg = caps.filter((c) => c.group === 'skill' || c.group === 'mcp')
     else seg = caps
     if (seg.length === 0) continue
     rows.push(`【${groupText(g)}】`)
@@ -381,18 +284,17 @@ export function catalogText(opts: {
   return text || '(暂无可用能力)'
 }
 
-/** 能力名(单工具能力)解析为 ToolDef;组/知识能力返回 undefined */
+/** 能力名(单工具能力)解析为 ToolDef */
 export function resolveCapDef(name: string): ToolDef | undefined {
-  return findTool(name) ?? findSoftwareTool(name) ?? findCustomTool(name) ?? findPackTool(name)
+  return findTool(name) ?? findSoftwareTool(name)
 }
 
-/** 展开挂载集合 → 可见工具 defs + 知识文本段(组能力在此握手,失败项跳过并回报) */
+/** 展开挂载集合 → 可见工具 defs(失效项跳过并回报) */
 export async function expandMounted(
   names: string[],
   opts: { bound: boolean }
-): Promise<{ defs: ToolDef[]; knowledge: string[]; errors: string[] }> {
+): Promise<{ defs: ToolDef[]; errors: string[] }> {
   const defs: ToolDef[] = []
-  const knowledge: string[] = []
   const errors: string[] = []
   const caps = listCaps()
   for (const name of names) {
@@ -405,27 +307,9 @@ export async function expandMounted(
       errors.push(`${name}:需绑定微信账号`)
       continue
     }
-    if (cap.kind === 'knowledge') {
-      const pkgName = cap.name.slice('knowledge:'.length)
-      const hit = listEnabledSkills().find((s) => (s.manifest.name || s.name) === pkgName)
-      if (hit?.manifest.knowledge?.trim()) {
-        const k = hit.manifest.knowledge.trim()
-        knowledge.push(k.length > 400 ? `${k.slice(0, 400)}…` : k)
-      } else {
-        errors.push(`${name}:知识不存在或已停用`)
-      }
-      continue
-    }
-    if (cap.kind === 'group') {
-      // MCP 组能力:挂载即握手展开其工具(工具名 mcp_{id}_{name})
-      const groupDefs = await defsOfServerCap(name)
-      if (groupDefs.length === 0) errors.push(`${name}:服务器不可用或无工具`)
-      else defs.push(...groupDefs)
-      continue
-    }
     const def = resolveCapDef(name)
     if (def) defs.push(def)
     else errors.push(`${name}:当前不可解析`)
   }
-  return { defs, knowledge, errors }
+  return { defs, errors }
 }

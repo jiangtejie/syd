@@ -22,14 +22,6 @@ import type {
   ChatSessionItem,
   ChatMsgItem,
   AiChatEvent,
-  McpServerItem,
-  McpServerInput,
-  CustomToolItem,
-  CustomToolInput,
-  AgentMemoryItem,
-  AgentMemoryInput,
-  SkillPackageItem,
-  SkillInstallInfo,
   ImChannelAccount,
   ImChannelAccountInput
 } from '../shared/types'
@@ -233,67 +225,7 @@ declare global {
             username: string
           ) => Promise<{ ok: boolean; error?: string }>
         }
-        aiChat: {
-          listChats: (wxid: string) => Promise<Result<{ chats?: ChatSessionItem[] }>>
-          messages: (sessionId: number) => Promise<Result<{ messages?: ChatMsgItem[] }>>
-          renameChat: (sessionId: number, title: string) => Promise<{ ok: boolean; error?: string }>
-          removeChat: (sessionId: number) => Promise<{ ok: boolean; error?: string }>
-          clearChat: (sessionId: number) => Promise<{ ok: boolean; error?: string }>
-          send: (input: {
-            wxid: string
-            chatId?: number
-            agentId?: string | null
-            text: string
-          }) => Promise<{ ok: boolean; chatId?: number; error?: string }>
-          stop: (wxid: string, sessionId: number) => Promise<{ ok: boolean }>
-          retry: (
-            wxid: string,
-            sessionId: number,
-            agentId?: string | null
-          ) => Promise<{ ok: boolean; chatId?: number; error?: string }>
-          confirmTool: (runId: string, ok: boolean) => Promise<{ ok: boolean; error?: string }>
-          setAgent: (
-            sessionId: number,
-            agentId: string | null
-          ) => Promise<{ ok: boolean; error?: string }>
-          onEvent: (callback: (evt: AiChatEvent) => void) => () => void
-        }
-        mcp: {
-          list: () => Promise<Result<{ servers?: McpServerItem[] }>>
-          save: (input: McpServerInput) => Promise<Result<{ item?: McpServerItem }>>
-          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
-        }
-        tool: {
-          list: () => Promise<Result<{ tools?: CustomToolItem[] }>>
-          save: (input: CustomToolInput) => Promise<Result<{ item?: CustomToolItem }>>
-          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
-        }
-        memory: {
-          list: () => Promise<Result<{ items?: AgentMemoryItem[] }>>
-          save: (input: AgentMemoryInput) => Promise<Result<{ item?: AgentMemoryItem }>>
-          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
-        }
-        skill: {
-          list: () => Promise<Result<{ skills?: SkillPackageItem[] }>>
-          inspect: (dir: string) => Promise<Result<{ info?: SkillInstallInfo }>>
-          install: (dir: string) => Promise<{ ok: boolean; error?: string }>
-          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
-          toggle: (id: number, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
-        }
-        cap: {
-          software: () => Promise<
-            Result<{
-              caps?: Array<{
-                name: string
-                oneLine: string
-                when: string
-                needsWx: boolean
-                disabled: boolean
-              }>
-            }>
-          >
-          setSoftware: (name: string, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
-        }
+
         im: {
           list: () => Promise<Result<{ accounts?: ImChannelAccount[] }>>
           save: (

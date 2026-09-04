@@ -172,59 +172,6 @@ const TABLES: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_chat_session_t ON chat_session(updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_chat_msg_s ON chat_message(session_id, id)`,
-  // AI 助手 MCP 服务器(外部能力接入;kind=stdio|http)
-  `CREATE TABLE IF NOT EXISTS ai_mcp_server (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    kind TEXT NOT NULL DEFAULT 'stdio',
-    command TEXT DEFAULT '',
-    args TEXT DEFAULT '[]',
-    url TEXT DEFAULT '',
-    timeout_sec INTEGER NOT NULL DEFAULT 30,
-    confirm INTEGER NOT NULL DEFAULT 1,
-    enabled INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
-  // AI 助手自定义 HTTP 工具(应用内“开发工具”:模型可调用任意内部/外部只读接口)
-  `CREATE TABLE IF NOT EXISTS ai_custom_tool (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    label TEXT DEFAULT '',
-    description TEXT NOT NULL,
-    method TEXT NOT NULL DEFAULT 'GET',
-    url TEXT NOT NULL,
-    headers TEXT DEFAULT '{}',
-    params TEXT DEFAULT '[]',
-    timeout_sec INTEGER NOT NULL DEFAULT 20,
-    confirm INTEGER NOT NULL DEFAULT 1,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
-  // AI 助手常驻记忆(跨会话长期上下文;agent_id 空=全部智能体生效)
-  `CREATE TABLE IF NOT EXISTS agent_memory (
-    id INTEGER PRIMARY KEY,
-    agent_id TEXT,
-    content TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
-  // 第三方技能包(声明式:tool=http 白名单执行器 / knowledge=受控知识注入;manifest 存 JSON)
-  `CREATE TABLE IF NOT EXISTS skill_package (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    version TEXT NOT NULL,
-    kind TEXT NOT NULL DEFAULT 'tool',
-    description TEXT NOT NULL DEFAULT '',
-    author TEXT DEFAULT '',
-    manifest TEXT NOT NULL,
-    hash TEXT DEFAULT '',
-    enabled INTEGER NOT NULL DEFAULT 1,
-    installed_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
   // IM 渠道账号(飞书机器人等;config 含 appId/secret,secret 以 safeStorage enc1 密文落库)
   `CREATE TABLE IF NOT EXISTS im_channel_account (
     id INTEGER PRIMARY KEY,

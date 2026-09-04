@@ -1,13 +1,10 @@
 import { getChatCaps, setChatCaps, chatCapsPersisted } from '../../../db/repos/chatRepo'
-import { getConfig } from '../../../db/repos/config'
-import { listMcpServers } from '../../../db/repos/mcpRepo'
 import { listCaps } from './registry'
 
 /**
  * 会话级能力挂载仓库(渐进式加载的“状态面”)。
  * - 持久化:chat_session.caps(JSON 名称数组),内存缓存会话轮次与最近使用轮;
- * - 新会话(从未持久化)自动写入“默认挂载”集:微信业务(L1,绑定账号)+ 自定义工具 + 第三方技能;
- *   MCP 默认不挂载(cap.autoMountMCP='1' 可恢复全自动),软件能力(L2)按需挂载;
+ * - 新会话(从未持久化)自动写入“默认挂载”集:微信业务(L1,绑定账号);软件能力按需挂载;
  * - 预算:同时挂载项上限 MOUNT_MAX_ITEMS;说明文本总量在组装层软限(MOUNT_TEXT_BUDGET);
  * - 空闲回收:连续 IDLE_TURNS 轮未被调用的挂载项自动卸载(见 beginTurn)。
  */
@@ -46,23 +43,13 @@ function persist(sessionId: number, s: SessionMounts): void {
   }
 }
 
-/** 新会话默认挂载集(与历史“启用即可见”行为对齐;MCP 默认排除,渐进式核心) */
+/** 新会话默认挂载集:仅绑定账号会话自动带 L1 微信业务工具 */
 function defaultNames(bound: boolean): string[] {
   const out: string[] = []
   const caps = listCaps()
   if (bound) {
     for (const c of caps) {
       if (c.tier === 1 && !c.disabled) out.push(c.name)
-    }
-  }
-  for (const c of caps) {
-    if ((c.group === 'custom' || c.group === 'skill') && c.tier >= 2 && !c.disabled)
-      out.push(c.name)
-  }
-  if (getConfig('cap.autoMountMCP') === '1') {
-    for (const s of listMcpServers().filter((x) => x.enabled)) {
-      const cap = caps.find((c) => c.name === `mcp@${s.name}`)
-      if (cap && !cap.disabled) out.push(cap.name)
     }
   }
   return [...new Set(out)]

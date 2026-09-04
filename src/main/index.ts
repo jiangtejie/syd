@@ -32,17 +32,10 @@ import { registerMediaHandlers } from './ipc/mediaHandlers'
 import { registerIssueHandlers } from './ipc/issueHandlers'
 import { registerAgentHandlers } from './ipc/agentHandlers'
 import { registerTeamHandlers } from './ipc/teamHandlers'
-import { registerAiChatHandlers } from './ipc/aiChatHandlers'
-import { registerMcpHandlers } from './ipc/mcpHandlers'
-import { registerCustomToolHandlers } from './ipc/customToolHandlers'
-import { registerMemoryHandlers } from './ipc/memoryHandlers'
-import { registerSkillHandlers } from './ipc/skillsHandlers'
-import { registerCapHandlers } from './ipc/capHandlers'
 import { registerImHandlers, bootImAccounts, stopAllIm } from './ipc/imHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
 import { stopAll as stopIssueScheduler } from './services/feedback/scheduler'
-import { flushMcpCache } from './services/ai/chat/mcp'
 import { stopSending } from './services/send/sendService'
 
 /**
@@ -312,12 +305,6 @@ if (!app.requestSingleInstanceLock()) {
     registerIssueHandlers()
     registerAgentHandlers()
     registerTeamHandlers()
-    registerAiChatHandlers()
-    registerMcpHandlers()
-    registerCustomToolHandlers()
-    registerMemoryHandlers()
-    registerSkillHandlers()
-    registerCapHandlers()
     registerImHandlers()
     registerExportHandlers()
     registerMediaProtocol()
@@ -357,7 +344,6 @@ app.on('before-quit', () => {
   closeDb()
   stopAllWatches()
   stopIssueScheduler()
-  flushMcpCache()
   stopAllIm()
   stopSending()
 })

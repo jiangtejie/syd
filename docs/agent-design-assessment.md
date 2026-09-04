@@ -1,5 +1,7 @@
 # 智能体/技能/知识库设计评估与重构建议
 
+> 状态:**方向搁置(2026-09)**。随后 AI 助手/技能/知识库功能整体下线,本文档仅作评估记录。
+
 > 触发:参考 `D:\software\a_data\CipherTalk`(本地版,AI-SDK 版)的智能体设计,重构本仓
 > 「智能体 / 技能 / 知识库」三块;本文件为**先行的全面评估与防冗余设计**,未动代码。
 > 本仓对应代码:`src/main/services/ai/**`、`cap/**`、`db/repos/{agentRepo,memoryRepo,skillsRepo}`、

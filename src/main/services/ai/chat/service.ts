@@ -2,7 +2,6 @@ import { BrowserWindow } from 'electron'
 import { createAiProvider, readProviderConfig, type ToolSchema, type WireMsg } from '../provider'
 import { getConfig } from '../../../db/repos/config'
 import { getAgentById, getDefaultAgent } from '../../../db/repos/agentRepo'
-import { listMemoriesForAgent } from '../../../db/repos/memoryRepo'
 import { getDb } from '../../../db/database'
 import {
   appendChatMessage,
@@ -17,9 +16,6 @@ import {
   touchChat
 } from '../../../db/repos/chatRepo'
 import { findTool, schemaFromParams, type ToolCtx, type ToolDef } from './skills'
-import { findMcpTool } from './mcp'
-import { findCustomTool } from './customTools'
-import { findPackTool } from './skillsPack'
 import { findSoftwareTool } from '../cap/software'
 import { expandMounted, capNameOfDef, isCapDisabled } from '../cap/registry'
 import {
@@ -34,10 +30,10 @@ import { metaToolDefs, runMetaTool } from '../cap/meta'
 import type { AiChatEvent, AiStyle, ChatMsgItem, ChatTurn } from '../../../../shared/types'
 
 /**
- * AI 助手会话 Runner(docs/skills-layered-loading-design.md;分层渐进式能力加载已启用)。
- * - 能力分层:L0 核心(元技能常驻) / L1 微信业务(绑定账号默认挂载) / L2 软件与自定义 / L3 外部与知识;
- * - 每轮 system 只包含:人设+状态块+协议 + 本会话已挂载能力的说明(预算上限),不再全量注入;
- * - 未挂载能力经 list_capabilities 目录发现 → mount_capability 挂载(会话级持久化),空闲自动卸载;
+ * AI 助手会话 Runner(供工作台会话/IM 机器人使用的对话引擎)。
+ * - 能力装配:L0 核心(元技能常驻) / L1 微信业务(绑定账号默认挂载) / L2 软件能力(按需挂载);
+ * - 每轮 system 只包含:人设+状态块+协议 + 本会话已挂载能力的说明(预算上限);
+ * - 第三方技能/知识库/自定义工具/MCP 已下线,未挂载能力经目录发现 → 挂载(会话级持久化);
  * - 事件统一 webContents.send('ai:chat', AiChatEvent);runId 确认机制服务高危工具。
  */
 
@@ -86,9 +82,6 @@ function boundOf(wxid: string): boolean {
   return (wxid || '').trim().length > 0
 }
 
-/** 知识注入总量上限(挂载的知识包裁剪到该值内) */
-const KNOWLEDGE_TEXT_BUDGET = 1500
-
 /** JSON 文本协议:分层渐进式目录/挂载使用规范(L0 常驻,不随工具规模膨胀) */
 const JSON_PROTOCOL = [
   '工作方式(ReAct 思考循环):',
@@ -131,24 +124,10 @@ async function assembleTurnSystem(opts: {
   const bound = boundOf(opts.wxid)
   const { dropped } = beginTurn(opts.sessionId, bound)
   const names = mountedNames(opts.sessionId, bound)
-  const { defs, knowledge, errors } = await expandMounted(names, { bound })
+  const { defs, errors } = await expandMounted(names, { bound })
 
   const chunks: string[] = [agentSystemText(opts.agentId ?? null)]
   chunks.push(stateBlockText(bound, names, dropped, errors))
-
-  // 挂载的知识(总量 ≤1500)
-  if (knowledge.length > 0) {
-    const items: string[] = []
-    let sum = 0
-    for (const k of knowledge) {
-      if (sum + k.length > KNOWLEDGE_TEXT_BUDGET) break
-      items.push(k)
-      sum += k.length
-    }
-    if (items.length > 0) {
-      chunks.push(`已挂载技能知识(仅相关内容时使用,不要向用户复述列表):\n- ${items.join('\n- ')}`)
-    }
-  }
 
   if (opts.native) {
     // 原生 function-calling:工具由 schemas 提供,无需文本工具段
@@ -192,7 +171,7 @@ function nativeRuleText(): string {
   )
 }
 
-/** 人设 + 记忆的 system 基座(知识类由“已挂载知识”注入,不再内置全量) */
+/** 人设的 system 基座(记忆/知识功能已下线) */
 function agentSystemText(agentId: string | null | undefined): string {
   const agent = agentId ? getAgentById(agentId) : getDefaultAgent()
   if (!agent) return SYSTEM_FALLBACK
@@ -202,24 +181,12 @@ function agentSystemText(agentId: string | null | undefined): string {
     `你是「${agent.name}」客服智能体${agent.description ? `,角色定位:${agent.description}` : ''}。${STYLE_DESC[agent.style ?? 'warm']}`
   )
   parts.push('回答要基于事实;不确定时明确说明,不编造。')
-  // 常驻记忆(跨会话长期上下文;全局或绑定本智能体)
-  const memories = listMemoriesForAgent(agent.id).slice(0, 10)
-  if (memories.length > 0) {
-    const block = memories.join('\n- ').slice(0, 1400)
-    parts.push(`常驻上下文(记忆;仅在相关内容时使用,不要向用户复述列表):\n- ${block}`)
-  }
   return parts.join('\n')
 }
 
-/** 统一工具解析链:内置 → 软件能力 → MCP → 自定义 → 第三方技能 */
+/** 统一工具解析链:内置 → 软件能力 */
 function resolveToolDef(name: string): ToolDef | undefined {
-  return (
-    findTool(name) ??
-    findSoftwareTool(name) ??
-    findMcpTool(name) ??
-    findCustomTool(name) ??
-    findPackTool(name)
-  )
+  return findTool(name) ?? findSoftwareTool(name)
 }
 
 /** 事件 sink:IM 等无窗口通道可注册,把某会话的事件同时投递过去(随 turn 结束自动移除) */

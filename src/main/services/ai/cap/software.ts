@@ -2,10 +2,7 @@ import { app } from 'electron'
 import { getDb } from '../../../db/database'
 import { getConfig } from '../../../db/repos/config'
 import { listAccounts as listKeyAccounts } from '../../keyStoreService'
-import { listMemories } from '../../../db/repos/memoryRepo'
-import { getAgentById } from '../../../db/repos/agentRepo'
 import { listImAccounts, rowToAccount } from '../../../db/repos/imRepo'
-import { listEnabledSkills } from '../../../db/repos/skillsRepo'
 import { getSessions } from '../../wechat/wxService'
 import { listFeedbackIssues } from '../../feedback/analyzer'
 import type { ToolCtx, ToolDef } from '../chat/skills'
@@ -170,10 +167,9 @@ function softwareStatusDef(): ToolDef {
   return defOf(
     'software_status',
     false,
-    '软件自身状态摘要:版本/微信账号绑定/IM 通道/AI 通道/监控开关/技能数量。args:{}',
+    '软件自身状态摘要:版本/微信账号绑定/IM 通道/AI 通道/监控开关。args:{}',
     async () => {
       const accs = listKeyAccounts()
-      const skills = listEnabledSkills()
       const cs = csStats()
       const im = await imAccountsStatus()
       const lines = [
@@ -194,7 +190,6 @@ function softwareStatusDef(): ToolDef {
                 .map((a) => `- ${a.name} ${a.enabled ? '启用' : '停用'} 状态:${a.status}`)
                 .join('\n')
             : ''),
-        `技能包:${skills.length} 个(知识 ${skills.filter((s) => s.manifest.kind === 'knowledge').length},工具 ${skills.filter((s) => s.manifest.kind === 'tool').length})`,
         `CS 库规模:AI 会话 ${cs.chats}、消息 ${cs.msgs}、问题记录 ${cs.issues}`
       ]
       return lines.join('\n')
@@ -316,18 +311,8 @@ function memoryViewDef(): ToolDef {
   return defOf(
     'memory_view',
     false,
-    '查看智能体常驻记忆清单(只读,最多列出 20 条摘要)。args:{}',
-    async () => {
-      const items = listMemories().slice(0, 20)
-      if (items.length === 0) return '当前没有保存任何常驻记忆。'
-      return items
-        .map((m) => {
-          const agent = m.agentId ? (getAgentById(m.agentId)?.name ?? m.agentId) : '全局'
-          const c = m.content.length > 120 ? `${m.content.slice(0, 120)}…` : m.content
-          return `- [${agent}][${m.enabled ? '启用' : '停用'}] ${c}`
-        })
-        .join('\n')
-    }
+    '查看当前会话的长期上下文来源(只读):常驻记忆功能已下线,上下文仅来自本会话历史与项目知识注入。args:{}',
+    async () => '常驻记忆/知识库功能已下线:当前上下文只包含本会话历史与智能体人设,没有跨会话记忆。'
   )
 }
 
