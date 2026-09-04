@@ -218,15 +218,6 @@ const api = {
       remove: (accountWxid: string, username: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:team:remove', accountWxid, username)
     },
-    phrase: {
-      list: (q?: string): Promise<{ ok: boolean; phrases?: unknown[]; error?: string }> =>
-        ipcRenderer.invoke('cs:phrase:list', q),
-      save: (input: unknown): Promise<{ ok: boolean; item?: unknown; error?: string }> =>
-        ipcRenderer.invoke('cs:phrase:save', input),
-      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:phrase:remove', id),
-      use: (id: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('cs:phrase:use', id)
-    },
     export: {
       chat: (
         wxid: string,

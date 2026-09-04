@@ -32,7 +32,6 @@ import { registerMediaHandlers } from './ipc/mediaHandlers'
 import { registerIssueHandlers } from './ipc/issueHandlers'
 import { registerAgentHandlers } from './ipc/agentHandlers'
 import { registerTeamHandlers } from './ipc/teamHandlers'
-import { registerPhraseHandlers } from './ipc/phraseHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
 import { stopAll as stopIssueScheduler } from './services/feedback/scheduler'
@@ -305,7 +304,6 @@ if (!app.requestSingleInstanceLock()) {
     registerIssueHandlers()
     registerAgentHandlers()
     registerTeamHandlers()
-    registerPhraseHandlers()
     registerExportHandlers()
     registerMediaProtocol()
 

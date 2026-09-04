@@ -148,21 +148,13 @@ const TABLES: string[] = [
     label TEXT DEFAULT '',
     created_at INTEGER,
     UNIQUE (account_wxid, username)
-  )`,
-  // 话术库（团队口径模板）：发送栏快速插入；{客户} 等变量在插入时替换
-  `CREATE TABLE IF NOT EXISTS phrase_book (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    tags TEXT DEFAULT '',
-    usage_count INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER,
-    updated_at INTEGER
   )`
 ]
 
 export function migrate(db: Database.Database): void {
   for (const sql of TABLES) db.exec(sql)
+  // 历史版本曾临时内置话术库(phrase_book),功能已下线:清理旧库残留表
+  db.exec('DROP TABLE IF EXISTS phrase_book')
   // 增量列迁移：issue_feedback.auto_done（自动闭环标记：unreplied 问题检测到回复后自动关闭）
   ensureColumn(db, 'issue_feedback', 'auto_done', 'INTEGER NOT NULL DEFAULT 0')
   // 增量列迁移：follow_up（跟进中：客服已回复未闭环）

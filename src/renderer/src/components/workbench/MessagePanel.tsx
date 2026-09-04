@@ -4,7 +4,6 @@ import { avatarColor, formatTimeDivider, needTimeDivider } from '../../lib/ui'
 import type { ChatMessage, ChatRecordItem, RedEnvelopeStatus } from '../../../../shared/types'
 import AttachmentViewer, { BubbleImage, type Attachment } from './AttachmentViewer'
 import MessageContextMenu, { type ContextMenuState } from './MessageContextMenu'
-import PhrasePicker from './PhrasePicker'
 
 /** 按需取头像（contact URL / head_image 本地 BLOB），带简单缓存与进行中去重；localOnly=远程 URL 已失败，强制取本地 */
 const avatarCache = new Map<string, string | null>()
@@ -467,7 +466,6 @@ function MessagePanel(): React.JSX.Element {
   const [attachment, setAttachment] = useState<Attachment | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [draft, setDraft] = useState('')
-  const [phraseOpen, setPhraseOpen] = useState(false)
 
   const activeSession = sessions.find((s) => s.username === activeSessionId) || null
 
@@ -639,33 +637,9 @@ function MessagePanel(): React.JSX.Element {
         )}
       </div>
       <div className="wb-chat-input">
-        <div className="wb-chat-tools">
-          <button
-            type="button"
-            className={`wb-tool-btn${phraseOpen ? ' is-on' : ''}`}
-            onClick={() => setPhraseOpen((v) => !v)}
-            title="话术库：团队口径模板，插入到输入框（{客户} 自动替换）"
-          >
-            ▤ 话术库
-          </button>
-          <span className="wb-tools-hint">Enter 发送 · Shift+Enter 换行</span>
-          {phraseOpen && (
-            <PhrasePicker
-              customerName={activeSession?.displayName || activeSession?.username || ''}
-              onUse={(content) => {
-                setDraft((d) => {
-                  const base = d ? `${d.trimEnd()}\n` : ''
-                  return base + content
-                })
-                setPhraseOpen(false)
-              }}
-              onClose={() => setPhraseOpen(false)}
-            />
-          )}
-        </div>
         <textarea
           className="wb-chat-textarea"
-          placeholder="输入人工回复…"
+          placeholder="输入人工回复，Enter 发送，Shift+Enter 换行"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

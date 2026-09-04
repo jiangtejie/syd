@@ -18,9 +18,7 @@ import type {
   MessageCursor,
   RedEnvelopeStatus,
   FeedbackTypeCount,
-  TeamMemberInfo,
-  PhraseItem,
-  PhraseInput
+  TeamMemberInfo
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -221,12 +219,6 @@ declare global {
             accountWxid: string,
             username: string
           ) => Promise<{ ok: boolean; error?: string }>
-        }
-        phrase: {
-          list: (q?: string) => Promise<Result<{ phrases?: PhraseItem[] }>>
-          save: (input: PhraseInput) => Promise<Result<{ item?: PhraseItem }>>
-          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
-          use: (id: number) => Promise<{ ok: boolean }>
         }
         export: {
           chat: (
