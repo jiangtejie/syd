@@ -42,7 +42,9 @@ export function schemaFromParams(
   params: Record<string, ToolParamDecl> | undefined
 ): Record<string, unknown> {
   if (!params || Object.keys(params).length === 0) {
-    return { type: 'object', additionalProperties: true }
+    // 无声明:仅声明 object 类型即可。不写 additionalProperties(true),
+    // 部分 OpenAI 兼容网关会拒绝显式的 additionalProperties 字段(400)。
+    return { type: 'object' }
   }
   const properties: Record<string, unknown> = {}
   const required: string[] = []
