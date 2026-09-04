@@ -7,6 +7,7 @@ import {
   appendChatMessage,
   clearChatMessages,
   createChat,
+  getChatById,
   lastUserMessage,
   listChatMessages,
   listChats,
@@ -938,6 +939,9 @@ export async function sendChatMessage(input: {
   let sessionId = input.chatId
   if (!sessionId) {
     sessionId = createChat(wxid, text.slice(0, 24) || '新对话', input.agentId)
+  } else if (!getChatById(sessionId)) {
+    // 会话已被删除:防止对失效会话写入触发外键约束(如 IM 映射残留)
+    return { ok: false, error: '会话不存在或已删除,请重试' }
   }
   void dispatchTurn({
     wxid,

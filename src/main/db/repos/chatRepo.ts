@@ -56,6 +56,13 @@ export function listChats(wxid: string): ChatSessionItem[] {
   return rows.map(rowToSession)
 }
 
+/** 单查会话(校验外部映射的 session_id 是否仍存在,避免外键写入失败) */
+export function getChatById(id: number): ChatSessionItem | null {
+  const row = getDb().prepare(`SELECT * FROM chat_session WHERE id = ?`).get(id) as
+    ChatSessionRow | undefined
+  return row ? rowToSession(row) : null
+}
+
 export function createChat(wxid: string, title: string, agentId?: string | null): number {
   const now = Date.now()
   const info = getDb()
