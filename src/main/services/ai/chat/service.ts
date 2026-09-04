@@ -15,7 +15,14 @@ import {
   setChatAgent,
   touchChat
 } from '../../../db/repos/chatRepo'
-import { ALL_TOOLS, findTool, toolInstructionsText, type ToolCtx } from './skills'
+import {
+  ALL_TOOLS,
+  findTool,
+  schemaFromParams,
+  toolInstructionsText,
+  type ToolCtx,
+  type ToolDef
+} from './skills'
 import { findMcpTool, mcpToolInstructionText, mcpToolNames } from './mcp'
 import { customToolInstructionText, findCustomTool, listCustomToolDefs } from './customTools'
 import type { AiChatEvent, AiStyle, ChatMsgItem, ChatTurn } from '../../../../shared/types'
@@ -29,6 +36,10 @@ import type { AiChatEvent, AiStyle, ChatMsgItem, ChatTurn } from '../../../../sh
 
 const MAX_TOOL_ROUNDS = 4
 const HISTORY_MAX_ROWS = 40
+/** 上下文字符预算(约等于主流 8K 上下文的 2/3,防长会话爆窗) */
+const CONTEXT_CHAR_BUDGET = 48_000
+/** 单条消息最长保留字符(超长截断并加尾注) */
+const MAX_MSG_CHARS = 6000
 const SYSTEM_FALLBACK =
   '你是「微信私域智能客服」桌面助手。回答要简洁、结构清晰、用中文;基于事实,不确定时明确说明。'
 
@@ -142,8 +153,21 @@ function historyToTurns(rows: ChatMsgItem[]): ChatTurn[] {
       turns.push({ role: r.role, content: r.content })
     }
   }
-  // 窗口裁剪:保留最近 HISTORY_MAX_ROWS 条(不含 system)
-  return turns.length > HISTORY_MAX_ROWS ? turns.slice(turns.length - HISTORY_MAX_ROWS) : turns
+  // 单条截断 + 总量预算:保留最新,超限从最旧丢弃
+  const kept: ChatTurn[] = []
+  let sum = 0
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i]
+    const content =
+      t.content.length > MAX_MSG_CHARS
+        ? `${t.content.slice(0, MAX_MSG_CHARS)}\n…(超长已截断)`
+        : t.content
+    if (kept.length > 0 && sum + content.length > CONTEXT_CHAR_BUDGET) break
+    kept.unshift({ role: t.role, content })
+    sum += content.length
+  }
+  // 条数上限兜底(预算未触发时)
+  return kept.length > HISTORY_MAX_ROWS ? kept.slice(kept.length - HISTORY_MAX_ROWS) : kept
 }
 
 async function runTurn(opts: {
@@ -182,17 +206,27 @@ async function runTurn(opts: {
     const turns = historyToTurns(listChatMessages(sessionId))
     turns.push({ role: 'user', content: userText })
 
+    // token 用量累计(决策轮 + 工具轮 + 终文)
+    let totalIn = 0
+    let totalOut = 0
+    const addUsage = (u: { inputTokens?: number; outputTokens?: number } | undefined): void => {
+      if (!u) return
+      totalIn += u.inputTokens ?? 0
+      totalOut += u.outputTokens ?? 0
+    }
+
     // 工具轮:最多 4 轮(小预算静默调用,逐字交给最终轮)
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       if (signal.aborted) break
       let decision = ''
-      await provider.streamChat([{ role: 'system', content: system }, ...turns], {
+      const decide = await provider.streamChat([{ role: 'system', content: system }, ...turns], {
         maxTokens: 300,
         signal,
         onDelta: (t) => {
           decision += t
         }
       })
+      addUsage(decide.usage)
       const intent = parseToolIntent(decision)
       if (!intent) break
       const def = findTool(intent.tool) ?? findMcpTool(intent.tool) ?? findCustomTool(intent.tool)
@@ -270,7 +304,6 @@ async function runTurn(opts: {
     // 最终正文:流式输出
     if (signal.aborted) return
     let content = ''
-    let finalUsage: { inputTokens?: number; outputTokens?: number } | undefined
     let finalReasoning: string | undefined
     sendEvent(wxid, { type: 'status', chatId: sessionId, text: '生成中' })
     try {
@@ -282,7 +315,7 @@ async function runTurn(opts: {
           sendEvent(wxid, { type: 'delta', chatId: sessionId, token: t })
         }
       })
-      finalUsage = finalRes.usage
+      addUsage(finalRes.usage)
       finalReasoning = finalRes.reasoningText
     } catch (e) {
       const aborted = signal.aborted || (e instanceof Error && e.name === 'AbortError')
@@ -304,9 +337,7 @@ async function runTurn(opts: {
       return
     }
     const meta: Record<string, unknown> = {}
-    if (finalUsage) {
-      meta.tokens = { input: finalUsage.inputTokens ?? 0, output: finalUsage.outputTokens ?? 0 }
-    }
+    if (totalIn || totalOut) meta.tokens = { input: totalIn, output: totalOut }
     if (finalReasoning && finalReasoning.trim()) meta.reasoning = finalReasoning.trim().slice(-600)
     const messageId = appendChatMessage(sessionId, 'assistant', 'text', trimmed, meta)
     touchChat(sessionId)
@@ -341,12 +372,16 @@ function nativeSystemText(base: string): string {
   return `${base}\n\n可用工具已由系统原生提供,按需直接调用即可;不要输出 JSON 格式的工具请求,始终用自然语言作答。`
 }
 
-/** 宽松工具 schema(OpenAI function calling;参数细节已在 description 中说明) */
-function schemaOf(tool: { name: string; description?: string }): ToolSchema {
+/** 工具参数 schema:有 params 声明生成精确 schema,否则宽松 object */
+function schemaOf(tool: {
+  name: string
+  description?: string
+  params?: ToolDef['params']
+}): ToolSchema {
   return {
     name: tool.name,
     description: tool.description ?? '',
-    parameters: { type: 'object', additionalProperties: true }
+    parameters: schemaFromParams(tool.params)
   }
 }
 

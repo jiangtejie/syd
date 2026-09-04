@@ -15,6 +15,14 @@ export interface TokenUsage {
   outputTokens?: number
 }
 
+/** 一次流式调用的统一结果 */
+export interface StreamOnceResult {
+  text: string
+  toolCalls: Array<{ id?: string; name: string; arguments: string }>
+  usage?: TokenUsage
+  reasoningText?: string
+}
+
 /** 原生工具 schema(OpenAI function calling) */
 export interface ToolSchema {
   name: string
@@ -171,12 +179,7 @@ class OpenAiCompatProvider implements AiProvider {
       onText?: (chunk: string) => void
       onReasoning?: (token: string) => void
     }
-  ): Promise<{
-    text: string
-    toolCalls: Array<{ id?: string; name: string; arguments: string }>
-    usage?: TokenUsage
-    reasoningText?: string
-  }> {
+  ): Promise<StreamOnceResult> {
     const model = this.cfg.model
     const maxTokens = opts.maxTokens ?? 2000
     const tools =
@@ -321,12 +324,17 @@ class OpenAiCompatProvider implements AiProvider {
       onReasoning?: (token: string) => void
     } = {}
   ): Promise<{ usage?: TokenUsage; reasoningText?: string }> {
-    const r = await this.streamOnce(messages, {
-      maxTokens: opts.maxTokens,
-      signal: opts.signal,
-      onText: opts.onDelta,
-      onReasoning: opts.onReasoning
-    })
+    const r = await this.retryEmpty(
+      this.streamOnce(messages, {
+        maxTokens: opts.maxTokens,
+        signal: opts.signal,
+        onText: opts.onDelta,
+        onReasoning: opts.onReasoning
+      }),
+      opts.maxTokens ?? 2000,
+      messages,
+      { signal: opts.signal, onText: opts.onDelta, onReasoning: opts.onReasoning }
+    )
     return { usage: r.usage, reasoningText: r.reasoningText }
   }
 
@@ -346,13 +354,45 @@ class OpenAiCompatProvider implements AiProvider {
     usage?: TokenUsage
     reasoningText?: string
   }> {
-    return await this.streamOnce(messages, {
-      tools,
-      maxTokens: opts.maxTokens,
-      signal: opts.signal,
-      onText: opts.onText,
-      onReasoning: opts.onReasoning
-    })
+    const r = await this.retryEmpty(
+      this.streamOnce(messages, {
+        tools,
+        maxTokens: opts.maxTokens,
+        signal: opts.signal,
+        onText: opts.onText,
+        onReasoning: opts.onReasoning
+      }),
+      opts.maxTokens ?? 2000,
+      messages,
+      { tools, signal: opts.signal, onText: opts.onText, onReasoning: opts.onReasoning }
+    )
+    return r
+  }
+
+  /** 空正文兜底:模型思考(reasoning)耗尽预算时放大 maxTokens 重发一次 */
+  private async retryEmpty(
+    first: Promise<StreamOnceResult>,
+    initialMax: number,
+    messages: WireMsg[],
+    retryOpts: {
+      tools?: ToolSchema[]
+      maxTokens?: number
+      signal?: AbortSignal
+      onText?: (chunk: string) => void
+      onReasoning?: (token: string) => void
+    }
+  ): Promise<StreamOnceResult> {
+    const r = await first
+    if (!r.text && r.reasoningText && retryOpts.signal?.aborted !== true && initialMax < 8192) {
+      return await this.streamOnce(messages, {
+        tools: retryOpts.tools,
+        maxTokens: Math.min(initialMax * 4, 8192),
+        signal: retryOpts.signal,
+        onText: retryOpts.onText,
+        onReasoning: retryOpts.onReasoning
+      })
+    }
+    return r
   }
 }
 

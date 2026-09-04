@@ -16,14 +16,44 @@ export interface ToolCtx {
   sessionId?: string
 }
 
+/** 轻量参数声明(原生 function-calling 生成精确 JSON Schema;JSON 协议仍靠 description) */
+export interface ToolParamDecl {
+  type?: 'string' | 'number' | 'boolean'
+  required?: boolean
+  desc?: string
+}
+
 export interface ToolDef {
   name: string
   kind: 'builtin' | 'skill' | 'mcp'
   /** 给 LLM 的描述(含 args 示例) */
   description: string
+  /** 参数声明(可选;缺省则原生通道给宽松 object schema) */
+  params?: Record<string, ToolParamDecl>
   /** 需要人工确认后执行(发消息/外部写类) */
   confirm?: boolean
   run: (ctx: ToolCtx, args: Record<string, unknown>) => Promise<string>
+}
+
+/** 由轻量声明生成 OpenAI function-calling 参数 schema */
+export function schemaFromParams(
+  params: Record<string, ToolParamDecl> | undefined
+): Record<string, unknown> {
+  if (!params || Object.keys(params).length === 0) {
+    return { type: 'object', additionalProperties: true }
+  }
+  const properties: Record<string, unknown> = {}
+  const required: string[] = []
+  for (const [name, p] of Object.entries(params)) {
+    const prop: Record<string, unknown> = {}
+    if (p.type) prop.type = p.type
+    if (p.desc) prop.description = p.desc
+    properties[name] = prop
+    if (p.required) required.push(name)
+  }
+  const schema: Record<string, unknown> = { type: 'object', properties }
+  if (required.length > 0) schema.required = required
+  return schema
 }
 
 const MAX_TEXT = 4000
@@ -97,6 +127,12 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'query_issues',
     kind: 'builtin',
+    params: {
+      q: { type: 'string', desc: '关键词(标题/摘要/类型)' },
+      status: { type: 'string', desc: 'open|done|stalled|archived' },
+      severity: { type: 'string', desc: '紧急|高|一般' },
+      limit: { type: 'number', desc: '最多返回条数(1-15)' }
+    },
     description:
       '按关键词/类型/状态/严重度查询本账号记录的问题(监控/群问题同源)。' +
       'args: {"q":"关键词(可空)","status":"open|done|stalled|archived(可空)","severity":"紧急|高|一般(可空)","limit":5}',
@@ -127,6 +163,10 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'query_group_issues',
     kind: 'builtin',
+    params: {
+      group: { type: 'string', desc: '群 username(空=当前会话)' },
+      limit: { type: 'number', desc: '最多返回条数(1-15)' }
+    },
     description:
       '读取指定群(或当前聊天对象)记录的问题,待处理优先。' +
       'args: {"group":"群username(可空,空=当前会话)","limit":8}',
@@ -149,6 +189,10 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'search_issue_history',
     kind: 'builtin',
+    params: {
+      q: { type: 'string', required: true, desc: '搜索关键词' },
+      limit: { type: 'number', desc: '最多返回条数(1-10)' }
+    },
     description:
       '关键词搜索历史客户问题(跨群),用于判断客户是否提过类似诉求、上次怎么处理。' +
       'args: {"q":"关键词","limit":5}',
@@ -176,6 +220,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'monitor_summary',
     kind: 'builtin',
+    params: { limit: { type: 'number', desc: '最多列出关注条目数' } },
     description:
       '读取问题监控概览(正式口径,排除疑似):待处理/跟进中/跟进超时/紧急与高危数/今日新增/疑似数,并列出最需关注的若干条。args: {"limit":5}',
     run: async (ctx, args) => {
@@ -213,6 +258,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'customer_lookup',
     kind: 'builtin',
+    params: { name: { type: 'string', desc: '客户名称或 username(空=当前会话对象)' } },
     description:
       '按名称或 username 查询客户/群资料(微信会话派生):显示名/备注/未读/最后消息时间/消息摘要。' +
       'args: {"name":"客户名称或username(可空,空=当前会话对象)"}',
@@ -254,6 +300,10 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'recent_messages',
     kind: 'builtin',
+    params: {
+      sessionId: { type: 'string', desc: '会话 username(空=当前会话)' },
+      limit: { type: 'number', desc: '最近 N 条(1-30)' }
+    },
     description:
       '读取指定会话(或当前聊天对象)最近消息文本,用于了解刚发生/正在讨论的内容。' +
       'args: {"sessionId":"会话username(可空,空=当前会话)","limit":10}',

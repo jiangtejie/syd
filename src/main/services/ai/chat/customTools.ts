@@ -1,6 +1,6 @@
 import { listCustomTools } from '../../../db/repos/customToolRepo'
 import type { CustomToolItem } from '../../../../shared/types'
-import type { ToolCtx, ToolDef } from './skills'
+import type { ToolCtx, ToolDef, ToolParamDecl } from './skills'
 
 /**
  * 自定义 HTTP 工具(应用内“开发工具”,docs 补丁)。
@@ -93,6 +93,15 @@ export function listCustomToolDefs(): ToolDef[] {
     .filter((t) => t.enabled)
     .map((t) => {
       const isRead = t.method === 'GET' || t.method === 'HEAD'
+      const params: Record<string, ToolParamDecl> = {}
+      for (const p of t.params ?? []) {
+        params[p.name] = {
+          type:
+            p.type === 'number' || p.type === 'boolean' || p.type === 'string' ? p.type : undefined,
+          required: p.required,
+          desc: p.desc
+        }
+      }
       const argHint =
         (t.params ?? []).length > 0
           ? ` args 形如:{"${(t.params ?? [])
@@ -105,6 +114,7 @@ export function listCustomToolDefs(): ToolDef[] {
         name: t.name,
         kind: 'skill' as const,
         description: `${t.label ? `【${t.label}】` : ''}${t.description}(${t.method} ${urlHint})。${argHint}`,
+        params: Object.keys(params).length > 0 ? params : undefined,
         confirm: isRead ? t.confirm : true,
         run: async (_ctx: ToolCtx, args: Record<string, unknown>) => fetchTool(t, args ?? {})
       }
