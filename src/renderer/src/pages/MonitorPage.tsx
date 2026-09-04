@@ -844,39 +844,41 @@ function MonitorPage(): React.JSX.Element {
                   )}
                 </div>
 
-                {detailLoading ? (
-                  <div className="mon-drawer-empty">加载证据中…</div>
-                ) : !detail ? (
-                  <div className="mon-drawer-empty">无证据详情</div>
-                ) : (
-                  <div className="mon-drawer-tl">
-                    {detail.related.map((m, i) => (
-                      <div
-                        key={i}
-                        className={`mon-tl-item${m.isSend || m.senderIsTeam ? ' is-my' : ''}`}
-                      >
-                        <span className="mon-tl-dot" />
-                        <div className="mon-tl-body">
-                          <div className="mon-tl-head">
-                            <b>
-                              {m.isSend
-                                ? `我方 · ${m.senderName}`
-                                : m.senderIsTeam
-                                  ? `团队 · ${m.senderName}`
-                                  : m.senderName}
-                            </b>
-                            <time>{fmtTimeShort(m.time)}</time>
-                            {i === 0 && <em className="mon-tl-mark">首现</em>}
-                            {i === detail.related.length - 1 && detail.related.length > 1 && (
-                              <em className="mon-tl-mark">最新</em>
-                            )}
+                <div className="mon-drawer-scroll">
+                  {detailLoading ? (
+                    <div className="mon-drawer-empty">加载证据中…</div>
+                  ) : !detail ? (
+                    <div className="mon-drawer-empty">无证据详情</div>
+                  ) : (
+                    <div className="mon-drawer-tl">
+                      {detail.related.map((m, i) => (
+                        <div
+                          key={i}
+                          className={`mon-tl-item${m.isSend || m.senderIsTeam ? ' is-my' : ''}`}
+                        >
+                          <span className="mon-tl-dot" />
+                          <div className="mon-tl-body">
+                            <div className="mon-tl-head">
+                              <b>
+                                {m.isSend
+                                  ? `我方 · ${m.senderName}`
+                                  : m.senderIsTeam
+                                    ? `团队 · ${m.senderName}`
+                                    : m.senderName}
+                              </b>
+                              <time>{fmtTimeShort(m.time)}</time>
+                              {i === 0 && <em className="mon-tl-mark">首现</em>}
+                              {i === detail.related.length - 1 && detail.related.length > 1 && (
+                                <em className="mon-tl-mark">最新</em>
+                              )}
+                            </div>
+                            <div className="mon-tl-text">{m.text || '[非文本消息]'}</div>
                           </div>
-                          <div className="mon-tl-text">{m.text || '[非文本消息]'}</div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <div className="mon-drawer-foot">
                   <IssueActions
