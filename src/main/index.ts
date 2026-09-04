@@ -34,6 +34,7 @@ import { registerAgentHandlers } from './ipc/agentHandlers'
 import { registerTeamHandlers } from './ipc/teamHandlers'
 import { registerImHandlers, bootImAccounts, stopAllIm } from './ipc/imHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
+import { registerWorkbenchHandlers } from './ipc/workbenchHandlers'
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
 import { stopAll as stopIssueScheduler } from './services/feedback/scheduler'
 import { stopSending } from './services/send/sendService'
@@ -307,6 +308,7 @@ if (!app.requestSingleInstanceLock()) {
     registerTeamHandlers()
     registerImHandlers()
     registerExportHandlers()
+    registerWorkbenchHandlers()
     registerMediaProtocol()
 
     // IM 渠道(飞书等):恢复上次启用状态的账号连接

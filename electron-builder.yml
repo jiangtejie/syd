@@ -11,6 +11,12 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+  # AI SDK(ESM,主进程 external 加载):从真实路径加载避免 asar 内 ESM 限制
+  - node_modules/ai/**
+  - node_modules/@ai-sdk/**
+  - node_modules/zod/**
+  - node_modules/eventsource-parser/**
+  - node_modules/@standard-schema/**
 win:
   executableName: wechat-cs-desktop
 nsis:

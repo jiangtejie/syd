@@ -303,6 +303,37 @@ declare global {
           }>
           clearCache: () => Promise<{ ok: boolean; error?: string }>
         }
+        wb: {
+          listChats: (wxid: string) => Promise<Result<{ chats?: ChatSessionItem[] }>>
+          messages: (id: number) => Promise<Result<{ messages?: ChatMsgItem[] }>>
+          create: (
+            wxid: string,
+            title: string
+          ) => Promise<{ ok: boolean; id?: number; error?: string }>
+          send: (id: number, wxid: string, text: string) => Promise<{ ok: boolean; error?: string }>
+          retry: (id: number, wxid: string) => Promise<{ ok: boolean; error?: string }>
+          stop: (id: number) => Promise<{ ok: boolean }>
+          approve: (runId: string, ok: boolean) => Promise<{ ok: boolean }>
+          rename: (id: number, title: string) => Promise<{ ok: boolean; error?: string }>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+          clear: (id: number) => Promise<{ ok: boolean; error?: string }>
+          skills: () => Promise<
+            Result<{
+              skills?: Array<{
+                name: string
+                description: string
+                enabled: boolean
+                sizeBytes: number
+                dirName: string
+              }>
+            }>
+          >
+          toggleSkill: (name: string, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+          openSkillsDir: () => Promise<{ ok: boolean; path?: string; error?: string }>
+          onEvent: (
+            callback: (evt: AiChatEvent & { sessionId?: number; runId?: string }) => void
+          ) => () => void
+        }
       }
     }
   }

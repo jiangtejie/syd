@@ -118,6 +118,16 @@ export function clearChatMessages(sessionId: number): void {
   getDb().prepare(`DELETE FROM chat_message WHERE session_id = ?`).run(sessionId)
 }
 
+/** 删除会话最后一条消息(重试清理用) */
+export function popLastChatMessage(sessionId: number): boolean {
+  const info = getDb()
+    .prepare(
+      `DELETE FROM chat_message WHERE id = (SELECT MAX(id) FROM chat_message WHERE session_id = ?)`
+    )
+    .run(sessionId)
+  return info.changes > 0
+}
+
 /** 会话最后一条 user 消息(供重试) */
 export function lastUserMessage(sessionId: number): string | null {
   const row = getDb()

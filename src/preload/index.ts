@@ -279,6 +279,42 @@ const api = {
         return () => ipcRenderer.removeListener('cs:export:progress', listener)
       }
     },
+    wb: {
+      listChats: (wxid: string): Promise<{ ok: boolean; chats?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:listChats', wxid),
+      messages: (id: number): Promise<{ ok: boolean; messages?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:messages', id),
+      create: (
+        wxid: string,
+        title: string
+      ): Promise<{ ok: boolean; id?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:create', wxid, title),
+      send: (id: number, wxid: string, text: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:send', id, wxid, text),
+      retry: (id: number, wxid: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:retry', id, wxid),
+      stop: (id: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('cs:wb:stop', id),
+      approve: (runId: string, ok: boolean): Promise<{ ok: boolean }> =>
+        ipcRenderer.invoke('cs:wb:approve', runId, ok),
+      rename: (id: number, title: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:rename', id, title),
+      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:remove', id),
+      clear: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:clear', id),
+      skills: (): Promise<{ ok: boolean; skills?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:skills'),
+      toggleSkill: (name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:toggleSkill', name, enabled),
+      openSkillsDir: (): Promise<{ ok: boolean; path?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:openSkillsDir'),
+      onEvent: (callback: (evt: unknown) => void): (() => void) => {
+        const listener = (_e: Electron.IpcRendererEvent, payload: unknown): void =>
+          callback(payload)
+        ipcRenderer.on('ai:wb', listener)
+        return () => ipcRenderer.removeListener('ai:wb', listener)
+      }
+    },
     agent: {
       list: (): Promise<{
         ok: boolean
