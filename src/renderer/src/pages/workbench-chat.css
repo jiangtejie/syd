@@ -2,7 +2,9 @@
 
 .wb-page {
   display: flex;
-  height: 100%;
+  height: calc(100% - 24px);
+  margin: 12px auto;
+  max-width: 1760px;
   border: 1px solid var(--border-light);
   border-radius: var(--r-md);
   background: var(--bg-panel);
