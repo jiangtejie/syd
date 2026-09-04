@@ -6,7 +6,10 @@ import type {
   McpServerItem,
   McpServerInput,
   CustomToolItem,
-  CustomToolInput
+  CustomToolInput,
+  AgentMemoryItem,
+  AgentMemoryInput,
+  AiAgent
 } from '../../../shared/types'
 import { toast } from '../stores/toast'
 import './settings.css'
@@ -593,6 +596,9 @@ function SettingsPage(): React.JSX.Element {
 
           {/* 自定义 HTTP 工具（AI 助手应用内开发工具） */}
           <CustomToolsSection />
+
+          {/* AI 助手偏好与常驻记忆 */}
+          <AiPrefsSection />
         </div>
       )}
 
@@ -1379,6 +1385,222 @@ function CustomToolsSection(): React.JSX.Element {
             </button>
             <button type="button" className="st-btn" disabled={saving} onClick={() => void save()}>
               {saving ? '保存中…' : '保存工具'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** AI 助手偏好与常驻记忆管理(引擎开关 + 跨会话长期上下文) */
+function AiPrefsSection(): React.JSX.Element {
+  const [nativeTools, setNativeTools] = useState<boolean | null>(null)
+  const [temperature, setTemperature] = useState<number | null>(null)
+  const [items, setItems] = useState<AgentMemoryItem[] | null>(null)
+  const [agents, setAgents] = useState<AiAgent[]>([])
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState<AgentMemoryInput>({ content: '', agentId: null, enabled: true })
+  const [saving, setSaving] = useState(false)
+
+  const configApi = window.api?.cs?.config
+  const memoryApi = window.api?.cs?.memory
+
+  const loadMemories = async (): Promise<void> => {
+    const [mr, ar] = await Promise.all([
+      memoryApi?.list().catch(() => null),
+      window.api?.cs?.agent?.list().catch(() => null)
+    ])
+    if (mr?.ok && mr.items) setItems(mr.items as AgentMemoryItem[])
+    else setItems([])
+    if (ar?.ok && ar.agents) setAgents(ar.agents as AiAgent[])
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取记忆/偏好(全仓同款模式)
+    void loadMemories()
+    void configApi
+      ?.getAll()
+      .then((cfg) => {
+        setNativeTools(cfg['ai.nativeTools'] !== '0')
+        const t = Number(cfg['ai.temperature'])
+        setTemperature(Number.isFinite(t) && t >= 0 && t <= 1.5 ? t : 0.7)
+      })
+      .catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const saveTemp = (v: number | null): void => {
+    if (v === null || !Number.isFinite(v)) return
+    const t = Math.min(1.5, Math.max(0, v))
+    setTemperature(t)
+    void configApi?.set('ai.temperature', String(t))
+    toast.success('温度已保存(新回复生效)')
+  }
+
+  const agentName = (id?: string): string =>
+    id ? (agents.find((a) => a.id === id)?.name ?? id) : '全部智能体'
+
+  const startNew = (): void => {
+    setForm({ content: '', agentId: null, enabled: true })
+    setOpen(true)
+  }
+  const editItem = (it: AgentMemoryItem): void => {
+    setForm({ id: it.id, content: it.content, agentId: it.agentId ?? null, enabled: it.enabled })
+    setOpen(true)
+  }
+  const save = async (): Promise<void> => {
+    setSaving(true)
+    try {
+      const res = await memoryApi?.save(form).catch(() => null)
+      if (!res?.ok) {
+        toast.error((res as { error?: string } | null)?.error || '保存失败')
+        return
+      }
+      toast.success('记忆条目已保存(跨会话常驻生效)')
+      setOpen(false)
+      await loadMemories()
+    } finally {
+      setSaving(false)
+    }
+  }
+  const remove = async (it: AgentMemoryItem): Promise<void> => {
+    if (!window.confirm('删除这条常驻记忆?')) return
+    const res = await memoryApi?.remove(it.id).catch(() => null)
+    if (res?.ok) {
+      toast.success('已删除')
+      await loadMemories()
+    } else {
+      toast.error((res as { error?: string } | null)?.error || '删除失败')
+    }
+  }
+
+  return (
+    <div className="page-card st-section">
+      <div className="st-title">AI 助手偏好与常驻记忆</div>
+
+      <label className="st-row">
+        <span className="st-label">原生工具调用</span>
+        <input
+          type="checkbox"
+          checked={nativeTools ?? true}
+          onChange={(e) => {
+            const v = e.target.checked
+            setNativeTools(v)
+            void configApi?.set('ai.nativeTools', v ? '1' : '0')
+            toast.success(
+              v
+                ? '已启用原生 function-calling(不支持时自动回退)'
+                : '已回退文本工具协议(任意模型可用)'
+            )
+          }}
+        />
+        <span className="st-hint-inline">
+          开启:支持 tools 的模型走原生调用;关闭/能力不足时自动回退文本协议
+        </span>
+      </label>
+      <label className="st-row">
+        <span className="st-label">采样温度</span>
+        <input
+          type="number"
+          min={0}
+          max={1.5}
+          step={0.05}
+          className="st-input sm"
+          value={temperature ?? 0.7}
+          onChange={(e) => setTemperature(Number(e.target.value))}
+          onBlur={() => saveTemp(temperature)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') saveTemp(temperature)
+          }}
+        />
+        <span className="st-hint-inline">
+          0 更稳定、越高越多样;部分推理模型不支持温度(自动忽略)
+        </span>
+      </label>
+
+      <div className="st-subtitle">常驻记忆(跨会话长期上下文)</div>
+      <div className="mcp-list">
+        {items === null ? (
+          <div className="st-hint">加载中…</div>
+        ) : items.length === 0 ? (
+          <div className="st-hint">
+            暂无记忆。可写入客户背景、店铺口径、重点事项等;新会话也会自动带上(与所选智能体相关时)。
+          </div>
+        ) : (
+          items.map((it) => (
+            <div key={it.id} className="mcp-item">
+              <div className="mcp-item-main">
+                <b>{agentName(it.agentId)}</b>
+                {it.enabled ? (
+                  <span className="mcp-on">生效</span>
+                ) : (
+                  <span className="mcp-off">停用</span>
+                )}
+                <span className="mcp-desc">{it.content}</span>
+              </div>
+              <div className="mcp-item-ops">
+                <button type="button" className="st-btn ghost sm" onClick={() => editItem(it)}>
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  className="st-btn ghost danger sm"
+                  onClick={() => void remove(it)}
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+        <button type="button" className="st-btn ghost sm mcp-add" onClick={startNew}>
+          + 添加记忆
+        </button>
+      </div>
+
+      {open && (
+        <div className="mcp-edit">
+          <label className="st-row">
+            <span className="st-label">生效智能体</span>
+            <select
+              className="st-input"
+              value={form.agentId ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, agentId: e.target.value || null }))}
+            >
+              <option value="">全部智能体</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="st-row">
+            <span className="st-label">记忆内容</span>
+            <textarea
+              className="st-input st-ta"
+              rows={4}
+              value={form.content}
+              onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
+              placeholder="如:客户「糖糖」是老客,偏好低价套餐,近 7 天投诉过物流超时,答复口径:先致歉再补偿运费券。"
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">生效</span>
+            <input
+              type="checkbox"
+              checked={form.enabled ?? true}
+              onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+            />
+            <span className="st-hint-inline">停用后不注入提示词(保留条目)</span>
+          </label>
+          <div className="st-actions">
+            <button type="button" className="st-btn ghost" onClick={() => setOpen(false)}>
+              取消
+            </button>
+            <button type="button" className="st-btn" disabled={saving} onClick={() => void save()}>
+              {saving ? '保存中…' : '保存记忆'}
             </button>
           </div>
         </div>

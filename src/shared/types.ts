@@ -521,3 +521,20 @@ export interface CustomToolInput {
   confirm?: boolean
   enabled?: boolean
 }
+
+/** 常驻记忆条目(跨会话长期上下文;agentId 空=全部智能体) */
+export interface AgentMemoryItem {
+  id: number
+  agentId?: string
+  content: string
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface AgentMemoryInput {
+  id?: number
+  agentId?: string | null
+  content: string
+  enabled?: boolean
+}

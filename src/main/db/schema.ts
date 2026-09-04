@@ -201,6 +201,15 @@ const TABLES: string[] = [
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
+  )`,
+  // AI 助手常驻记忆(跨会话长期上下文;agent_id 空=全部智能体生效)
+  `CREATE TABLE IF NOT EXISTS agent_memory (
+    id INTEGER PRIMARY KEY,
+    agent_id TEXT,
+    content TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
   )`
 ]
 

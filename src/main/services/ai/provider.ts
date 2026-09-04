@@ -81,6 +81,8 @@ export interface ProviderConfig {
   apiKey: string
   model: string
   enabled: boolean
+  /** 采样温度(0~1.5,默认 0.7);部分推理模型不支持温度参数,由请求层自动去掉 */
+  temperature: number
 }
 
 export function readProviderConfig(): ProviderConfig {
@@ -88,7 +90,9 @@ export function readProviderConfig(): ProviderConfig {
   const apiKey = openSecret(getConfig('ai.apiKey'))
   const model = getConfig('ai.model')?.trim() || ''
   const enabled = getConfig('ai.enabled') === '1' || getConfig('ai.enabled') === 'true'
-  return { baseUrl, apiKey, model, enabled }
+  const rawTemp = Number(getConfig('ai.temperature'))
+  const temperature = Number.isFinite(rawTemp) && rawTemp >= 0 && rawTemp <= 1.5 ? rawTemp : 0.7
+  return { baseUrl, apiKey, model, enabled, temperature }
 }
 
 class OpenAiCompatProvider implements AiProvider {
@@ -115,7 +119,7 @@ class OpenAiCompatProvider implements AiProvider {
         body: JSON.stringify({
           model,
           messages,
-          ...(withTemp ? { temperature: 0.7 } : {}),
+          ...(withTemp ? { temperature: this.cfg.temperature } : {}),
           max_tokens: maxTokens
         })
       })
@@ -206,7 +210,7 @@ class OpenAiCompatProvider implements AiProvider {
           messages,
           stream: true,
           ...(tools ? { tools } : {}),
-          ...(withTemp ? { temperature: 0.7 } : {}),
+          ...(withTemp ? { temperature: this.cfg.temperature } : {}),
           max_tokens: maxTokens
         }),
         signal: opts.signal

@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import { createAiProvider, readProviderConfig, type ToolSchema, type WireMsg } from '../provider'
 import { getConfig } from '../../../db/repos/config'
 import { getAgentById, getDefaultAgent } from '../../../db/repos/agentRepo'
+import { listMemoriesForAgent } from '../../../db/repos/memoryRepo'
 import { getDb } from '../../../db/database'
 import {
   appendChatMessage,
@@ -79,6 +80,12 @@ function agentSystemText(agentId: string | null | undefined): string {
     `你是「${agent.name}」客服智能体${agent.description ? `,角色定位:${agent.description}` : ''}。${STYLE_DESC[agent.style ?? 'warm']}`
   )
   parts.push('回答要基于事实;不确定时明确说明,不编造。')
+  // 常驻记忆(跨会话长期上下文;全局或绑定本智能体)
+  const memories = listMemoriesForAgent(agent.id).slice(0, 10)
+  if (memories.length > 0) {
+    const block = memories.join('\n- ').slice(0, 1400)
+    parts.push(`常驻上下文(记忆;仅在相关内容时使用,不要向用户复述列表):\n- ${block}`)
+  }
   return parts.join('\n')
 }
 
@@ -183,6 +190,54 @@ function historyToTurns(rows: ChatMsgItem[]): ChatTurn[] {
   return kept.length > HISTORY_MAX_ROWS ? kept.slice(kept.length - HISTORY_MAX_ROWS) : kept
 }
 
+/** 历史总字符估算 */
+function rowsChars(rows: ChatMsgItem[]): number {
+  return rows.reduce((n, r) => n + r.content.length, 0)
+}
+
+/**
+ * 长会话上下文压缩:历史超阈值时,保留最近一半完整消息,
+ * 较早一半用 LLM 压缩成摘要文本(失败则降级直接丢旧,不影响对话)。
+ */
+async function loadHistoryCtx(
+  sessionId: number
+): Promise<{ rowsTail: ChatMsgItem[]; summary: string | null }> {
+  const rows = listChatMessages(sessionId)
+  if (rows.length < 24 || rowsChars(rows) <= 36_000) {
+    return { rowsTail: rows, summary: null }
+  }
+  const keep = Math.ceil(rows.length / 2)
+  const tail = rows.slice(rows.length - keep)
+  const old = rows.slice(0, rows.length - keep)
+  const provider = createAiProvider()
+  if (!provider) return { rowsTail: tail, summary: null }
+  const text = old
+    .map((r) => {
+      const who =
+        r.role === 'user'
+          ? '用户'
+          : r.kind === 'tool_result'
+            ? '工具结果'
+            : r.kind === 'error'
+              ? '错误'
+              : '助手'
+      const c = r.content.length > 400 ? `${r.content.slice(0, 400)}…` : r.content
+      return `${who}: ${c}`
+    })
+    .join('\n')
+    .slice(-24_000)
+  try {
+    const s = await provider.complete(
+      '你是对话摘要器。用户会给一段客服 AI 助手的历史对话,请压缩为不超过 400 字的中文摘要,保留:已查到的业务结论与数据要点、客户诉求与状态、执行过的工具及其结果要点、未完成/待跟进事项。不要复述寒暄。',
+      `历史对话:\n${text}`
+    )
+    const summary = (s || '').trim().slice(0, 1400)
+    return { rowsTail: tail, summary: summary || null }
+  } catch {
+    return { rowsTail: tail, summary: null }
+  }
+}
+
 async function runTurn(opts: {
   wxid: string
   sessionId: number
@@ -214,9 +269,11 @@ async function runTurn(opts: {
   try {
     if (opts.appendUserRow) appendChatMessage(sessionId, 'user', 'text', userText)
     const agentId = opts.agentId ?? undefined
-    const system = await buildSystem(agentId)
-
-    const turns = historyToTurns(listChatMessages(sessionId))
+    const ctx = await loadHistoryCtx(sessionId)
+    const system =
+      (await buildSystem(agentId)) +
+      (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '')
+    const turns = historyToTurns(ctx.rowsTail)
     turns.push({ role: 'user', content: userText })
 
     // token 用量累计(决策轮 + 工具轮 + 终文)
@@ -537,7 +594,10 @@ async function runTurnNative(opts: {
   try {
     if (opts.appendUserRow) appendChatMessage(sessionId, 'user', 'text', userText)
     const agentId = opts.agentId ?? undefined
-    const system = nativeSystemText(agentSystemText(agentId))
+    const ctx = await loadHistoryCtx(sessionId)
+    const system =
+      nativeSystemText(agentSystemText(agentId)) +
+      (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '')
     const schemas = [
       ...ALL_TOOLS,
       ...listCustomToolDefs(),
@@ -546,7 +606,7 @@ async function runTurnNative(opts: {
     ].map(schemaOf)
 
     const wire: WireMsg[] = [{ role: 'system', content: system }]
-    for (const t of historyToTurns(listChatMessages(sessionId))) {
+    for (const t of historyToTurns(ctx.rowsTail)) {
       wire.push({ role: t.role, content: t.content })
     }
     wire.push({ role: 'user', content: userText })

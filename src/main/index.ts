@@ -35,6 +35,7 @@ import { registerTeamHandlers } from './ipc/teamHandlers'
 import { registerAiChatHandlers } from './ipc/aiChatHandlers'
 import { registerMcpHandlers } from './ipc/mcpHandlers'
 import { registerCustomToolHandlers } from './ipc/customToolHandlers'
+import { registerMemoryHandlers } from './ipc/memoryHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
 import { stopAll as stopIssueScheduler } from './services/feedback/scheduler'
@@ -311,6 +312,7 @@ if (!app.requestSingleInstanceLock()) {
     registerAiChatHandlers()
     registerMcpHandlers()
     registerCustomToolHandlers()
+    registerMemoryHandlers()
     registerExportHandlers()
     registerMediaProtocol()
 

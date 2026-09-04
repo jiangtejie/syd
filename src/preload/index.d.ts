@@ -25,7 +25,9 @@ import type {
   McpServerItem,
   McpServerInput,
   CustomToolItem,
-  CustomToolInput
+  CustomToolInput,
+  AgentMemoryItem,
+  AgentMemoryInput
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -260,6 +262,11 @@ declare global {
         tool: {
           list: () => Promise<Result<{ tools?: CustomToolItem[] }>>
           save: (input: CustomToolInput) => Promise<Result<{ item?: CustomToolItem }>>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+        }
+        memory: {
+          list: () => Promise<Result<{ items?: AgentMemoryItem[] }>>
+          save: (input: AgentMemoryInput) => Promise<Result<{ item?: AgentMemoryItem }>>
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
         }
         export: {

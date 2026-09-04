@@ -276,6 +276,14 @@ const api = {
       remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:tool:remove', id)
     },
+    memory: {
+      list: (): Promise<{ ok: boolean; items?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:memory:list'),
+      save: (input: unknown): Promise<{ ok: boolean; item?: unknown; error?: string }> =>
+        ipcRenderer.invoke('cs:memory:save', input),
+      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:memory:remove', id)
+    },
     export: {
       chat: (
         wxid: string,
