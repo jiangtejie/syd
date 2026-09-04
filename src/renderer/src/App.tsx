@@ -3,6 +3,7 @@ import { useWorkbenchStore, type WorkbenchPage } from './stores/workbench'
 import Workbench from './pages/Workbench'
 import AiChatPage from './pages/AiChatPage'
 import SkillsPage from './pages/SkillsPage'
+import ImPage from './pages/ImPage'
 import MonitorPage from './pages/MonitorPage'
 import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
@@ -19,7 +20,7 @@ import './pages/shell.css'
  */
 
 type NavIconName =
-  'ai' | 'skills' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
+  'ai' | 'skills' | 'im' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -47,6 +48,14 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
           <rect x="13.5" y="3.5" width="7" height="7" rx="1.2" />
           <rect x="3.5" y="13.5" width="7" height="7" rx="1.2" />
           <rect x="13.5" y="13.5" width="7" height="7" rx="1.2" />
+        </svg>
+      )
+    case 'im':
+      return (
+        <svg {...attrs}>
+          <rect x="3.5" y="5" width="17" height="12" rx="2.5" />
+          <path d="M8 12h1.2M12 12h1.2M15.8 12H17" />
+          <path d="m10.5 17-2 3h7l-2-3" />
         </svg>
       )
     case 'monitor':
@@ -100,6 +109,7 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
 const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }> = [
   { key: 'ai', icon: 'ai', label: 'AI' },
   { key: 'skills', icon: 'skills', label: '技能' },
+  { key: 'im', icon: 'im', label: 'IM' },
   { key: 'monitor', icon: 'monitor', label: '监控' },
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
@@ -270,6 +280,11 @@ function App(): React.JSX.Element {
             {page === 'skills' && (
               <div className="app-page">
                 <SkillsPage />
+              </div>
+            )}
+            {page === 'im' && (
+              <div className="app-page">
+                <ImPage />
               </div>
             )}
             {page === 'monitor' && (

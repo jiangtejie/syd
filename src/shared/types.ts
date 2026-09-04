@@ -590,3 +590,26 @@ export interface SkillInstallInfo {
   capabilities: string[]
   hash: string
 }
+
+// ── IM 渠道(飞书机器人一期) ──
+
+export interface ImChannelAccount {
+  id: number
+  channel: 'feishu'
+  name: string
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+  /** 实时连接状态(查询时由主进程填充) */
+  status?: 'connected' | 'connecting' | 'stopped' | 'error'
+  statusText?: string
+}
+
+export interface ImChannelAccountInput {
+  id?: number
+  channel: 'feishu'
+  name: string
+  appId: string
+  appSecret: string
+  enabled?: boolean
+}

@@ -25,6 +25,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@heroui/react": "^3.2.4",
     "@heroui/styles": "^3.2.4",
+    "@larksuiteoapi/node-sdk": "^1.73.3",
     "better-sqlite3-multiple-ciphers": "^13.0.3",
     "echarts": "^6.1.0",
     "framer-motion": "^13.2.0",

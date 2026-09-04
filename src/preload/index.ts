@@ -296,6 +296,16 @@ const api = {
       toggle: (id: number, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:skill:toggle', id, enabled)
     },
+    im: {
+      list: (): Promise<{ ok: boolean; accounts?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:im:list'),
+      save: (input: unknown): Promise<{ ok: boolean; id?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:im:save', input),
+      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:im:remove', id),
+      toggle: (id: number, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:im:toggle', id, enabled)
+    },
     export: {
       chat: (
         wxid: string,

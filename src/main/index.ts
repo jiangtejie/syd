@@ -37,6 +37,7 @@ import { registerMcpHandlers } from './ipc/mcpHandlers'
 import { registerCustomToolHandlers } from './ipc/customToolHandlers'
 import { registerMemoryHandlers } from './ipc/memoryHandlers'
 import { registerSkillHandlers } from './ipc/skillsHandlers'
+import { registerImHandlers, bootImAccounts, stopAllIm } from './ipc/imHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
 import { stopAll as stopIssueScheduler } from './services/feedback/scheduler'
@@ -315,8 +316,12 @@ if (!app.requestSingleInstanceLock()) {
     registerCustomToolHandlers()
     registerMemoryHandlers()
     registerSkillHandlers()
+    registerImHandlers()
     registerExportHandlers()
     registerMediaProtocol()
+
+    // IM 渠道(飞书等):恢复上次启用状态的账号连接
+    void bootImAccounts()
 
     // 微信库变更 → 新消息提醒（节流 + 聚焦抑制）
     setOnDbChangedNotify(notifyNewMessage)
@@ -351,5 +356,6 @@ app.on('before-quit', () => {
   stopAllWatches()
   stopIssueScheduler()
   flushMcpCache()
+  stopAllIm()
   stopSending()
 })

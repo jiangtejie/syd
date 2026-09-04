@@ -224,6 +224,26 @@ const TABLES: string[] = [
     enabled INTEGER NOT NULL DEFAULT 1,
     installed_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
+  )`,
+  // IM 渠道账号(飞书机器人等;config 含 appId/secret,secret 以 safeStorage enc1 密文落库)
+  `CREATE TABLE IF NOT EXISTS im_channel_account (
+    id INTEGER PRIMARY KEY,
+    channel TEXT NOT NULL DEFAULT 'feishu',
+    name TEXT NOT NULL,
+    config TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  // IM 外部聊天 → 本地 AI 会话映射(群/私聊各自独立上下文)
+  `CREATE TABLE IF NOT EXISTS im_chat_map (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL,
+    external_chat_id TEXT NOT NULL,
+    session_id INTEGER NOT NULL,
+    external_name TEXT DEFAULT '',
+    created_at INTEGER NOT NULL,
+    UNIQUE (account_id, external_chat_id)
   )`
 ]
 

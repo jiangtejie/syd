@@ -29,7 +29,9 @@ import type {
   AgentMemoryItem,
   AgentMemoryInput,
   SkillPackageItem,
-  SkillInstallInfo
+  SkillInstallInfo,
+  ImChannelAccount,
+  ImChannelAccountInput
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -275,6 +277,14 @@ declare global {
           list: () => Promise<Result<{ skills?: SkillPackageItem[] }>>
           inspect: (dir: string) => Promise<Result<{ info?: SkillInstallInfo }>>
           install: (dir: string) => Promise<{ ok: boolean; error?: string }>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+          toggle: (id: number, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+        }
+        im: {
+          list: () => Promise<Result<{ accounts?: ImChannelAccount[] }>>
+          save: (
+            input: ImChannelAccountInput
+          ) => Promise<{ ok: boolean; id?: number; error?: string }>
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
           toggle: (id: number, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
         }

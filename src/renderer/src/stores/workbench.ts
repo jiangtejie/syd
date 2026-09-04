@@ -22,7 +22,7 @@ export type DataSource = 'wx' | 'empty'
 
 /** 工作台页面（应用外壳导航） */
 export type WorkbenchPage =
-  'ai' | 'skills' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'settings' | 'export'
+  'ai' | 'skills' | 'im' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'settings' | 'export'
 
 interface WorkbenchState {
   /** 当前页面 */

@@ -1,0 +1,29 @@
+/* ══════════ IM 渠道页(飞书机器人一期) ══════════ */
+
+.im-page {
+  max-width: 1260px;
+}
+
+.im-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.im-guide {
+  font-size: 12px;
+  color: var(--text-3);
+  background: var(--bg-hover);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  line-height: 1.8;
+  margin-bottom: 14px;
+}
+
+.im-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
