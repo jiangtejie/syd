@@ -603,6 +603,8 @@ export interface ImChannelAccount {
   /** 实时连接状态(查询时由主进程填充) */
   status?: 'connected' | 'connecting' | 'stopped' | 'error'
   statusText?: string
+  /** 回复内容是否带账号标识前缀(【账号名称】) */
+  replyTag?: boolean
 }
 
 export interface ImChannelAccountInput {
@@ -612,4 +614,6 @@ export interface ImChannelAccountInput {
   appId: string
   appSecret: string
   enabled?: boolean
+  /** 回复内容是否带账号标识前缀(【账号名称】),缺省按开启处理 */
+  replyTag?: boolean
 }
