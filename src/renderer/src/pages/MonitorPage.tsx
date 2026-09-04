@@ -325,6 +325,36 @@ function MonitorPage(): React.JSX.Element {
     setDetailLoading(false)
   }
 
+  // 默认选中第一条(正式待办列表第一行;用户已选择或改动过筛选时不打扰)
+  useEffect(() => {
+    if (active || loading || statusFilter !== 'open') return
+    if (
+      keyword.trim() ||
+      typeFilter !== 'all' ||
+      groupFilter ||
+      ownerFilter ||
+      sevFilter !== 'all'
+    ) {
+      return
+    }
+    const first = formalIssues.find((i) => i.status === 'open')
+    if (!first) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面默认选中第一条并展开详情(全仓同款模式)
+    void openDetail(first)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    issues,
+    formalIssues,
+    loading,
+    active,
+    statusFilter,
+    typeFilter,
+    groupFilter,
+    ownerFilter,
+    sevFilter,
+    keyword
+  ])
+
   // 跟进人展示名：成员备注 label 优先，其次微信联系人备注/昵称，最后 username
   const ownerName = (username: string): string => {
     if (!username) return ''
