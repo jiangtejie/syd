@@ -28,6 +28,26 @@ const COMPRESS_THRESHOLD_ROWS = 24
 const COMPRESS_THRESHOLD_CHARS = 36_000
 /** 推理过程(思考内容)实时上屏上限:超限后不再推送/落库,避免消息体过大 */
 const REASON_CAP = 6000
+/** 工具调用参数/结果推送到渲染端的上限(渲染端可折叠查看,截断防刷屏) */
+const TOOL_IO_CAP = 4000
+
+/** 工具参数/结果 → 可推送文本(≤TOOL_IO_CAP,带截断标记) */
+function clipToolIO(v: unknown): { text: string; truncated: boolean } {
+  let text: string
+  if (v === null || v === undefined) {
+    text = ''
+  } else if (typeof v === 'string') {
+    text = v.trim()
+  } else {
+    try {
+      text = JSON.stringify(v, null, 2)
+    } catch {
+      text = String(v)
+    }
+  }
+  if (text.length <= TOOL_IO_CAP) return { text, truncated: false }
+  return { text: `${text.slice(0, TOOL_IO_CAP)}\n…(已截断,原 ${text.length} 字)`, truncated: true }
+}
 
 /** 剔除控制字符/零宽字符,避免干扰 markdown 解析与复制 */
 function cleanModelText(s: string): string {
@@ -166,6 +186,8 @@ export async function sendWorkbenchMessage(
     emitWorkbenchEvent(sessionId, { type: 'status', text: '生成中' })
     let content = ''
     let reasoning = ''
+    let reasonStartedAt = 0
+    let reasonEndedAt = 0
     let usageIn = 0
     let usageOut = 0
     const result = streamText({
@@ -187,6 +209,9 @@ export async function sendWorkbenchMessage(
         // 思考型模型(reasoner)的推理过程:实时推送,收尾随 meta.reasoning 落库
         const t = cleanModelText((part as { text?: string }).text ?? '')
         if (t) {
+          const now = Date.now()
+          if (reasonStartedAt === 0) reasonStartedAt = now
+          reasonEndedAt = now
           const room = REASON_CAP - reasoning.length
           if (room > 0) {
             const chunk = room >= t.length ? t : t.slice(0, room)
@@ -195,33 +220,31 @@ export async function sendWorkbenchMessage(
           }
         }
       } else if (part.type === 'tool-call') {
+        const io = clipToolIO((part as { input?: unknown }).input)
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
           tool: part.toolName,
           toolStatus: 'start',
-          args: JSON.stringify((part as { input?: unknown }).input ?? {}).slice(0, 300)
+          args: io.text
         })
       } else if (part.type === 'tool-result') {
-        const output = (part as { output?: unknown }).output
-        const clip =
-          typeof output === 'string'
-            ? output.slice(0, 500)
-            : JSON.stringify(output ?? '').slice(0, 500)
+        const io = clipToolIO((part as { output?: unknown }).output)
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
           tool: part.toolName,
           toolStatus: 'done',
-          resultClip: clip
+          output: io.text,
+          outTrunc: io.truncated
         })
       } else if (part.type === 'tool-error') {
+        const msg =
+          part.error instanceof Error ? part.error.message : String(part.error ?? '').trim()
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
           tool: part.toolName,
           toolStatus: 'fail',
-          resultClip:
-            part.error instanceof Error
-              ? part.error.message.slice(0, 500)
-              : String(part.error).slice(0, 500)
+          output: msg.slice(0, TOOL_IO_CAP) || '工具执行失败(无详情)',
+          outTrunc: msg.length > TOOL_IO_CAP
         })
       } else if (part.type === 'error') {
         throw part.error
@@ -244,7 +267,12 @@ export async function sendWorkbenchMessage(
     }
     const meta: Record<string, unknown> = {}
     if (usageIn || usageOut) meta.tokens = { input: usageIn, output: usageOut }
-    if (reasoning.trim()) meta.reasoning = reasoning.trim()
+    if (reasoning.trim()) {
+      meta.reasoning = reasoning.trim()
+      if (reasonStartedAt > 0) {
+        meta.reasoningMs = Math.max(0, (reasonEndedAt || Date.now()) - reasonStartedAt)
+      }
+    }
     const messageId = appendChatMessage(sessionId, 'assistant', 'text', trimmed, meta)
     touchChat(sessionId)
     emitWorkbenchEvent(sessionId, { type: 'done', messageId })

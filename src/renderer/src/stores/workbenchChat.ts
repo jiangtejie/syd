@@ -21,8 +21,11 @@ export interface WbToolCard {
   id: string
   name: string
   status: 'start' | 'pending' | 'done' | 'fail'
+  /** 工具调用参数(JSON,引擎已截断至 4k) */
   args?: string
-  result?: string
+  /** 工具结果(引擎已截断至 4k,展开查看) */
+  output?: string
+  outTrunc?: boolean
 }
 
 export interface WbApprovalCard {
@@ -436,6 +439,8 @@ function handleWbEvent(raw: unknown): void {
     tool?: string
     toolStatus?: string
     args?: string
+    output?: string
+    outTrunc?: boolean
     resultClip?: string
     runId?: string
     approvalText?: string
@@ -506,7 +511,12 @@ function handleWbEvent(raw: unknown): void {
       useWorkbenchChatStore.setState({
         toolCards: cards.map((c) =>
           c.name === e.tool && c.status === 'start'
-            ? { ...c, status: e.toolStatus === 'fail' ? 'fail' : 'done', result: e.resultClip }
+            ? {
+                ...c,
+                status: e.toolStatus === 'fail' ? 'fail' : 'done',
+                output: e.output ?? e.resultClip,
+                outTrunc: e.toolStatus === 'fail' ? undefined : e.outTrunc
+              }
             : c
         )
       })

@@ -62,10 +62,102 @@ const MD_COMPONENTS = {
   img: MdImg
 }
 
+/** 复制到剪贴板(navigator.clipboard 失败时回退 execCommand) */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    /* fallthrough */
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    return ok
+  } catch {
+    return false
+  }
+}
+
+/** 耗时(ms)→ 人类可读(秒/分) */
+function fmtDur(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s} 秒`
+  return `${Math.floor(s / 60)} 分 ${s % 60} 秒`
+}
+
+/**
+ * 常用业务提问预设:点击把规范句式填入输入框(工作台按绑定账号实际数据作答)。
+ * 模板与 SKILL.md 口径解耦,只负责把问题问清楚。
+ */
+const WB_PRESETS: Array<{ label: string; text: string; hint: string }> = [
+  {
+    label: '今日待跟进',
+    text: '列出今日需要跟进的待办：群问题中未闭环的、跟进超时的、以及我承诺过要回复的事项。按紧急程度排序，并给出每条建议动作。',
+    hint: '今日待跟进清单'
+  },
+  {
+    label: '近 7 天问题汇总',
+    text: '汇总近 7 天各群反馈的问题：按群与类型归类，标注仍待处理的条数与严重程度，指出 2-3 个最值得优先处理的。',
+    hint: '近 7 天群问题汇总'
+  },
+  {
+    label: '群经营复盘',
+    text: '对「当前打开的群」做一份近期复盘：主要讨论主题、客户诉求与情绪变化、已解决与未闭环事项、可复用的经验与下一步动作。',
+    hint: '单群经营复盘'
+  },
+  {
+    label: '口径核对',
+    text: '请先说明你将依据的 SKILL.md 业务口径，然后核对以下问题是否与口径一致：(请补充要核对的具体说法)。',
+    hint: '按口径核对话术'
+  },
+  {
+    label: '写周报素材',
+    text: '基于近 7 天工作数据整理周报素材：各群问题处置情况、重点关注事件、自动/人工介入的数据表现、下周建议安排，分条输出便于直接引用。',
+    hint: '周报素材整理'
+  },
+  {
+    label: '下一步建议',
+    text: '结合本会话前文，先复述我当前的目标，再给 3-5 条可执行的下一步建议，标注每条的优先级与预计耗时。',
+    hint: '下一步行动建议'
+  }
+]
+
+/** 等待态计时(思考/等待首字期间):active 变 true 起计时,false 复位 */
+function useWaitElapsed(active: boolean): number {
+  const [sec, setSec] = useState(0)
+  const startRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!active) {
+      startRef.current = null
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 等待结束复位秒数(全仓同款模式)
+      setSec(0)
+      return
+    }
+    if (startRef.current === null) startRef.current = Date.now()
+    const tick = (): void => {
+      if (startRef.current !== null) {
+        setSec(Math.floor((Date.now() - startRef.current) / 1000))
+      }
+    }
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [active])
+  return sec
+}
+
 function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   const isUser = msg.role === 'user'
   const isError = msg.kind === 'error'
   const [reasonOpen, setReasonOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
   const content = useMemo(() => cleanStreamText(msg.content), [msg.content])
   const meta = useMemo(() => {
     if (!msg.meta) return null
@@ -78,11 +170,32 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   }, [msg.meta])
   const reasoningText =
     !isUser && !isError && typeof meta?.reasoning === 'string' ? meta.reasoning : ''
+  const reasoningMs =
+    !isUser && !isError && typeof meta?.reasoningMs === 'number' ? meta.reasoningMs : undefined
   const t = meta?.tokens as { input?: number; output?: number } | undefined
   const hasTokens = !!t && (typeof t.input === 'number' || typeof t.output === 'number')
+
+  const onCopy = (): void => {
+    if (copied) return
+    void copyToClipboard(content).then((ok) => {
+      if (ok) {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1600)
+      }
+    })
+  }
   return (
     <div className={`wb-row${isUser ? ' is-user' : ''}${isError ? ' is-error' : ''}`}>
       <div className="wb-bubble">
+        <button
+          type="button"
+          className={`wb-bubble-copy${copied ? ' is-copied' : ''}`}
+          title={copied ? '已复制' : '复制内容'}
+          aria-label={copied ? '已复制' : '复制内容'}
+          onClick={onCopy}
+        >
+          {copied ? '✓' : '⧉'}
+        </button>
         {isError ? (
           <span className="wb-error-text">{content}</span>
         ) : isUser ? (
@@ -99,6 +212,7 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
                 >
                   <span className={`wb-reason-caret${reasonOpen ? ' is-open' : ''}`}>▸</span>
                   思考过程 · {reasoningText.length} 字
+                  {reasoningMs !== undefined ? ` · ${fmtDur(reasoningMs)}` : ''}
                 </button>
                 {reasonOpen && <pre className="wb-reason-static">{reasoningText}</pre>}
               </div>
@@ -140,16 +254,48 @@ function WbToolCards(): React.JSX.Element | null {
 }
 
 function WbToolCard({ c }: { c: WbToolCard }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const openRef = useRef(false)
+  // 开始执行自动展开(看它要做什么);结束后自动收起,用户手动展开过则保持
+  useEffect(() => {
+    if (c.status === 'start') {
+      openRef.current = false
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 工具状态迁移自动开合(全仓同款模式)
+      setOpen(true)
+    } else if (c.status === 'done' || c.status === 'fail') {
+      if (!openRef.current) setOpen(false)
+    }
+  }, [c.status])
+  const toggle = (): void => {
+    openRef.current = !open
+    setOpen(!open)
+  }
+  const statusIcon = c.status === 'start' ? '⚙' : c.status === 'fail' ? '✗' : '✓'
   return (
     <div className={`wb-toolcard is-${c.status}`}>
-      <span className="wb-toolcard-name">
-        {c.status === 'start' && '⚙ '}
-        {c.status === 'done' && '✓ '}
-        {c.status === 'fail' && '✗ '}
-        {c.name}
-      </span>
-      {c.args && <code className="wb-toolcard-args">{c.args}</code>}
-      {c.result && <div className="wb-toolcard-result">{c.result}</div>}
+      <button type="button" className="wb-toolcard-head" onClick={toggle} aria-expanded={open}>
+        <span className="wb-toolcard-name">
+          {statusIcon} {c.name}
+          {c.status === 'start' && <em className="wb-toolcard-state">执行中</em>}
+        </span>
+        <span className={`wb-toolcard-caret${open ? ' is-open' : ''}`}>▾</span>
+      </button>
+      {open && (
+        <div className="wb-toolcard-detail">
+          {c.args && (
+            <div className="wb-toolcard-sec">
+              <div className="wb-toolcard-detail-title">参数</div>
+              <pre className="wb-toolcard-detail-pre">{c.args}</pre>
+            </div>
+          )}
+          {c.output !== undefined && (
+            <div className="wb-toolcard-sec">
+              <div className="wb-toolcard-detail-title">结果{c.outTrunc ? '（已截断）' : ''}</div>
+              <pre className="wb-toolcard-detail-pre">{c.output}</pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -160,14 +306,22 @@ function WbApprovals(): React.JSX.Element | null {
   if (approvals.length === 0) return null
   return (
     <div className="wb-approvals">
-      <div className="wb-approvals-tip">此操作需要你确认后才继续执行</div>
       {approvals.map((a) => (
         <div key={a.runId} className="wb-approval">
-          <div className="wb-approval-title">请求执行工具:{a.tool}</div>
-          {a.args && <code className="wb-toolcard-args">{a.args}</code>}
+          <div className="wb-approval-main">
+            <span className="wb-approval-title">
+              请求执行工具:{a.tool}
+              {a.approvalText && <em className="wb-approval-why">{a.approvalText}</em>}
+            </span>
+            {a.args && (
+              <code className="wb-toolcard-args" title={a.args}>
+                {a.args}
+              </code>
+            )}
+          </div>
           <div className="wb-approval-ops">
             <button type="button" className="st-btn sm" onClick={() => void approve(a.runId, true)}>
-              允许执行
+              允许
             </button>
             <button
               type="button"
@@ -198,6 +352,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const sessNew = useWorkbenchChatStore((s) => s.sessNew)
   const sessErr = useWorkbenchChatStore((s) => s.sessErr)
   const activeBusy = activeId !== null && !!busyIds[activeId]
+  // 等待首字/思考耗时(跨「思考中」与「推理流」连续计时)
+  const waitSec = useWaitElapsed(activeBusy && !streamingBuf && activeId !== null)
   const [stick, setStick] = useState(true)
   const stickRef = useRef(true)
 
@@ -353,6 +509,15 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }
 
+  /** 常用提问预设:把规范句式填入输入框并聚焦 */
+  const applyPreset = (text: string): void => {
+    setDraft(text)
+    requestAnimationFrame(() => {
+      growTextarea()
+      taRef.current?.focus()
+    })
+  }
+
   return (
     <div className="wb-page">
       <aside className="wb-side">
@@ -496,15 +661,16 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             </div>
           )}
           <WbToolCards />
-          <WbApprovals />
-          {/* 等待首字:思考动画(推理流已开始或有审批卡片时不重复提示) */}
+          {/* 等待首字:思考动画(推理流已开始或有审批时不再重复提示) */}
           {activeBusy && !streamingBuf && !reasoningBuf && approvals.length === 0 && (
             <div className="wb-row">
               <div className="wb-bubble wb-thinking">
                 <span className="wb-thinking-dot" />
                 <span className="wb-thinking-dot" />
                 <span className="wb-thinking-dot" />
-                <span className="wb-thinking-text">正在思考</span>
+                <span className="wb-thinking-text">
+                  正在思考{waitSec > 0 ? ` ${waitSec}s` : '…'}
+                </span>
               </div>
             </div>
           )}
@@ -512,7 +678,9 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           {reasoningBuf && (
             <div className="wb-row">
               <div className="wb-bubble wb-reason-live">
-                <div className="wb-reason-label">💭 思考过程</div>
+                <div className="wb-reason-label">
+                  💭 思考过程{waitSec > 0 ? ` · ${waitSec}s` : ''}
+                </div>
                 <pre className="wb-reason-text">{reasoningBuf}</pre>
               </div>
             </div>
@@ -535,9 +703,30 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           )}
         </div>
 
+        {/* 审批统一条:固定在输入区上方,不再随消息流滚动/埋没 */}
+        <WbApprovals />
+
         {error && <div className="wb-error">✗ {error}</div>}
 
         <div className="wb-composer">
+          {activeId !== null && (
+            <div className="wb-presets">
+              <span className="wb-presets-tip">常用提问</span>
+              <div className="wb-presets-list">
+                {WB_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    className="wb-preset-btn"
+                    title={p.hint}
+                    onClick={() => applyPreset(p.text)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <textarea
             ref={taRef}
             className="wb-textarea"

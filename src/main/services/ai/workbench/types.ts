@@ -10,9 +10,12 @@ export interface WbEvent {
   token?: string
   tool?: string
   toolStatus?: WbToolStatus
-  /** 工具参数 JSON 摘要 */
+  /** 工具调用参数(JSON 摘要,≤4000 字符) */
   args?: string
-  /** 工具结果截断 */
+  /** 工具结果(截断至 ≤4000 字符,outTrunc=true 表示有截断) */
+  output?: string
+  outTrunc?: boolean
+  /** 工具结果截断(旧字段,保留兼容) */
   resultClip?: string
   /** 审批 runId(approval 事件携带) */
   runId?: string
