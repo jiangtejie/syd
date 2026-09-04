@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMsgItem } from '../../../shared/types'
 import {
+  ensureWorkbenchEvents,
   useWorkbenchChatStore,
-  subscribeWorkbenchEvents,
   type WbToolCard
 } from '../stores/workbenchChat'
 import { useWorkbenchStore } from '../stores/workbench'
@@ -14,9 +14,11 @@ import './workbench-chat.css'
 /**
  * AI 工作台页:让 AI 调用产品原生能力(业务查询/软件状态)+ SKILL.md 业务口径。
  * 引擎基于 Vercel AI SDK(主进程),工具只读;写/危险操作会经确认桥弹窗(v2 启用)。
+ * 交互优化:历史气泡 memo(流式时不重复解析 Markdown)、delta 按帧渲染、
+ * 发送后乐观回显、跟随滚动(用户上翻时不抢滚)、思考动画、中文输入法回车不误发。
  */
 
-function WbMessage({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
+function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   const isUser = msg.role === 'user'
   const isError = msg.kind === 'error'
   return (
@@ -33,6 +35,13 @@ function WbMessage({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
     </div>
   )
 }
+
+/** memo:流式期间历史消息不重渲染(ReactMarkdown 解析开销大) */
+const WbMessage = memo(WbMessageInner, (prev, next) => {
+  const a = prev.msg
+  const b = next.msg
+  return a.id === b.id && a.role === b.role && a.kind === b.kind && a.content === b.content
+})
 
 function WbToolCards(): React.JSX.Element | null {
   const cards = useWorkbenchChatStore((s) => s.toolCards)
@@ -67,6 +76,7 @@ function WbApprovals(): React.JSX.Element | null {
   if (approvals.length === 0) return null
   return (
     <div className="wb-approvals">
+      <div className="wb-approvals-tip">此操作需要你确认后才继续执行</div>
       {approvals.map((a) => (
         <div key={a.runId} className="wb-approval">
           <div className="wb-approval-title">请求执行工具:{a.tool}</div>
@@ -94,10 +104,14 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const connected = !!wxid && wxid !== 'wxid_demo'
   const [draft, setDraft] = useState('')
   const bodyRef = useRef<HTMLDivElement | null>(null)
-  const lastLenRef = useRef(0)
+  const taRef = useRef<HTMLTextAreaElement | null>(null)
   const store = useWorkbenchChatStore()
-  const { chats, activeId, messages, loading, busyIds, streamingBuf, error } = store
+  const { chats, activeId, messages, loading, busyIds, streamingBuf, error, pendingUser } = store
+  const toolCards = useWorkbenchChatStore((s) => s.toolCards)
+  const approvals = useWorkbenchChatStore((s) => s.approvals)
   const activeBusy = activeId !== null && !!busyIds[activeId]
+  const [stick, setStick] = useState(true)
+  const stickRef = useRef(true)
 
   /** 应用内输入弹窗（Electron 不支持 window.prompt：不弹窗且返回 undefined） */
   interface PromptState {
@@ -135,18 +149,42 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const accountKey = connected ? wxid : ''
   useEffect(() => {
     void store.init(accountKey)
-    const off = subscribeWorkbenchEvents()
-    return off
+    ensureWorkbenchEvents()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 账号切换时重建工作台会话(全仓同款模式)
   }, [accountKey])
 
+  // 切会话:先滚到底并进入「跟随」态(消息异步加载,加载完成后由下方 effect 再滚一次)
+  useEffect(() => {
+    stickRef.current = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话切换时同步复位跟随态(全仓同款模式)
+    setStick(true)
+    const el = bodyRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [activeId])
+
+  // 内容更新(流式/回显/工具卡/整轮刷新):仅在用户处于底部附近时跟随滚动
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
-    const total = messages.length + streamingBuf.length
-    if (total >= lastLenRef.current) el.scrollTop = el.scrollHeight
-    lastLenRef.current = total
-  }, [messages, streamingBuf])
+    if (stickRef.current) el.scrollTop = el.scrollHeight
+  }, [messages, streamingBuf, pendingUser, toolCards, approvals, loading])
+
+  const handleBodyScroll = (): void => {
+    const el = bodyRef.current
+    if (!el) return
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 90
+    if (near !== stickRef.current) {
+      stickRef.current = near
+      setStick(near)
+    }
+  }
+
+  const jumpToBottom = (): void => {
+    stickRef.current = true
+    setStick(true)
+    const el = bodyRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }
 
   const active = useMemo(
     () => (chats ?? []).find((c) => c.id === activeId) ?? null,
@@ -173,7 +211,23 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     const t = draft.trim()
     if (!t || !canSend) return
     setDraft('')
+    stickRef.current = true
+    setStick(true)
     void store.send(t)
+    // 按钮点击路径恢复输入焦点(回车路径焦点本就在输入框)
+    requestAnimationFrame(() => taRef.current?.focus())
+  }
+
+  /** 输入框随内容自动增高(上限 220px,由 CSS max-height 兜底) */
+  const growTextarea = (): void => {
+    const el = taRef.current
+    if (!el) return
+    if (!el.value) {
+      el.style.height = ''
+      return
+    }
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }
 
   return (
@@ -242,7 +296,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             <button
               type="button"
               className="st-btn ghost sm"
-              disabled={!activeId || messages.length === 0}
+              disabled={!activeId || messages.length === 0 || activeBusy}
               onClick={() => void store.retry()}
             >
               重试
@@ -258,7 +312,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             <button
               type="button"
               className="st-btn ghost danger sm"
-              disabled={!activeId || messages.length === 0}
+              disabled={!activeId || messages.length === 0 || activeBusy}
               onClick={() => {
                 if (window.confirm('清空当前会话的消息记录?')) void store.clear(activeId!)
               }}
@@ -268,7 +322,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="wb-body" ref={bodyRef}>
+        <div className="wb-body" ref={bodyRef} onScroll={handleBodyScroll}>
           {!activeId && (
             <div className="wb-welcome">
               <div className="wb-welcome-title">AI 工作台</div>
@@ -280,6 +334,14 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           )}
           {loading && <div className="wb-loading">加载中…</div>}
           {!loading && activeId !== null && messages.map((m) => <WbMessage key={m.id} msg={m} />)}
+          {/* 乐观回显:本轮用户消息(引擎已落库,整轮结束刷新后被正式列表替换) */}
+          {pendingUser && activeId === pendingUser.sid && (
+            <div className="wb-row is-user">
+              <div className="wb-bubble">
+                <div className="wb-plain">{pendingUser.text}</div>
+              </div>
+            </div>
+          )}
           {activeId !== null && !loading && messages.length === 0 && !activeBusy && (
             <div className="wb-loading">
               可以试试:「今天有哪些待处理问题?」「XX 客户最近聊了什么?」「导出范围有多大?」
@@ -287,7 +349,17 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           )}
           <WbToolCards />
           <WbApprovals />
-          {activeBusy && !streamingBuf && <div className="wb-loading">思考中…</div>}
+          {/* 等待首字:思考动画(有审批卡片时不重复提示) */}
+          {activeBusy && !streamingBuf && approvals.length === 0 && (
+            <div className="wb-row">
+              <div className="wb-bubble wb-thinking">
+                <span className="wb-thinking-dot" />
+                <span className="wb-thinking-dot" />
+                <span className="wb-thinking-dot" />
+                <span className="wb-thinking-text">正在思考</span>
+              </div>
+            </div>
+          )}
           {streamingBuf && (
             <div className="wb-row">
               <div className="wb-bubble">
@@ -296,20 +368,30 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               </div>
             </div>
           )}
+          {/* 用户上翻阅读时:悬浮「回到底部」胶囊 */}
+          {!stick && (
+            <button type="button" className="wb-jump" onClick={jumpToBottom}>
+              ↓ 最新
+            </button>
+          )}
         </div>
 
         {error && <div className="wb-error">✗ {error}</div>}
 
         <div className="wb-composer">
           <textarea
+            ref={taRef}
             className="wb-textarea"
             placeholder={activeId ? '输入问题…(Enter 发送,Shift+Enter 换行)' : '先新建一个会话'}
             value={draft}
             rows={1}
             disabled={!activeId}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value)
+              requestAnimationFrame(growTextarea)
+            }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 send()
               }

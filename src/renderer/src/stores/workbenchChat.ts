@@ -1,7 +1,14 @@
 import { create } from 'zustand'
 import type { ChatMsgItem, ChatSessionItem } from '../../../shared/types'
 
-/** AI 工作台前端 store(事件通道 ai:wb;会话复用 chat 体系,busy 按会话维度)。 */
+/**
+ * AI 工作台前端 store(事件通道 ai:wb;会话复用 chat 体系,busy 按会话维度)。
+ * 流畅性设计:
+ * - delta 事件按帧批量合并(zustand 每 token 一 set 会整页重渲染);
+ * - 事件订阅常驻(singleton):切页/切会话不断线,busy/回显不会卡死;
+ * - 发送后乐观回显用户消息(pendingUser),避免整轮结束才出现自己的消息;
+ * - load 带请求序号,防止慢响应覆盖后选的会话。
+ */
 
 export interface WbToolCard {
   id: string
@@ -30,6 +37,8 @@ interface WbState {
   toolCards: WbToolCard[]
   approvals: WbApprovalCard[]
   error: string | null
+  /** 乐观回显:引擎已落库但列表尚未刷新,先上屏的用户消息(仅当前轮) */
+  pendingUser: { sid: number; text: string } | null
 
   init: (wxid: string) => Promise<void>
   load: (id: number) => Promise<void>
@@ -47,6 +56,34 @@ interface WbState {
 
 const wbApi = window.api?.cs?.wb
 
+/** load 请求序号:慢响应不得覆盖后选的会话 */
+let loadSeq = 0
+
+/** delta 按帧批量(单路活动会话展示) */
+let deltaQueue: Array<{ sid: number; token: string }> = []
+let flushHandle: number | null = null
+function queueDelta(sid: number, token: string): void {
+  deltaQueue.push({ sid, token })
+  if (flushHandle !== null) return
+  const flush = (): void => {
+    flushHandle = null
+    const items = deltaQueue
+    deltaQueue = []
+    for (const it of items) {
+      const st = useWorkbenchChatStore.getState()
+      if (it.sid !== st.activeId) continue // 非活动会话的增量先丢弃,done 后整轮刷新兜底
+      if (st.pendingUser?.sid === it.sid) useWorkbenchChatStore.setState({ pendingUser: null })
+      useWorkbenchChatStore.setState({
+        streamingBuf: st.streamingBuf + it.token
+      })
+    }
+  }
+  flushHandle =
+    typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame(flush)
+      : (setTimeout(flush, 32) as unknown as number)
+}
+
 export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   wxid: '',
   chats: null,
@@ -58,10 +95,20 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   toolCards: [],
   approvals: [],
   error: null,
+  pendingUser: null,
 
   init: async (wxid) => {
-    set({ wxid: wxid || '', streamingBuf: '', toolCards: [], approvals: [], error: null })
-    const res = await wbApi?.listChats(wxid || '').catch(() => null)
+    const key = wxid || ''
+    set({
+      wxid: key,
+      streamingBuf: '',
+      toolCards: [],
+      approvals: [],
+      error: null,
+      pendingUser: null,
+      busyIds: {}
+    })
+    const res = await wbApi?.listChats(key).catch(() => null)
     if (res?.ok && res.chats) {
       const chats = res.chats as ChatSessionItem[]
       set({ chats })
@@ -74,7 +121,9 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   },
 
   load: async (id) => {
+    const seq = ++loadSeq
     const res = await wbApi?.messages(id).catch(() => null)
+    if (seq !== loadSeq) return // 期间已切换到别的会话,丢弃过期响应
     if (res?.ok && res.messages) {
       set({ messages: res.messages as ChatMsgItem[], loading: false })
     } else {
@@ -111,7 +160,11 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     const busyIds = { ...get().busyIds }
     delete busyIds[id]
     const next = (get().chats ?? []).filter((c) => c.id !== id)
-    set({ chats: next, busyIds })
+    set({
+      chats: next,
+      busyIds,
+      pendingUser: get().pendingUser?.sid === id ? null : get().pendingUser
+    })
     if (get().activeId === id) {
       if (next.length > 0) void get().select(next[0].id)
       else get().resetActive()
@@ -136,7 +189,8 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       toolCards: [],
       approvals: [],
       streamingBuf: '',
-      error: null
+      error: null,
+      pendingUser: null
     })
   },
 
@@ -145,32 +199,56 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     if (!activeId || busyIds[activeId]) return
     const t = text.trim()
     if (!t) return
+    const sid = activeId
     set({
-      busyIds: { ...busyIds, [activeId]: true },
+      busyIds: { ...busyIds, [sid]: true },
       streamingBuf: '',
       toolCards: [],
       approvals: [],
-      error: null
+      error: null,
+      pendingUser: { sid, text: t }
     })
-    const res = await wbApi?.send(activeId, wxid, t).catch(() => null)
-    if (res && !res.ok) {
-      set({ busyIds: { ...get().busyIds, [activeId]: false }, error: res.error ?? '发送失败' })
+    const res = await wbApi?.send(sid, wxid, t).catch(() => null)
+    // 引擎整轮结束才 resolve;期间失败已由 error 事件处理。此处兜底:忙碌未被事件清除时按失败收尾
+    if (res && !res.ok && get().busyIds[sid]) {
+      set({
+        busyIds: { ...get().busyIds, [sid]: false },
+        error: res.error ?? '发送失败',
+        pendingUser: get().pendingUser?.sid === sid ? null : get().pendingUser
+      })
+      if (get().activeId === sid) void get().load(sid)
     }
   },
 
   retry: async () => {
     const { activeId, wxid, busyIds } = get()
     if (!activeId || busyIds[activeId]) return
+    const sid = activeId
+    // 引擎重试前会弹出尾部 assistant 行:先同步裁剪本地列表,避免旧气泡残留
+    const msgs = get().messages
+    let keep = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        keep = i
+        break
+      }
+    }
     set({
-      busyIds: { ...busyIds, [activeId]: true },
+      busyIds: { ...busyIds, [sid]: true },
       streamingBuf: '',
       toolCards: [],
       approvals: [],
-      error: null
+      error: null,
+      messages: keep >= 0 ? msgs.slice(0, keep + 1) : msgs,
+      pendingUser: get().pendingUser?.sid === sid ? null : get().pendingUser
     })
-    const res = await wbApi?.retry(activeId, wxid).catch(() => null)
-    if (res && !res.ok) {
-      set({ busyIds: { ...get().busyIds, [activeId]: false }, error: res.error ?? '重试失败' })
+    const res = await wbApi?.retry(sid, wxid).catch(() => null)
+    if (res && !res.ok && get().busyIds[sid]) {
+      set({
+        busyIds: { ...get().busyIds, [sid]: false },
+        error: res.error ?? '重试失败'
+      })
+      if (get().activeId === sid) void get().load(sid)
     }
   },
 
@@ -178,7 +256,20 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     const { activeId } = get()
     if (!activeId) return
     await wbApi?.stop(activeId).catch(() => null)
-    set({ busyIds: { ...get().busyIds, [activeId]: false } })
+    // busy 由事件「已停止」复位;若事件丢失,此处不强行复位(避免与引擎仍运行冲突),
+    // 轮询性兜底:2s 后仍未收到事件再复位
+    const sid = activeId
+    window.setTimeout(() => {
+      const st = useWorkbenchChatStore.getState()
+      if (st.busyIds[sid]) {
+        useWorkbenchChatStore.setState({
+          busyIds: { ...st.busyIds, [sid]: false },
+          streamingBuf: '',
+          pendingUser: st.pendingUser?.sid === sid ? null : st.pendingUser
+        })
+        if (st.activeId === sid) void st.load(sid)
+      }
+    }, 2000)
   },
 
   approve: async (runId, ok) => {
@@ -187,75 +278,89 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   }
 }))
 
-/** 事件接线(页面挂载时调用一次);busy 按事件所属会话复位,不受当前选中会话影响 */
-export function subscribeWorkbenchEvents(): () => void {
-  const off = wbApi?.onEvent?.((raw) => {
-    const e = raw as {
-      sessionId?: number
-      type?: string
-      token?: string
-      text?: string
-      tool?: string
-      toolStatus?: string
-      args?: string
-      resultClip?: string
-      runId?: string
-      approvalText?: string
-      messageId?: number
+/** 事件回调(单实例):按会话复位 busy/回显;活动会话才更新屏幕内容 */
+function handleWbEvent(raw: unknown): void {
+  const e = raw as {
+    sessionId?: number
+    type?: string
+    token?: string
+    text?: string
+    tool?: string
+    toolStatus?: string
+    args?: string
+    resultClip?: string
+    runId?: string
+    approvalText?: string
+    messageId?: number
+  }
+  const sid = e.sessionId
+  if (sid === undefined) return
+  const st = useWorkbenchChatStore.getState()
+  const isActive = st.activeId === sid
+  const clearPending = (): void => {
+    const cur = useWorkbenchChatStore.getState().pendingUser
+    if (cur?.sid === sid) useWorkbenchChatStore.setState({ pendingUser: null })
+  }
+  const finishTurn = (): void => {
+    clearPending()
+    const cur = useWorkbenchChatStore.getState()
+    if (cur.busyIds[sid]) {
+      useWorkbenchChatStore.setState({ busyIds: { ...cur.busyIds, [sid]: false } })
     }
-    const sid = e.sessionId
-    if (sid === undefined) return
-    const st = useWorkbenchChatStore.getState()
-    const isActive = st.activeId === sid
-    const clearBusy = (): void => {
-      useWorkbenchChatStore.setState({ busyIds: { ...st.busyIds, [sid]: false } })
+    if (cur.activeId === sid) {
+      useWorkbenchChatStore.setState({ streamingBuf: '' })
+      void useWorkbenchChatStore.getState().load(sid)
     }
-    if (e.type === 'delta' && e.token && isActive) {
-      useWorkbenchChatStore.setState({ streamingBuf: st.streamingBuf + e.token })
-    } else if (e.type === 'done') {
-      clearBusy()
-      if (isActive) {
-        useWorkbenchChatStore.setState({ streamingBuf: '' })
-        void useWorkbenchChatStore.getState().load(sid)
-      }
-    } else if (e.type === 'error') {
-      clearBusy()
-      if (isActive) {
-        useWorkbenchChatStore.setState({ streamingBuf: '', error: e.text ?? '出错了' })
-        void useWorkbenchChatStore.getState().load(sid)
-      }
-    } else if (e.type === 'status' && e.text === '已停止') {
-      clearBusy()
-      if (isActive) {
-        useWorkbenchChatStore.setState({ streamingBuf: '' })
-        void useWorkbenchChatStore.getState().load(sid)
-      }
-    } else if (e.type === 'approval' && e.runId && isActive) {
+  }
+  if (e.type === 'delta' && e.token && isActive) {
+    queueDelta(sid, e.token)
+  } else if (e.type === 'done') {
+    finishTurn()
+  } else if (e.type === 'error') {
+    finishTurn()
+    if (isActive) {
+      useWorkbenchChatStore.setState({ error: e.text ?? '出错了' })
+    }
+  } else if (e.type === 'status' && e.text === '已停止') {
+    finishTurn()
+  } else if (e.type === 'approval' && e.runId && isActive) {
+    useWorkbenchChatStore.setState({
+      approvals: [
+        ...useWorkbenchChatStore.getState().approvals.filter((a) => a.runId !== e.runId),
+        { runId: e.runId, tool: e.tool ?? '', args: e.args, approvalText: e.approvalText }
+      ]
+    })
+  } else if (e.type === 'tool' && e.tool && isActive) {
+    const cards = useWorkbenchChatStore.getState().toolCards
+    if (e.toolStatus === 'start') {
       useWorkbenchChatStore.setState({
-        approvals: [
-          ...st.approvals.filter((a) => a.runId !== e.runId),
-          { runId: e.runId, tool: e.tool ?? '', args: e.args, approvalText: e.approvalText }
+        toolCards: [
+          ...cards,
+          { id: `${e.tool}:${Date.now()}`, name: e.tool, status: 'start', args: e.args }
         ]
       })
-    } else if (e.type === 'tool' && e.tool && isActive) {
-      const cards = st.toolCards
-      if (e.toolStatus === 'start') {
-        useWorkbenchChatStore.setState({
-          toolCards: [
-            ...cards,
-            { id: `${e.tool}:${cards.length}`, name: e.tool, status: 'start', args: e.args }
-          ]
-        })
-      } else {
-        useWorkbenchChatStore.setState({
-          toolCards: cards.map((c) =>
-            c.name === e.tool && c.status === 'start'
-              ? { ...c, status: e.toolStatus === 'fail' ? 'fail' : 'done', result: e.resultClip }
-              : c
-          )
-        })
-      }
+    } else {
+      useWorkbenchChatStore.setState({
+        toolCards: cards.map((c) =>
+          c.name === e.tool && c.status === 'start'
+            ? { ...c, status: e.toolStatus === 'fail' ? 'fail' : 'done', result: e.resultClip }
+            : c
+        )
+      })
     }
-  })
-  return off ?? ((): void => {})
+  }
+}
+
+let eventsBound = false
+/** 事件订阅常驻:页面挂载一次后不随切页摘除,避免 busy/回显状态卡死 */
+export function ensureWorkbenchEvents(): void {
+  if (eventsBound) return
+  eventsBound = true
+  wbApi?.onEvent?.(handleWbEvent)
+}
+
+/** 兼容旧调用(页面卸载不再摘除) */
+export function subscribeWorkbenchEvents(): () => void {
+  ensureWorkbenchEvents()
+  return (): void => {}
 }
