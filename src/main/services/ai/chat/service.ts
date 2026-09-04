@@ -623,6 +623,7 @@ export async function sendChatMessage(input: {
 }): Promise<SendChatResult> {
   const text = (input.text || '').trim()
   if (!text) return { ok: false, error: '消息为空' }
+  if (!(input.wxid || '').trim()) return { ok: false, error: '缺少账号标识' }
   let sessionId = input.chatId
   if (!sessionId) {
     sessionId = createChat(input.wxid, text.slice(0, 24) || '新对话', input.agentId)
@@ -641,6 +642,13 @@ export async function sendChatMessage(input: {
 export function stopChat(wxid: string, chatId: number): void {
   const handle = running.get(runKeyOf(wxid, chatId))
   if (handle?.active) handle.controller.abort()
+}
+
+/** 按会话 id 中止其运行(删除/清空会话前调用,防孤儿任务继续写已删会话) */
+export function stopChatById(chatId: number): void {
+  for (const handle of running.values()) {
+    if (handle.chatId === chatId && handle.active) handle.controller.abort()
+  }
 }
 
 /** 重试:移除失败的尾部 assistant/error 行,重跑最后一次 user 消息 */

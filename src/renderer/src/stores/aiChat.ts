@@ -102,7 +102,11 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
   send: async (text) => {
     const { wxid, activeId, agentId } = get()
     const trimmed = (text || '').trim()
-    if (!trimmed || !wxid) return
+    if (!trimmed) return
+    if (!wxid) {
+      set({ error: '未连接微信账号,请先到 设置 → 微信数据与密钥 连接' })
+      return
+    }
     if (get().busy) {
       toast.error('正在生成中,请等待或停止')
       return
@@ -172,17 +176,24 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
   },
 
   removeChat: async (id) => {
+    // 若删除的是正在生成的会话,先让主进程中止该 run(防孤儿任务继续写已删会话/回流事件)
+    const { wxid, activeId, busy } = get()
+    if (busy && activeId === id && wxid) {
+      await aiChatApi?.stop(wxid, id).catch(() => null)
+    }
     const res = await aiChatApi?.removeChat(id).catch(() => null)
     if (!res?.ok) return
     set((s) => {
       const chats = s.chats.filter((c) => c.id !== id)
-      const activeId = s.activeId === id ? null : s.activeId
+      const nextActive = s.activeId === id ? null : s.activeId
       return {
         chats,
-        activeId,
-        messages: activeId === null ? [] : s.messages,
-        streamingBuf: activeId === null ? '' : s.streamingBuf,
-        busy: activeId === null ? false : s.busy
+        activeId: nextActive,
+        messages: nextActive === null ? [] : s.messages,
+        streamingBuf: nextActive === null ? '' : s.streamingBuf,
+        busy: nextActive === null ? false : s.busy,
+        toolCards: nextActive === null ? [] : s.toolCards,
+        error: nextActive === null ? null : s.error
       }
     })
   },
@@ -219,17 +230,21 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
   subscribe: () => {
     const handle = (evt: AiChatEvent): void => {
       const s = get()
-      if (s.activeId !== evt.chatId) return // 非当前会话的进度忽略;切回时以 messages 全量对齐
+      // 非当前会话的进度忽略;会话已删除的终态事件只复位状态,不再回流重载
+      const chatExists = s.chats.some((c) => c.id === evt.chatId)
+      const isCurrent = s.activeId === evt.chatId
+      const resetAll = (): void => set({ streamingBuf: '', busy: false, toolCards: [] })
       if (evt.type === 'delta' && evt.token) {
-        set({ streamingBuf: s.streamingBuf + evt.token })
+        if (isCurrent) set({ streamingBuf: s.streamingBuf + evt.token })
       } else if (evt.type === 'tool') {
+        if (!isCurrent) return
         const card: ToolCard = {
           id: ++toolSeq,
           name: evt.tool ?? '',
           status: evt.toolStatus ?? 'start',
           args: evt.args,
           result: evt.resultClip,
-          runId: evt.type === 'tool' && evt.toolStatus === 'pending' ? evt.text : undefined
+          runId: evt.toolStatus === 'pending' ? evt.text : undefined
         }
         // 同名工具新一轮执行:更新最近一张
         set((st) => {
@@ -242,16 +257,19 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
           return { toolCards: cards.slice(-8) }
         })
       } else if (evt.type === 'done') {
-        set({ streamingBuf: '', busy: false, toolCards: [] })
-        void get().selectChat(evt.chatId)
-        void get().refreshChatList()
+        resetAll()
+        if (isCurrent && chatExists) void get().selectChat(evt.chatId)
+        if (chatExists) void get().refreshChatList()
       } else if (evt.type === 'error') {
-        set({ streamingBuf: '', busy: false, error: evt.text ?? '生成失败', toolCards: [] })
-        void get().selectChat(evt.chatId)
+        resetAll()
+        if (isCurrent && chatExists) {
+          set({ error: evt.text ?? '生成失败' })
+          void get().selectChat(evt.chatId)
+        }
       } else if (evt.type === 'status') {
         if (evt.text === '已停止') {
-          set({ busy: false, streamingBuf: '' })
-          void get().selectChat(evt.chatId)
+          resetAll()
+          if (isCurrent && chatExists) void get().selectChat(evt.chatId)
         }
       }
     }

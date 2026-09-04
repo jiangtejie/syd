@@ -4,6 +4,7 @@ import {
   retryChat,
   sendChatMessage,
   stopChat,
+  stopChatById,
   clearChat,
   chatRepo
 } from '../services/ai/chat/service'
@@ -44,6 +45,7 @@ export function registerAiChatHandlers(): void {
   ipcMain.handle('cs:aichat:removeChat', (_e, sessionId: number) => {
     if (!Number.isInteger(sessionId)) return { ok: false as const, error: '参数错误' }
     try {
+      stopChatById(sessionId) // 先中止该会话在跑的生成,防孤儿任务写已删会话
       chatRepo.removeChat(sessionId)
       return { ok: true as const }
     } catch (err) {
@@ -54,6 +56,7 @@ export function registerAiChatHandlers(): void {
   ipcMain.handle('cs:aichat:clearChat', (_e, sessionId: number) => {
     if (!Number.isInteger(sessionId)) return { ok: false as const, error: '参数错误' }
     try {
+      stopChatById(sessionId)
       clearChat(sessionId)
       return { ok: true as const }
     } catch (err) {
