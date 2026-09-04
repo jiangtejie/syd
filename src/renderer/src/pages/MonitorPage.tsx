@@ -24,6 +24,8 @@ type StatusFilter = 'open' | 'done' | 'stalled' | 'archived' | 'all'
 const TYPE_OPTIONS: FeedbackIssueType[] = ['客诉', '售后', '物流', '价格', '咨询', '建议', '其他']
 
 const RANGE_OPTIONS = [7, 14, 30]
+/** 问题列表每页条数选项（默认 15） */
+const PAGE_SIZES = [15, 30, 50, 100]
 
 const STATUS_CHIP: Record<FeedbackIssueStatus, { label: string; cls: string }> = {
   open: { label: '待处理', cls: 'is-open' },
@@ -126,7 +128,9 @@ function MonitorPage(): React.JSX.Element {
   const [typeFilter, setTypeFilter] = useState<'all' | FeedbackIssueType>('all')
   const [groupFilter, setGroupFilter] = useState('')
   const [keyword, setKeyword] = useState('')
-  const [visible, setVisible] = useState(40)
+  // 分页表格：默认每页 15 条
+  const [pageSize, setPageSize] = useState(15)
+  const [page, setPage] = useState(1)
   // 口径配置(读取 app_config,默认 积压48h / 跟进超时12h)
   const [thresh, setThresh] = useState({ backlog: 48, followUp: 12 })
   // 追踪抽屉
@@ -504,7 +508,9 @@ function MonitorPage(): React.JSX.Element {
     }
   }, [metrics])
 
-  const visibleList = filtered.slice(0, visible)
+  const pageTotal = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const curPage = Math.min(page, pageTotal)
+  const pageItems = filtered.slice((curPage - 1) * pageSize, curPage * pageSize)
 
   return (
     <div className="page-scroll mon-page">
@@ -612,7 +618,7 @@ function MonitorPage(): React.JSX.Element {
                   value={statusFilter}
                   onChange={(e) => {
                     setStatusFilter(e.target.value as StatusFilter)
-                    setVisible(40)
+                    setPage(1)
                   }}
                 >
                   <option value="open">只看待处理/跟进中</option>
@@ -626,7 +632,7 @@ function MonitorPage(): React.JSX.Element {
                   value={typeFilter}
                   onChange={(e) => {
                     setTypeFilter(e.target.value as 'all' | FeedbackIssueType)
-                    setVisible(40)
+                    setPage(1)
                   }}
                 >
                   <option value="all">全部类型</option>
@@ -641,7 +647,7 @@ function MonitorPage(): React.JSX.Element {
                   value={groupFilter}
                   onChange={(e) => {
                     setGroupFilter(e.target.value)
-                    setVisible(40)
+                    setPage(1)
                   }}
                 >
                   <option value="">全部群</option>
@@ -656,7 +662,7 @@ function MonitorPage(): React.JSX.Element {
                   value={ownerFilter}
                   onChange={(e) => {
                     setOwnerFilter(e.target.value)
-                    setVisible(40)
+                    setPage(1)
                   }}
                   title="按跟进人筛选"
                 >
@@ -674,71 +680,113 @@ function MonitorPage(): React.JSX.Element {
                   value={keyword}
                   onChange={(e) => {
                     setKeyword(e.target.value)
-                    setVisible(40)
+                    setPage(1)
                   }}
                 />
-                <span className="mon-count">
-                  共 {filtered.length} 条{groupFilter ? '（已按群钻取）' : ''}
-                </span>
               </div>
 
-              {visibleList.length === 0 && (
+              {pageItems.length === 0 ? (
                 <div className="mon-empty">没有符合条件的问题{loading ? '（加载中…）' : ''}</div>
-              )}
-              {visibleList.map((it) => {
-                const chip = statusChip(it)
-                const isOld =
-                  // eslint-disable-next-line -- 渲染中取当前时间仅用于积压标红(展示层,允许偶发非纯)
-                  it.status === 'open' && Date.now() - it.occurAt > thresh.backlog * 3600_000
-                return (
-                  <div
-                    key={it.id}
-                    className={`mon-row${active?.id === it.id ? ' is-active' : ''}`}
-                    onClick={() => void openDetail(it)}
-                  >
-                    <span className={`mon-st ${chip.cls}`}>{chip.label}</span>
-                    <span className="mon-row-type">{it.type}</span>
-                    <span className="mon-row-main">
-                      <span className="mon-row-title">{it.title}</span>
-                      <span className="mon-row-sub">
-                        {it.groupName || it.groupUsername} · {fmtTimeShort(it.occurAt)} · 证据{' '}
-                        {it.msgCount} 条{it.autoDone ? ' · 自动' : ''}
-                      </span>
+              ) : (
+                <>
+                  <div className="mon-tbl-head">
+                    <span className="mon-th-st">状态</span>
+                    <span className="mon-th-type">类型</span>
+                    <span className="mon-th-main">问题</span>
+                    <span className="mon-th-owner">跟进人</span>
+                    <span className="mon-th-age">积压</span>
+                  </div>
+                  <div className="mon-tbl-body">
+                    {pageItems.map((it) => {
+                      const chip = statusChip(it)
+                      const isOld =
+                        // eslint-disable-next-line -- 渲染中取当前时间仅用于积压标红(展示层,允许偶发非纯)
+                        it.status === 'open' && Date.now() - it.occurAt > thresh.backlog * 3600_000
+                      return (
+                        <div
+                          key={it.id}
+                          className={`mon-row${active?.id === it.id ? ' is-active' : ''}`}
+                          onClick={() => void openDetail(it)}
+                        >
+                          <span className={`mon-st ${chip.cls}`}>{chip.label}</span>
+                          <span className="mon-row-type">{it.type}</span>
+                          <span className="mon-row-main">
+                            <span className="mon-row-title">{it.title}</span>
+                            <span className="mon-row-sub">
+                              {it.groupName || it.groupUsername} · {fmtTimeShort(it.occurAt)} · 证据{' '}
+                              {it.msgCount} 条{it.autoDone ? ' · 自动' : ''}
+                            </span>
+                          </span>
+                          <span className="mon-row-owner">
+                            <select
+                              className="mon-owner-select"
+                              value={it.assignee ?? ''}
+                              aria-label="跟进人"
+                              title={
+                                it.assignee ? `跟进人：${ownerName(it.assignee)}` : '指派跟进人'
+                              }
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                e.stopPropagation()
+                                void applyAssignee(it.id, e.target.value)
+                              }}
+                            >
+                              <option value="">未指派</option>
+                              {members.map((m) => (
+                                <option key={m.username} value={m.username}>
+                                  {ownerName(m.username)}
+                                </option>
+                              ))}
+                            </select>
+                          </span>
+                          <span className={`mon-row-age${isOld ? ' is-old' : ''}`}>
+                            {it.status === 'open' ? ageText(it.occurAt) : ''}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="mon-pager">
+                    <span className="mon-pager-info">
+                      共 {filtered.length} 条 · 第 {curPage} / {pageTotal} 页
+                      {groupFilter ? '（已按群钻取）' : ''}
                     </span>
-                    <span className="mon-row-owner">
+                    <div className="mon-pager-ctrl">
                       <select
-                        className="mon-owner-select"
-                        value={it.assignee ?? ''}
-                        aria-label="跟进人"
-                        title={it.assignee ? `跟进人：${ownerName(it.assignee)}` : '指派跟进人'}
-                        onClick={(e) => e.stopPropagation()}
+                        className="mon-select"
+                        value={pageSize}
+                        aria-label="每页条数"
+                        title="每页条数"
                         onChange={(e) => {
-                          e.stopPropagation()
-                          void applyAssignee(it.id, e.target.value)
+                          setPageSize(Number(e.target.value))
+                          setPage(1)
                         }}
                       >
-                        <option value="">未指派</option>
-                        {members.map((m) => (
-                          <option key={m.username} value={m.username}>
-                            {ownerName(m.username)}
+                        {PAGE_SIZES.map((n) => (
+                          <option key={n} value={n}>
+                            {n} 条/页
                           </option>
                         ))}
                       </select>
-                    </span>
-                    <span className={`mon-row-age${isOld ? ' is-old' : ''}`}>
-                      {it.status === 'open' ? ageText(it.occurAt) : ''}
-                    </span>
+                      <button
+                        type="button"
+                        className="mon-btn ghost"
+                        disabled={curPage <= 1}
+                        onClick={() => setPage(curPage - 1)}
+                      >
+                        ‹ 上一页
+                      </button>
+                      <button
+                        type="button"
+                        className="mon-btn ghost"
+                        disabled={curPage >= pageTotal}
+                        onClick={() => setPage(curPage + 1)}
+                      >
+                        下一页 ›
+                      </button>
+                    </div>
                   </div>
-                )
-              })}
-              {filtered.length > visible && (
-                <button
-                  type="button"
-                  className="mon-more"
-                  onClick={() => setVisible((v) => v + 40)}
-                >
-                  加载更多（{filtered.length - visible}）
-                </button>
+                </>
               )}
             </div>
 
