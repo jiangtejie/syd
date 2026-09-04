@@ -13,7 +13,7 @@
 /* 指标卡 */
 .db-cards {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -590,7 +590,9 @@
   font-size: 12px;
   padding: 5px 12px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .db-seg-btn + .db-seg-btn {
