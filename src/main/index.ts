@@ -117,10 +117,10 @@ function registerMediaProtocol(): void {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1280,
+    width: 1400,
     height: 800,
-    // 右栏(群问题/回复建议)460px 宽,消息区需保有可用宽度
-    minWidth: 1160,
+    // 右栏(群问题/回复建议)加宽至 520px 后,消息区仍需保有可用宽度
+    minWidth: 1240,
     minHeight: 680,
     show: false,
     autoHideMenuBar: true,

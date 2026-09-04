@@ -6,7 +6,7 @@
   flex-wrap: wrap;
   gap: 8px;
   margin: 14px 0 16px;
-  max-width: 1080px;
+  max-width: 1260px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
 }
@@ -36,7 +36,7 @@
 
 /* Tab 面板内容 */
 .st-tab-panel {
-  max-width: 1080px;
+  max-width: 1260px;
 }
 
 /* 双列紧凑网格：宽屏两列、窄屏自动一列 */
@@ -44,13 +44,13 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 14px;
-  max-width: 1080px;
+  max-width: 1260px;
   align-items: start;
 }
 
 .st-section {
   margin-bottom: 14px;
-  max-width: 1080px;
+  max-width: 1260px;
 }
 
 /* 网格内的卡片去掉底部外边距，由 gap 控制间距 */
