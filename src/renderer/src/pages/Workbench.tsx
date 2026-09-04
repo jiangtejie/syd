@@ -68,13 +68,22 @@ function Workbench(): React.JSX.Element {
         if (cur?.isGroup) void st.refreshGroupIssues()
         else void st.refreshGroupBadges()
         const added = p && typeof p.added === 'number' ? p.added : 0
+        const escalate = p && typeof p.escalate === 'number' ? p.escalate : 0
         const now = Date.now()
-        if (added > 0 && !document.hasFocus() && now - issueNotifyAtRef.current >= 30_000) {
+        if (
+          (added > 0 || escalate > 0) &&
+          !document.hasFocus() &&
+          now - issueNotifyAtRef.current >= 30_000
+        ) {
           issueNotifyAtRef.current = now
           if ('Notification' in window && Notification.permission === 'granted') {
-            const n = new Notification('群问题监控', {
-              body: `后台自动分析发现 ${added} 条新问题，点击查看监控中心`
-            })
+            const body =
+              escalate > 0
+                ? added > 0
+                  ? `${added} 条新问题 · ${escalate} 条需盯办（未指派/跟进超时）`
+                  : `${escalate} 条问题需盯办：未指派超时或跟进超时，点击查看监控中心`
+                : `后台自动分析发现 ${added} 条新问题，点击查看监控中心`
+            const n = new Notification('群问题监控', { body })
             n.onclick = (): void => {
               useWorkbenchStore.getState().setPage('monitor')
               window.focus()

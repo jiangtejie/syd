@@ -148,6 +148,16 @@ const TABLES: string[] = [
     label TEXT DEFAULT '',
     created_at INTEGER,
     UNIQUE (account_wxid, username)
+  )`,
+  // 话术库（团队口径模板）：发送栏快速插入；{客户} 等变量在插入时替换
+  `CREATE TABLE IF NOT EXISTS phrase_book (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tags TEXT DEFAULT '',
+    usage_count INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER,
+    updated_at INTEGER
   )`
 ]
 

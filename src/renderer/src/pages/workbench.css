@@ -1786,3 +1786,265 @@
   color: var(--text-4);
   padding: 10px 0 4px;
 }
+
+/* ── 话术库（发送栏）── */
+.wb-chat-input {
+  position: relative;
+}
+
+.wb-chat-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.wb-tool-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  border-radius: var(--r-sm);
+  padding: 2px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.wb-tool-btn:hover,
+.wb-tool-btn.is-on {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.wb-tools-hint {
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+
+.wb-phrase {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.14);
+  max-height: min(56vh, 480px);
+  min-height: 180px;
+}
+
+.wb-phrase-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.wb-phrase-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  flex: none;
+}
+
+.wb-phrase-search {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  font-size: 12px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  outline: none;
+}
+
+.wb-phrase-search:focus {
+  border-color: var(--brand);
+}
+
+.wb-phrase-add {
+  flex: none;
+  border: 1px dashed var(--brand-line);
+  color: var(--brand);
+  background: transparent;
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.wb-phrase-add:hover {
+  background: var(--brand-soft);
+}
+
+.wb-phrase-x {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wb-phrase-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.wb-phrase-empty {
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
+  padding: 24px 8px;
+}
+
+.wb-phrase-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--bg);
+}
+
+.wb-phrase-item.is-edit {
+  border-color: var(--brand);
+}
+
+.wb-phrase-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.wb-phrase-item-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.wb-phrase-item-title b {
+  font-size: 12.5px;
+}
+
+.wb-phrase-tag {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  border-radius: var(--r-pill);
+  padding: 1px 6px;
+}
+
+.wb-phrase-usage {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-4);
+}
+
+.wb-phrase-item-content {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.wb-phrase-item-ops {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wb-btn-phrase {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.wb-btn-phrase.primary {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.wb-btn-phrase.primary:hover:not(:disabled) {
+  background: var(--brand-soft);
+}
+
+.wb-btn-phrase.danger {
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+
+.wb-btn-phrase.danger:hover {
+  background: var(--danger-soft);
+}
+
+.wb-btn-phrase:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wb-phrase-edit {
+  flex: none;
+  border-top: 1px solid var(--border-light);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-hover);
+  border-radius: 0 0 var(--r-md) var(--r-md);
+}
+
+.wb-phrase-input,
+.wb-phrase-textarea {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+  font-family: inherit;
+  width: 100%;
+}
+
+.wb-phrase-input:focus,
+.wb-phrase-textarea:focus {
+  border-color: var(--brand);
+}
+
+.wb-phrase-textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.wb-phrase-edit-ops {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.wb-phrase-edit-hint {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--text-3);
+}

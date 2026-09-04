@@ -18,7 +18,9 @@ import type {
   MessageCursor,
   RedEnvelopeStatus,
   FeedbackTypeCount,
-  TeamMemberInfo
+  TeamMemberInfo,
+  PhraseItem,
+  PhraseInput
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -200,7 +202,12 @@ declare global {
             wxid: string
           ) => Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }>
           onChanged: (
-            callback: (payload: { at?: number; wxid?: string; added?: number }) => void
+            callback: (payload: {
+              at?: number
+              wxid?: string
+              added?: number
+              escalate?: number
+            }) => void
           ) => () => void
         }
         team: {
@@ -214,6 +221,12 @@ declare global {
             accountWxid: string,
             username: string
           ) => Promise<{ ok: boolean; error?: string }>
+        }
+        phrase: {
+          list: (q?: string) => Promise<Result<{ phrases?: PhraseItem[] }>>
+          save: (input: PhraseInput) => Promise<Result<{ item?: PhraseItem }>>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+          use: (id: number) => Promise<{ ok: boolean }>
         }
         export: {
           chat: (

@@ -410,3 +410,21 @@ export interface TeamMemberInfo {
   /** 自定义备注（如「店长-小张」），展示用 */
   label?: string
 }
+
+/** 话术模板（团队口径；全局共享，发送栏可变量替换） */
+export interface PhraseItem {
+  id: number
+  title: string
+  content: string
+  tags?: string
+  usageCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface PhraseInput {
+  id?: number
+  title: string
+  content: string
+  tags?: string
+}

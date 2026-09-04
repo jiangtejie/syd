@@ -146,6 +146,8 @@ function SettingsPage(): React.JSX.Element {
   const [followUpHours, setFollowUpHours] = useState(12)
   // 后台自动增量分析(全部活跃群,不限于当前打开的群;默认开)
   const [autoScanIssue, setAutoScanIssue] = useState(true)
+  // 盯办提醒(未指派超时/跟进超时升级;默认开)
+  const [escalateIssue, setEscalateIssue] = useState(true)
 
   /** 刷新缓存目录状态（生效目录/默认目录；effect 与路径变更共用） */
   const refreshCachePath = async (): Promise<void> => {
@@ -186,6 +188,7 @@ function SettingsPage(): React.JSX.Element {
       setBacklogHours(hours(cfg['monitor.backlogHours'], 48))
       setFollowUpHours(hours(cfg['monitor.followUpHours'], 12))
       setAutoScanIssue(cfg['issue.autoScan.enabled'] !== '0')
+      setEscalateIssue(cfg['issue.escalate.enabled'] !== '0')
       setLoaded(true)
     })
     void replyApi
@@ -764,6 +767,25 @@ function SettingsPage(): React.JSX.Element {
                 />
                 <span className="st-hint-inline">
                   覆盖全部活跃群的新消息自动提取(不限于当前打开的群),无新消息时不消耗模型
+                </span>
+              </label>
+              <label className="st-row">
+                <span className="st-label">盯办升级提醒</span>
+                <input
+                  type="checkbox"
+                  checked={escalateIssue}
+                  onChange={(e) => {
+                    setEscalateIssue(e.target.checked)
+                    void configApi?.set('issue.escalate.enabled', e.target.checked ? '1' : '0')
+                    toast.success(
+                      e.target.checked
+                        ? '已开启:未指派超时/跟进超时自动提醒'
+                        : '已关闭盯办提醒(监控页仍可见)'
+                    )
+                  }}
+                />
+                <span className="st-hint-inline">
+                  未指派超时(紧急&gt;1h/其余&gt;4h)与跟进超时的问题,后台每分钟巡检、窗口未聚焦时桌面提醒
                 </span>
               </label>
               <label className="st-row">

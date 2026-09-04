@@ -191,11 +191,16 @@ const api = {
       ): Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }> =>
         ipcRenderer.invoke('cs:issue:groupBadges', wxid),
       onChanged: (
-        callback: (payload: { at?: number; wxid?: string; added?: number }) => void
+        callback: (payload: {
+          at?: number
+          wxid?: string
+          added?: number
+          escalate?: number
+        }) => void
       ): (() => void) => {
         const listener = (
           _e: Electron.IpcRendererEvent,
-          payload: { at?: number; wxid?: string; added?: number }
+          payload: { at?: number; wxid?: string; added?: number; escalate?: number }
         ): void => callback(payload)
         ipcRenderer.on('cs:issue:changed', listener)
         return () => ipcRenderer.removeListener('cs:issue:changed', listener)
@@ -212,6 +217,15 @@ const api = {
         ipcRenderer.invoke('cs:team:save', accountWxid, username, label),
       remove: (accountWxid: string, username: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:team:remove', accountWxid, username)
+    },
+    phrase: {
+      list: (q?: string): Promise<{ ok: boolean; phrases?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:phrase:list', q),
+      save: (input: unknown): Promise<{ ok: boolean; item?: unknown; error?: string }> =>
+        ipcRenderer.invoke('cs:phrase:save', input),
+      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:phrase:remove', id),
+      use: (id: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('cs:phrase:use', id)
     },
     export: {
       chat: (
