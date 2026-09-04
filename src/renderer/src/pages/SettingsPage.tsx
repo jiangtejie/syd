@@ -543,7 +543,7 @@ function SettingsPage(): React.JSX.Element {
               </button>
             </div>
             <label className="st-row st-agent-row">
-              <span className="st-label">智能体增强</span>
+              <span className="st-label">业务上下文增强</span>
               <input
                 type="checkbox"
                 checked={boolVal(form['ai.agent'])}

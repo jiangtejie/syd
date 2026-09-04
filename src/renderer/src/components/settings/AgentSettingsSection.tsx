@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { AiAgent, AiAgentInput, AiStyle } from '../../../../shared/types'
 import { toast } from '../../stores/toast'
 import { useWorkbenchStore } from '../../stores/workbench'
+import { avatarColor } from '../../lib/ui'
 
 /** 变更成功后同步工作台（对话页常驻挂载，仅首挂载拉取会陈旧/悬空） */
 function syncWorkbenchAgents(): void {
@@ -24,7 +25,18 @@ const AI_STYLE_LABELS: Record<AiStyle, string> = {
   brief: '简洁干练'
 }
 
+/** 列表风格短标签（长文案放表单下拉） */
+const AI_STYLE_SHORT: Record<AiStyle, string> = {
+  warm: '温暖亲切',
+  formal: '正式专业',
+  brief: '简洁干练'
+}
+
 const STYLE_KEYS = Object.keys(AI_STYLE_LABELS) as AiStyle[]
+
+/** 表单快照（脏检查基准，纯函数） */
+const snapshotOf = (nm: string, ds: string, st: AiStyle, pt: string): string =>
+  JSON.stringify([nm, ds, st, pt])
 
 function AgentSettingsSection(): React.JSX.Element {
   const [agents, setAgents] = useState<AiAgent[]>([])
@@ -38,37 +50,45 @@ function AgentSettingsSection(): React.JSX.Element {
   const [prompt, setPrompt] = useState('')
   const [saving, setSaving] = useState(false)
   const [errorTip, setErrorTip] = useState('')
+  // 最近一次落库/载入的表单快照（脏检查用：切换前有未保存修改先确认）
+  const [snapshot, setSnapshot] = useState('')
   // 删除确认弹窗：记录待删智能体与确认文案
   const [removeCtx, setRemoveCtx] = useState<{ agent: AiAgent; message: string } | null>(null)
 
-  /** 用智能体填充编辑表单（reload 与列表点选共用） */
-  const fillForm = (a: AiAgent | undefined): void => {
+  /** 用智能体填充编辑表单（reload 与列表点选共用）；同步快照作为“未修改”基准 */
+  const fillForm = useCallback((a: AiAgent | undefined): void => {
     setEditingId(a?.id ?? null)
     setName(a?.name ?? '')
     setDescription(a?.description ?? '')
     setStyle(a?.style ?? 'warm')
     setPrompt(a?.prompt ?? '')
-  }
-
-  const reload = useCallback(async (keepId?: string | null): Promise<void> => {
-    if (!agentApi) return
-    try {
-      const res = await agentApi.list()
-      if (res.ok && res.agents && res.agents.length > 0) {
-        setAgents(res.agents)
-        setDefaultId(res.defaultId ?? null)
-        const targetId =
-          keepId && res.agents.some((a) => a.id === keepId)
-            ? keepId
-            : (res.defaultId ?? res.agents[0].id)
-        fillForm(res.agents.find((a) => a.id === targetId))
-      }
-    } catch (e) {
-      setErrorTip(e instanceof Error ? e.message : '加载智能体失败')
-    } finally {
-      setLoading(false)
-    }
+    setSnapshot(
+      snapshotOf(a?.name ?? '', a?.description ?? '', a?.style ?? 'warm', a?.prompt ?? '')
+    )
   }, [])
+
+  const reload = useCallback(
+    async (keepId?: string | null): Promise<void> => {
+      if (!agentApi) return
+      try {
+        const res = await agentApi.list()
+        if (res.ok && res.agents && res.agents.length > 0) {
+          setAgents(res.agents)
+          setDefaultId(res.defaultId ?? null)
+          const targetId =
+            keepId && res.agents.some((a) => a.id === keepId)
+              ? keepId
+              : (res.defaultId ?? res.agents[0].id)
+          fillForm(res.agents.find((a) => a.id === targetId))
+        }
+      } catch (e) {
+        setErrorTip(e instanceof Error ? e.message : '加载智能体失败')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [fillForm]
+  )
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载时一次性异步拉取（回调内 setState，全仓同款模式）
@@ -82,7 +102,26 @@ function AgentSettingsSection(): React.JSX.Element {
     setDescription('')
     setStyle('warm')
     setPrompt('')
+    setSnapshot('')
     setErrorTip('')
+  }
+
+  const dirty = snapshot !== snapshotOf(name, description, style, prompt)
+
+  /** 有未保存修改时先确认，防误触切换丢内容 */
+  const confirmDiscard = (): boolean =>
+    !dirty || window.confirm('当前编辑内容尚未保存，切换后将丢失这些修改。确定继续？')
+
+  /** 点选列表项（带脏检查） */
+  const pick = (a: AiAgent): void => {
+    if (!confirmDiscard()) return
+    fillForm(a)
+  }
+
+  /** 新建（带脏检查） */
+  const handleNew = (): void => {
+    if (!confirmDiscard()) return
+    startNew()
   }
 
   const save = async (): Promise<void> => {
@@ -145,7 +184,12 @@ function AgentSettingsSection(): React.JSX.Element {
         if (list.ok && list.agents) {
           setAgents(list.agents)
           setDefaultId(list.defaultId ?? list.agents[0]?.id ?? null)
-          fillForm(list.agents[0])
+          // 优先保留正在编辑的项；被删则回落默认/首项
+          const target =
+            list.agents.find((x) => x.id === editingId) ??
+            list.agents.find((x) => x.id === list.defaultId) ??
+            list.agents[0]
+          if (target) fillForm(target)
         }
       } else {
         setErrorTip(res.error || '删除失败')
@@ -174,53 +218,70 @@ function AgentSettingsSection(): React.JSX.Element {
   return (
     <div className="ag-wrap">
       {/* 列表 */}
-      <div className="ag-list">
-        {loading && <div className="ag-empty">加载中…</div>}
-        {!loading && agents.length === 0 && <div className="ag-empty">暂无智能体，请新建</div>}
-        {agents.map((a) => (
-          <div
-            key={a.id}
-            className={`ag-item${a.id === editingId ? ' is-active' : ''}`}
-            onClick={() => fillForm(a)}
-          >
-            <div className="ag-item-title">
-              <b>{a.name}</b>
-              {a.id === defaultId && <span className="ag-tag">默认</span>}
-            </div>
-            {a.description && <div className="ag-item-desc">{a.description}</div>}
-            <div className="ag-item-actions">
-              {a.id !== defaultId && (
-                <button
-                  type="button"
-                  className="ag-mini"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void setAsDefault(a.id)
-                  }}
-                >
-                  设为默认
-                </button>
-              )}
-              <button
-                type="button"
-                className="ag-mini danger"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void remove(a)
-                }}
-              >
-                删除
-              </button>
-            </div>
-          </div>
-        ))}
-        <button type="button" className="ag-add" onClick={startNew}>
+      <div className="ag-list-col">
+        <button type="button" className="ag-add" onClick={handleNew}>
           + 新建智能体
         </button>
+        <div className="ag-list">
+          {loading && <div className="ag-empty">加载中…</div>}
+          {!loading && agents.length === 0 && <div className="ag-empty">暂无智能体，请新建</div>}
+          {agents.map((a) => (
+            <div
+              key={a.id}
+              className={`ag-item${a.id === editingId ? ' is-active' : ''}`}
+              onClick={() => pick(a)}
+            >
+              <div className="ag-item-top">
+                <span className="ag-avatar" style={{ background: avatarColor(a.name) }}>
+                  {(a.name || '?').slice(0, 1)}
+                </span>
+                <span className="ag-item-title">
+                  <b>{a.name}</b>
+                  {a.id === defaultId && <span className="ag-tag">默认</span>}
+                </span>
+                <span className={`ag-style ag-style-${a.style}`}>{AI_STYLE_SHORT[a.style]}</span>
+              </div>
+              {a.description && <div className="ag-item-desc">{a.description}</div>}
+              <div className="ag-item-actions">
+                {a.id !== defaultId && (
+                  <button
+                    type="button"
+                    className="ag-mini"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void setAsDefault(a.id)
+                    }}
+                  >
+                    设为默认
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="ag-mini danger"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void remove(a)
+                  }}
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 编辑区 */}
       <div className="ag-edit">
+        <div className="ag-edit-head">
+          <span className={`ag-edit-subject${editingId ? '' : ' is-new'}`}>
+            {editingId
+              ? `正在编辑 · ${agents.find((x) => x.id === editingId)?.name ?? ''}`
+              : '正在新建智能体'}
+          </span>
+          {editingId === defaultId && <span className="ag-edit-default">默认人设</span>}
+          {dirty && <span className="ag-dirty">● 有未保存修改</span>}
+        </div>
         <label className="st-row">
           <span className="st-label">名称</span>
           <input
