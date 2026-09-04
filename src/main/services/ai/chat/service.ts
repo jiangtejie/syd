@@ -51,6 +51,32 @@ const MAX_MSG_CHARS = 6000
 const SYSTEM_FALLBACK =
   '你是「微信私域智能客服」桌面助手。回答要简洁、结构清晰、用中文;基于事实,不确定时明确说明。'
 
+/** 无微信账号的外部渠道(IM 等)system 补充说明 */
+const IM_CHANNEL_NOTE =
+  '\n\n# 渠道说明(外部 IM 会话)\n' +
+  '当前对话来自外部 IM 渠道(如飞书机器人),未绑定任何微信账号:' +
+  '微信业务工具(客户/群问题/监控/团队/最近消息查询)不可用,调用会被拒绝并返回占位提示;' +
+  '请勿反复尝试此类工具。回答仅基于通用知识与本会话记忆;' +
+  '用户问到本企业微信客户/群数据时,礼貌说明需在已连接微信账号的客服工作台内提问。'
+
+function imChannelNote(wxid: string): string {
+  return (wxid || '').trim() ? '' : IM_CHANNEL_NOTE
+}
+
+/** 无微信账号时微信业务工具返回占位结果,避免“空数据误导”或反复调用 */
+const IM_NO_WX_TOOL_TEXT =
+  '[不可用]当前会话来自外部 IM 渠道,未绑定微信账号,无法查询微信业务数据(客户会话/群问题/监控/最近消息)。' +
+  '请直接礼貌说明:此类查询需要在连接了微信账号的客服工作台内进行。不要再次调用该工具。'
+
+function executeToolDef(
+  def: ToolDef,
+  ctx: ToolCtx,
+  args: Record<string, unknown>
+): Promise<string> {
+  if (def.needsWx && !(ctx.wxid || '').trim()) return Promise.resolve(IM_NO_WX_TOOL_TEXT)
+  return def.run(ctx, args)
+}
+
 const STYLE_DESC: Record<AiStyle, string> = {
   warm: '语气温暖亲切,像熟悉店铺的客服',
   formal: '语气正式专业',
@@ -300,7 +326,8 @@ async function runTurn(opts: {
     const ctx = await loadHistoryCtx(sessionId)
     const system =
       (await buildSystem(agentId)) +
-      (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '')
+      (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '') +
+      imChannelNote(wxid)
     const turns = historyToTurns(ctx.rowsTail)
     turns.push({ role: 'user', content: userText })
 
@@ -393,7 +420,7 @@ async function runTurn(opts: {
       }
 
       const ctx: ToolCtx = { wxid }
-      const result = await def.run(ctx, intent.args)
+      const result = await executeToolDef(def, ctx, intent.args)
       appendChatMessage(sessionId, 'assistant', 'tool_call', JSON.stringify(intent.args), {
         tool: def.name
       })
@@ -594,9 +621,9 @@ async function executeNativeToolCalls(opts: {
     } catch {
       args = {}
     }
-    const result = await def
-      .run({ wxid }, args)
-      .catch((e: unknown) => `工具执行失败:${e instanceof Error ? e.message : String(e)}`)
+    const result = await executeToolDef(def, { wxid }, args).catch(
+      (e: unknown) => `工具执行失败:${e instanceof Error ? e.message : String(e)}`
+    )
     appendChatMessage(sessionId, 'assistant', 'tool_call', call.arguments, { tool: call.name })
     appendChatMessage(sessionId, 'user', 'tool_result', result, { tool: call.name })
     wire.push({ role: 'tool', tool_call_id: call.id ?? `tc_0`, content: result })
@@ -636,14 +663,18 @@ async function runTurnNative(opts: {
     const ctx = await loadHistoryCtx(sessionId)
     const system =
       nativeSystemText(agentSystemText(agentId)) +
-      (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '')
-    const schemas = [
+      (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '') +
+      imChannelNote(wxid)
+    // 无微信账号(外部 IM)时不向模型暴露微信业务工具
+    const isBound = (wxid || '').trim().length > 0
+    const defs = [
       ...ALL_TOOLS,
       ...listCustomToolDefs(),
       ...listPackToolDefs(),
       // MCP 工具已就绪时才纳入(由 buildSystem 预握手触发)
       ...mcpToolNames().map((n) => findMcpTool(n)!)
-    ].map(schemaOf)
+    ]
+    const schemas = (isBound ? defs : defs.filter((d) => !d.needsWx)).map(schemaOf)
 
     const wire: WireMsg[] = [{ role: 'system', content: system }]
     for (const t of historyToTurns(ctx.rowsTail)) {
@@ -737,7 +768,9 @@ export interface SendChatResult {
   error?: string
 }
 
-/** 发送一条消息;chatId 为空则先建会话(标题=首条消息) */
+/** 发送一条消息;chatId 为空则先建会话(标题=首条消息)。
+ *  wxid 允许为空 —— 表示外部 IM 等未绑定微信账号的通用会话,
+ *  此类会话中微信业务工具(needsWx)会被禁用并返回占位说明。 */
 export async function sendChatMessage(input: {
   wxid: string
   chatId?: number
@@ -746,13 +779,13 @@ export async function sendChatMessage(input: {
 }): Promise<SendChatResult> {
   const text = (input.text || '').trim()
   if (!text) return { ok: false, error: '消息为空' }
-  if (!(input.wxid || '').trim()) return { ok: false, error: '缺少账号标识' }
+  const wxid = (input.wxid || '').trim()
   let sessionId = input.chatId
   if (!sessionId) {
-    sessionId = createChat(input.wxid, text.slice(0, 24) || '新对话', input.agentId)
+    sessionId = createChat(wxid, text.slice(0, 24) || '新对话', input.agentId)
   }
   void dispatchTurn({
-    wxid: input.wxid,
+    wxid,
     sessionId,
     agentId: input.agentId,
     userText: text,

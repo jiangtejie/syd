@@ -32,6 +32,8 @@ export interface ToolDef {
   params?: Record<string, ToolParamDecl>
   /** 需要人工确认后执行(发消息/外部写类) */
   confirm?: boolean
+  /** 依赖微信账号上下文:wxid 为空的会话(IM 等外部渠道)执行时返回占位说明 */
+  needsWx?: boolean
   run: (ctx: ToolCtx, args: Record<string, unknown>) => Promise<string>
 }
 
@@ -127,6 +129,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'query_issues',
     kind: 'builtin',
+    needsWx: true,
     params: {
       q: { type: 'string', desc: '关键词(标题/摘要/类型)' },
       status: { type: 'string', desc: 'open|done|stalled|archived' },
@@ -163,6 +166,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'query_group_issues',
     kind: 'builtin',
+    needsWx: true,
     params: {
       group: { type: 'string', desc: '群 username(空=当前会话)' },
       limit: { type: 'number', desc: '最多返回条数(1-15)' }
@@ -189,6 +193,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'search_issue_history',
     kind: 'builtin',
+    needsWx: true,
     params: {
       q: { type: 'string', required: true, desc: '搜索关键词' },
       limit: { type: 'number', desc: '最多返回条数(1-10)' }
@@ -208,6 +213,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'list_team_members',
     kind: 'builtin',
+    needsWx: true,
     description: '列出已标记的团队客服成员名单(我方同事,其发言不是客户诉求)。args: {}',
     run: async (ctx) => {
       const members = listTeamMembers(ctx.wxid)
@@ -220,6 +226,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'monitor_summary',
     kind: 'builtin',
+    needsWx: true,
     params: { limit: { type: 'number', desc: '最多列出关注条目数' } },
     description:
       '读取问题监控概览(正式口径,排除疑似):待处理/跟进中/跟进超时/紧急与高危数/今日新增/疑似数,并列出最需关注的若干条。args: {"limit":5}',
@@ -258,6 +265,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'customer_lookup',
     kind: 'builtin',
+    needsWx: true,
     params: { name: { type: 'string', desc: '客户名称或 username(空=当前会话对象)' } },
     description:
       '按名称或 username 查询客户/群资料(微信会话派生):显示名/备注/未读/最后消息时间/消息摘要。' +
@@ -300,6 +308,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   {
     name: 'recent_messages',
     kind: 'builtin',
+    needsWx: true,
     params: {
       sessionId: { type: 'string', desc: '会话 username(空=当前会话)' },
       limit: { type: 'number', desc: '最近 N 条(1-30)' }
