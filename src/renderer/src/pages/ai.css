@@ -3,7 +3,7 @@
 .aichat-page {
   display: flex;
   height: 100%;
-  max-width: 1400px;
+  max-width: 1680px;
   margin: 0 auto;
   border: 1px solid var(--border-light);
   border-radius: var(--r-md);
@@ -258,7 +258,7 @@
 }
 
 .aichat-bubble {
-  max-width: min(760px, 82%);
+  max-width: min(920px, 92%);
   padding: 9px 12px;
   border-radius: var(--r-md);
   background: var(--bg);
@@ -266,7 +266,9 @@
   font-size: 13.5px;
   line-height: 1.65;
   word-break: break-word;
-  white-space: pre-wrap;
+  /* 注意:不用 pre-wrap —— markdown 正文里的软换行应交给 react-markdown
+     折叠(段落内单换行合并为空格),pre-wrap 会让模型自带换行全部上屏,
+     造成“AI 回复换行太多”。纯文本场景(用户气泡/错误/思考)单独保留 pre-wrap。 */
 }
 
 .aichat-row.is-user .aichat-bubble {
@@ -282,6 +284,7 @@
 
 .aichat-error-text {
   color: var(--danger);
+  white-space: pre-wrap;
 }
 
 .aichat-plain {
