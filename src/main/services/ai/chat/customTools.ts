@@ -17,7 +17,11 @@ function clip(s: string): string {
   return s.length > MAX_BODY ? `${s.slice(0, MAX_BODY)}\n…(已截断)` : s
 }
 
-async function fetchTool(tool: CustomToolItem, args: Record<string, unknown>): Promise<string> {
+/** 通用 HTTP 工具执行(自定义工具与第三方技能包共用;含参数声明校验/裁剪/超时) */
+export async function fetchTool(
+  tool: CustomToolItem,
+  args: Record<string, unknown>
+): Promise<string> {
   const params = tool.params ?? []
   const headers: Record<string, string> = { ...(tool.headers ?? {}) }
   const query = new URLSearchParams()

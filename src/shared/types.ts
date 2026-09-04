@@ -538,3 +538,55 @@ export interface AgentMemoryInput {
   content: string
   enabled?: boolean
 }
+
+// ── 声明式技能包(第三方来源;一期支持 tool=http 白名单执行器 / knowledge=受控知识) ──
+
+export interface SkillParamDecl {
+  name: string
+  desc?: string
+  type?: 'string' | 'number' | 'boolean'
+  required?: boolean
+  in?: 'query' | 'path' | 'body'
+}
+
+export interface SkillManifest {
+  name: string
+  version: string
+  kind: 'tool' | 'knowledge'
+  description: string
+  author?: string
+  homepage?: string
+  /** tool 类:http 白名单执行器配置(默认每次执行需人工确认) */
+  tool?: {
+    url: string
+    method?: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH'
+    params?: SkillParamDecl[]
+    headers?: Record<string, string>
+  }
+  /** knowledge 类:受控注入的知识/固定口径文本(长度受限) */
+  knowledge?: string
+}
+
+export interface SkillPackageItem {
+  id: number
+  name: string
+  version: string
+  kind: 'tool' | 'knowledge'
+  description: string
+  author?: string
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface SkillInstallInfo {
+  name: string
+  version: string
+  kind: 'tool' | 'knowledge'
+  description: string
+  author?: string
+  homepage?: string
+  /** 安装前的能力/权限摘要(展示给用户确认) */
+  capabilities: string[]
+  hash: string
+}

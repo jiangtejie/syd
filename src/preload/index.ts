@@ -284,6 +284,18 @@ const api = {
       remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:memory:remove', id)
     },
+    skill: {
+      list: (): Promise<{ ok: boolean; skills?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:skill:list'),
+      inspect: (dir: string): Promise<{ ok: boolean; info?: unknown; error?: string }> =>
+        ipcRenderer.invoke('cs:skill:inspect', dir),
+      install: (dir: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:skill:install', dir),
+      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:skill:remove', id),
+      toggle: (id: number, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:skill:toggle', id, enabled)
+    },
     export: {
       chat: (
         wxid: string,

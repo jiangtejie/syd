@@ -27,7 +27,9 @@ import type {
   CustomToolItem,
   CustomToolInput,
   AgentMemoryItem,
-  AgentMemoryInput
+  AgentMemoryInput,
+  SkillPackageItem,
+  SkillInstallInfo
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -268,6 +270,13 @@ declare global {
           list: () => Promise<Result<{ items?: AgentMemoryItem[] }>>
           save: (input: AgentMemoryInput) => Promise<Result<{ item?: AgentMemoryItem }>>
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+        }
+        skill: {
+          list: () => Promise<Result<{ skills?: SkillPackageItem[] }>>
+          inspect: (dir: string) => Promise<Result<{ info?: SkillInstallInfo }>>
+          install: (dir: string) => Promise<{ ok: boolean; error?: string }>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+          toggle: (id: number, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
         }
         export: {
           chat: (

@@ -210,6 +210,20 @@ const TABLES: string[] = [
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
+  )`,
+  // 第三方技能包(声明式:tool=http 白名单执行器 / knowledge=受控知识注入;manifest 存 JSON)
+  `CREATE TABLE IF NOT EXISTS skill_package (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    version TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'tool',
+    description TEXT NOT NULL DEFAULT '',
+    author TEXT DEFAULT '',
+    manifest TEXT NOT NULL,
+    hash TEXT DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    installed_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
   )`
 ]
 

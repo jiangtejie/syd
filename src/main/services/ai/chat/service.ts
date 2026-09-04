@@ -26,6 +26,13 @@ import {
 } from './skills'
 import { findMcpTool, mcpToolInstructionText, mcpToolNames } from './mcp'
 import { customToolInstructionText, findCustomTool, listCustomToolDefs } from './customTools'
+import {
+  findPackTool,
+  listPackToolDefs,
+  packKnowledgeText,
+  packToolInstructionText,
+  packToolNames
+} from './skillsPack'
 import type { AiChatEvent, AiStyle, ChatMsgItem, ChatTurn } from '../../../../shared/types'
 
 /**
@@ -59,9 +66,12 @@ async function buildSystem(agentId?: string | null): Promise<string> {
   } catch {
     /* MCP 不可用不阻塞对话 */
   }
-  const sections = [toolInstructionsText(), customToolInstructionText(), mcpText].filter(
-    (s) => s.trim().length > 0
-  )
+  const sections = [
+    toolInstructionsText(),
+    customToolInstructionText(),
+    packToolInstructionText(),
+    mcpText
+  ].filter((s) => s.trim().length > 0)
   if (sections.length === 0) return `${base}\n\n直接回答用户问题。`
   return [
     base,
@@ -86,6 +96,9 @@ function agentSystemText(agentId: string | null | undefined): string {
     const block = memories.join('\n- ').slice(0, 1400)
     parts.push(`常驻上下文(记忆;仅在相关内容时使用,不要向用户复述列表):\n- ${block}`)
   }
+  // 第三方技能知识(受控注入)
+  const packKnowledge = packKnowledgeText()
+  if (packKnowledge) parts.push(packKnowledge)
   return parts.join('\n')
 }
 
@@ -300,13 +313,18 @@ async function runTurn(opts: {
       const thought = extractThought(decision)
       const intent = parseToolIntent(decision)
       if (!intent) break
-      const def = findTool(intent.tool) ?? findMcpTool(intent.tool) ?? findCustomTool(intent.tool)
+      const def =
+        findTool(intent.tool) ??
+        findMcpTool(intent.tool) ??
+        findCustomTool(intent.tool) ??
+        findPackTool(intent.tool)
       if (!def) {
         // 未知工具:回填可用列表让模型修正
         const names = [
           ...ALL_TOOLS.map((t) => t.name),
           ...mcpToolNames(),
-          ...listCustomToolDefs().map((t) => t.name)
+          ...listCustomToolDefs().map((t) => t.name),
+          ...packToolNames()
         ]
         const err = `工具 ${intent.tool} 不存在。可用工具:${names.join('、')}`
         appendChatMessage(sessionId, 'user', 'tool_result', err)
@@ -490,7 +508,11 @@ async function executeNativeToolCalls(opts: {
   ]
   wire.push(...wireCalls)
   for (const call of calls) {
-    const def = findTool(call.name) ?? findMcpTool(call.name) ?? findCustomTool(call.name)
+    const def =
+      findTool(call.name) ??
+      findMcpTool(call.name) ??
+      findCustomTool(call.name) ??
+      findPackTool(call.name)
     const argsClip = call.arguments.slice(0, 300)
     sendEvent(wxid, {
       type: 'tool',
@@ -503,7 +525,8 @@ async function executeNativeToolCalls(opts: {
       const names = [
         ...ALL_TOOLS.map((t) => t.name),
         ...mcpToolNames(),
-        ...listCustomToolDefs().map((t) => t.name)
+        ...listCustomToolDefs().map((t) => t.name),
+        ...packToolNames()
       ]
       const err = `工具 ${call.name} 不存在。可用工具:${names.join('、')}`
       appendChatMessage(sessionId, 'user', 'tool_result', err, { tool: call.name })
@@ -601,6 +624,7 @@ async function runTurnNative(opts: {
     const schemas = [
       ...ALL_TOOLS,
       ...listCustomToolDefs(),
+      ...listPackToolDefs(),
       // MCP 工具已就绪时才纳入(由 buildSystem 预握手触发)
       ...mcpToolNames().map((n) => findMcpTool(n)!)
     ].map(schemaOf)

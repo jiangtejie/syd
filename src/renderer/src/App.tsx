@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useWorkbenchStore, type WorkbenchPage } from './stores/workbench'
 import Workbench from './pages/Workbench'
 import AiChatPage from './pages/AiChatPage'
+import SkillsPage from './pages/SkillsPage'
 import MonitorPage from './pages/MonitorPage'
 import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
@@ -17,7 +18,8 @@ import './pages/shell.css'
  * 对话页（Workbench）始终保持挂载（隐藏不卸载），切页不丢滚动位置与输入状态。
  */
 
-type NavIconName = 'ai' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
+type NavIconName =
+  'ai' | 'skills' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -36,6 +38,15 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
       return (
         <svg {...attrs}>
           <path d="M12 2.5 14 9l6.5 2-6.5 2-2 6.5L10 13l-6.5-2L10 9z" />
+        </svg>
+      )
+    case 'skills':
+      return (
+        <svg {...attrs}>
+          <rect x="3.5" y="3.5" width="7" height="7" rx="1.2" />
+          <rect x="13.5" y="3.5" width="7" height="7" rx="1.2" />
+          <rect x="3.5" y="13.5" width="7" height="7" rx="1.2" />
+          <rect x="13.5" y="13.5" width="7" height="7" rx="1.2" />
         </svg>
       )
     case 'monitor':
@@ -88,6 +99,7 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
 
 const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }> = [
   { key: 'ai', icon: 'ai', label: 'AI' },
+  { key: 'skills', icon: 'skills', label: '技能' },
   { key: 'monitor', icon: 'monitor', label: '监控' },
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
@@ -132,6 +144,7 @@ function NavAccountBadge(): React.JSX.Element {
   // 切换账号/连接状态后重新取当前账号自己的头像（contact URL → head_image 本地头像）
   useEffect(() => {
     let alive = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 切换账号时复位头像展示(全仓同款模式)
     setAvatarUrl(null)
     setFailed(false)
     if (!wxid) return
@@ -147,7 +160,10 @@ function NavAccountBadge(): React.JSX.Element {
   }, [wxid, source])
 
   // 头像地址变化时重置失败态（换成本地兜底图后可重试）
-  useEffect(() => setFailed(false), [avatarUrl])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 头像源变化复位失败标记(全仓同款模式)
+    setFailed(false)
+  }, [avatarUrl])
 
   const showImg = !!avatarUrl && /^(https?:|data:image)/.test(avatarUrl) && !failed
   const statusText = !wxid
@@ -249,6 +265,11 @@ function App(): React.JSX.Element {
             {page === 'ai' && (
               <div className="app-page">
                 <AiChatPage />
+              </div>
+            )}
+            {page === 'skills' && (
+              <div className="app-page">
+                <SkillsPage />
               </div>
             )}
             {page === 'monitor' && (
