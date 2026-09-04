@@ -24,10 +24,10 @@ import type { FeedbackIssueStatus } from '../../shared/types'
  */
 
 export function registerIssueHandlers(): void {
-  /** 数据变更通知:监控/看板等页面据此同步刷新 */
-  const notifyChanged = (): void => {
+  /** 数据变更通知:监控/看板等页面据此同步刷新;added>0 表示本次新落库问题数(渲染端提醒用) */
+  const notifyChanged = (extra: { wxid?: string; added?: number } = {}): void => {
     for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('cs:issue:changed', { at: Date.now() })
+      win.webContents.send('cs:issue:changed', { at: Date.now(), ...extra })
     }
   }
 
@@ -63,7 +63,10 @@ export function registerIssueHandlers(): void {
     ) => {
       if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
       return analyzeGroupIssues(wxid, groupUsername, groupName ?? '', opts ?? {}).then((r) => {
-        notifyChanged()
+        notifyChanged({
+          wxid,
+          added: r.ok && !r.skipped && r.count && r.count > 0 ? r.count : undefined
+        })
         return r
       })
     }

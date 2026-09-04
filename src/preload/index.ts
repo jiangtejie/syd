@@ -188,8 +188,13 @@ const api = {
         wxid: string
       ): Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }> =>
         ipcRenderer.invoke('cs:issue:groupBadges', wxid),
-      onChanged: (callback: () => void): (() => void) => {
-        const listener = (): void => callback()
+      onChanged: (
+        callback: (payload: { at?: number; wxid?: string; added?: number }) => void
+      ): (() => void) => {
+        const listener = (
+          _e: Electron.IpcRendererEvent,
+          payload: { at?: number; wxid?: string; added?: number }
+        ): void => callback(payload)
         ipcRenderer.on('cs:issue:changed', listener)
         return () => ipcRenderer.removeListener('cs:issue:changed', listener)
       }

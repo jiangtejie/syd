@@ -122,9 +122,11 @@ function SettingsPage(): React.JSX.Element {
   const [savedTip, setSavedTip] = useState('')
   const [sendStatus, setSendStatus] = useState<SendStatusInfo | null>(null)
   const [aiTesting, setAiTesting] = useState(false)
-  const [aiTestRes, setAiTestRes] = useState<{ ok: boolean; latencyMs?: number; error?: string } | null>(
-    null
-  )
+  const [aiTestRes, setAiTestRes] = useState<{
+    ok: boolean
+    latencyMs?: number
+    error?: string
+  } | null>(null)
   const [aiModelsLoading, setAiModelsLoading] = useState(false)
   const [aiModels, setAiModels] = useState<string[]>([])
   const [aiModelsMsg, setAiModelsMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -142,6 +144,8 @@ function SettingsPage(): React.JSX.Element {
   // 问题监控口径(小时):积压超时 / 跟进超时
   const [backlogHours, setBacklogHours] = useState(48)
   const [followUpHours, setFollowUpHours] = useState(12)
+  // 后台自动增量分析(全部活跃群,不限于当前打开的群;默认开)
+  const [autoScanIssue, setAutoScanIssue] = useState(true)
 
   /** 刷新缓存目录状态（生效目录/默认目录；effect 与路径变更共用） */
   const refreshCachePath = async (): Promise<void> => {
@@ -181,14 +185,17 @@ function SettingsPage(): React.JSX.Element {
       }
       setBacklogHours(hours(cfg['monitor.backlogHours'], 48))
       setFollowUpHours(hours(cfg['monitor.followUpHours'], 12))
+      setAutoScanIssue(cfg['issue.autoScan.enabled'] !== '0')
       setLoaded(true)
     })
-    void replyApi?.getSendStatus().then(setSendStatus).catch(() => undefined)
+    void replyApi
+      ?.getSendStatus()
+      .then(setSendStatus)
+      .catch(() => undefined)
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载时一次性刷新缓存目录展示（异步回调后 setState）
     void refreshCachePath()
     void appApi?.getAutoLaunch().then((r) => setAutoLaunch(!!r?.enabled))
     void appApi?.info().then((r) => setVersion(r?.version ?? ''))
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载时一次性刷新数据占用统计（异步回调后 setState）
     void refreshDataStats()
   }, [])
 
@@ -200,8 +207,7 @@ function SettingsPage(): React.JSX.Element {
   const applyCachePath = async (dir: string): Promise<void> => {
     const dir2 = dir.trim()
     // 恰好选回默认目录时归一化为空配置，保持「默认目录」展示
-    const final =
-      dir2 && cacheEffective && samePath(dir2, cacheEffective.defaultPath) ? '' : dir2
+    const final = dir2 && cacheEffective && samePath(dir2, cacheEffective.defaultPath) ? '' : dir2
     if (cacheEffective && !cacheEffective.isDefault && samePath(final, cacheEffective.path)) return
     await configApi?.set('cache.path', final)
     await refreshCachePath()
@@ -219,7 +225,11 @@ function SettingsPage(): React.JSX.Element {
   }
 
   /** 保存监控口径阈值(失焦/回车),非法值回落默认 */
-  const saveThreshold = (key: 'monitor.backlogHours' | 'monitor.followUpHours', value: number, fallback: number): void => {
+  const saveThreshold = (
+    key: 'monitor.backlogHours' | 'monitor.followUpHours',
+    value: number,
+    fallback: number
+  ): void => {
     if (!Number.isFinite(value) || value < 1 || value > 24 * 30) {
       if (key === 'monitor.backlogHours') setBacklogHours(fallback)
       else setFollowUpHours(fallback)
@@ -353,9 +363,7 @@ function SettingsPage(): React.JSX.Element {
 
   // 模型下拉候选：远程获取模型 ∪ 当前已填值（保证已选项可见；不预置任何模型名）
   const modelCandidates = Array.from(
-    new Set(
-      [...aiModels, form['ai.model']].filter((m) => typeof m === 'string' && m.trim() !== '')
-    )
+    new Set([...aiModels, form['ai.model']].filter((m) => typeof m === 'string' && m.trim() !== ''))
   ) as string[]
 
   return (
@@ -397,395 +405,432 @@ function SettingsPage(): React.JSX.Element {
 
       {tab === 'ai' && (
         <div className="st-tab-panel">
-        {/* AI 通道（独占一行） */}
-      <div className="page-card st-section">
-        <div className="st-title">AI 通道配置（OpenAI 兼容）</div>
-        <label className="st-row">
-          <span className="st-label">启用 AI 调用</span>
-          <input
-            type="checkbox"
-            checked={boolVal(form['ai.enabled'])}
-            onChange={(e) => patch('ai.enabled', boolStr(e.target.checked))}
-          />
-        </label>
-        <label className="st-row">
-          <span className="st-label">通道</span>
-          <select
-            className="st-input"
-            value={form['ai.provider']}
-            onChange={(e) => pickAiProvider(e.target.value)}
-          >
-            {AI_PRESETS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="st-row">
-          <span className="st-label">接口地址（Base URL）</span>
-          <input
-            className="st-input"
-            value={form['ai.baseUrl']}
-            onChange={(e) => patch('ai.baseUrl', e.target.value)}
-            placeholder="https://api.openai.com/v1"
-          />
-        </label>
-        <label className="st-row">
-          <span className="st-label">API Key</span>
-          <input
-            className="st-input"
-            type="password"
-            value={form['ai.apiKey']}
-            onChange={(e) => patch('ai.apiKey', e.target.value)}
-            placeholder="sk-..."
-          />
-        </label>
-        <label className="st-row">
-          <span className="st-label">模型名称</span>
-          <span className="st-mrow">
-            {modelFree ? (
+          {/* AI 通道（独占一行） */}
+          <div className="page-card st-section">
+            <div className="st-title">AI 通道配置（OpenAI 兼容）</div>
+            <label className="st-row">
+              <span className="st-label">启用 AI 调用</span>
               <input
-                className="st-input"
-                value={form['ai.model']}
-                onChange={(e) => patch('ai.model', e.target.value)}
-                placeholder={form['ai.provider'] === 'custom' ? '输入任意 OpenAI 兼容模型名' : '模型名'}
+                type="checkbox"
+                checked={boolVal(form['ai.enabled'])}
+                onChange={(e) => patch('ai.enabled', boolStr(e.target.checked))}
               />
-            ) : (
+            </label>
+            <label className="st-row">
+              <span className="st-label">通道</span>
               <select
                 className="st-input"
-                value={modelCandidates.includes(form['ai.model']) ? form['ai.model'] : ''}
-                onChange={(e) => {
-                  if (e.target.value === '__manual__') {
-                    setModelFree(true)
-                  } else {
-                    patch('ai.model', e.target.value)
-                  }
-                }}
+                value={form['ai.provider']}
+                onChange={(e) => pickAiProvider(e.target.value)}
               >
-                {modelCandidates.length === 0 && (
-                  <option value="" disabled>
-                    （暂无模型，可点右侧「获取模型」或手动输入）
-                  </option>
-                )}
-                {modelCandidates.map((m) => (
-                  <option key={`model-opt-${m}`} value={m}>
-                    {m}
+                {AI_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
                   </option>
                 ))}
-                <option value="__manual__">✍️ 手动输入模型…</option>
               </select>
-            )}
-            {modelFree && modelCandidates.length > 0 && (
+            </label>
+            <label className="st-row">
+              <span className="st-label">接口地址（Base URL）</span>
+              <input
+                className="st-input"
+                value={form['ai.baseUrl']}
+                onChange={(e) => patch('ai.baseUrl', e.target.value)}
+                placeholder="https://api.openai.com/v1"
+              />
+            </label>
+            <label className="st-row">
+              <span className="st-label">API Key</span>
+              <input
+                className="st-input"
+                type="password"
+                value={form['ai.apiKey']}
+                onChange={(e) => patch('ai.apiKey', e.target.value)}
+                placeholder="sk-..."
+              />
+            </label>
+            <label className="st-row">
+              <span className="st-label">模型名称</span>
+              <span className="st-mrow">
+                {modelFree ? (
+                  <input
+                    className="st-input"
+                    value={form['ai.model']}
+                    onChange={(e) => patch('ai.model', e.target.value)}
+                    placeholder={
+                      form['ai.provider'] === 'custom' ? '输入任意 OpenAI 兼容模型名' : '模型名'
+                    }
+                  />
+                ) : (
+                  <select
+                    className="st-input"
+                    value={modelCandidates.includes(form['ai.model']) ? form['ai.model'] : ''}
+                    onChange={(e) => {
+                      if (e.target.value === '__manual__') {
+                        setModelFree(true)
+                      } else {
+                        patch('ai.model', e.target.value)
+                      }
+                    }}
+                  >
+                    {modelCandidates.length === 0 && (
+                      <option value="" disabled>
+                        （暂无模型，可点右侧「获取模型」或手动输入）
+                      </option>
+                    )}
+                    {modelCandidates.map((m) => (
+                      <option key={`model-opt-${m}`} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                    <option value="__manual__">✍️ 手动输入模型…</option>
+                  </select>
+                )}
+                {modelFree && modelCandidates.length > 0 && (
+                  <button
+                    type="button"
+                    className="st-btn ghost"
+                    onClick={() => setModelFree(false)}
+                    title="从下拉列表选择模型"
+                  >
+                    列表选择
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="st-btn ghost"
+                  disabled={aiModelsLoading || !form['ai.baseUrl'].trim()}
+                  onClick={() => void fetchAiModels()}
+                  title="调用 {Base URL}/models 拉取当前通道可用模型"
+                >
+                  {aiModelsLoading ? '获取中…' : '获取模型'}
+                </button>
+              </span>
+            </label>
+            <div className="st-model-msg">
+              {aiModelsMsg &&
+                (aiModelsMsg.ok ? (
+                  <span className="st-ok">✓ {aiModelsMsg.text}</span>
+                ) : (
+                  <span className="st-bad">✗ {aiModelsMsg.text}</span>
+                ))}
+            </div>
+            <div className="st-actions">
               <button
                 type="button"
                 className="st-btn ghost"
-                onClick={() => setModelFree(false)}
-                title="从下拉列表选择模型"
+                disabled={aiTesting}
+                onClick={() => void testAi()}
               >
-                列表选择
+                {aiTesting ? '测试中…' : '测试连接'}
               </button>
-            )}
-            <button
-              type="button"
-              className="st-btn ghost"
-              disabled={aiModelsLoading || !form['ai.baseUrl'].trim()}
-              onClick={() => void fetchAiModels()}
-              title="调用 {Base URL}/models 拉取当前通道可用模型"
-            >
-              {aiModelsLoading ? '获取中…' : '获取模型'}
-            </button>
-          </span>
-        </label>
-        <div className="st-model-msg">
-          {aiModelsMsg &&
-            (aiModelsMsg.ok ? (
-              <span className="st-ok">✓ {aiModelsMsg.text}</span>
-            ) : (
-              <span className="st-bad">✗ {aiModelsMsg.text}</span>
-            ))}
-        </div>
-        <div className="st-actions">
-          <button
-            type="button"
-            className="st-btn ghost"
-            disabled={aiTesting}
-            onClick={() => void testAi()}
-          >
-            {aiTesting ? '测试中…' : '测试连接'}
-          </button>
-          <button
-            type="button"
-            className="st-btn"
-            disabled={!loaded}
-            onClick={() =>
-              void save([
-                'ai.enabled',
-                'ai.provider',
-                'ai.baseUrl',
-                'ai.apiKey',
-                'ai.model',
-                'ai.agent'
-              ])
-            }
-          >
-            保存 AI 配置
-          </button>
-        </div>
-        <label className="st-row st-agent-row">
-          <span className="st-label">智能体增强</span>
-          <input
-            type="checkbox"
-            checked={boolVal(form['ai.agent'])}
-            onChange={(e) => patch('ai.agent', boolStr(e.target.checked))}
-          />
-          <span className="st-hint-inline">
-            生成建议时自动带上本群待处理问题与团队客服背景；模型必要时可调用只读工具(查历史问题/团队名单)再作答。关闭则仅用聊天记录。
-          </span>
-        </label>
-        <div className="st-ai-test">
-          {aiTestRes &&
-            (aiTestRes.ok ? (
-              <span className="st-ok">✓ 连接成功 · {aiTestRes.latencyMs} ms</span>
-            ) : (
-              <span className="st-bad">✗ {aiTestRes.error}</span>
-            ))}
-        </div>
-        <span className="st-hint">
-          选择通道会自动填入官方接口地址（火山方舟需在控制台创建推理接入点后填写
-          ep-xxx）；模型名不做预置，可点「获取模型」从当前通道拉取，或手动填写。建议先
-          「测试连接」通过后再保存；未启用或未配置 Key/模型名时：回复建议不产出候选并提示开启、
-          群问题反馈提取走本地规则降级。
-        </span>
-      </div>
+              <button
+                type="button"
+                className="st-btn"
+                disabled={!loaded}
+                onClick={() =>
+                  void save([
+                    'ai.enabled',
+                    'ai.provider',
+                    'ai.baseUrl',
+                    'ai.apiKey',
+                    'ai.model',
+                    'ai.agent'
+                  ])
+                }
+              >
+                保存 AI 配置
+              </button>
+            </div>
+            <label className="st-row st-agent-row">
+              <span className="st-label">智能体增强</span>
+              <input
+                type="checkbox"
+                checked={boolVal(form['ai.agent'])}
+                onChange={(e) => patch('ai.agent', boolStr(e.target.checked))}
+              />
+              <span className="st-hint-inline">
+                生成建议时自动带上本群待处理问题与团队客服背景；模型必要时可调用只读工具(查历史问题/团队名单)再作答。关闭则仅用聊天记录。
+              </span>
+            </label>
+            <div className="st-ai-test">
+              {aiTestRes &&
+                (aiTestRes.ok ? (
+                  <span className="st-ok">✓ 连接成功 · {aiTestRes.latencyMs} ms</span>
+                ) : (
+                  <span className="st-bad">✗ {aiTestRes.error}</span>
+                ))}
+            </div>
+            <span className="st-hint">
+              选择通道会自动填入官方接口地址（火山方舟需在控制台创建推理接入点后填写
+              ep-xxx）；模型名不做预置，可点「获取模型」从当前通道拉取，或手动填写。建议先
+              「测试连接」通过后再保存；未启用或未配置 Key/模型名时：回复建议不产出候选并提示开启、
+              群问题反馈提取走本地规则降级。
+            </span>
+          </div>
 
-      {/* 智能体（客服人设） */}
-      <div className="page-card st-section">
-        <div className="st-title">智能体（客服人设）</div>
-        <span className="st-hint">
-          一个智能体 = 名称 + 人设 + 话术风格 + 自定义守则，用于 AI 生成回复建议时扮演的角色。
-          内置默认「微信私域智能客服」，可随时新建/切换。
-        </span>
-          <AgentSettingsSection />
-        </div>
+          {/* 智能体（客服人设） */}
+          <div className="page-card st-section">
+            <div className="st-title">智能体（客服人设）</div>
+            <span className="st-hint">
+              一个智能体 = 名称 + 人设 + 话术风格 + 自定义守则，用于 AI 生成回复建议时扮演的角色。
+              内置默认「微信私域智能客服」，可随时新建/切换。
+            </span>
+            <AgentSettingsSection />
+          </div>
         </div>
       )}
 
       {tab === 'send' && (
         <div className="st-tab-panel">
           <div className="st-grid">
-      {/* 发送频控 */}
-      <div className="page-card st-section">
-        <div className="st-title">发送与频控</div>
-        <label className="st-row">
-          <span className="st-label">每日发送上限</span>
-          <input
-            className="st-input sm"
-            type="number"
-            min={1}
-            max={2000}
-            value={form['send.dailyLimit']}
-            onChange={(e) => patch('send.dailyLimit', e.target.value)}
-          />
-        </label>
-        <label className="st-row">
-          <span className="st-label">拟人化延迟（发送间隔随机化）</span>
-          <input
-            type="checkbox"
-            checked={boolVal(form['send.humanizeDelay'])}
-            onChange={(e) => patch('send.humanizeDelay', boolStr(e.target.checked))}
-          />
-        </label>
-        <label className="st-row">
-          <span className="st-label">启用注入发送</span>
-          <input
-            type="checkbox"
-            checked={boolVal(form['inject.enabled'])}
-            onChange={(e) => patch('inject.enabled', boolStr(e.target.checked))}
-          />
-        </label>
-        <div className="st-actions">
-          <button
-            type="button"
-            className="st-btn"
-            onClick={() => void save(['send.dailyLimit', 'send.humanizeDelay', 'inject.enabled'])}
-          >
-            保存发送配置
-          </button>
-          <span className="st-hint">关闭注入后所有发送请求会被拒绝（仅记录审计）</span>
-        </div>
-      </div>
+            {/* 发送频控 */}
+            <div className="page-card st-section">
+              <div className="st-title">发送与频控</div>
+              <label className="st-row">
+                <span className="st-label">每日发送上限</span>
+                <input
+                  className="st-input sm"
+                  type="number"
+                  min={1}
+                  max={2000}
+                  value={form['send.dailyLimit']}
+                  onChange={(e) => patch('send.dailyLimit', e.target.value)}
+                />
+              </label>
+              <label className="st-row">
+                <span className="st-label">拟人化延迟（发送间隔随机化）</span>
+                <input
+                  type="checkbox"
+                  checked={boolVal(form['send.humanizeDelay'])}
+                  onChange={(e) => patch('send.humanizeDelay', boolStr(e.target.checked))}
+                />
+              </label>
+              <label className="st-row">
+                <span className="st-label">启用注入发送</span>
+                <input
+                  type="checkbox"
+                  checked={boolVal(form['inject.enabled'])}
+                  onChange={(e) => patch('inject.enabled', boolStr(e.target.checked))}
+                />
+              </label>
+              <div className="st-actions">
+                <button
+                  type="button"
+                  className="st-btn"
+                  onClick={() =>
+                    void save(['send.dailyLimit', 'send.humanizeDelay', 'inject.enabled'])
+                  }
+                >
+                  保存发送配置
+                </button>
+                <span className="st-hint">关闭注入后所有发送请求会被拒绝（仅记录审计）</span>
+              </div>
+            </div>
 
-      {/* 熔断状态 */}
-      <div className="page-card st-section">
-        <div className="st-title">发送通道状态</div>
-        <div className="st-status">
-          <div className="st-kv">
-            <span>熔断状态</span>
-            <span className={sendStatus?.halted ? 'st-bad' : 'st-ok'}>
-              {sendStatus ? (sendStatus.halted ? '已熔断' : '正常') : '—'}
-            </span>
-          </div>
-          <div className="st-kv">
-            <span>今日已发送</span>
-            <span>{sendStatus ? `${sendStatus.todayCount} / ${sendStatus.dailyLimit}` : '—'}</span>
-          </div>
-          <div className="st-kv">
-            <span>队列等待</span>
-            <span>{sendStatus?.queued ?? '—'}</span>
+            {/* 熔断状态 */}
+            <div className="page-card st-section">
+              <div className="st-title">发送通道状态</div>
+              <div className="st-status">
+                <div className="st-kv">
+                  <span>熔断状态</span>
+                  <span className={sendStatus?.halted ? 'st-bad' : 'st-ok'}>
+                    {sendStatus ? (sendStatus.halted ? '已熔断' : '正常') : '—'}
+                  </span>
+                </div>
+                <div className="st-kv">
+                  <span>今日已发送</span>
+                  <span>
+                    {sendStatus ? `${sendStatus.todayCount} / ${sendStatus.dailyLimit}` : '—'}
+                  </span>
+                </div>
+                <div className="st-kv">
+                  <span>队列等待</span>
+                  <span>{sendStatus?.queued ?? '—'}</span>
+                </div>
+              </div>
+              <div className="st-actions">
+                <button
+                  type="button"
+                  className="st-btn danger"
+                  disabled={!sendStatus?.halted}
+                  onClick={() => void resetCircuit()}
+                >
+                  复位熔断
+                </button>
+                <span className="st-hint">连续 2 次发送校验失败会自动熔断，复位前请先排查原因</span>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="st-actions">
-          <button
-            type="button"
-            className="st-btn danger"
-            disabled={!sendStatus?.halted}
-            onClick={() => void resetCircuit()}
-          >
-            复位熔断
-          </button>
-          <span className="st-hint">连续 2 次发送校验失败会自动熔断，复位前请先排查原因</span>
-        </div>
-      </div>
-        </div>
-      </div>
       )}
 
       {tab === 'other' && (
         <div className="st-tab-panel">
           <div className="st-grid">
-      {/* 数据缓存目录 */}
-      <div className="page-card st-section">
-        <div className="st-title">数据与缓存</div>
-        <div
-          className="st-cache-pick"
-          role="button"
-          tabIndex={0}
-          title="点击选择新的缓存目录"
-          onClick={() => void browseCachePath()}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              void browseCachePath()
-            }
-          }}
-        >
-          <div className="st-cache-main">
-            <span className={`st-cache-tag${cacheEffective?.isDefault === false ? ' custom' : ''}`}>
-              {cacheEffective?.isDefault === false ? '自定义目录' : '默认目录'}
-            </span>
-            <span className="st-cache-dir">{cacheEffective ? cacheEffective.path : '加载中…'}</span>
+            {/* 数据缓存目录 */}
+            <div className="page-card st-section">
+              <div className="st-title">数据与缓存</div>
+              <div
+                className="st-cache-pick"
+                role="button"
+                tabIndex={0}
+                title="点击选择新的缓存目录"
+                onClick={() => void browseCachePath()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    void browseCachePath()
+                  }
+                }}
+              >
+                <div className="st-cache-main">
+                  <span
+                    className={`st-cache-tag${cacheEffective?.isDefault === false ? ' custom' : ''}`}
+                  >
+                    {cacheEffective?.isDefault === false ? '自定义目录' : '默认目录'}
+                  </span>
+                  <span className="st-cache-dir">
+                    {cacheEffective ? cacheEffective.path : '加载中…'}
+                  </span>
+                </div>
+                <span className="st-cache-change">选择…</span>
+              </div>
+              <div className="st-actions">
+                {cacheEffective?.isDefault === false && (
+                  <button
+                    type="button"
+                    className="st-btn ghost"
+                    onClick={() => void resetCachePath()}
+                  >
+                    恢复默认
+                  </button>
+                )}
+                <span className="st-hint">
+                  选择目录后立即生效；切换目录后仅新缓存/导出写入新位置，旧目录内容需手动迁移
+                </span>
+              </div>
+              <div className="st-hint st-cache-hint">
+                用于解密图片/附件缓存与导出文件。默认优先取非系统盘（无可用盘符时回退应用数据目录）；
+                本地数据库 cs.db 固定存于应用数据目录，不随此项迁移。
+              </div>
+            </div>
+
+            {/* 通用（通知 / 开机自启） */}
+            <div className="page-card st-section">
+              <div className="st-title">通用</div>
+              <label className="st-row">
+                <span className="st-label">新消息系统通知</span>
+                <input
+                  type="checkbox"
+                  checked={boolVal(form['notify.enabled'])}
+                  onChange={(e) => {
+                    patch('notify.enabled', boolStr(e.target.checked))
+                    void configApi?.set('notify.enabled', boolStr(e.target.checked))
+                  }}
+                />
+              </label>
+              <label className="st-row">
+                <span className="st-label">开机自动启动</span>
+                <input
+                  type="checkbox"
+                  checked={autoLaunch}
+                  onChange={(e) => void toggleAutoLaunch(e.target.checked)}
+                />
+              </label>
+              <div className="st-hint st-cache-hint">
+                关闭窗口会最小化到系统托盘，可在托盘菜单中退出；
+                开机自启在打包安装后生效（开发模式下指向 Electron 本体）。
+              </div>
+            </div>
+
+            {/* 问题监控口径 */}
+            <div className="page-card st-section">
+              <div className="st-title">问题监控口径</div>
+              <label className="st-row">
+                <span className="st-label">后台自动增量分析</span>
+                <input
+                  type="checkbox"
+                  checked={autoScanIssue}
+                  onChange={(e) => {
+                    setAutoScanIssue(e.target.checked)
+                    void configApi?.set('issue.autoScan.enabled', e.target.checked ? '1' : '0')
+                    toast.success(
+                      e.target.checked
+                        ? '已开启:新消息事件 + 60s 巡检自动提取'
+                        : '已关闭后台自动分析(仍可手动分析)'
+                    )
+                  }}
+                />
+                <span className="st-hint-inline">
+                  覆盖全部活跃群的新消息自动提取(不限于当前打开的群),无新消息时不消耗模型
+                </span>
+              </label>
+              <label className="st-row">
+                <span className="st-label">积压超时阈值</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={720}
+                  className="st-input st-th-input"
+                  value={backlogHours}
+                  onChange={(e) => setBacklogHours(Number(e.target.value))}
+                  onBlur={() => saveThreshold('monitor.backlogHours', backlogHours, 48)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveThreshold('monitor.backlogHours', backlogHours, 48)
+                  }}
+                />
+                <span className="st-hint-inline">
+                  小时：问题首现超过该时长未闭环即标为「积压超时」
+                </span>
+              </label>
+              <label className="st-row">
+                <span className="st-label">跟进超时阈值</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={720}
+                  className="st-input st-th-input"
+                  value={followUpHours}
+                  onChange={(e) => setFollowUpHours(Number(e.target.value))}
+                  onBlur={() => saveThreshold('monitor.followUpHours', followUpHours, 12)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveThreshold('monitor.followUpHours', followUpHours, 12)
+                  }}
+                />
+                <span className="st-hint-inline">
+                  小时：客服回复后超过该时长仍未闭环即标为「跟进超时」
+                </span>
+              </label>
+              <div className="st-hint">
+                应用于监控中心 KPI、群问题面板的逾期徽标与排序提示；失焦或回车保存，立即生效。
+              </div>
+            </div>
+
+            {/* 数据管理 */}
+            <div className="page-card st-section">
+              <div className="st-title">数据管理</div>
+              <div className="st-kv">
+                <span>本地数据库</span>
+                <span>{dataStats ? formatBytes(dataStats.dbBytes) : '—'}</span>
+              </div>
+              <div className="st-kv">
+                <span>缓存占用</span>
+                <span>{dataStats ? formatBytes(dataStats.cacheBytes) : '—'}</span>
+              </div>
+              <div className="st-actions">
+                <button
+                  type="button"
+                  className={`st-btn${clearArmed ? ' danger' : ' ghost'}`}
+                  onClick={() => void clearCache()}
+                >
+                  {clearArmed ? '再点一次确认清理' : '清理缓存'}
+                </button>
+                <span className="st-hint">仅清空缓存目录，不影响密钥、配置与审计数据</span>
+              </div>
+              <div className="st-version">微信私域智能客服 v{version || '—'}</div>
+            </div>
           </div>
-          <span className="st-cache-change">选择…</span>
-        </div>
-        <div className="st-actions">
-          {cacheEffective?.isDefault === false && (
-            <button type="button" className="st-btn ghost" onClick={() => void resetCachePath()}>
-              恢复默认
-            </button>
-          )}
-          <span className="st-hint">
-            选择目录后立即生效；切换目录后仅新缓存/导出写入新位置，旧目录内容需手动迁移
-          </span>
-        </div>
-        <div className="st-hint st-cache-hint">
-          用于解密图片/附件缓存与导出文件。默认优先取非系统盘（无可用盘符时回退应用数据目录）；
-          本地数据库 cs.db 固定存于应用数据目录，不随此项迁移。
-        </div>
-      </div>
-
-      {/* 通用（通知 / 开机自启） */}
-      <div className="page-card st-section">
-        <div className="st-title">通用</div>
-        <label className="st-row">
-          <span className="st-label">新消息系统通知</span>
-          <input
-            type="checkbox"
-            checked={boolVal(form['notify.enabled'])}
-            onChange={(e) => {
-              patch('notify.enabled', boolStr(e.target.checked))
-              void configApi?.set('notify.enabled', boolStr(e.target.checked))
-            }}
-          />
-        </label>
-        <label className="st-row">
-          <span className="st-label">开机自动启动</span>
-          <input
-            type="checkbox"
-            checked={autoLaunch}
-            onChange={(e) => void toggleAutoLaunch(e.target.checked)}
-          />
-        </label>
-        <div className="st-hint st-cache-hint">
-          关闭窗口会最小化到系统托盘，可在托盘菜单中退出；
-          开机自启在打包安装后生效（开发模式下指向 Electron 本体）。
-        </div>
-      </div>
-
-      {/* 问题监控口径 */}
-      <div className="page-card st-section">
-        <div className="st-title">问题监控口径</div>
-        <label className="st-row">
-          <span className="st-label">积压超时阈值</span>
-          <input
-            type="number"
-            min={1}
-            max={720}
-            className="st-input st-th-input"
-            value={backlogHours}
-            onChange={(e) => setBacklogHours(Number(e.target.value))}
-            onBlur={() => saveThreshold('monitor.backlogHours', backlogHours, 48)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') saveThreshold('monitor.backlogHours', backlogHours, 48)
-            }}
-          />
-          <span className="st-hint-inline">小时：问题首现超过该时长未闭环即标为「积压超时」</span>
-        </label>
-        <label className="st-row">
-          <span className="st-label">跟进超时阈值</span>
-          <input
-            type="number"
-            min={1}
-            max={720}
-            className="st-input st-th-input"
-            value={followUpHours}
-            onChange={(e) => setFollowUpHours(Number(e.target.value))}
-            onBlur={() => saveThreshold('monitor.followUpHours', followUpHours, 12)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') saveThreshold('monitor.followUpHours', followUpHours, 12)
-            }}
-          />
-          <span className="st-hint-inline">小时：客服回复后超过该时长仍未闭环即标为「跟进超时」</span>
-        </label>
-        <div className="st-hint">
-          应用于监控中心 KPI、群问题面板的逾期徽标与排序提示；失焦或回车保存，立即生效。
-        </div>
-      </div>
-
-      {/* 数据管理 */}
-      <div className="page-card st-section">
-        <div className="st-title">数据管理</div>
-        <div className="st-kv">
-          <span>本地数据库</span>
-          <span>{dataStats ? formatBytes(dataStats.dbBytes) : '—'}</span>
-        </div>
-        <div className="st-kv">
-          <span>缓存占用</span>
-          <span>{dataStats ? formatBytes(dataStats.cacheBytes) : '—'}</span>
-        </div>
-        <div className="st-actions">
-          <button
-            type="button"
-            className={`st-btn${clearArmed ? ' danger' : ' ghost'}`}
-            onClick={() => void clearCache()}
-          >
-            {clearArmed ? '再点一次确认清理' : '清理缓存'}
-          </button>
-          <span className="st-hint">仅清空缓存目录，不影响密钥、配置与审计数据</span>
-        </div>
-        <div className="st-version">微信私域智能客服 v{version || '—'}</div>
-        </div>
-        </div>
         </div>
       )}
     </div>

@@ -198,7 +198,9 @@ declare global {
           groupBadges: (
             wxid: string
           ) => Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }>
-          onChanged: (callback: () => void) => () => void
+          onChanged: (
+            callback: (payload: { at?: number; wxid?: string; added?: number }) => void
+          ) => () => void
         }
         team: {
           list: (accountWxid: string) => Promise<Result<{ members?: TeamMemberInfo[] }>>

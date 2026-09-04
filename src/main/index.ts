@@ -34,6 +34,7 @@ import { registerAgentHandlers } from './ipc/agentHandlers'
 import { registerTeamHandlers } from './ipc/teamHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
+import { stopAll as stopIssueScheduler } from './services/feedback/scheduler'
 import { stopSending } from './services/send/sendService'
 
 /**
@@ -337,5 +338,6 @@ app.on('before-quit', () => {
   isQuitting = true
   closeDb()
   stopAllWatches()
+  stopIssueScheduler()
   stopSending()
 })

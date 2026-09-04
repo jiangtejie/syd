@@ -20,6 +20,17 @@ export function setOnDbChangedNotify(fn: (sessionChanged: boolean) => void): voi
   onDbChangedNotify = fn
 }
 
+/** 库变化订阅钩子（后台调度器等主进程模块用）；返回取消函数 */
+type DbChangedHook = (payload: DbChangedPayload) => void
+const dbChangedHooks = new Set<DbChangedHook>()
+
+export function addDbChangeHook(hook: DbChangedHook): () => void {
+  dbChangedHooks.add(hook)
+  return () => {
+    dbChangedHooks.delete(hook)
+  }
+}
+
 export interface DbChangedPayload {
   wxid: string
   info: DbChangeInfo
@@ -32,6 +43,13 @@ function broadcast(payload: DbChangedPayload): void {
     win.webContents.send('cs:wx:dbChanged', payload)
   }
   onDbChangedNotify?.(payload.info.sessionChanged)
+  for (const hook of dbChangedHooks) {
+    try {
+      hook(payload)
+    } catch {
+      /* 单个钩子异常不影响广播 */
+    }
+  }
 }
 
 /** 为 wxid 启动监控（幂等，重复调用返回现有实例） */

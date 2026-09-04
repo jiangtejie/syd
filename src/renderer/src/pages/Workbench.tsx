@@ -50,7 +50,40 @@ function Workbench(): React.JSX.Element {
       if (msgTimerRef.current !== null) window.clearTimeout(msgTimerRef.current)
       unsub?.()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 问题数据变化(任意页面处置/分析/后台调度落库):刷新各群徽标;
+  // 后台调度新增问题且窗口未聚焦时桌面提醒(30s 节流),点击直达监控中心
+  const issueTimerRef = useRef<number | null>(null)
+  const issueNotifyAtRef = useRef(0)
+  useEffect(() => {
+    const unsub = window.api?.cs?.issue?.onChanged?.((p) => {
+      if (issueTimerRef.current !== null) window.clearTimeout(issueTimerRef.current)
+      issueTimerRef.current = window.setTimeout(() => {
+        issueTimerRef.current = null
+        const st = useWorkbenchStore.getState()
+        if (p?.wxid && st.wxid && st.wxid !== p.wxid) return
+        void st.refreshGroupBadges()
+        const added = p && typeof p.added === 'number' ? p.added : 0
+        const now = Date.now()
+        if (added > 0 && !document.hasFocus() && now - issueNotifyAtRef.current >= 30_000) {
+          issueNotifyAtRef.current = now
+          if ('Notification' in window && Notification.permission === 'granted') {
+            const n = new Notification('群问题监控', {
+              body: `后台自动分析发现 ${added} 条新问题，点击查看监控中心`
+            })
+            n.onclick = (): void => {
+              useWorkbenchStore.getState().setPage('monitor')
+              window.focus()
+            }
+          }
+        }
+      }, 400)
+    })
+    return () => {
+      if (issueTimerRef.current !== null) window.clearTimeout(issueTimerRef.current)
+      unsub?.()
+    }
   }, [])
 
   return (

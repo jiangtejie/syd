@@ -1,10 +1,18 @@
 import { ipcMain } from 'electron'
 import * as wxService from '../services/wechat/wxService'
 import { startWatch, stopWatch, listWatchWxids } from '../services/wechat/watchService'
+import {
+  ensure as ensureIssueScheduler,
+  remove as removeIssueScheduler
+} from '../services/feedback/scheduler'
 import type { MessageCursor } from '../../shared/types'
 
 export function registerWechatHandlers(): void {
-  ipcMain.handle('cs:wx:connect', (_e, wxid: string) => wxService.connect(wxid))
+  ipcMain.handle('cs:wx:connect', (_e, wxid: string) => {
+    const r = wxService.connect(wxid)
+    if (r.ok) ensureIssueScheduler(wxid)
+    return r
+  })
 
   ipcMain.handle('cs:wx:getSessions', (_e, wxid: string) => wxService.getSessions(wxid))
 
@@ -33,9 +41,14 @@ export function registerWechatHandlers(): void {
     wxService.getContactNames(wxid, usernames ?? [])
   )
 
-  ipcMain.handle('cs:wx:startWatch', (_e, wxid: string) => startWatch(wxid))
+  ipcMain.handle('cs:wx:startWatch', (_e, wxid: string) => {
+    const r = startWatch(wxid)
+    if (r.ok) ensureIssueScheduler(wxid)
+    return r
+  })
   ipcMain.handle('cs:wx:stopWatch', (_e, wxid: string) => {
     stopWatch(wxid)
+    removeIssueScheduler(wxid)
     return { ok: true }
   })
   ipcMain.handle('cs:wx:listWatch', () => listWatchWxids())
