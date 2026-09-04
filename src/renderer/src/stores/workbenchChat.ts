@@ -34,6 +34,8 @@ interface WbState {
   /** 每会话生成状态(切换会话不互相阻塞) */
   busyIds: Record<number, boolean>
   streamingBuf: string
+  /** 推理过程(思考内容)实时缓冲:reasoner 模型才出现 */
+  reasoningBuf: string
   toolCards: WbToolCard[]
   approvals: WbApprovalCard[]
   error: string | null
@@ -59,11 +61,11 @@ const wbApi = window.api?.cs?.wb
 /** load 请求序号:慢响应不得覆盖后选的会话 */
 let loadSeq = 0
 
-/** delta 按帧批量(单路活动会话展示) */
-let deltaQueue: Array<{ sid: number; token: string }> = []
+/** delta 按帧批量(单路活动会话展示;text=正文,reason=推理过程) */
+let deltaQueue: Array<{ sid: number; kind: 'text' | 'reason'; token: string }> = []
 let flushHandle: number | null = null
-function queueDelta(sid: number, token: string): void {
-  deltaQueue.push({ sid, token })
+function queueDelta(sid: number, kind: 'text' | 'reason', token: string): void {
+  deltaQueue.push({ sid, kind, token })
   if (flushHandle !== null) return
   const flush = (): void => {
     flushHandle = null
@@ -72,10 +74,16 @@ function queueDelta(sid: number, token: string): void {
     for (const it of items) {
       const st = useWorkbenchChatStore.getState()
       if (it.sid !== st.activeId) continue // 非活动会话的增量先丢弃,done 后整轮刷新兜底
-      if (st.pendingUser?.sid === it.sid) useWorkbenchChatStore.setState({ pendingUser: null })
-      useWorkbenchChatStore.setState({
-        streamingBuf: st.streamingBuf + it.token
-      })
+      if (it.kind === 'text') {
+        if (st.pendingUser?.sid === it.sid) useWorkbenchChatStore.setState({ pendingUser: null })
+        useWorkbenchChatStore.setState({
+          streamingBuf: st.streamingBuf + it.token
+        })
+      } else {
+        useWorkbenchChatStore.setState({
+          reasoningBuf: st.reasoningBuf + it.token
+        })
+      }
     }
   }
   flushHandle =
@@ -92,6 +100,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   loading: false,
   busyIds: {},
   streamingBuf: '',
+  reasoningBuf: '',
   toolCards: [],
   approvals: [],
   error: null,
@@ -102,6 +111,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     set({
       wxid: key,
       streamingBuf: '',
+      reasoningBuf: '',
       toolCards: [],
       approvals: [],
       error: null,
@@ -133,7 +143,14 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
 
   select: async (id) => {
     const prev = get().activeId
-    set({ activeId: id, toolCards: [], approvals: [], streamingBuf: '', error: null })
+    set({
+      activeId: id,
+      toolCards: [],
+      approvals: [],
+      streamingBuf: '',
+      reasoningBuf: '',
+      error: null
+    })
     if (prev !== id) set({ messages: [], loading: true })
     await get().load(id)
   },
@@ -189,6 +206,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       toolCards: [],
       approvals: [],
       streamingBuf: '',
+      reasoningBuf: '',
       error: null,
       pendingUser: null
     })
@@ -203,6 +221,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     set({
       busyIds: { ...busyIds, [sid]: true },
       streamingBuf: '',
+      reasoningBuf: '',
       toolCards: [],
       approvals: [],
       error: null,
@@ -236,6 +255,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     set({
       busyIds: { ...busyIds, [sid]: true },
       streamingBuf: '',
+      reasoningBuf: '',
       toolCards: [],
       approvals: [],
       error: null,
@@ -265,6 +285,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
         useWorkbenchChatStore.setState({
           busyIds: { ...st.busyIds, [sid]: false },
           streamingBuf: '',
+          reasoningBuf: '',
           pendingUser: st.pendingUser?.sid === sid ? null : st.pendingUser
         })
         if (st.activeId === sid) void st.load(sid)
@@ -308,12 +329,14 @@ function handleWbEvent(raw: unknown): void {
       useWorkbenchChatStore.setState({ busyIds: { ...cur.busyIds, [sid]: false } })
     }
     if (cur.activeId === sid) {
-      useWorkbenchChatStore.setState({ streamingBuf: '' })
+      useWorkbenchChatStore.setState({ streamingBuf: '', reasoningBuf: '' })
       void useWorkbenchChatStore.getState().load(sid)
     }
   }
   if (e.type === 'delta' && e.token && isActive) {
-    queueDelta(sid, e.token)
+    queueDelta(sid, 'text', e.token)
+  } else if (e.type === 'reasoning' && e.token && isActive) {
+    queueDelta(sid, 'reason', e.token)
   } else if (e.type === 'done') {
     finishTurn()
   } else if (e.type === 'error') {

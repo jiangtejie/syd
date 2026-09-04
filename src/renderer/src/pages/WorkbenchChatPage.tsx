@@ -15,12 +15,31 @@ import './workbench-chat.css'
  * AI 工作台页:让 AI 调用产品原生能力(业务查询/软件状态)+ SKILL.md 业务口径。
  * 引擎基于 Vercel AI SDK(主进程),工具只读;写/危险操作会经确认桥弹窗(v2 启用)。
  * 交互优化:历史气泡 memo(流式时不重复解析 Markdown)、delta 按帧渲染、
- * 发送后乐观回显、跟随滚动(用户上翻时不抢滚)、思考动画、中文输入法回车不误发。
+ * 发送后乐观回显、跟随滚动(用户上翻时不抢滚)、思考动画、中文输入法回车不误发、
+ * reasoner 推理过程实时流+落库可折叠回看、超长会话消息窗口化。
  */
+
+/** 消息窗口:只渲染最近 N 条(超长会话防整表重排);向上分页翻更早 */
+const WB_WINDOW = 200
+const WB_OLDER_STEP = 200
 
 function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   const isUser = msg.role === 'user'
   const isError = msg.kind === 'error'
+  const [reasonOpen, setReasonOpen] = useState(false)
+  const meta = useMemo(() => {
+    if (!msg.meta) return null
+    try {
+      const p = JSON.parse(msg.meta) as unknown
+      return p && typeof p === 'object' ? (p as Record<string, unknown>) : null
+    } catch {
+      return null
+    }
+  }, [msg.meta])
+  const reasoningText =
+    !isUser && !isError && typeof meta?.reasoning === 'string' ? meta.reasoning : ''
+  const t = meta?.tokens as { input?: number; output?: number } | undefined
+  const hasTokens = !!t && (typeof t.input === 'number' || typeof t.output === 'number')
   return (
     <div className={`wb-row${isUser ? ' is-user' : ''}${isError ? ' is-error' : ''}`}>
       <div className="wb-bubble">
@@ -29,7 +48,30 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
         ) : isUser ? (
           <div className="wb-plain">{msg.content}</div>
         ) : (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+          <>
+            {reasoningText && (
+              <div className="wb-reason">
+                <button
+                  type="button"
+                  className="wb-reason-toggle"
+                  aria-expanded={reasonOpen}
+                  onClick={() => setReasonOpen((o) => !o)}
+                >
+                  <span className={`wb-reason-caret${reasonOpen ? ' is-open' : ''}`}>▸</span>
+                  思考过程 · {reasoningText.length} 字
+                </button>
+                {reasonOpen && <pre className="wb-reason-static">{reasoningText}</pre>}
+              </div>
+            )}
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+            {hasTokens && (
+              <div className="wb-tokens-line">
+                {typeof t.input === 'number' ? `输入 ${t.input}` : ''}
+                {typeof t.input === 'number' && typeof t.output === 'number' ? ' / ' : ''}
+                {typeof t.output === 'number' ? `输出 ${t.output}` : ''} tokens
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -109,9 +151,32 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const { chats, activeId, messages, loading, busyIds, streamingBuf, error, pendingUser } = store
   const toolCards = useWorkbenchChatStore((s) => s.toolCards)
   const approvals = useWorkbenchChatStore((s) => s.approvals)
+  const reasoningBuf = useWorkbenchChatStore((s) => s.reasoningBuf)
   const activeBusy = activeId !== null && !!busyIds[activeId]
   const [stick, setStick] = useState(true)
   const stickRef = useRef(true)
+
+  /** 消息窗口化:只渲染最近 WB_WINDOW 条,防止超长会话整表重排;向上可翻更早 */
+  const [startIdx, setStartIdx] = useState(0)
+  const pendingAnchorRef = useRef<string | null>(null)
+  const visible = useMemo(
+    () => (startIdx > 0 ? messages.slice(startIdx) : messages),
+    [messages, startIdx]
+  )
+  // 底部跟随:整轮加载/追加后,窗口保持贴底(仅用户本就在底部时)
+  useEffect(() => {
+    if (!stickRef.current) return
+    const maxStart = Math.max(0, messages.length - WB_WINDOW)
+    setStartIdx((i) => (i === maxStart ? i : maxStart))
+  }, [messages])
+  // 加载更早:以原首条为锚,展开后仍停在原位附近
+  useEffect(() => {
+    const id = pendingAnchorRef.current
+    if (id === null) return
+    pendingAnchorRef.current = null
+    const el = bodyRef.current?.querySelector(`[data-wid="${id}"]`)
+    el?.scrollIntoView({ block: 'start' })
+  }, [startIdx])
 
   /** 应用内输入弹窗（Electron 不支持 window.prompt：不弹窗且返回 undefined） */
   interface PromptState {
@@ -162,12 +227,12 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     if (el) el.scrollTop = el.scrollHeight
   }, [activeId])
 
-  // 内容更新(流式/回显/工具卡/整轮刷新):仅在用户处于底部附近时跟随滚动
+  // 内容更新(流式/推理/回显/工具卡/整轮刷新/窗口变化):仅在用户处于底部附近时跟随滚动
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
     if (stickRef.current) el.scrollTop = el.scrollHeight
-  }, [messages, streamingBuf, pendingUser, toolCards, approvals, loading])
+  }, [messages, streamingBuf, reasoningBuf, pendingUser, toolCards, approvals, loading, startIdx])
 
   const handleBodyScroll = (): void => {
     const el = bodyRef.current
@@ -182,8 +247,18 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const jumpToBottom = (): void => {
     stickRef.current = true
     setStick(true)
-    const el = bodyRef.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    pendingAnchorRef.current = null
+    setStartIdx(Math.max(0, messages.length - WB_WINDOW))
+  }
+
+  /** 加载更早:记录原首条,展开后以它为锚保持位置(进入历史浏览态,停止跟随) */
+  const loadOlder = (): void => {
+    const anchorId = messages[startIdx]?.id
+    if (anchorId === undefined) return
+    pendingAnchorRef.current = String(anchorId)
+    stickRef.current = false
+    setStick(false)
+    setStartIdx((i) => Math.max(0, i - WB_OLDER_STEP))
   }
 
   const active = useMemo(
@@ -213,6 +288,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     setDraft('')
     stickRef.current = true
     setStick(true)
+    // 若用户正在翻更早历史,发送后回到贴底窗口
+    setStartIdx(Math.max(0, messages.length - WB_WINDOW))
     void store.send(t)
     // 按钮点击路径恢复输入焦点(回车路径焦点本就在输入框)
     requestAnimationFrame(() => taRef.current?.focus())
@@ -333,7 +410,18 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             </div>
           )}
           {loading && <div className="wb-loading">加载中…</div>}
-          {!loading && activeId !== null && messages.map((m) => <WbMessage key={m.id} msg={m} />)}
+          {!loading && startIdx > 0 && (
+            <button type="button" className="wb-older" onClick={loadOlder}>
+              ↑ 查看更早 {startIdx} 条
+            </button>
+          )}
+          {!loading &&
+            activeId !== null &&
+            visible.map((m) => (
+              <div className="wb-msg-anchor" data-wid={m.id} key={m.id}>
+                <WbMessage msg={m} />
+              </div>
+            ))}
           {/* 乐观回显:本轮用户消息(引擎已落库,整轮结束刷新后被正式列表替换) */}
           {pendingUser && activeId === pendingUser.sid && (
             <div className="wb-row is-user">
@@ -349,14 +437,23 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           )}
           <WbToolCards />
           <WbApprovals />
-          {/* 等待首字:思考动画(有审批卡片时不重复提示) */}
-          {activeBusy && !streamingBuf && approvals.length === 0 && (
+          {/* 等待首字:思考动画(推理流已开始或有审批卡片时不重复提示) */}
+          {activeBusy && !streamingBuf && !reasoningBuf && approvals.length === 0 && (
             <div className="wb-row">
               <div className="wb-bubble wb-thinking">
                 <span className="wb-thinking-dot" />
                 <span className="wb-thinking-dot" />
                 <span className="wb-thinking-dot" />
                 <span className="wb-thinking-text">正在思考</span>
+              </div>
+            </div>
+          )}
+          {/* 推理过程实时流(reasoner 模型):收尾落库后由消息内折叠区展示 */}
+          {reasoningBuf && (
+            <div className="wb-row">
+              <div className="wb-bubble wb-reason-live">
+                <div className="wb-reason-label">💭 思考过程</div>
+                <pre className="wb-reason-text">{reasoningBuf}</pre>
               </div>
             </div>
           )}

@@ -26,6 +26,8 @@ const MAX_CHARS = 24_000
 const MAX_MSG_CHARS = 6000
 const COMPRESS_THRESHOLD_ROWS = 24
 const COMPRESS_THRESHOLD_CHARS = 36_000
+/** 推理过程(思考内容)实时上屏上限:超限后不再推送/落库,避免消息体过大 */
+const REASON_CAP = 6000
 
 interface RunHandle {
   controller: AbortController
@@ -154,6 +156,7 @@ export async function sendWorkbenchMessage(
 
     emitWorkbenchEvent(sessionId, { type: 'status', text: '生成中' })
     let content = ''
+    let reasoning = ''
     let usageIn = 0
     let usageOut = 0
     const result = streamText({
@@ -171,6 +174,17 @@ export async function sendWorkbenchMessage(
       if (part.type === 'text-delta') {
         content += part.text
         emitWorkbenchEvent(sessionId, { type: 'delta', token: part.text })
+      } else if (part.type === 'reasoning-delta') {
+        // 思考型模型(reasoner)的推理过程:实时推送,收尾随 meta.reasoning 落库
+        const t = (part as { text?: string }).text ?? ''
+        if (t) {
+          const room = REASON_CAP - reasoning.length
+          if (room > 0) {
+            const chunk = room >= t.length ? t : t.slice(0, room)
+            reasoning += chunk
+            emitWorkbenchEvent(sessionId, { type: 'reasoning', token: chunk })
+          }
+        }
       } else if (part.type === 'tool-call') {
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
@@ -221,6 +235,7 @@ export async function sendWorkbenchMessage(
     }
     const meta: Record<string, unknown> = {}
     if (usageIn || usageOut) meta.tokens = { input: usageIn, output: usageOut }
+    if (reasoning.trim()) meta.reasoning = reasoning.trim()
     const messageId = appendChatMessage(sessionId, 'assistant', 'text', trimmed, meta)
     touchChat(sessionId)
     emitWorkbenchEvent(sessionId, { type: 'done', messageId })
