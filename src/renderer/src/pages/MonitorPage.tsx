@@ -16,7 +16,7 @@ import './monitor.css'
 
 /**
  * 问题监控中心(管理者视角 BI + Bug 追踪):
- * KPI 大卡 → 趋势/类型/群榜/积压年龄图表 → 钻取追踪列表(状态处置/时间线/定位聊天)。
+ * KPI 大卡 → 钻取追踪列表(状态处置/指派跟进人/时间线/定位聊天) → 趋势/类型/群榜/积压年龄图表。
  * 数据源:本地 issue 库(cs:issue:list/detail/setStatus),无新增后端聚合。
  */
 
@@ -603,29 +603,6 @@ function MonitorPage(): React.JSX.Element {
             />
           </div>
 
-          {/* 图表区 */}
-          <div className="mon-charts">
-            <div className="mon-card mon-trend">
-              <div className="mon-card-title">新增 / 解决趋势</div>
-              <EChart option={trendOption} height={190} />
-            </div>
-            <div className="mon-card mon-pie">
-              <div className="mon-card-title">待处理类型分布</div>
-              <EChart option={typeOption} height={190} />
-            </div>
-            <div className="mon-card mon-groups">
-              <div className="mon-card-title">问题最多的群(Top10 · 下拉可钻取)</div>
-              <EChart
-                option={groupOption}
-                height={Math.max(120, metrics.groupTop.length * 20 + 40)}
-              />
-            </div>
-            <div className="mon-card mon-age">
-              <div className="mon-card-title">积压年龄分布</div>
-              <EChart option={ageOption} height={190} />
-            </div>
-          </div>
-
           {/* 钻取列表 + 追踪抽屉 */}
           <div className="mon-bottom">
             <div className="mon-card mon-list-card">
@@ -876,6 +853,29 @@ function MonitorPage(): React.JSX.Element {
                 )}
               </div>
             )}
+          </div>
+
+          {/* 图表区 */}
+          <div className="mon-charts">
+            <div className="mon-card mon-trend">
+              <div className="mon-card-title">新增 / 解决趋势</div>
+              <EChart option={trendOption} height={190} />
+            </div>
+            <div className="mon-card mon-pie">
+              <div className="mon-card-title">待处理类型分布</div>
+              <EChart option={typeOption} height={190} />
+            </div>
+            <div className="mon-card mon-groups">
+              <div className="mon-card-title">问题最多的群(Top10 · 下拉可钻取)</div>
+              <EChart
+                option={groupOption}
+                height={Math.max(120, metrics.groupTop.length * 20 + 40)}
+              />
+            </div>
+            <div className="mon-card mon-age">
+              <div className="mon-card-title">积压年龄分布</div>
+              <EChart option={ageOption} height={190} />
+            </div>
           </div>
         </>
       )}
