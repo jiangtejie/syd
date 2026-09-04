@@ -30,11 +30,23 @@ async function fetchTool(tool: CustomToolItem, args: Record<string, unknown>): P
       return `缺少必填参数 ${p.name}${p.desc ? `(${p.desc})` : ''},请补全后重试。`
     }
     if (missing) continue
-    const str = typeof v === 'string' ? v : JSON.stringify(v)
+    // 类型校验/归一(number/boolean),错误文本回填模型让其修正
+    let val: unknown = v
+    if (p.type === 'number') {
+      const n = typeof v === 'number' ? v : Number(v)
+      if (!Number.isFinite(n)) return `参数 ${p.name} 需要数字类型。`
+      val = n
+    } else if (p.type === 'boolean') {
+      if (typeof v === 'boolean') val = v
+      else if (v === 'true' || v === 1) val = true
+      else if (v === 'false' || v === 0) val = false
+      else return `参数 ${p.name} 需要布尔类型(true/false)。`
+    }
+    const str = typeof val === 'string' ? val : JSON.stringify(val)
     if (p.in === 'path') {
       url = url.replace(`{${p.name}}`, encodeURIComponent(str))
     } else if (p.in === 'body') {
-      bodyObj[p.name] = v
+      bodyObj[p.name] = val
     } else {
       query.append(p.name, str)
     }

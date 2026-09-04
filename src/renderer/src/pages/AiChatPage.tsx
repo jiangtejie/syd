@@ -17,6 +17,20 @@ function MessageBubble({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   const isUser = msg.role === 'user'
   const isError = msg.kind === 'error'
   const isTool = msg.kind === 'tool_result'
+  // meta: {"tokens":{"input":n,"output":n},"reasoning":"…"}
+  const meta = useMemo(() => {
+    if (!msg.meta) return null
+    try {
+      return JSON.parse(msg.meta) as {
+        tokens?: { input?: number; output?: number }
+        reasoning?: string
+      }
+    } catch {
+      return null
+    }
+  }, [msg.meta])
+  const hasReasoning = !!meta?.reasoning?.trim()
+  const hasTokens = !!(meta?.tokens?.input || meta?.tokens?.output)
   return (
     <div className={`aichat-row ${isUser ? 'is-user' : ''}${isError ? ' is-error' : ''}`}>
       <div className="aichat-bubble">
@@ -26,7 +40,20 @@ function MessageBubble({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
         ) : isUser ? (
           <div className="aichat-plain">{msg.content}</div>
         ) : (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+          <>
+            {hasReasoning && (
+              <details className="aichat-reasoning">
+                <summary>思考过程（可折叠）</summary>
+                <div className="aichat-reasoning-body">{meta?.reasoning}</div>
+              </details>
+            )}
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+            {hasTokens && (
+              <div className="aichat-tokens">
+                ↑{meta?.tokens?.input ?? 0} ↓{meta?.tokens?.output ?? 0} tokens
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

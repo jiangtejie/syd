@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
-import { createAiProvider } from '../provider'
+import { createAiProvider, readProviderConfig, type ToolSchema, type WireMsg } from '../provider'
+import { getConfig } from '../../../db/repos/config'
 import { getAgentById, getDefaultAgent } from '../../../db/repos/agentRepo'
 import { getDb } from '../../../db/database'
 import {
@@ -128,11 +129,11 @@ function parseToolIntent(text: string): { tool: string; args: Record<string, unk
   return null
 }
 
-/** 历史消息 → LLM turns(工具结果以 user 角色回填,保持上下文一致) */
+/** 历史消息 → LLM turns(工具结果以 user 角色回填;tool_call 行仅 UI 用,不入上下文) */
 function historyToTurns(rows: ChatMsgItem[]): ChatTurn[] {
   const turns: ChatTurn[] = []
   for (const r of rows) {
-    if (r.kind === 'error') continue
+    if (r.kind === 'error' || r.kind === 'tool_call') continue
     if (r.kind === 'tool_result') {
       turns.push({ role: 'user', content: `[工具结果]\n${r.content}` })
       continue
@@ -269,9 +270,11 @@ async function runTurn(opts: {
     // 最终正文:流式输出
     if (signal.aborted) return
     let content = ''
+    let finalUsage: { inputTokens?: number; outputTokens?: number } | undefined
+    let finalReasoning: string | undefined
     sendEvent(wxid, { type: 'status', chatId: sessionId, text: '生成中' })
     try {
-      await provider.streamChat([{ role: 'system', content: system }, ...turns], {
+      const finalRes = await provider.streamChat([{ role: 'system', content: system }, ...turns], {
         maxTokens: 2400,
         signal,
         onDelta: (t) => {
@@ -279,6 +282,8 @@ async function runTurn(opts: {
           sendEvent(wxid, { type: 'delta', chatId: sessionId, token: t })
         }
       })
+      finalUsage = finalRes.usage
+      finalReasoning = finalRes.reasoningText
     } catch (e) {
       const aborted = signal.aborted || (e instanceof Error && e.name === 'AbortError')
       if (aborted) {
@@ -298,7 +303,12 @@ async function runTurn(opts: {
       sendEvent(wxid, { type: 'error', chatId: sessionId, text: msg })
       return
     }
-    const messageId = appendChatMessage(sessionId, 'assistant', 'text', trimmed)
+    const meta: Record<string, unknown> = {}
+    if (finalUsage) {
+      meta.tokens = { input: finalUsage.inputTokens ?? 0, output: finalUsage.outputTokens ?? 0 }
+    }
+    if (finalReasoning && finalReasoning.trim()) meta.reasoning = finalReasoning.trim().slice(-600)
+    const messageId = appendChatMessage(sessionId, 'assistant', 'text', trimmed, meta)
     touchChat(sessionId)
     sendEvent(wxid, { type: 'done', chatId: sessionId, messageId })
   } catch (e) {
@@ -308,6 +318,258 @@ async function runTurn(opts: {
   } finally {
     handle.active = false
     running.delete(key)
+  }
+}
+
+// ── 双协议:原生 function-calling 通道(自动回退 JSON 协议) ──
+
+/** 模型是否走原生 tools:reasoner/思考型默认 JSON 协议;可用配置 ai.nativeTools='0' 强制关闭 */
+function shouldUseNativeTools(): boolean {
+  if (getConfig('ai.nativeTools') === '0') return false
+  const model = readProviderConfig().model.toLowerCase() || ''
+  if (!model) return false
+  if (
+    /(reasoner|deepseek-r1|r1-|o1|o3|mini-max.*think|qwen.*think|glm.*think|thinking)/i.test(model)
+  ) {
+    return false
+  }
+  return true
+}
+
+/** 原生轮 system:保留能力说明,但禁止文本 JSON 工具请求(工具由原生机制提供) */
+function nativeSystemText(base: string): string {
+  return `${base}\n\n可用工具已由系统原生提供,按需直接调用即可;不要输出 JSON 格式的工具请求,始终用自然语言作答。`
+}
+
+/** 宽松工具 schema(OpenAI function calling;参数细节已在 description 中说明) */
+function schemaOf(tool: { name: string; description?: string }): ToolSchema {
+  return {
+    name: tool.name,
+    description: tool.description ?? '',
+    parameters: { type: 'object', additionalProperties: true }
+  }
+}
+
+function isToolCapabilityError(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : String(e)
+  return /tool|function|parameters/i.test(m)
+}
+
+/** 原生工具轮执行(与 JSON 协议同一套 def/确认/落库/事件) */
+async function executeNativeToolCalls(opts: {
+  wxid: string
+  sessionId: number
+  calls: Array<{ id?: string; name: string; arguments: string }>
+  wire: WireMsg[]
+}): Promise<void> {
+  const { wxid, sessionId, calls, wire } = opts
+  const wireCalls: WireMsg[] = [
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: calls.map((c, i) => ({
+        id: c.id ?? `tc_${i}`,
+        type: 'function' as const,
+        function: { name: c.name, arguments: c.arguments }
+      }))
+    }
+  ]
+  wire.push(...wireCalls)
+  for (const call of calls) {
+    const def = findTool(call.name) ?? findMcpTool(call.name) ?? findCustomTool(call.name)
+    const argsClip = call.arguments.slice(0, 300)
+    sendEvent(wxid, {
+      type: 'tool',
+      chatId: sessionId,
+      tool: call.name,
+      toolStatus: 'start',
+      args: argsClip
+    })
+    if (!def) {
+      const names = [
+        ...ALL_TOOLS.map((t) => t.name),
+        ...mcpToolNames(),
+        ...listCustomToolDefs().map((t) => t.name)
+      ]
+      const err = `工具 ${call.name} 不存在。可用工具:${names.join('、')}`
+      appendChatMessage(sessionId, 'user', 'tool_result', err, { tool: call.name })
+      wire.push({ role: 'tool', tool_call_id: call.id ?? `tc_0`, content: err })
+      sendEvent(wxid, {
+        type: 'tool',
+        chatId: sessionId,
+        tool: call.name,
+        toolStatus: 'fail',
+        resultClip: err
+      })
+      continue
+    }
+    if (def.confirm) {
+      const runId = `n${++confirmSeq}`
+      const ok = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => {
+          pendingConfirm.delete(runId)
+          resolve(false)
+        }, 60_000)
+        pendingConfirm.set(runId, { resolve, timer })
+        sendEvent(wxid, {
+          type: 'tool',
+          chatId: sessionId,
+          tool: def.name,
+          toolStatus: 'pending',
+          args: argsClip,
+          text: runId
+        })
+      })
+      if (!ok) {
+        const msg = `工具 ${def.name} 未获确认,已跳过。`
+        appendChatMessage(sessionId, 'user', 'tool_result', msg, { tool: def.name })
+        wire.push({ role: 'tool', tool_call_id: call.id ?? `tc_0`, content: msg })
+        sendEvent(wxid, {
+          type: 'tool',
+          chatId: sessionId,
+          tool: def.name,
+          toolStatus: 'fail',
+          resultClip: msg
+        })
+        continue
+      }
+    }
+    let args: Record<string, unknown> = {}
+    try {
+      args = JSON.parse(call.arguments || '{}') as Record<string, unknown>
+      if (!args || typeof args !== 'object' || Array.isArray(args)) args = {}
+    } catch {
+      args = {}
+    }
+    const result = await def
+      .run({ wxid }, args)
+      .catch((e: unknown) => `工具执行失败:${e instanceof Error ? e.message : String(e)}`)
+    appendChatMessage(sessionId, 'assistant', 'tool_call', call.arguments, { tool: call.name })
+    appendChatMessage(sessionId, 'user', 'tool_result', result, { tool: call.name })
+    wire.push({ role: 'tool', tool_call_id: call.id ?? `tc_0`, content: result })
+    sendEvent(wxid, {
+      type: 'tool',
+      chatId: sessionId,
+      tool: def.name,
+      toolStatus: 'done',
+      resultClip: result.slice(0, 500)
+    })
+  }
+}
+
+/** 原生 function-calling 路径:模型原生请求工具→执行→续轮,直到纯文本(≤4 轮);失败自动降级 JSON 协议 */
+async function runTurnNative(opts: {
+  wxid: string
+  sessionId: number
+  agentId?: string | null
+  userText: string
+  appendUserRow: boolean
+}): Promise<void> {
+  const { wxid, sessionId, userText } = opts
+  const provider = createAiProvider()
+  if (!provider) return
+  const key = runKeyOf(wxid, sessionId)
+  const handle: RunHandle = {
+    controller: new AbortController(),
+    active: true,
+    wxid,
+    chatId: sessionId
+  }
+  running.set(key, handle)
+  const signal = handle.controller.signal
+  try {
+    if (opts.appendUserRow) appendChatMessage(sessionId, 'user', 'text', userText)
+    const agentId = opts.agentId ?? undefined
+    const system = nativeSystemText(agentSystemText(agentId))
+    const schemas = [
+      ...ALL_TOOLS,
+      ...listCustomToolDefs(),
+      // MCP 工具已就绪时才纳入(由 buildSystem 预握手触发)
+      ...mcpToolNames().map((n) => findMcpTool(n)!)
+    ].map(schemaOf)
+
+    const wire: WireMsg[] = [{ role: 'system', content: system }]
+    for (const t of historyToTurns(listChatMessages(sessionId))) {
+      wire.push({ role: t.role, content: t.content })
+    }
+    wire.push({ role: 'user', content: userText })
+
+    let totalIn = 0
+    let totalOut = 0
+    let reasoningText = ''
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      if (signal.aborted) return
+      sendEvent(wxid, {
+        type: 'status',
+        chatId: sessionId,
+        text: round === 0 ? '生成中' : '工具处理中'
+      })
+      const res = await provider.streamChatTools(wire, schemas, { maxTokens: 2400, signal })
+      if (res.usage) {
+        totalIn += res.usage.inputTokens ?? 0
+        totalOut += res.usage.outputTokens ?? 0
+      }
+      if (res.reasoningText) reasoningText = res.reasoningText
+      if (!res.toolCalls || res.toolCalls.length === 0) {
+        // 终文:整段输出(原生轮不做打字机回放)
+        const trimmed = res.text.trim()
+        if (!trimmed) {
+          const msg = '模型未返回内容(可能是思考型模型预算不足),可重试。'
+          appendChatMessage(sessionId, 'assistant', 'error', msg)
+          sendEvent(wxid, { type: 'error', chatId: sessionId, text: msg })
+          return
+        }
+        const meta: Record<string, unknown> = {}
+        if (totalIn || totalOut) meta.tokens = { input: totalIn, output: totalOut }
+        if (reasoningText.trim()) meta.reasoning = reasoningText.trim().slice(-600)
+        const messageId = appendChatMessage(sessionId, 'assistant', 'text', trimmed, meta)
+        touchChat(sessionId)
+        sendEvent(wxid, { type: 'done', chatId: sessionId, messageId })
+        return
+      }
+      await executeNativeToolCalls({ wxid, sessionId, calls: res.toolCalls, wire })
+    }
+    const msg = '工具轮数超限仍未完成。'
+    appendChatMessage(sessionId, 'assistant', 'error', msg)
+    sendEvent(wxid, { type: 'error', chatId: sessionId, text: msg })
+  } catch (e) {
+    const aborted = signal.aborted || (e instanceof Error && e.name === 'AbortError')
+    if (aborted) {
+      sendEvent(wxid, { type: 'status', chatId: sessionId, text: '已停止' })
+      return
+    }
+    if (isToolCapabilityError(e)) {
+      // 通道不支持 tools → 自动降级 JSON 协议重跑(用户消息已落库,不再追加)
+      await runTurn({
+        wxid,
+        sessionId,
+        agentId: opts.agentId ?? undefined,
+        userText,
+        appendUserRow: false
+      })
+      return
+    }
+    const msg = e instanceof Error ? e.message : String(e)
+    appendChatMessage(sessionId, 'assistant', 'error', msg)
+    sendEvent(wxid, { type: 'error', chatId: sessionId, text: msg })
+  } finally {
+    handle.active = false
+    running.delete(key)
+  }
+}
+
+/** 入口分发:支持原生 tools 的模型走原生通道,否则 JSON 协议 */
+function dispatchTurn(opts: {
+  wxid: string
+  sessionId: number
+  agentId?: string | null
+  userText: string
+  appendUserRow: boolean
+}): void {
+  if (shouldUseNativeTools()) {
+    void runTurnNative(opts)
+  } else {
+    void runTurn(opts)
   }
 }
 
@@ -330,7 +592,7 @@ export async function sendChatMessage(input: {
   if (!sessionId) {
     sessionId = createChat(input.wxid, text.slice(0, 24) || '新对话', input.agentId)
   }
-  void runTurn({
+  void dispatchTurn({
     wxid: input.wxid,
     sessionId,
     agentId: input.agentId,
@@ -366,7 +628,7 @@ export async function retryChat(
   }
   const userText = lastUserMessage(chatId)
   if (!userText) return { ok: false, error: '没有可重试的消息' }
-  void runTurn({
+  void dispatchTurn({
     wxid,
     sessionId: chatId,
     agentId: agentId ?? undefined,

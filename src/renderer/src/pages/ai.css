@@ -367,6 +367,39 @@
   }
 }
 
+/* 思考过程折叠 + token 用量角标 */
+.aichat-reasoning {
+  margin: 0 0 6px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  padding: 4px 8px;
+  font-size: 11.5px;
+}
+
+.aichat-reasoning summary {
+  cursor: pointer;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.aichat-reasoning-body {
+  margin-top: 4px;
+  color: var(--text-2);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.aichat-tokens {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-4);
+  text-align: right;
+}
+
 /* ── 工具卡 ── */
 .aichat-toolcards {
   margin: 2px 0 10px;

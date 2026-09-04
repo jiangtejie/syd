@@ -9,6 +9,33 @@ import type { ChatTurn } from '../../../shared/types'
  * ai.apiKey 落库为 safeStorage 密文（enc1: 前缀），读取时在此统一解密；明文形态兼容。
  */
 
+/** token 用量(流式解析,供应商不返回时为 undefined) */
+export interface TokenUsage {
+  inputTokens?: number
+  outputTokens?: number
+}
+
+/** 原生工具 schema(OpenAI function calling) */
+export interface ToolSchema {
+  name: string
+  description?: string
+  parameters: unknown
+}
+
+/** 发送给模型的消息(含原生工具轮:assistant tool_calls / tool 角色) */
+export type WireMsg =
+  | ChatTurn
+  | {
+      role: 'assistant'
+      content?: string | null
+      tool_calls?: Array<{
+        id: string
+        type: 'function'
+        function: { name: string; arguments: string }
+      }>
+    }
+  | { role: 'tool'; tool_call_id: string; content: string }
+
 export interface AiProvider {
   /** 系统 + 用户消息，返回模型输出文本 */
   complete(system: string, user: string, opts?: { maxTokens?: number }): Promise<string>
@@ -21,7 +48,23 @@ export interface AiProvider {
       onDelta?: (token: string) => void
       onReasoning?: (token: string) => void
     }
-  ): Promise<string>
+  ): Promise<{ usage?: TokenUsage; reasoningText?: string }>
+  /** 原生 function-calling 流式:tools 透传;工具参数分片自动聚合;signal 可中断 */
+  streamChatTools(
+    messages: WireMsg[],
+    tools: ToolSchema[],
+    opts?: {
+      maxTokens?: number
+      signal?: AbortSignal
+      onText?: (chunk: string) => void
+      onReasoning?: (token: string) => void
+    }
+  ): Promise<{
+    text: string
+    toolCalls: Array<{ id?: string; name: string; arguments: string }>
+    usage?: TokenUsage
+    reasoningText?: string
+  }>
   readonly name: string
 }
 
@@ -118,18 +161,35 @@ class OpenAiCompatProvider implements AiProvider {
     }
   }
 
-  /** 多轮流式：SSE 增量；外部 signal 可中断；400 且不支持 temperature 时自动去参重试一次 */
-  async streamChat(
-    messages: ChatTurn[],
+  /** 统一 SSE 流式底层:支持原生 tools(tool_calls 分片聚合)、usage 与 reasoning 收集 */
+  private async streamOnce(
+    messages: WireMsg[],
     opts: {
+      tools?: ToolSchema[]
       maxTokens?: number
       signal?: AbortSignal
-      onDelta?: (token: string) => void
+      onText?: (chunk: string) => void
       onReasoning?: (token: string) => void
-    } = {}
-  ): Promise<string> {
+    }
+  ): Promise<{
+    text: string
+    toolCalls: Array<{ id?: string; name: string; arguments: string }>
+    usage?: TokenUsage
+    reasoningText?: string
+  }> {
     const model = this.cfg.model
     const maxTokens = opts.maxTokens ?? 2000
+    const tools =
+      opts.tools && opts.tools.length > 0
+        ? opts.tools.map((t) => ({
+            type: 'function' as const,
+            function: {
+              name: t.name,
+              description: t.description ?? '',
+              parameters: t.parameters
+            }
+          }))
+        : undefined
 
     const post = (withTemp: boolean): Promise<Response> =>
       fetch(`${this.cfg.baseUrl}/chat/completions`, {
@@ -142,6 +202,7 @@ class OpenAiCompatProvider implements AiProvider {
           model,
           messages,
           stream: true,
+          ...(tools ? { tools } : {}),
           ...(withTemp ? { temperature: 0.7 } : {}),
           max_tokens: maxTokens
         }),
@@ -163,12 +224,15 @@ class OpenAiCompatProvider implements AiProvider {
     if (!res.ok) {
       throw new Error(`LLM 调用失败 HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
     }
-
     if (!res.body) throw new Error('LLM 流式响应无 body')
+
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
     let content = ''
+    let reasoningText = ''
+    let usage: TokenUsage | undefined
+    const tcByIndex = new Map<number, { id: string; name: string; args: string }>()
     try {
       for (;;) {
         const { done, value } = await reader.read()
@@ -183,23 +247,49 @@ class OpenAiCompatProvider implements AiProvider {
             const s = line.trim()
             if (!s.startsWith('data:')) continue
             const data = s.slice(5).trim()
-            if (data === '[DONE]') return content
+            if (data === '[DONE]') {
+              break
+            }
             try {
               const json = JSON.parse(data) as {
                 choices?: Array<{
-                  delta?: { content?: string | null; reasoning_content?: string | null }
+                  delta?: {
+                    content?: string | null
+                    reasoning_content?: string | null
+                    tool_calls?: Array<{
+                      index?: number
+                      id?: string
+                      type?: string
+                      function?: { name?: string; arguments?: string }
+                    }>
+                  }
                 }>
+                usage?: { prompt_tokens?: number; completion_tokens?: number }
               }
               const delta = json.choices?.[0]?.delta
-              if (typeof delta?.content === 'string' && delta.content.length > 0) {
+              if (delta?.content) {
                 content += delta.content
-                opts.onDelta?.(delta.content)
+                opts.onText?.(delta.content)
               }
-              if (
-                typeof delta?.reasoning_content === 'string' &&
-                delta.reasoning_content.length > 0
-              ) {
+              if (delta?.reasoning_content) {
+                reasoningText += delta.reasoning_content
                 opts.onReasoning?.(delta.reasoning_content)
+              }
+              if (Array.isArray(delta?.tool_calls)) {
+                for (const tc of delta.tool_calls) {
+                  const idx = tc.index ?? 0
+                  const cur = tcByIndex.get(idx) ?? { id: '', name: '', args: '' }
+                  if (tc.id) cur.id = tc.id
+                  if (tc.function?.name) cur.name += tc.function.name
+                  if (tc.function?.arguments) cur.args += tc.function.arguments
+                  tcByIndex.set(idx, cur)
+                }
+              }
+              if (json.usage && (json.usage.prompt_tokens || json.usage.completion_tokens)) {
+                usage = {
+                  inputTokens: json.usage.prompt_tokens,
+                  outputTokens: json.usage.completion_tokens
+                }
               }
             } catch {
               /* 忽略无法解析的分片 */
@@ -207,10 +297,62 @@ class OpenAiCompatProvider implements AiProvider {
           }
         }
       }
-      return content
     } finally {
       reader.releaseLock()
     }
+    const toolCalls = [...tcByIndex.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, v]) => ({ id: v.id || undefined, name: v.name, arguments: v.args }))
+    return {
+      text: content,
+      toolCalls,
+      usage,
+      reasoningText: reasoningText.slice(-2000)
+    }
+  }
+
+  /** 文本对话流式(无原生工具) */
+  async streamChat(
+    messages: ChatTurn[],
+    opts: {
+      maxTokens?: number
+      signal?: AbortSignal
+      onDelta?: (token: string) => void
+      onReasoning?: (token: string) => void
+    } = {}
+  ): Promise<{ usage?: TokenUsage; reasoningText?: string }> {
+    const r = await this.streamOnce(messages, {
+      maxTokens: opts.maxTokens,
+      signal: opts.signal,
+      onText: opts.onDelta,
+      onReasoning: opts.onReasoning
+    })
+    return { usage: r.usage, reasoningText: r.reasoningText }
+  }
+
+  /** 原生 function-calling 流式(工具参数分片自动聚合) */
+  async streamChatTools(
+    messages: WireMsg[],
+    tools: ToolSchema[],
+    opts: {
+      maxTokens?: number
+      signal?: AbortSignal
+      onText?: (chunk: string) => void
+      onReasoning?: (token: string) => void
+    } = {}
+  ): Promise<{
+    text: string
+    toolCalls: Array<{ id?: string; name: string; arguments: string }>
+    usage?: TokenUsage
+    reasoningText?: string
+  }> {
+    return await this.streamOnce(messages, {
+      tools,
+      maxTokens: opts.maxTokens,
+      signal: opts.signal,
+      onText: opts.onText,
+      onReasoning: opts.onReasoning
+    })
   }
 }
 
