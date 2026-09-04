@@ -102,11 +102,26 @@ function agentSystemText(agentId: string | null | undefined): string {
   return parts.join('\n')
 }
 
+/** 事件 sink:IM 等无窗口通道可注册,把某会话的事件同时投递过去(随 turn 结束自动移除) */
+const eventSinks = new Map<string, (evt: AiChatEvent) => void>()
+
+export function registerEventSink(
+  wxid: string,
+  chatId: number,
+  sink: (evt: AiChatEvent) => void
+): () => void {
+  eventSinks.set(runKeyOf(wxid, chatId), sink)
+  return () => {
+    eventSinks.delete(runKeyOf(wxid, chatId))
+  }
+}
+
 function sendEvent(wxid: string, evt: Omit<AiChatEvent, 'wxid'> & { wxid?: string }): void {
   const payload: AiChatEvent = { wxid, ...evt } as AiChatEvent
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('ai:chat', payload)
   }
+  eventSinks.get(runKeyOf(wxid, evt.chatId))?.(payload)
 }
 
 /** 运行句柄:中断控制器 + 是否仍在跑 */
@@ -446,6 +461,7 @@ async function runTurn(opts: {
   } finally {
     handle.active = false
     running.delete(key)
+    eventSinks.delete(key)
   }
 }
 
@@ -696,6 +712,7 @@ async function runTurnNative(opts: {
   } finally {
     handle.active = false
     running.delete(key)
+    eventSinks.delete(key)
   }
 }
 
