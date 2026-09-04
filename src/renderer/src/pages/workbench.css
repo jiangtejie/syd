@@ -838,6 +838,51 @@
   opacity: 0.6;
 }
 
+/* 统一人设展示（全端共用一条；点击去设置修改） */
+.wb-suggest-agent-current {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel, #fff);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.wb-suggest-agent-current:hover {
+  border-color: var(--brand);
+}
+
+.wb-suggest-agent-current b {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-suggest-agent-current .wb-suggest-agent-edit {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.wb-suggest-agent-current:hover .wb-suggest-agent-edit {
+  color: var(--brand);
+}
+
 .wb-suggest-empty {
   color: var(--text-3);
   font-size: 13px;

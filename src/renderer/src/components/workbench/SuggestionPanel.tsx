@@ -16,16 +16,13 @@ function SuggestionPanel(): React.JSX.Element {
   const generateSuggestions = useWorkbenchStore((s) => s.generateSuggestions)
   const adoptSuggestion = useWorkbenchStore((s) => s.adoptSuggestion)
   const agents = useWorkbenchStore((s) => s.agents)
-  const agentId = useWorkbenchStore((s) => s.agentId)
   const defaultAgentId = useWorkbenchStore((s) => s.defaultAgentId)
-  const setAgentId = useWorkbenchStore((s) => s.setAgentId)
   const loadAgents = useWorkbenchStore((s) => s.loadAgents)
 
-  // 首次挂载拉取智能体列表（复用已加载结果，不重复请求）
+  // 首次挂载拉取智能体列表（复用已加载结果，不重复请求；store action 引用稳定）
   useEffect(() => {
     void loadAgents()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loadAgents])
 
   // 切换会话时重置建议状态；生成由 selectSession 加载完消息后驱动（避免旧消息上下文错乱）
   useEffect(() => {
@@ -35,10 +32,13 @@ function SuggestionPanel(): React.JSX.Element {
       chosenText: null,
       sendResult: null
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId])
 
   const noSession = !activeSessionId
+
+  // 统一人设：全端共用一条，此处只展示当前生效人设，编辑入口在设置页
+  const persona =
+    agents.find((a) => a.id === defaultAgentId) ?? (agents.length === 1 ? agents[0] : undefined)
 
   return (
     <div className="wb-suggest-panel">
@@ -47,23 +47,18 @@ function SuggestionPanel(): React.JSX.Element {
         {suggestions.length > 0 && <span className="wb-suggest-tag wb-suggest-tag-ai">AI</span>}
       </div>
 
-      {!noSession && agents.length > 0 && (
+      {!noSession && persona && (
         <div className="wb-suggest-agent">
-          <span className="wb-suggest-agent-label">人设</span>
-          <select
-            className="wb-suggest-agent-select"
-            value={agentId ?? ''}
-            disabled={suggestLoading}
-            onChange={(e) => setAgentId(e.target.value || null)}
-            title="切换当前使用的智能体（人设），选择会保留；全局默认在 设置 → AI 助手 → 智能体 中管理"
+          <span className="wb-suggest-agent-label">统一人设</span>
+          <button
+            type="button"
+            className="wb-suggest-agent-current"
+            title="智能分析/智能回复/IM 通道统一使用此人设；点击到 设置 → AI 助手 中修改"
+            onClick={() => useWorkbenchStore.getState().setPage('settings')}
           >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-                {a.id === defaultAgentId ? '（默认）' : ''}
-              </option>
-            ))}
-          </select>
+            <b>{persona.name}</b>
+            <span className="wb-suggest-agent-edit">修改</span>
+          </button>
         </div>
       )}
 

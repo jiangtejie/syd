@@ -595,12 +595,12 @@ function SettingsPage(): React.JSX.Element {
             </span>
           </div>
 
-          {/* 智能体（客服人设） */}
+          {/* 智能体（统一人设） */}
           <div className="page-card st-section">
-            <div className="st-title">智能体（客服人设）</div>
+            <div className="st-title">智能体（统一人设）</div>
             <span className="st-hint">
-              一个智能体 = 名称 + 人设 + 话术风格 + 自定义守则，用于 AI 生成回复建议时扮演的角色。
-              内置默认「微信私域智能客服」，可随时新建/切换。
+              全应用统一使用同一条人设：智能分析（群问题/工作台）与智能回复（回复建议/IM
+              通道）都按此人设组织口径与话术，AI 界面不再提供人设选择或切换。修改后即时生效。
             </span>
             <AgentSettingsSection />
           </div>

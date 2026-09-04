@@ -1,6 +1,6 @@
-/* 设置页（颜色/圆角已 token 化，引用 assets/base.css 的全局设计变量） */
+﻿/* 璁剧疆椤碉紙棰滆壊/鍦嗚宸?token 鍖栵紝寮曠敤 assets/base.css 鐨勫叏灞€璁捐鍙橀噺锛?*/
 
-/* Tab 导航（按板块切换，减少拥挤） */
+/* Tab 瀵艰埅锛堟寜鏉垮潡鍒囨崲锛屽噺灏戞嫢鎸わ級 */
 .st-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -34,12 +34,12 @@
   font-weight: 500;
 }
 
-/* Tab 面板内容 */
+/* Tab 闈㈡澘鍐呭 */
 .st-tab-panel {
   max-width: 1520px;
 }
 
-/* 双列紧凑网格：宽屏固定两列(对齐整齐)、窄屏自动一列 */
+/* 鍙屽垪绱у噾缃戞牸锛氬灞忓浐瀹氫袱鍒?瀵归綈鏁撮綈)銆佺獎灞忚嚜鍔ㄤ竴鍒?*/
 .st-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -59,7 +59,7 @@
   max-width: 1520px;
 }
 
-/* 网格内的卡片去掉底部外边距，由 gap 控制间距 */
+/* 缃戞牸鍐呯殑鍗＄墖鍘绘帀搴曢儴澶栬竟璺濓紝鐢?gap 鎺у埗闂磋窛 */
 .st-grid > .st-section {
   margin-bottom: 0;
   max-width: none;
@@ -71,7 +71,7 @@
   margin-bottom: 12px;
 }
 
-/* 卡片内二级分区标题（如「图片解密」） */
+/* 鍗＄墖鍐呬簩绾у垎鍖烘爣棰橈紙濡傘€屽浘鐗囪В瀵嗐€嶏級 */
 .st-subtitle {
   font-size: 12px;
   font-weight: 600;
@@ -199,7 +199,7 @@ select.st-input {
   font-weight: 600;
 }
 
-/* AI 测试连接结果行 */
+/* AI 娴嬭瘯杩炴帴缁撴灉琛?*/
 .st-ai-test {
   min-height: 18px;
   margin-top: 8px;
@@ -207,7 +207,7 @@ select.st-input {
   word-break: break-all;
 }
 
-/* AI 模型名称行：输入框 + 获取模型按钮 */
+/* AI 妯″瀷鍚嶇О琛岋細杈撳叆妗?+ 鑾峰彇妯″瀷鎸夐挳 */
 .st-mrow {
   flex: 1;
   display: flex;
@@ -220,7 +220,7 @@ select.st-input {
   flex: 1;
 }
 
-/* AI 获取模型结果行 */
+/* AI 鑾峰彇妯″瀷缁撴灉琛?*/
 .st-model-msg {
   min-height: 18px;
   margin-top: 2px;
@@ -229,7 +229,7 @@ select.st-input {
   word-break: break-all;
 }
 
-/* ── 智能体（客服人设）管理 ── */
+/* 鈹€鈹€ 鏅鸿兘浣擄紙瀹㈡湇浜鸿锛夌鐞?鈹€鈹€ */
 .ag-wrap {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
@@ -238,7 +238,7 @@ select.st-input {
   align-items: stretch;
 }
 
-/* 窄屏折叠为上下布局（列表在上） */
+/* 绐勫睆鎶樺彔涓轰笂涓嬪竷灞€锛堝垪琛ㄥ湪涓婏級 */
 @media (max-width: 860px) {
   .ag-wrap {
     grid-template-columns: minmax(0, 1fr);
@@ -385,7 +385,7 @@ select.st-input {
   font-size: 12px;
 }
 
-/* 列表项头部:头像 + 名称 + 风格徽标 */
+/* 鍒楄〃椤瑰ご閮?澶村儚 + 鍚嶇О + 椋庢牸寰芥爣 */
 .ag-item-top {
   display: flex;
   align-items: center;
@@ -433,7 +433,7 @@ select.st-input {
   color: var(--success-strong);
 }
 
-/* 编辑区状态条 */
+/* 缂栬緫鍖虹姸鎬佹潯 */
 .ag-edit-head {
   display: flex;
   align-items: center;
@@ -472,7 +472,7 @@ select.st-input {
   flex: none;
 }
 
-/* 次级按钮 */
+/* 娆＄骇鎸夐挳 */
 .st-btn.ghost {
   background: var(--bg-panel);
   color: var(--brand);
@@ -485,7 +485,7 @@ select.st-input {
   background: var(--brand-soft);
 }
 
-/* 密钥状态卡片 */
+/* 瀵嗛挜鐘舵€佸崱鐗?*/
 .st-keystatus {
   margin-top: 14px;
   border: 1px solid var(--border-light);
@@ -505,7 +505,7 @@ select.st-input {
   max-width: 380px;
 }
 
-/* 解密层提示 */
+/* 瑙ｅ瘑灞傛彁绀?*/
 .st-decrypt-note {
   margin-top: 12px;
   font-size: 12px;
@@ -517,7 +517,7 @@ select.st-input {
   padding: 10px 12px;
 }
 
-/* 缓存目录卡片：点击整行打开目录选择 */
+/* 缂撳瓨鐩綍鍗＄墖锛氱偣鍑绘暣琛屾墦寮€鐩綍閫夋嫨 */
 .st-cache-pick {
   display: flex;
   align-items: center;
@@ -582,7 +582,7 @@ select.st-input {
   line-height: 1.6;
 }
 
-/* 版本号行 */
+/* 鐗堟湰鍙疯 */
 .st-version {
   margin-top: 14px;
   padding-top: 10px;
@@ -592,7 +592,7 @@ select.st-input {
   text-align: center;
 }
 
-/* ── MCP 服务器管理 ── */
+/* 鈹€鈹€ MCP 鏈嶅姟鍣ㄧ鐞?鈹€鈹€ */
 .mcp-list {
   margin-top: 10px;
   display: flex;
@@ -697,7 +697,7 @@ select.st-input {
   padding-top: 8px;
 }
 
-/* 智能体增强行内说明 */
+/* 鏅鸿兘浣撳寮鸿鍐呰鏄?*/
 .st-agent-row .st-hint-inline {
   font-size: 11px;
   color: var(--text-3);
@@ -705,8 +705,58 @@ select.st-input {
   margin-left: 6px;
 }
 
-/* 阈值小时输入(设置-偏好与数据) */
+/* 闃堝€煎皬鏃惰緭鍏?璁剧疆-鍋忓ソ涓庢暟鎹? */
 .st-th-input {
   width: 92px !important;
   flex: none;
 }
+
+/* 鈹€鈹€ 缁熶竴浜鸿锛堝崟涓€鏅鸿兘浣擄級缂栬緫甯冨眬 鈹€鈹€ */
+.ag-single {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+}
+
+.ag-loading {
+  color: var(--text-3);
+  font-size: 12.5px;
+  padding: 12px 2px;
+}
+
+.ag-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ag-head-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ag-head-title b {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-scope {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+  background: var(--bg-hover);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+}
+.ag-head-title .ag-style {
+  margin-left: 0;
+  font-style: normal;
+}
+
