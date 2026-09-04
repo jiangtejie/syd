@@ -14,7 +14,8 @@ import {
   setChatAgent,
   touchChat
 } from '../../../db/repos/chatRepo'
-import { ALL_TOOLS, findTool, runTool, toolInstructionsText, type ToolCtx } from './skills'
+import { ALL_TOOLS, findTool, toolInstructionsText, type ToolCtx } from './skills'
+import { findMcpTool, mcpToolInstructionText, mcpToolNames } from './mcp'
 import type { AiChatEvent, AiStyle, ChatMsgItem, ChatTurn } from '../../../../shared/types'
 
 /**
@@ -33,6 +34,26 @@ const STYLE_DESC: Record<AiStyle, string> = {
   warm: '语气温暖亲切,像熟悉店铺的客服',
   formal: '语气正式专业',
   brief: '语气简洁干练,少客套'
+}
+
+/** 人设 + 内置 skill + MCP 工具的 system 组装(async:MCP 需惰性握手) */
+async function buildSystem(agentId?: string | null): Promise<string> {
+  const base = agentSystemText(agentId)
+  let mcpText = ''
+  try {
+    mcpText = await mcpToolInstructionText()
+  } catch {
+    /* MCP 不可用不阻塞对话 */
+  }
+  const builtinText = toolInstructionsText()
+  const sections = [builtinText, mcpText].filter((s) => s.trim().length > 0)
+  if (sections.length === 0) return `${base}\n\n直接回答用户问题。`
+  return [
+    base,
+    '可用工具(仅当需要业务数据时调用;工具请求必须是独立 JSON,不要夹带其它文字):',
+    sections.join('\n\n'),
+    '如果不需要工具,直接输出最终回答。'
+  ].join('\n\n')
 }
 
 function agentSystemText(agentId: string | null | undefined): string {
@@ -153,10 +174,7 @@ async function runTurn(opts: {
   try {
     if (opts.appendUserRow) appendChatMessage(sessionId, 'user', 'text', userText)
     const agentId = opts.agentId ?? undefined
-    const system = agentSystemText(agentId)
-      .concat('\n\n可用工具(仅当需要业务数据时调用;工具请求必须是独立 JSON,不要夹带其它文字):\n')
-      .concat(toolInstructionsText())
-      .concat('\n如果不需要工具,直接输出最终回答。')
+    const system = await buildSystem(agentId)
 
     const turns = historyToTurns(listChatMessages(sessionId))
     turns.push({ role: 'user', content: userText })
@@ -174,10 +192,11 @@ async function runTurn(opts: {
       })
       const intent = parseToolIntent(decision)
       if (!intent) break
-      const def = findTool(intent.tool)
+      const def = findTool(intent.tool) ?? findMcpTool(intent.tool)
       if (!def) {
         // 未知工具:回填可用列表让模型修正
-        const err = `工具 ${intent.tool} 不存在。可用工具:${ALL_TOOLS.map((t) => t.name).join('、')}`
+        const names = [...ALL_TOOLS.map((t) => t.name), ...mcpToolNames()]
+        const err = `工具 ${intent.tool} 不存在。可用工具:${names.join('、')}`
         appendChatMessage(sessionId, 'user', 'tool_result', err)
         turns.push({ role: 'user', content: `[工具结果]\n${err}` })
         continue
@@ -225,7 +244,7 @@ async function runTurn(opts: {
       }
 
       const ctx: ToolCtx = { wxid }
-      const result = await runTool(ctx, def.name, intent.args)
+      const result = await def.run(ctx, intent.args)
       appendChatMessage(sessionId, 'assistant', 'tool_call', JSON.stringify(intent.args), {
         tool: def.name
       })

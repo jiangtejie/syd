@@ -21,7 +21,9 @@ import type {
   TeamMemberInfo,
   ChatSessionItem,
   ChatMsgItem,
-  AiChatEvent
+  AiChatEvent,
+  McpServerItem,
+  McpServerInput
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -247,6 +249,11 @@ declare global {
             agentId: string | null
           ) => Promise<{ ok: boolean; error?: string }>
           onEvent: (callback: (evt: AiChatEvent) => void) => () => void
+        }
+        mcp: {
+          list: () => Promise<Result<{ servers?: McpServerItem[] }>>
+          save: (input: McpServerInput) => Promise<Result<{ item?: McpServerItem }>>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
         }
         export: {
           chat: (

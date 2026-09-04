@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useWorkbenchStore } from '../stores/workbench'
 import { useAiChatStore } from '../stores/aiChat'
+import { toast } from '../stores/toast'
 import type { ChatMsgItem } from '../../../shared/types'
 import './ai.css'
 
@@ -95,6 +96,7 @@ export default function AiChatPage(): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const lastLenRef = useRef(0)
+  const [search, setSearch] = useState('')
 
   const { chats, activeId, messages, loading, busy, streamingBuf, error, agents, agentId } = store
 
@@ -118,6 +120,15 @@ export default function AiChatPage(): React.JSX.Element {
 
   const activeChat = useMemo(() => chats.find((c) => c.id === activeId) ?? null, [chats, activeId])
 
+  const filteredChats = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return chats
+    return chats.filter((c) => c.title.toLowerCase().includes(q))
+  }, [chats, search])
+
+  // 会话字数估算(约等于 token 输入量提示)
+  const estChars = useMemo(() => messages.reduce((n, m) => n + m.content.length, 0), [messages])
+
   const canSend = connected && !busy
   const send = (): void => {
     const t = draft.trim()
@@ -128,6 +139,30 @@ export default function AiChatPage(): React.JSX.Element {
 
   const stop = (): void => void store.stop()
   const retry = (): void => void store.retry()
+
+  const exportChat = async (): Promise<void> => {
+    if (!activeChat || messages.length === 0) return
+    const dir = await window.api?.cs?.dialog?.pickDirectory('选择对话导出目录')
+    if (!dir?.ok || !dir.path) return
+    const lines = messages
+      .map((m) => {
+        const who = m.role === 'user' ? '我' : m.kind === 'error' ? 'AI(错误)' : 'AI'
+        return `## ${who}\n\n${m.content}`
+      })
+      .join('\n\n---\n\n')
+    const stamp = new Date()
+    const pad = (x: number): string => String(x).padStart(2, '0')
+    const name = `ai-chat-${activeChat.id}-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(
+      stamp.getDate()
+    )}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.md`
+    const w = await window.api?.cs?.export?.writeFile(
+      dir.path,
+      name,
+      `# ${activeChat.title}\n\n${lines}\n`
+    )
+    if (w?.ok) toast.success(`已导出:${name}`)
+    else toast.error(w?.error || '导出失败')
+  }
 
   const copyText = async (): Promise<void> => {
     const text = messages
@@ -148,9 +183,17 @@ export default function AiChatPage(): React.JSX.Element {
         <button type="button" className="ai-btn primary aichat-new" onClick={store.newChat}>
           ＋ 新对话
         </button>
+        <input
+          className="aichat-search"
+          placeholder="搜索会话…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <div className="aichat-side-list">
-          {chats.length === 0 && <div className="aichat-empty">暂无会话</div>}
-          {chats.map((c) => (
+          {filteredChats.length === 0 && (
+            <div className="aichat-empty">{chats.length === 0 ? '暂无会话' : '没有匹配的会话'}</div>
+          )}
+          {filteredChats.map((c) => (
             <div
               key={c.id}
               className={`aichat-side-item${activeId === c.id ? ' is-active' : ''}`}
@@ -229,6 +272,15 @@ export default function AiChatPage(): React.JSX.Element {
             <button
               type="button"
               className="ai-mini"
+              onClick={() => void exportChat()}
+              disabled={!activeChat || messages.length === 0}
+              title="导出当前会话为 Markdown"
+            >
+              导出
+            </button>
+            <button
+              type="button"
+              className="ai-mini"
               onClick={() => void copyText()}
               title="复制全部消息"
             >
@@ -288,7 +340,10 @@ export default function AiChatPage(): React.JSX.Element {
             }}
           />
           <div className="aichat-composer-ops">
-            <span className="aichat-hint">Enter 发送 · Shift+Enter 换行</span>
+            <span className="aichat-hint">
+              Enter 发送 · Shift+Enter 换行
+              {estChars > 0 && ` · 本次上下文约 ${Math.max(1, Math.round(estChars / 1000))}k 字符`}
+            </span>
             {busy ? (
               <button type="button" className="ai-btn" onClick={stop}>
                 停止生成

@@ -454,3 +454,31 @@ export interface AiChatEvent {
   messageId?: number
   text?: string
 }
+
+/** MCP 服务器配置(stdio=本机命令;http=JSON-RPC 端点) */
+export interface McpServerItem {
+  id: number
+  name: string
+  kind: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  url?: string
+  timeoutSec: number
+  /** 是否高危确认:执行其工具前需人工确认 */
+  confirm: boolean
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface McpServerInput {
+  id?: number
+  name: string
+  kind: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  url?: string
+  timeoutSec?: number
+  confirm?: boolean
+  enabled?: boolean
+}

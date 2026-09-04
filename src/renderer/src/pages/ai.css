@@ -28,6 +28,21 @@
   width: 100%;
 }
 
+.aichat-search {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-panel);
+  padding: 5px 8px;
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+}
+
+.aichat-search:focus {
+  border-color: var(--brand);
+}
+
 .aichat-side-list {
   flex: 1 1 auto;
   min-height: 0;

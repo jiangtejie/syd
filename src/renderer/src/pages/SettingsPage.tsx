@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SendStatusInfo } from '../../../shared/types'
 import WechatKeySection from '../components/settings/WechatKeySection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
+import type { McpServerItem, McpServerInput } from '../../../shared/types'
 import { toast } from '../stores/toast'
 import './settings.css'
 
@@ -581,6 +582,9 @@ function SettingsPage(): React.JSX.Element {
             </span>
             <AgentSettingsSection />
           </div>
+
+          {/* MCP 服务器（AI 助手外部能力） */}
+          <McpServersSection />
         </div>
       )}
 
@@ -852,6 +856,235 @@ function SettingsPage(): React.JSX.Element {
               </div>
               <div className="st-version">微信私域智能客服 v{version || '—'}</div>
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** MCP 服务器管理（AI 助手外部能力：stdio 本机命令 / http JSON-RPC） */
+function McpServersSection(): React.JSX.Element {
+  const [servers, setServers] = useState<McpServerItem[] | null>(null)
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState<McpServerInput>({
+    name: '',
+    kind: 'stdio',
+    command: '',
+    args: [],
+    url: '',
+    timeoutSec: 30,
+    confirm: true,
+    enabled: false
+  })
+  const [saving, setSaving] = useState(false)
+
+  const load = async (): Promise<void> => {
+    const res = await window.api?.cs?.mcp?.list().catch(() => null)
+    if (res?.ok && res.servers) setServers(res.servers as McpServerItem[])
+    else setServers([])
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取 MCP 服务器列表(全仓同款模式)
+    void load()
+  }, [])
+
+  const startNew = (): void => {
+    setForm({
+      name: '',
+      kind: 'stdio',
+      command: '',
+      args: [],
+      url: '',
+      timeoutSec: 30,
+      confirm: true,
+      enabled: false
+    })
+    setOpen(true)
+  }
+  const editServer = (s: McpServerItem): void => {
+    setForm({
+      id: s.id,
+      name: s.name,
+      kind: s.kind,
+      command: s.command ?? '',
+      args: s.args ?? [],
+      url: s.url ?? '',
+      timeoutSec: s.timeoutSec,
+      confirm: s.confirm,
+      enabled: s.enabled
+    })
+    setOpen(true)
+  }
+  const save = async (): Promise<void> => {
+    setSaving(true)
+    try {
+      const res = await window.api?.cs?.mcp?.save(form).catch(() => null)
+      if (!res?.ok) {
+        toast.error((res as { error?: string } | null)?.error || '保存失败')
+        return
+      }
+      toast.success('MCP 服务器已保存')
+      setOpen(false)
+      await load()
+    } finally {
+      setSaving(false)
+    }
+  }
+  const removeServer = async (s: McpServerItem): Promise<void> => {
+    if (!window.confirm(`删除 MCP 服务器「${s.name}」？`)) return
+    const res = await window.api?.cs?.mcp?.remove(s.id).catch(() => null)
+    if (res?.ok) {
+      toast.success('已删除')
+      await load()
+    } else {
+      toast.error((res as { error?: string } | null)?.error || '删除失败')
+    }
+  }
+
+  return (
+    <div className="page-card st-section">
+      <div className="st-title">MCP 服务器（AI 助手外部能力）</div>
+      <span className="st-hint">
+        AI 助手可按需调用外部工具。stdio=本机命令启动（如 npx 服务器），http=JSON-RPC
+        端点；工具默认需人工确认后执行。
+      </span>
+
+      <div className="mcp-list">
+        {servers === null ? (
+          <div className="st-hint">加载中…</div>
+        ) : servers.length === 0 ? (
+          <div className="st-hint">
+            暂无 MCP 服务器。可接入公司知识库 / ERP 等能力，也可留空仅用内置业务工具。
+          </div>
+        ) : (
+          servers.map((s) => (
+            <div key={s.id} className="mcp-item">
+              <div className="mcp-item-main">
+                <b>{s.name}</b>
+                <span className="mcp-kind">{s.kind === 'http' ? 'http' : 'stdio'}</span>
+                {s.enabled ? (
+                  <span className="mcp-on">启用</span>
+                ) : (
+                  <span className="mcp-off">停用</span>
+                )}
+                {s.confirm && <span className="mcp-confirm-tag">需确认</span>}
+                <span className="mcp-desc">
+                  {s.kind === 'http' ? s.url : `${s.command ?? ''} ${(s.args ?? []).join(' ')}`}
+                </span>
+              </div>
+              <div className="mcp-item-ops">
+                <button type="button" className="st-btn ghost sm" onClick={() => editServer(s)}>
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  className="st-btn ghost danger sm"
+                  onClick={() => void removeServer(s)}
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+        <button type="button" className="st-btn ghost sm mcp-add" onClick={startNew}>
+          + 添加服务器
+        </button>
+      </div>
+
+      {open && (
+        <div className="mcp-edit">
+          <label className="st-row">
+            <span className="st-label">名称</span>
+            <input
+              className="st-input"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="如：内部知识库"
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">连接方式</span>
+            <select
+              className="st-input"
+              value={form.kind}
+              onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as 'stdio' | 'http' }))}
+            >
+              <option value="stdio">stdio（本机命令）</option>
+              <option value="http">http（JSON-RPC 端点）</option>
+            </select>
+          </label>
+          {form.kind === 'stdio' ? (
+            <>
+              <label className="st-row">
+                <span className="st-label">启动命令</span>
+                <input
+                  className="st-input"
+                  value={form.command}
+                  onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
+                  placeholder="如：npx -y @some/mcp-server"
+                />
+              </label>
+              <label className="st-row">
+                <span className="st-label">参数（空格分隔）</span>
+                <input
+                  className="st-input"
+                  value={(form.args ?? []).join(' ')}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, args: e.target.value.split(/\s+/).filter(Boolean) }))
+                  }
+                />
+              </label>
+            </>
+          ) : (
+            <label className="st-row">
+              <span className="st-label">端点 URL</span>
+              <input
+                className="st-input"
+                value={form.url}
+                onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                placeholder="https://host/mcp"
+              />
+            </label>
+          )}
+          <label className="st-row">
+            <span className="st-label">超时(秒)</span>
+            <input
+              type="number"
+              min={5}
+              max={300}
+              className="st-input sm"
+              value={form.timeoutSec ?? 30}
+              onChange={(e) => setForm((f) => ({ ...f, timeoutSec: Number(e.target.value) }))}
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">启用</span>
+            <input
+              type="checkbox"
+              checked={form.enabled ?? false}
+              onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+            />
+            <span className="st-hint-inline">启用后其工具才会出现在 AI 助手可用列表中</span>
+          </label>
+          <label className="st-row">
+            <span className="st-label">执行需人工确认</span>
+            <input
+              type="checkbox"
+              checked={form.confirm ?? true}
+              onChange={(e) => setForm((f) => ({ ...f, confirm: e.target.checked }))}
+            />
+            <span className="st-hint-inline">关闭后其工具可在对话中直接执行（谨慎）</span>
+          </label>
+          <div className="st-actions">
+            <button type="button" className="st-btn ghost" onClick={() => setOpen(false)}>
+              取消
+            </button>
+            <button type="button" className="st-btn" disabled={saving} onClick={() => void save()}>
+              {saving ? '保存中…' : '保存服务器'}
+            </button>
           </div>
         </div>
       )}

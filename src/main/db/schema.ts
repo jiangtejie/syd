@@ -171,7 +171,21 @@ const TABLES: string[] = [
     FOREIGN KEY (session_id) REFERENCES chat_session(id) ON DELETE CASCADE
   )`,
   `CREATE INDEX IF NOT EXISTS idx_chat_session_t ON chat_session(updated_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_chat_msg_s ON chat_message(session_id, id)`
+  `CREATE INDEX IF NOT EXISTS idx_chat_msg_s ON chat_message(session_id, id)`,
+  // AI 助手 MCP 服务器(外部能力接入;kind=stdio|http)
+  `CREATE TABLE IF NOT EXISTS ai_mcp_server (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'stdio',
+    command TEXT DEFAULT '',
+    args TEXT DEFAULT '[]',
+    url TEXT DEFAULT '',
+    timeout_sec INTEGER NOT NULL DEFAULT 30,
+    confirm INTEGER NOT NULL DEFAULT 1,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`
 ]
 
 export function migrate(db: Database.Database): void {

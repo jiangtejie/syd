@@ -586,6 +586,111 @@ select.st-input {
   text-align: center;
 }
 
+/* ── MCP 服务器管理 ── */
+.mcp-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mcp-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-hover);
+  padding: 8px 12px;
+}
+
+.mcp-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mcp-item-main b {
+  font-size: 13px;
+}
+
+.mcp-kind {
+  font-size: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 1px 6px;
+  color: var(--text-2);
+  background: var(--bg-panel);
+}
+
+.mcp-on {
+  font-size: 10px;
+  color: var(--success-strong);
+  background: var(--success-soft);
+  border-radius: var(--r-pill);
+  padding: 1px 6px;
+}
+
+.mcp-off {
+  font-size: 10px;
+  color: var(--text-3);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 1px 6px;
+}
+
+.mcp-confirm-tag {
+  font-size: 10px;
+  color: var(--warn-text);
+  background: var(--warn-soft);
+  border-radius: var(--r-pill);
+  padding: 1px 6px;
+}
+
+.mcp-desc {
+  width: 100%;
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-item-ops {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+.st-btn.sm {
+  padding: 3px 10px;
+  font-size: 11.5px;
+}
+
+.st-btn.ghost.danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger-line);
+}
+
+.st-btn.ghost.danger:hover {
+  background: var(--danger-soft);
+}
+
+.mcp-add {
+  align-self: flex-start;
+}
+
+.mcp-edit {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border-light);
+  padding-top: 8px;
+}
+
 /* 智能体增强行内说明 */
 .st-agent-row .st-hint-inline {
   font-size: 11px;

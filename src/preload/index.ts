@@ -260,6 +260,14 @@ const api = {
         return () => ipcRenderer.removeListener('ai:chat', listener)
       }
     },
+    mcp: {
+      list: (): Promise<{ ok: boolean; servers?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:mcp:list'),
+      save: (input: unknown): Promise<{ ok: boolean; item?: unknown; error?: string }> =>
+        ipcRenderer.invoke('cs:mcp:save', input),
+      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:mcp:remove', id)
+    },
     export: {
       chat: (
         wxid: string,
