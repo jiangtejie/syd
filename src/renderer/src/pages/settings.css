@@ -39,13 +39,19 @@
   max-width: 1520px;
 }
 
-/* 双列紧凑网格：宽屏两列、窄屏自动一列 */
+/* 双列紧凑网格：宽屏固定两列(对齐整齐)、窄屏自动一列 */
 .st-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   max-width: 1520px;
   align-items: start;
+}
+
+@media (max-width: 860px) {
+  .st-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .st-section {
