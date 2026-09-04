@@ -135,13 +135,14 @@
   margin-bottom: 8px;
 }
 
-/* ── 底部:列表 + 抽屉(等高对齐,下方留出呼吸间距) ── */
+/* ── 底部:列表 + 抽屉(共享列高,严格等高对齐;下方留出呼吸间距) ── */
 .mon-bottom {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: 12px;
   align-items: stretch;
   margin-bottom: 28px;
+  --col-h: min(680px, calc(100vh - 300px));
 }
 
 .mon-filter-bar {
@@ -291,11 +292,12 @@
   color: var(--brand);
 }
 
-/* ── 追踪抽屉(与左侧表格等高;头部/操作区固定,聊天证据区内部滚动) ── */
+/* ── 追踪抽屉(与左侧表格共享 --col-h 严格等高;头部/操作区固定,聊天证据区内部滚动) ── */
 .mon-drawer {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  height: var(--col-h);
+  min-height: 420px;
   overflow: hidden;
 }
 
@@ -575,11 +577,11 @@
   text-align: center;
 }
 
-/* 问题列表卡:纵向弹性,表体占满剩余高度与抽屉对齐 */
+/* 问题列表卡:纵向弹性,表体占满剩余高度,总高与右侧抽屉一致 */
 .mon-list-card {
   display: flex;
   flex-direction: column;
-  height: min(680px, calc(100vh - 300px));
+  height: var(--col-h);
   min-height: 420px;
 }
 
