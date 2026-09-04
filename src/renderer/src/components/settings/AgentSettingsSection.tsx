@@ -58,7 +58,11 @@ function AgentSettingsSection(): React.JSX.Element {
   }, [])
 
   const reload = useCallback(async (): Promise<void> => {
-    if (!agentApi) return
+    if (!agentApi) {
+      setErrorTip('人设通道未就绪，请重启应用后重试')
+      setLoading(false)
+      return
+    }
     try {
       const res = await agentApi.list()
       if (res.ok && res.agents && res.agents.length > 0) {

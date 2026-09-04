@@ -38,7 +38,13 @@ function MdLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX
 /** 图片:限高防撑爆气泡;加载失败就地隐藏(不显示裂图) */
 function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement>): React.JSX.Element | null {
   const [failed, setFailed] = useState(false)
-  if (failed || !props.src) return null
+  const src = props.src
+  // 流式中图片 URL 是逐步成型的:URL 变化时复位失败态,避免残缺 URL 404 后永久隐藏
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 源变化复位失败标记(全仓同款模式)
+    setFailed(false)
+  }, [src])
+  if (failed || !src) return null
   return (
     <img
       {...props}
@@ -196,7 +202,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const stickRef = useRef(true)
 
   /** 消息窗口化:只渲染最近 WB_WINDOW 条,防止超长会话整表重排;向上可翻更早 */
-  const [startIdx, setStartIdx] = useState(0)
+  // lazy 初始化:切页再回来时组件状态重置,首帧即按当前消息数截尾,避免先全量渲染再校正
+  const [startIdx, setStartIdx] = useState(() => Math.max(0, messages.length - WB_WINDOW))
   const pendingAnchorRef = useRef<string | null>(null)
   const visible = useMemo(
     () => (startIdx > 0 ? messages.slice(startIdx) : messages),

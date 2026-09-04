@@ -183,9 +183,32 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
 
   init: async (wxid) => {
     const key = wxid || ''
+    const prevKey = get().wxid
+    if (prevKey === key) {
+      // 页面重挂载(切走再切回):只刷新会话列表,不打断进行中的生成/徽标/回显状态
+      const res = await wbApi?.listChats(key).catch(() => null)
+      if (res?.ok && res.chats) {
+        const chats = res.chats as ChatSessionItem[]
+        const st = get()
+        set({ chats })
+        if (st.activeId === null && chats.length > 0) {
+          await get().select(chats[0].id)
+        } else if (st.activeId !== null && !chats.some((c) => c.id === st.activeId)) {
+          // 当前会话已被删除:复位并回到最新会话
+          get().resetActive()
+          if (chats.length > 0) await get().select(chats[0].id)
+        }
+      }
+      return
+    }
+    // 账号切换:全量重建(旧账号状态不再适用)
     turnSeq.clear()
     set({
       wxid: key,
+      chats: null,
+      activeId: null,
+      messages: [],
+      loading: false,
       streamingBuf: '',
       reasoningBuf: '',
       toolCards: [],
@@ -200,9 +223,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     if (res?.ok && res.chats) {
       const chats = res.chats as ChatSessionItem[]
       set({ chats })
-      if (get().activeId === null && chats.length > 0) {
-        await get().select(chats[0].id)
-      }
+      if (chats.length > 0) await get().select(chats[0].id)
     } else {
       set({ chats: [] })
     }
@@ -441,6 +462,9 @@ function handleWbEvent(raw: unknown): void {
       })
       void useWorkbenchChatStore.getState().load(sid)
     } else if (!isStop) {
+      // 会话已不在当前账号列表(切账号后旧账号后台收尾):静默丢弃,不污染徽标/通知
+      const chatsNow = useWorkbenchChatStore.getState().chats
+      if (chatsNow !== null && !chatsNow.some((c) => c.id === sid)) return
       const now = useWorkbenchChatStore.getState()
       useWorkbenchChatStore.setState({
         sessNew: { ...now.sessNew, [sid]: true },
