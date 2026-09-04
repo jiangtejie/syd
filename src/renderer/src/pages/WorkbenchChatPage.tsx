@@ -8,6 +8,7 @@ import {
   type WbToolCard
 } from '../stores/workbenchChat'
 import { useWorkbenchStore } from '../stores/workbench'
+import { toast } from '../stores/toast'
 import './workbench-chat.css'
 
 /**
@@ -122,7 +123,10 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const createChat = async (): Promise<void> => {
     const title = window.prompt('工作台会话名称', `会话 ${(chats?.length ?? 0) + 1}`)
     if (title === null) return
-    await store.create(title.trim() || `会话 ${(chats?.length ?? 0) + 1}`)
+    const id = await store.create(title.trim() || `会话 ${(chats?.length ?? 0) + 1}`)
+    if (id === null) {
+      toast.error('新建会话失败,请重启应用后重试')
+    }
   }
 
   const canSend = !!activeId && !activeBusy

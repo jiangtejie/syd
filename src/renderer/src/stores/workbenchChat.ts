@@ -92,8 +92,15 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   create: async (title) => {
     const res = await wbApi?.create(get().wxid, title).catch(() => null)
     if (!res?.ok || res.id === undefined) return null
-    const list = await wbApi?.listChats(get().wxid).catch(() => null)
-    if (list?.ok && list.chats) set({ chats: list.chats as ChatSessionItem[] })
+    const now = Date.now()
+    const session: ChatSessionItem = {
+      id: res.id,
+      wxid: `wb:${get().wxid}`,
+      title: title.trim() || '工作台会话',
+      createdAt: now,
+      updatedAt: now
+    }
+    set({ chats: [session, ...(get().chats ?? [])] })
     await get().select(res.id)
     return res.id
   },
