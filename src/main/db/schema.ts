@@ -244,7 +244,27 @@ const TABLES: string[] = [
     external_name TEXT DEFAULT '',
     created_at INTEGER NOT NULL,
     UNIQUE (account_id, external_chat_id)
-  )`
+  )`,
+  // 工作区 Agent(本地自动化副驾;Claude Code 风格):每会话绑定一个工作目录,受限文件工具+人工确认
+  `CREATE TABLE IF NOT EXISTS workspace_session (
+    id INTEGER PRIMARY KEY,
+    cwd TEXT NOT NULL,
+    title TEXT DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS workspace_message (
+    id INTEGER PRIMARY KEY,
+    session_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'text',
+    content TEXT NOT NULL DEFAULT '',
+    meta TEXT,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES workspace_session(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_ws_msg_s ON workspace_message(session_id, id)`,
+  `CREATE INDEX IF NOT EXISTS idx_ws_sess_t ON workspace_session(updated_at DESC)`
 ]
 
 export function migrate(db: Database.Database): void {

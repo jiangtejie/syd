@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useWorkbenchStore, type WorkbenchPage } from './stores/workbench'
 import Workbench from './pages/Workbench'
 import AiChatPage from './pages/AiChatPage'
+import WorkspacePage from './pages/WorkspacePage'
 import SkillsPage from './pages/SkillsPage'
 import ImPage from './pages/ImPage'
 import MonitorPage from './pages/MonitorPage'
@@ -20,7 +21,16 @@ import './pages/shell.css'
  */
 
 type NavIconName =
-  'ai' | 'skills' | 'im' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
+  | 'ai'
+  | 'workspace'
+  | 'skills'
+  | 'im'
+  | 'monitor'
+  | 'chat'
+  | 'customers'
+  | 'dashboard'
+  | 'export'
+  | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -39,6 +49,14 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
       return (
         <svg {...attrs}>
           <path d="M12 2.5 14 9l6.5 2-6.5 2-2 6.5L10 13l-6.5-2L10 9z" />
+        </svg>
+      )
+    case 'workspace':
+      return (
+        <svg {...attrs}>
+          <path d="M3.5 7.5V6a2 2 0 0 1 2-2h3.2l2 2H18a2 2 0 0 1 2 2v1.5" />
+          <path d="M3.5 7.5h17a1.5 1.5 0 0 1 1.5 1.5v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a1.5 1.5 0 0 1 1.5-1.5z" />
+          <path d="M2.5 13h19" />
         </svg>
       )
     case 'skills':
@@ -108,6 +126,7 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
 
 const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }> = [
   { key: 'ai', icon: 'ai', label: 'AI' },
+  { key: 'workspace', icon: 'workspace', label: '工作区' },
   { key: 'skills', icon: 'skills', label: '技能' },
   { key: 'im', icon: 'im', label: 'IM' },
   { key: 'monitor', icon: 'monitor', label: '监控' },
@@ -275,6 +294,11 @@ function App(): React.JSX.Element {
             {page === 'ai' && (
               <div className="app-page">
                 <AiChatPage />
+              </div>
+            )}
+            {page === 'workspace' && (
+              <div className="app-page">
+                <WorkspacePage />
               </div>
             )}
             {page === 'skills' && (

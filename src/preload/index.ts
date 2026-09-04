@@ -402,6 +402,33 @@ const api = {
       }> => ipcRenderer.invoke('cs:app:dataStats'),
       clearCache: (): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:app:clearCache')
+    },
+    ws: {
+      list: (): Promise<{ ok: boolean; sessions?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:ws:list'),
+      create: (cwd: string, title: string): Promise<{ ok: boolean; id?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:ws:create', cwd, title),
+      rename: (id: number, title: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:ws:rename', id, title),
+      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:ws:remove', id),
+      messages: (id: number): Promise<{ ok: boolean; messages?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:ws:messages', id),
+      send: (id: number, text: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:ws:send', id, text),
+      retry: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:ws:retry', id),
+      stop: (id: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('cs:ws:stop', id),
+      confirm: (runId: string, ok: boolean): Promise<{ ok: boolean }> =>
+        ipcRenderer.invoke('cs:ws:confirm', runId, ok),
+      preview: (cwd: string): Promise<{ ok: boolean; tree?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:ws:preview', cwd),
+      onEvent: (callback: (evt: unknown) => void): (() => void) => {
+        const listener = (_e: Electron.IpcRendererEvent, payload: unknown): void =>
+          callback(payload)
+        ipcRenderer.on('ai:ws', listener)
+        return () => ipcRenderer.removeListener('ai:ws', listener)
+      }
     }
   }
 }

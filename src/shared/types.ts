@@ -613,3 +613,14 @@ export interface ImChannelAccountInput {
   appSecret: string
   enabled?: boolean
 }
+
+// ── 工作区 Agent(本地自动化副驾;Claude Code 风格,桌面入口 v1) ──
+
+export interface WorkspaceSessionItem {
+  id: number
+  /** 绑定的工作目录(全部文件/命令操作限制在其内) */
+  cwd: string
+  title: string
+  createdAt: number
+  updatedAt: number
+}

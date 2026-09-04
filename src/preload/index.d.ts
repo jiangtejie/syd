@@ -31,7 +31,8 @@ import type {
   SkillPackageItem,
   SkillInstallInfo,
   ImChannelAccount,
-  ImChannelAccountInput
+  ImChannelAccountInput,
+  WorkspaceSessionItem
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -370,6 +371,22 @@ declare global {
             cachePath?: string
           }>
           clearCache: () => Promise<{ ok: boolean; error?: string }>
+        }
+        ws: {
+          list: () => Promise<Result<{ sessions?: WorkspaceSessionItem[] }>>
+          create: (
+            cwd: string,
+            title: string
+          ) => Promise<{ ok: boolean; id?: number; error?: string }>
+          rename: (id: number, title: string) => Promise<{ ok: boolean; error?: string }>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+          messages: (id: number) => Promise<Result<{ messages?: ChatMsgItem[] }>>
+          send: (id: number, text: string) => Promise<{ ok: boolean; error?: string }>
+          retry: (id: number) => Promise<{ ok: boolean; error?: string }>
+          stop: (id: number) => Promise<{ ok: boolean }>
+          confirm: (runId: string, ok: boolean) => Promise<{ ok: boolean }>
+          preview: (cwd: string) => Promise<{ ok: boolean; tree?: string; error?: string }>
+          onEvent: (callback: (evt: AiChatEvent & { sessionId?: number }) => void) => () => void
         }
       }
     }
