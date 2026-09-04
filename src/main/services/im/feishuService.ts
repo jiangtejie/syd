@@ -71,8 +71,6 @@ interface Runtime {
   }
   wsc: { start: (p: { eventDispatcher: unknown }) => Promise<void>; close?: () => void } | null
   name: string
-  /** 回复内容是否带账号标识前缀(【账号名称】) */
-  replyTag: boolean
   status: 'connected' | 'connecting' | 'error'
   statusText: string
   lastError?: string
@@ -90,15 +88,6 @@ const CONNECT_TIMEOUT_MS = 20_000
 export function getImStatus(accountId: number): { status?: string; statusText?: string } {
   const r = runtimes.get(accountId)
   return r ? { status: r.status, statusText: r.lastError ?? r.statusText } : {}
-}
-
-/** 保存/改名后同步运行期展示名与回复前缀开关(不必重启连接) */
-export function syncFeishuMeta(accountId: number, name: string): void {
-  const rt = runtimes.get(accountId)
-  if (!rt) return
-  const cfg = getImAccountConfig(accountId)
-  if (name?.trim()) rt.name = name.trim()
-  rt.replyTag = cfg.replyTag !== false
 }
 
 function setStatus(rt: Runtime, status: Runtime['status'], text: string, err?: unknown): void {
@@ -206,7 +195,6 @@ export async function startFeishuAccount(
       client,
       wsc: null,
       name,
-      replyTag: cfg.replyTag !== false,
       status: 'connecting',
       statusText: '连接中…',
       recent: new Map()
@@ -405,7 +393,7 @@ async function safeReply(rt: Runtime, messageId: string, text: string): Promise<
   }
 }
 
-/** 原消息回复,长文本分片;开启账号标识时首片带【账号名称】前缀 */
+/** 原消息回复,长文本分片 */
 async function sendTextReply(rt: Runtime, messageId: string, text: string): Promise<void> {
   const chunks: string[] = []
   let rest = (text ?? '').trim()
@@ -414,10 +402,6 @@ async function sendTextReply(rt: Runtime, messageId: string, text: string): Prom
     rest = rest.slice(3000)
   }
   const list = chunks.length > 0 ? chunks : ['(空)']
-  if (rt.replyTag && rt.name.trim()) {
-    const tag = `【${rt.name.trim().slice(0, 20)}】`
-    if (!list[0].startsWith(tag)) list[0] = `${tag} ${list[0]}`
-  }
   imLog(rt.accountId, `回发 ${list.length} 片 共 ${(text ?? '').length} 字 -> ${messageId}`)
   for (const chunk of list) {
     await rt.client.im.message.reply({

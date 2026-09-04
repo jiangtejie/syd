@@ -19,8 +19,7 @@ export default function ImPage(): React.JSX.Element {
     channel: 'feishu',
     appId: '',
     appSecret: '',
-    enabled: false,
-    replyTag: true
+    enabled: false
   })
   const [editId, setEditId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -59,14 +58,7 @@ export default function ImPage(): React.JSX.Element {
 
   const startNew = (): void => {
     setEditId(null)
-    setForm({
-      name: '',
-      channel: 'feishu',
-      appId: '',
-      appSecret: '',
-      enabled: true,
-      replyTag: true
-    })
+    setForm({ name: '', channel: 'feishu', appId: '', appSecret: '', enabled: true })
     setOpen(true)
   }
   const editAccount = (a: ImChannelAccount): void => {
@@ -78,8 +70,7 @@ export default function ImPage(): React.JSX.Element {
       channel: 'feishu',
       appId: '',
       appSecret: '',
-      enabled: a.enabled,
-      replyTag: a.replyTag ?? true
+      enabled: a.enabled
     })
     setOpen(true)
   }
@@ -225,17 +216,6 @@ export default function ImPage(): React.JSX.Element {
               onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
             />
             <span className="st-hint-inline">启用即建立长连接开始接收消息</span>
-          </label>
-          <label className="st-row">
-            <span className="st-label">回复带账号标识</span>
-            <input
-              type="checkbox"
-              checked={form.replyTag !== false}
-              onChange={(e) => setForm((f) => ({ ...f, replyTag: e.target.checked }))}
-            />
-            <span className="st-hint-inline">
-              每条回复开头加【账号名称】前缀,便于区分多个机器人的回复
-            </span>
           </label>
           <div className="st-actions">
             <button type="button" className="st-btn ghost" onClick={() => setOpen(false)}>

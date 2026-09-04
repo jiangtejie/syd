@@ -16,26 +16,16 @@ interface AccountRow {
 export interface ImAccountConfig {
   appId?: string
   appSecret?: string
-  /** 回复内容是否带账号标识前缀(【账号名称】);缺省视为开启 */
-  replyTag?: boolean
 }
 
 export function rowToAccount(r: AccountRow): ImChannelAccount {
-  let replyTag: boolean | undefined
-  try {
-    const cfg = JSON.parse(r.config) as ImAccountConfig
-    replyTag = cfg.replyTag !== false
-  } catch {
-    replyTag = true
-  }
   return {
     id: r.id,
     channel: r.channel === 'feishu' ? 'feishu' : 'feishu',
     name: r.name,
     enabled: r.enabled === 1,
     createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    replyTag
+    updatedAt: r.updated_at
   }
 }
 

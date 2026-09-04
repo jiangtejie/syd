@@ -11,7 +11,6 @@ import {
   startFeishuAccount,
   stopFeishuAccount,
   getImStatus,
-  syncFeishuMeta,
   stopAllFeishu
 } from '../services/im/feishuService'
 import { sealSecret } from '../services/secrets'
@@ -25,8 +24,6 @@ async function refreshAccount(id: number | undefined): Promise<{ ok: boolean; er
   const row = rows.find((r) => r.id === id)
   if (!row) return { ok: true }
   if (row.enabled === 1) {
-    // 先同步展示名/回复前缀(改名即时生效),再确保连接
-    syncFeishuMeta(row.id, row.name)
     return await startFeishuAccount(row.id, row.name)
   }
   stopFeishuAccount(row.id)
@@ -56,8 +53,7 @@ export function registerImHandlers(): void {
         enabled: input?.enabled,
         config: {
           appId: input?.appId?.trim() ?? '',
-          appSecret: input?.appSecret ? sealSecret(input.appSecret) : '',
-          replyTag: input?.replyTag !== false
+          appSecret: input?.appSecret ? sealSecret(input.appSecret) : ''
         }
       })
       if (!saved.ok || saved.id === undefined) return saved
