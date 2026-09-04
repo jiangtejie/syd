@@ -152,6 +152,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const toolCards = useWorkbenchChatStore((s) => s.toolCards)
   const approvals = useWorkbenchChatStore((s) => s.approvals)
   const reasoningBuf = useWorkbenchChatStore((s) => s.reasoningBuf)
+  const sessNew = useWorkbenchChatStore((s) => s.sessNew)
+  const sessErr = useWorkbenchChatStore((s) => s.sessErr)
   const activeBusy = activeId !== null && !!busyIds[activeId]
   const [stick, setStick] = useState(true)
   const stickRef = useRef(true)
@@ -329,7 +331,21 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               className={`wb-side-item${activeId === c.id ? ' is-active' : ''}`}
               onClick={() => void store.select(c.id)}
             >
-              <div className="wb-side-title">{c.title}</div>
+              <div className="wb-side-main">
+                <div className="wb-side-title">{c.title}</div>
+                {c.id !== activeId && (busyIds[c.id] || sessNew[c.id] || sessErr[c.id]) && (
+                  <div className="wb-side-status">
+                    {busyIds[c.id] && (
+                      <span className="wb-side-run">
+                        <i className="wb-side-run-dot" />
+                        生成中
+                      </span>
+                    )}
+                    {!busyIds[c.id] && sessNew[c.id] && <span className="wb-side-new">新回复</span>}
+                    {sessErr[c.id] && <span className="wb-side-err">失败</span>}
+                  </div>
+                )}
+              </div>
               <div className="wb-side-ops">
                 <button
                   type="button"

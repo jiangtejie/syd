@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ChatMsgItem, ChatSessionItem } from '../../../shared/types'
+import { useWorkbenchStore } from './workbench'
 
 /**
  * AI 工作台前端 store(事件通道 ai:wb;会话复用 chat 体系,busy 按会话维度)。
@@ -8,6 +9,10 @@ import type { ChatMsgItem, ChatSessionItem } from '../../../shared/types'
  * - 事件订阅常驻(singleton):切页/切会话不断线,busy/回显不会卡死;
  * - 发送后乐观回显用户消息(pendingUser),避免整轮结束才出现自己的消息;
  * - load 带请求序号,防止慢响应覆盖后选的会话。
+ * 多会话并行:
+ * - busy 按会话,后台会话继续跑,整轮结束不丢(重新选中即全量刷新);
+ * - sessNew/sessErr 会话级徽标:后台完成/失败在会话列表可见;
+ * - 后台完成且窗口未聚焦时桌面提醒,点击直达工作台。
  */
 
 export interface WbToolCard {
@@ -33,6 +38,10 @@ interface WbState {
   loading: boolean
   /** 每会话生成状态(切换会话不互相阻塞) */
   busyIds: Record<number, boolean>
+  /** 后台完成未读徽标:该会话有新回复且尚未被查看 */
+  sessNew: Record<number, boolean>
+  /** 后台失败徽标 */
+  sessErr: Record<number, boolean>
   streamingBuf: string
   /** 推理过程(思考内容)实时缓冲:reasoner 模型才出现 */
   reasoningBuf: string
@@ -57,6 +66,33 @@ interface WbState {
 }
 
 const wbApi = window.api?.cs?.wb
+
+/** 删除记录项(不可变更新) */
+function withoutKey<K extends string | number>(
+  rec: Record<K, boolean>,
+  key: K
+): Record<K, boolean> {
+  const next = { ...rec }
+  delete next[key]
+  return next
+}
+
+/** 后台完成且窗口未聚焦:桌面提醒,点击直达工作台 */
+function notifyDone(sid: number): void {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return
+  if (document.hasFocus()) return
+  const chats = useWorkbenchChatStore.getState().chats ?? []
+  const title = chats.find((c) => c.id === sid)?.title ?? '工作台会话'
+  try {
+    const n = new Notification('AI 工作台', { body: `「${title}」已完成本轮回复，点击查看` })
+    n.onclick = (): void => {
+      useWorkbenchStore.getState().setPage('workbench')
+      window.focus()
+    }
+  } catch {
+    /* 忽略通知不可用 */
+  }
+}
 
 /** load 请求序号:慢响应不得覆盖后选的会话 */
 let loadSeq = 0
@@ -99,6 +135,8 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   messages: [],
   loading: false,
   busyIds: {},
+  sessNew: {},
+  sessErr: {},
   streamingBuf: '',
   reasoningBuf: '',
   toolCards: [],
@@ -116,7 +154,9 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       approvals: [],
       error: null,
       pendingUser: null,
-      busyIds: {}
+      busyIds: {},
+      sessNew: {},
+      sessErr: {}
     })
     const res = await wbApi?.listChats(key).catch(() => null)
     if (res?.ok && res.chats) {
@@ -149,7 +189,9 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       approvals: [],
       streamingBuf: '',
       reasoningBuf: '',
-      error: null
+      error: null,
+      sessNew: withoutKey(get().sessNew, id),
+      sessErr: withoutKey(get().sessErr, id)
     })
     if (prev !== id) set({ messages: [], loading: true })
     await get().load(id)
@@ -180,6 +222,8 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     set({
       chats: next,
       busyIds,
+      sessNew: withoutKey(get().sessNew, id),
+      sessErr: withoutKey(get().sessErr, id),
       pendingUser: get().pendingUser?.sid === id ? null : get().pendingUser
     })
     if (get().activeId === id) {
@@ -220,6 +264,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     const sid = activeId
     set({
       busyIds: { ...busyIds, [sid]: true },
+      sessErr: withoutKey(get().sessErr, sid),
       streamingBuf: '',
       reasoningBuf: '',
       toolCards: [],
@@ -228,6 +273,10 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       pendingUser: { sid, text: t }
     })
     const res = await wbApi?.send(sid, wxid, t).catch(() => null)
+    // 首轮发送时顺手请求通知权限(后台完成桌面提醒用,拒绝则静默降级为列表徽标)
+    if ('Notification' in window && Notification.permission === 'default') {
+      void Notification.requestPermission().catch(() => undefined)
+    }
     // 引擎整轮结束才 resolve;期间失败已由 error 事件处理。此处兜底:忙碌未被事件清除时按失败收尾
     if (res && !res.ok && get().busyIds[sid]) {
       set({
@@ -254,6 +303,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     }
     set({
       busyIds: { ...busyIds, [sid]: true },
+      sessErr: withoutKey(get().sessErr, sid),
       streamingBuf: '',
       reasoningBuf: '',
       toolCards: [],
@@ -322,15 +372,29 @@ function handleWbEvent(raw: unknown): void {
     const cur = useWorkbenchChatStore.getState().pendingUser
     if (cur?.sid === sid) useWorkbenchChatStore.setState({ pendingUser: null })
   }
-  const finishTurn = (): void => {
+  /** 收尾:复位 busy/回显;活动会话直接整刷,后台会话打徽标(重新选中时全量刷新兜底) */
+  const finishTurn = (isErr: boolean, isStop = false): void => {
     clearPending()
     const cur = useWorkbenchChatStore.getState()
     if (cur.busyIds[sid]) {
       useWorkbenchChatStore.setState({ busyIds: { ...cur.busyIds, [sid]: false } })
     }
-    if (cur.activeId === sid) {
-      useWorkbenchChatStore.setState({ streamingBuf: '', reasoningBuf: '' })
+    const latest = useWorkbenchChatStore.getState()
+    if (latest.activeId === sid) {
+      useWorkbenchChatStore.setState({
+        streamingBuf: '',
+        reasoningBuf: '',
+        sessNew: withoutKey(latest.sessNew, sid),
+        sessErr: withoutKey(latest.sessErr, sid)
+      })
       void useWorkbenchChatStore.getState().load(sid)
+    } else if (!isStop) {
+      const now = useWorkbenchChatStore.getState()
+      useWorkbenchChatStore.setState({
+        sessNew: { ...now.sessNew, [sid]: true },
+        sessErr: isErr ? { ...now.sessErr, [sid]: true } : withoutKey(now.sessErr, sid)
+      })
+      if (!isErr) notifyDone(sid)
     }
   }
   if (e.type === 'delta' && e.token && isActive) {
@@ -338,14 +402,14 @@ function handleWbEvent(raw: unknown): void {
   } else if (e.type === 'reasoning' && e.token && isActive) {
     queueDelta(sid, 'reason', e.token)
   } else if (e.type === 'done') {
-    finishTurn()
+    finishTurn(false)
   } else if (e.type === 'error') {
-    finishTurn()
+    finishTurn(true)
     if (isActive) {
       useWorkbenchChatStore.setState({ error: e.text ?? '出错了' })
     }
   } else if (e.type === 'status' && e.text === '已停止') {
-    finishTurn()
+    finishTurn(false, true)
   } else if (e.type === 'approval' && e.runId && isActive) {
     useWorkbenchChatStore.setState({
       approvals: [
