@@ -15,12 +15,17 @@ import {
 import { resolveToolApproval } from '../services/ai/workbench/approval'
 import { listSkills, setSkillEnabled, skillsRoot } from '../services/ai/workbench/skills'
 
-/** AI 工作台 IPC(会话复用 chat 体系;事件通道 ai:wb)。 */
+/** AI 工作台 IPC(会话复用 chat 体系,存储 wxid 带 wb: 前缀与 IM 会话隔离;事件通道 ai:wb)。 */
+
+/** 工作台会话存储命名空间:避免未绑定账号(wxid='')时与飞书 IM 映射会话混列 */
+function wbWxid(wxid: string): string {
+  return `wb:${String(wxid || '')}`
+}
 
 export function registerWorkbenchHandlers(): void {
   ipcMain.handle('cs:wb:listChats', (_e, wxid: string) => {
     try {
-      return { ok: true as const, chats: listChats(String(wxid || '')) }
+      return { ok: true as const, chats: listChats(wbWxid(String(wxid || ''))) }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }
@@ -38,7 +43,7 @@ export function registerWorkbenchHandlers(): void {
   ipcMain.handle('cs:wb:create', (_e, wxid: string, title: string) => {
     try {
       const id = createChat(
-        String(wxid || ''),
+        wbWxid(String(wxid || '')),
         String(title || '').slice(0, 24) || '工作台会话',
         null
       )

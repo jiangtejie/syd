@@ -95,7 +95,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const lastLenRef = useRef(0)
   const store = useWorkbenchChatStore()
-  const { chats, activeId, messages, loading, busy, streamingBuf, error } = store
+  const { chats, activeId, messages, loading, busyIds, streamingBuf, error } = store
+  const activeBusy = activeId !== null && !!busyIds[activeId]
 
   const accountKey = connected ? wxid : ''
   useEffect(() => {
@@ -124,7 +125,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     await store.create(title.trim() || `会话 ${(chats?.length ?? 0) + 1}`)
   }
 
-  const canSend = !!activeId && !busy
+  const canSend = !!activeId && !activeBusy
   const send = (): void => {
     const t = draft.trim()
     if (!t || !canSend) return
@@ -231,14 +232,14 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           )}
           {loading && <div className="wb-loading">加载中…</div>}
           {!loading && activeId !== null && messages.map((m) => <WbMessage key={m.id} msg={m} />)}
-          {activeId !== null && !loading && messages.length === 0 && !busy && (
+          {activeId !== null && !loading && messages.length === 0 && !activeBusy && (
             <div className="wb-loading">
               可以试试:「今天有哪些待处理问题?」「XX 客户最近聊了什么?」「导出范围有多大?」
             </div>
           )}
           <WbToolCards />
           <WbApprovals />
-          {busy && !streamingBuf && <div className="wb-loading">思考中…</div>}
+          {activeBusy && !streamingBuf && <div className="wb-loading">思考中…</div>}
           {streamingBuf && (
             <div className="wb-row">
               <div className="wb-bubble">
@@ -268,7 +269,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           />
           <div className="wb-composer-ops">
             <span className="wb-hint">Enter 发送 · Shift+Enter 换行 · 业务查询只读</span>
-            {busy ? (
+            {activeBusy ? (
               <button type="button" className="st-btn" onClick={() => void store.stop()}>
                 停止生成
               </button>

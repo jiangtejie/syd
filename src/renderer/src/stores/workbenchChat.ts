@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { ChatMsgItem, ChatSessionItem } from '../../../shared/types'
 
-/** AI 工作台前端 store(事件通道 ai:wb;会话复用 chat 体系)。 */
+/** AI 工作台前端 store(事件通道 ai:wb;会话复用 chat 体系,busy 按会话维度)。 */
 
 export interface WbToolCard {
   id: string
@@ -24,7 +24,8 @@ interface WbState {
   activeId: number | null
   messages: ChatMsgItem[]
   loading: boolean
-  busy: boolean
+  /** 每会话生成状态(切换会话不互相阻塞) */
+  busyIds: Record<number, boolean>
   streamingBuf: string
   toolCards: WbToolCard[]
   approvals: WbApprovalCard[]
@@ -52,21 +53,14 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   activeId: null,
   messages: [],
   loading: false,
-  busy: false,
+  busyIds: {},
   streamingBuf: '',
   toolCards: [],
   approvals: [],
   error: null,
 
   init: async (wxid) => {
-    set({
-      wxid: wxid || '',
-      busy: false,
-      streamingBuf: '',
-      toolCards: [],
-      approvals: [],
-      error: null
-    })
+    set({ wxid: wxid || '', streamingBuf: '', toolCards: [], approvals: [], error: null })
     const res = await wbApi?.listChats(wxid || '').catch(() => null)
     if (res?.ok && res.chats) {
       const chats = res.chats as ChatSessionItem[]
@@ -98,16 +92,19 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   create: async (title) => {
     const res = await wbApi?.create(get().wxid, title).catch(() => null)
     if (!res?.ok || res.id === undefined) return null
-    await get().init(get().wxid)
-    void get().select(res.id)
+    const list = await wbApi?.listChats(get().wxid).catch(() => null)
+    if (list?.ok && list.chats) set({ chats: list.chats as ChatSessionItem[] })
+    await get().select(res.id)
     return res.id
   },
 
   remove: async (id) => {
     const res = await wbApi?.remove(id).catch(() => null)
     if (!res?.ok) return
+    const busyIds = { ...get().busyIds }
+    delete busyIds[id]
     const next = (get().chats ?? []).filter((c) => c.id !== id)
-    set({ chats: next })
+    set({ chats: next, busyIds })
     if (get().activeId === id) {
       if (next.length > 0) void get().select(next[0].id)
       else get().resetActive()
@@ -132,34 +129,49 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       toolCards: [],
       approvals: [],
       streamingBuf: '',
-      busy: false,
       error: null
     })
   },
 
   send: async (text) => {
-    const { activeId, wxid, busy } = get()
-    if (!activeId || busy) return
+    const { activeId, wxid, busyIds } = get()
+    if (!activeId || busyIds[activeId]) return
     const t = text.trim()
     if (!t) return
-    set({ busy: true, streamingBuf: '', toolCards: [], approvals: [], error: null })
+    set({
+      busyIds: { ...busyIds, [activeId]: true },
+      streamingBuf: '',
+      toolCards: [],
+      approvals: [],
+      error: null
+    })
     const res = await wbApi?.send(activeId, wxid, t).catch(() => null)
-    if (res && !res.ok) set({ busy: false, error: res.error ?? '发送失败' })
+    if (res && !res.ok) {
+      set({ busyIds: { ...get().busyIds, [activeId]: false }, error: res.error ?? '发送失败' })
+    }
   },
 
   retry: async () => {
-    const { activeId, wxid, busy } = get()
-    if (!activeId || busy) return
-    set({ busy: true, streamingBuf: '', toolCards: [], approvals: [], error: null })
+    const { activeId, wxid, busyIds } = get()
+    if (!activeId || busyIds[activeId]) return
+    set({
+      busyIds: { ...busyIds, [activeId]: true },
+      streamingBuf: '',
+      toolCards: [],
+      approvals: [],
+      error: null
+    })
     const res = await wbApi?.retry(activeId, wxid).catch(() => null)
-    if (res && !res.ok) set({ busy: false, error: res.error ?? '重试失败' })
+    if (res && !res.ok) {
+      set({ busyIds: { ...get().busyIds, [activeId]: false }, error: res.error ?? '重试失败' })
+    }
   },
 
   stop: async () => {
     const { activeId } = get()
     if (!activeId) return
     await wbApi?.stop(activeId).catch(() => null)
-    set({ busy: false })
+    set({ busyIds: { ...get().busyIds, [activeId]: false } })
   },
 
   approve: async (runId, ok) => {
@@ -168,7 +180,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   }
 }))
 
-/** 事件接线(页面挂载时调用一次) */
+/** 事件接线(页面挂载时调用一次);busy 按事件所属会话复位,不受当前选中会话影响 */
 export function subscribeWorkbenchEvents(): () => void {
   const off = wbApi?.onEvent?.((raw) => {
     const e = raw as {
@@ -184,28 +196,41 @@ export function subscribeWorkbenchEvents(): () => void {
       approvalText?: string
       messageId?: number
     }
-    const { activeId } = useWorkbenchChatStore.getState()
-    if (!activeId || e.sessionId !== activeId) return
+    const sid = e.sessionId
+    if (sid === undefined) return
     const st = useWorkbenchChatStore.getState()
-    if (e.type === 'delta' && e.token) {
+    const isActive = st.activeId === sid
+    const clearBusy = (): void => {
+      useWorkbenchChatStore.setState({ busyIds: { ...st.busyIds, [sid]: false } })
+    }
+    if (e.type === 'delta' && e.token && isActive) {
       useWorkbenchChatStore.setState({ streamingBuf: st.streamingBuf + e.token })
     } else if (e.type === 'done') {
-      useWorkbenchChatStore.setState({ busy: false, streamingBuf: '' })
-      void useWorkbenchChatStore.getState().load(activeId)
+      clearBusy()
+      if (isActive) {
+        useWorkbenchChatStore.setState({ streamingBuf: '' })
+        void useWorkbenchChatStore.getState().load(sid)
+      }
     } else if (e.type === 'error') {
-      useWorkbenchChatStore.setState({ busy: false, streamingBuf: '', error: e.text ?? '出错了' })
-      void useWorkbenchChatStore.getState().load(activeId)
+      clearBusy()
+      if (isActive) {
+        useWorkbenchChatStore.setState({ streamingBuf: '', error: e.text ?? '出错了' })
+        void useWorkbenchChatStore.getState().load(sid)
+      }
     } else if (e.type === 'status' && e.text === '已停止') {
-      useWorkbenchChatStore.setState({ busy: false, streamingBuf: '' })
-      void useWorkbenchChatStore.getState().load(activeId)
-    } else if (e.type === 'approval' && e.runId) {
+      clearBusy()
+      if (isActive) {
+        useWorkbenchChatStore.setState({ streamingBuf: '' })
+        void useWorkbenchChatStore.getState().load(sid)
+      }
+    } else if (e.type === 'approval' && e.runId && isActive) {
       useWorkbenchChatStore.setState({
         approvals: [
           ...st.approvals.filter((a) => a.runId !== e.runId),
           { runId: e.runId, tool: e.tool ?? '', args: e.args, approvalText: e.approvalText }
         ]
       })
-    } else if (e.type === 'tool' && e.tool) {
+    } else if (e.type === 'tool' && e.tool && isActive) {
       const cards = st.toolCards
       if (e.toolStatus === 'start') {
         useWorkbenchChatStore.setState({
