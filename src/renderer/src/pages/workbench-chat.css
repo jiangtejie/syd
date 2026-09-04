@@ -399,3 +399,27 @@
   font-size: 11px;
   color: var(--text-4);
 }
+
+/* ── 新建/重命名会话输入弹窗（Electron 不支持 window.prompt，应用内自绘） ── */
+.wb-prompt-dialog {
+  width: min(380px, calc(100vw - 48px));
+}
+
+.wb-prompt-input {
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  color: var(--text-1);
+  outline: none;
+  user-select: text;
+  box-sizing: border-box;
+}
+
+.wb-prompt-input:focus {
+  border-color: var(--brand);
+}

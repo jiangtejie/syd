@@ -99,6 +99,39 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const { chats, activeId, messages, loading, busyIds, streamingBuf, error } = store
   const activeBusy = activeId !== null && !!busyIds[activeId]
 
+  /** 应用内输入弹窗（Electron 不支持 window.prompt：不弹窗且返回 undefined） */
+  interface PromptState {
+    title: string
+    initial: string
+    placeholder: string
+    okLabel: string
+    submit: (value: string) => void | Promise<void>
+  }
+  const [promptState, setPromptState] = useState<PromptState | null>(null)
+  const [promptVal, setPromptVal] = useState('')
+  const [promptBusy, setPromptBusy] = useState(false)
+
+  const openPrompt = (cfg: PromptState): void => {
+    setPromptVal(cfg.initial)
+    setPromptState(cfg)
+  }
+  const closePrompt = (): void => {
+    if (promptBusy) return
+    setPromptState(null)
+  }
+  const submitPrompt = async (): Promise<void> => {
+    if (!promptState || promptBusy) return
+    const v = promptVal.trim()
+    if (!v) return
+    setPromptBusy(true)
+    try {
+      await promptState.submit(v)
+      setPromptState(null)
+    } finally {
+      setPromptBusy(false)
+    }
+  }
+
   const accountKey = connected ? wxid : ''
   useEffect(() => {
     void store.init(accountKey)
@@ -120,13 +153,19 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     [chats, activeId]
   )
 
-  const createChat = async (): Promise<void> => {
-    const title = window.prompt('工作台会话名称', `会话 ${(chats?.length ?? 0) + 1}`)
-    if (title === null) return
-    const id = await store.create(title.trim() || `会话 ${(chats?.length ?? 0) + 1}`)
-    if (id === null) {
-      toast.error('新建会话失败,请重启应用后重试')
-    }
+  const createChat = (): void => {
+    openPrompt({
+      title: '新建工作台会话',
+      placeholder: '输入会话名称',
+      okLabel: '创建',
+      initial: `会话 ${(chats?.length ?? 0) + 1}`,
+      submit: async (value) => {
+        const id = await store.create(value.trim())
+        if (id === null) {
+          toast.error('新建会话失败,请重启应用后重试')
+        }
+      }
+    })
   }
 
   const canSend = !!activeId && !activeBusy
@@ -140,7 +179,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   return (
     <div className="wb-page">
       <aside className="wb-side">
-        <button type="button" className="st-btn wb-new" onClick={() => void createChat()}>
+        <button type="button" className="st-btn wb-new" onClick={createChat}>
           ＋ 新会话
         </button>
         <div className="wb-side-tip">
@@ -166,8 +205,13 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                   title="重命名"
                   onClick={(e) => {
                     e.stopPropagation()
-                    const t = window.prompt('重命名会话', c.title)
-                    if (t && t.trim()) void store.rename(c.id, t.trim())
+                    openPrompt({
+                      title: '重命名会话',
+                      placeholder: '输入新名称',
+                      okLabel: '保存',
+                      initial: c.title,
+                      submit: (t) => store.rename(c.id, t.trim())
+                    })
                   }}
                 >
                   改
@@ -290,6 +334,44 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      {/* 新建/重命名会话输入弹窗（Electron 不支持 window.prompt，自绘输入框） */}
+      {promptState && (
+        <div className="confirm-mask" onClick={closePrompt}>
+          <div className="confirm-dialog wb-prompt-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-title">{promptState.title}</div>
+            <input
+              className="wb-prompt-input"
+              autoFocus
+              value={promptVal}
+              placeholder={promptState.placeholder}
+              spellCheck={false}
+              onChange={(e) => setPromptVal(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void submitPrompt()
+                } else if (e.key === 'Escape') {
+                  closePrompt()
+                }
+              }}
+            />
+            <div className="confirm-actions">
+              <button type="button" className="confirm-btn" onClick={closePrompt}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="confirm-btn confirm-primary"
+                disabled={promptBusy || !promptVal.trim()}
+                onClick={() => void submitPrompt()}
+              >
+                {promptState.okLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
