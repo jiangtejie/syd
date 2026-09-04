@@ -363,6 +363,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* 时间线块:作为消息流的组成部分,自带呼吸间距 */
+  margin: 2px 0 12px;
 }
 
 .wb-toolcard.is-done {

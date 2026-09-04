@@ -6,7 +6,7 @@ import {
   cleanStreamText,
   ensureWorkbenchEvents,
   useWorkbenchChatStore,
-  type WbToolCard
+  type WbTurnBlock
 } from '../stores/workbenchChat'
 import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
@@ -262,57 +262,45 @@ const WbMessage = memo(WbMessageInner, (prev, next) => {
   return a.id === b.id && a.role === b.role && a.kind === b.kind && a.content === b.content
 })
 
-function WbToolCards(): React.JSX.Element | null {
-  const cards = useWorkbenchChatStore((s) => s.toolCards)
-  if (cards.length === 0) return null
-  return (
-    <div className="wb-toolcards">
-      {cards.map((c) => (
-        <WbToolCard key={c.id} c={c} />
-      ))}
-    </div>
-  )
-}
-
-function WbToolCard({ c }: { c: WbToolCard }): React.JSX.Element {
+function WbToolCard({ b }: { b: WbTurnBlock }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const openRef = useRef(false)
   // 开始执行自动展开(看它要做什么);结束后自动收起,用户手动展开过则保持
   useEffect(() => {
-    if (c.status === 'start') {
+    if (b.status === 'start') {
       openRef.current = false
       // eslint-disable-next-line react-hooks/set-state-in-effect -- 工具状态迁移自动开合(全仓同款模式)
       setOpen(true)
-    } else if (c.status === 'done' || c.status === 'fail') {
+    } else if (b.status === 'done' || b.status === 'fail') {
       if (!openRef.current) setOpen(false)
     }
-  }, [c.status])
+  }, [b.status])
   const toggle = (): void => {
     openRef.current = !open
     setOpen(!open)
   }
-  const statusIcon = c.status === 'start' ? '⚙' : c.status === 'fail' ? '✗' : '✓'
+  const statusIcon = b.status === 'start' ? '⚙' : b.status === 'fail' ? '✗' : '✓'
   return (
-    <div className={`wb-toolcard is-${c.status}`}>
+    <div className={`wb-toolcard is-${b.status}`}>
       <button type="button" className="wb-toolcard-head" onClick={toggle} aria-expanded={open}>
         <span className="wb-toolcard-name">
-          {statusIcon} {c.name}
-          {c.status === 'start' && <em className="wb-toolcard-state">执行中</em>}
+          {statusIcon} {b.name}
+          {b.status === 'start' && <em className="wb-toolcard-state">执行中</em>}
         </span>
         <span className={`wb-toolcard-caret${open ? ' is-open' : ''}`}>▾</span>
       </button>
       {open && (
         <div className="wb-toolcard-detail">
-          {c.args && (
+          {b.args && (
             <div className="wb-toolcard-sec">
               <div className="wb-toolcard-detail-title">参数</div>
-              <pre className="wb-toolcard-detail-pre">{c.args}</pre>
+              <pre className="wb-toolcard-detail-pre">{b.args}</pre>
             </div>
           )}
-          {c.output !== undefined && (
+          {b.output !== undefined && (
             <div className="wb-toolcard-sec">
-              <div className="wb-toolcard-detail-title">结果{c.outTrunc ? '（已截断）' : ''}</div>
-              <pre className="wb-toolcard-detail-pre">{c.output}</pre>
+              <div className="wb-toolcard-detail-title">结果{b.outTrunc ? '（已截断）' : ''}</div>
+              <pre className="wb-toolcard-detail-pre">{b.output}</pre>
             </div>
           )}
         </div>
@@ -365,19 +353,19 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const taRef = useRef<HTMLTextAreaElement | null>(null)
   const store = useWorkbenchChatStore()
-  const { chats, activeId, messages, loading, busyIds, streamingBuf, error, pendingTexts } = store
+  const { chats, activeId, messages, loading, busyIds, error, pendingTexts } = store
   const pendingText = activeId !== null ? (pendingTexts[activeId] ?? undefined) : undefined
   const compactBySid = useWorkbenchChatStore((s) => s.compactBySid)
   const editingSid = useWorkbenchChatStore((s) => s.editingSid)
   const compactText = activeId !== null ? (compactBySid[activeId] ?? undefined) : undefined
-  const toolCards = useWorkbenchChatStore((s) => s.toolCards)
+  const turnBlocks = useWorkbenchChatStore((s) => s.turnBlocks)
   const approvals = useWorkbenchChatStore((s) => s.approvals)
-  const reasoningBuf = useWorkbenchChatStore((s) => s.reasoningBuf)
   const sessNew = useWorkbenchChatStore((s) => s.sessNew)
   const sessErr = useWorkbenchChatStore((s) => s.sessErr)
   const activeBusy = activeId !== null && !!busyIds[activeId]
-  // 等待首字/思考耗时(跨「思考中」与「推理流」连续计时)
-  const waitSec = useWaitElapsed(activeBusy && !streamingBuf && activeId !== null)
+  // 等待首字/思考耗时:正文开始输出(文本段出现)后停止计时;推理/工具/等待期间持续
+  const hasLiveText = turnBlocks.some((b) => b.kind === 'text')
+  const waitSec = useWaitElapsed(activeBusy && !hasLiveText && activeId !== null)
   const [stick, setStick] = useState(true)
   const stickRef = useRef(true)
 
@@ -460,12 +448,12 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     if (el) el.scrollTop = el.scrollHeight
   }, [activeId])
 
-  // 内容更新(流式/推理/回显/工具卡/整轮刷新/窗口变化):仅在用户处于底部附近时跟随滚动
+  // 内容更新(流式/推理/回显/时间线块/整轮刷新/窗口变化):仅在用户处于底部附近时跟随滚动
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
     if (stickRef.current) el.scrollTop = el.scrollHeight
-  }, [messages, streamingBuf, reasoningBuf, pendingText, toolCards, approvals, loading, startIdx])
+  }, [messages, turnBlocks, pendingText, approvals, loading, startIdx])
 
   const handleBodyScroll = (): void => {
     const el = bodyRef.current
@@ -729,9 +717,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               可以试试:「今天有哪些待处理问题?」「XX 客户最近聊了什么?」「导出范围有多大?」
             </div>
           )}
-          <WbToolCards />
-          {/* 等待首字:思考动画(推理流已开始或有审批时不再重复提示) */}
-          {activeBusy && !streamingBuf && !reasoningBuf && approvals.length === 0 && (
+          {/* 当前轮时间线块:按事件顺序渲染(文本段落 / 工具调用 / 推理过程) */}
+          {activeBusy && turnBlocks.length === 0 && approvals.length === 0 && (
             <div className="wb-row">
               <div className="wb-bubble wb-thinking">
                 <span className="wb-thinking-dot" />
@@ -743,27 +730,34 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               </div>
             </div>
           )}
-          {/* 推理过程实时流(reasoner 模型):收尾落库后由消息内折叠区展示 */}
-          {reasoningBuf && (
-            <div className="wb-row">
-              <div className="wb-bubble wb-reason-live">
-                <div className="wb-reason-label">
-                  💭 思考过程{waitSec > 0 ? ` · ${waitSec}s` : ''}
+          {turnBlocks.map((b, i) => {
+            if (b.kind === 'tool') {
+              return <WbToolCard key={b.id} b={b} />
+            }
+            if (b.kind === 'reason') {
+              return (
+                <div key={b.id} className="wb-row">
+                  <div className="wb-bubble wb-reason-live">
+                    <div className="wb-reason-label">
+                      💭 思考过程{!hasLiveText && waitSec > 0 ? ` · ${waitSec}s` : ''}
+                    </div>
+                    <pre className="wb-reason-text">{b.text}</pre>
+                  </div>
                 </div>
-                <pre className="wb-reason-text">{reasoningBuf}</pre>
+              )
+            }
+            const isTail = activeBusy && i === turnBlocks.length - 1
+            return (
+              <div key={b.id} className="wb-row">
+                <div className="wb-bubble">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+                    {b.text ?? ''}
+                  </ReactMarkdown>
+                  {isTail && <span className="wb-caret" />}
+                </div>
               </div>
-            </div>
-          )}
-          {streamingBuf && (
-            <div className="wb-row">
-              <div className="wb-bubble">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
-                  {streamingBuf}
-                </ReactMarkdown>
-                <span className="wb-caret" />
-              </div>
-            </div>
-          )}
+            )
+          })}
           {/* 用户上翻阅读时:悬浮「回到底部」胶囊 */}
           {!stick && (
             <button type="button" className="wb-jump" onClick={jumpToBottom}>

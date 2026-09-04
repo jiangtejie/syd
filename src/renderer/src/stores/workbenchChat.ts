@@ -17,16 +17,28 @@ import { useWorkbenchStore } from './workbench'
  * - 后台完成且窗口未聚焦时桌面提醒,点击直达工作台。
  */
 
-export interface WbToolCard {
-  id: string
-  name: string
-  status: 'start' | 'pending' | 'done' | 'fail'
+/**
+ * 当前轮时间线块:一轮生成内按事件顺序展示的内容(与历史消息区分开)。
+ * - text:正文段落;工具调用之间会自然分段(每段独立气泡,卡片按序插入段落之间)
+ * - tool:工具调用(含参数/结果,状态实时更新),不再堆在消息流末尾
+ * - reason:推理过程实时流(出现于文本/工具之前)
+ * 整轮结束(done/error/停止)后清空,由 load 后的正式消息接续时间线。
+ */
+export interface WbTurnBlock {
+  id: number
+  kind: 'text' | 'tool' | 'reason'
+  text?: string
+  name?: string
+  status?: 'start' | 'done' | 'fail'
   /** 工具调用参数(JSON,引擎已截断至 4k) */
   args?: string
   /** 工具结果(引擎已截断至 4k,展开查看) */
   output?: string
   outTrunc?: boolean
 }
+
+/** 单轮内块序号(单调递增,仅作 key) */
+let blockSeq = 0
 
 export interface WbApprovalCard {
   runId: string
@@ -56,10 +68,8 @@ interface WbState {
   sessNew: Record<number, boolean>
   /** 后台失败徽标 */
   sessErr: Record<number, boolean>
-  streamingBuf: string
-  /** 推理过程(思考内容)实时缓冲:reasoner 模型才出现 */
-  reasoningBuf: string
-  toolCards: WbToolCard[]
+  /** 当前轮时间线块(文本段落/工具调用/推理过程,按发生顺序) */
+  turnBlocks: WbTurnBlock[]
   approvals: WbApprovalCard[]
   error: string | null
   /** 乐观回显(按会话):引擎已落库但列表尚未刷新,先上屏的用户消息 */
@@ -140,6 +150,19 @@ function bumpTurn(sid: number): number {
   return next
 }
 
+/** 把 token 追加进当前轮时间线:kind 相同且是末尾块则续写,否则另起一块 */
+function appendTurnToken(kind: 'text' | 'reason', token: string): void {
+  const st = useWorkbenchChatStore.getState()
+  const blocks = st.turnBlocks
+  const last = blocks.length > 0 ? blocks[blocks.length - 1] : undefined
+  if (last && last.kind === kind) {
+    blocks[blocks.length - 1] = { ...last, text: (last.text ?? '') + token }
+  } else {
+    blocks.push({ id: ++blockSeq, kind, text: token })
+  }
+  useWorkbenchChatStore.setState({ turnBlocks: blocks })
+}
+
 /** delta 按帧批量(单路活动会话展示;text=正文,reason=推理过程) */
 let deltaQueue: Array<{ sid: number; kind: 'text' | 'reason'; seq: number; token: string }> = []
 let flushHandle: number | null = null
@@ -157,19 +180,14 @@ function queueDelta(sid: number, kind: 'text' | 'reason', token: string): void {
       if (!st.busyIds[it.sid]) continue // 已收尾:迟到帧丢弃(最终内容由 load 全量兜底)
       if ((turnSeq.get(it.sid) ?? 0) !== it.seq) continue // 跨轮次旧帧:丢弃
       if (it.kind === 'text') {
-        if (st.pendingTexts[it.sid] !== undefined) {
-          useWorkbenchChatStore.setState({ pendingTexts: withoutKeyStr(st.pendingTexts, it.sid) })
+        const latest = useWorkbenchChatStore.getState()
+        if (latest.pendingTexts[it.sid] !== undefined) {
+          useWorkbenchChatStore.setState({
+            pendingTexts: withoutKeyStr(latest.pendingTexts, it.sid)
+          })
         }
-        const latest = useWorkbenchChatStore.getState()
-        useWorkbenchChatStore.setState({
-          streamingBuf: latest.streamingBuf + it.token
-        })
-      } else {
-        const latest = useWorkbenchChatStore.getState()
-        useWorkbenchChatStore.setState({
-          reasoningBuf: latest.reasoningBuf + it.token
-        })
       }
+      appendTurnToken(it.kind, it.token)
     }
   }
   flushHandle =
@@ -187,9 +205,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   busyIds: {},
   sessNew: {},
   sessErr: {},
-  streamingBuf: '',
-  reasoningBuf: '',
-  toolCards: [],
+  turnBlocks: [],
   approvals: [],
   error: null,
   pendingTexts: {},
@@ -224,9 +240,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       activeId: null,
       messages: [],
       loading: false,
-      streamingBuf: '',
-      reasoningBuf: '',
-      toolCards: [],
+      turnBlocks: [],
       approvals: [],
       error: null,
       pendingTexts: {},
@@ -275,10 +289,8 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     const prev = get().activeId
     set({
       activeId: id,
-      toolCards: [],
+      turnBlocks: [],
       approvals: [],
-      streamingBuf: '',
-      reasoningBuf: '',
       error: null,
       editingSid: null,
       sessNew: withoutKey(get().sessNew, id),
@@ -344,10 +356,8 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     set({
       activeId: null,
       messages: [],
-      toolCards: [],
+      turnBlocks: [],
       approvals: [],
-      streamingBuf: '',
-      reasoningBuf: '',
       error: null,
       pendingTexts: {},
       compactBySid: {},
@@ -365,9 +375,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     set({
       busyIds: { ...busyIds, [sid]: true },
       sessErr: withoutKey(get().sessErr, sid),
-      streamingBuf: '',
-      reasoningBuf: '',
-      toolCards: [],
+      turnBlocks: [],
       approvals: [],
       error: null,
       pendingTexts: { ...get().pendingTexts, [sid]: t }
@@ -400,9 +408,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       busyIds: { ...busyIds, [sid]: true },
       editingSid: null,
       sessErr: withoutKey(get().sessErr, sid),
-      streamingBuf: '',
-      reasoningBuf: '',
-      toolCards: [],
+      turnBlocks: [],
       approvals: [],
       error: null,
       pendingTexts: { ...get().pendingTexts, [sid]: t }
@@ -461,9 +467,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     set({
       busyIds: { ...busyIds, [sid]: true },
       sessErr: withoutKey(get().sessErr, sid),
-      streamingBuf: '',
-      reasoningBuf: '',
-      toolCards: [],
+      turnBlocks: [],
       approvals: [],
       error: null,
       messages: keep >= 0 ? msgs.slice(0, keep + 1) : msgs,
@@ -491,8 +495,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       if (st.busyIds[sid]) {
         useWorkbenchChatStore.setState({
           busyIds: { ...st.busyIds, [sid]: false },
-          streamingBuf: '',
-          reasoningBuf: '',
+          turnBlocks: [],
           pendingTexts: withoutKeyStr(st.pendingTexts, sid)
         })
         if (st.activeId === sid) void st.load(sid)
@@ -537,8 +540,7 @@ function handleWbEvent(raw: unknown): void {
     const latest = useWorkbenchChatStore.getState()
     if (latest.activeId === sid) {
       useWorkbenchChatStore.setState({
-        streamingBuf: '',
-        reasoningBuf: '',
+        turnBlocks: [],
         sessNew: withoutKey(latest.sessNew, sid),
         sessErr: withoutKey(latest.sessErr, sid)
       })
@@ -584,27 +586,36 @@ function handleWbEvent(raw: unknown): void {
       ]
     })
   } else if (e.type === 'tool' && e.tool && isActive) {
-    const cards = useWorkbenchChatStore.getState().toolCards
+    const stNow = useWorkbenchChatStore.getState()
     if (e.toolStatus === 'start') {
+      // 追加为时间线块:自动封口当前文本段,后续文本另起一段,保持发生顺序
       useWorkbenchChatStore.setState({
-        toolCards: [
-          ...cards,
-          { id: `${e.tool}:${Date.now()}`, name: e.tool, status: 'start', args: e.args }
+        turnBlocks: [
+          ...stNow.turnBlocks,
+          { id: ++blockSeq, kind: 'tool', name: e.tool, status: 'start', args: e.args }
         ]
       })
     } else {
-      useWorkbenchChatStore.setState({
-        toolCards: cards.map((c) =>
-          c.name === e.tool && c.status === 'start'
-            ? {
-                ...c,
-                status: e.toolStatus === 'fail' ? 'fail' : 'done',
-                output: e.output ?? e.resultClip,
-                outTrunc: e.toolStatus === 'fail' ? undefined : e.outTrunc
-              }
-            : c
-        )
-      })
+      // 收尾最近的同名 start 块(参数/结果就位)
+      const blocks = stNow.turnBlocks
+      let doneIdx = -1
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        const b = blocks[i]
+        if (b.kind === 'tool' && b.name === e.tool && b.status === 'start') {
+          doneIdx = i
+          break
+        }
+      }
+      if (doneIdx >= 0) {
+        const next = blocks.slice()
+        next[doneIdx] = {
+          ...next[doneIdx],
+          status: e.toolStatus === 'fail' ? 'fail' : 'done',
+          output: e.output ?? e.resultClip,
+          outTrunc: e.toolStatus === 'fail' ? undefined : e.outTrunc
+        }
+        useWorkbenchChatStore.setState({ turnBlocks: next })
+      }
     }
   }
 }
