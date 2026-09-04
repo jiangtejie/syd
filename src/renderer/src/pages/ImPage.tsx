@@ -4,14 +4,14 @@ import { toast } from '../stores/toast'
 import './im.css'
 
 /**
- * IM 渠道页(一期:飞书机器人)。
- * 机器人 = 本产品 AI 助手(复用记忆/工具/ReAct)通过飞书 WebSocket 长连接收发;
+ * IM 渠道管理(一期:飞书机器人;嵌入 设置 → IM 渠道 tab)。
+ * 机器人 = 本产品 AI 助手引擎通过飞书 WebSocket 长连接收发;
  * 私聊直接响应,群聊需 @;凭证 AppSecret 以系统加密存储。
  */
 
 const imApi = window.api?.cs?.im
 
-export default function ImPage(): React.JSX.Element {
+export function ImSection(): React.JSX.Element {
   const [accounts, setAccounts] = useState<ImChannelAccount[] | null>(null)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<ImChannelAccountInput>({
@@ -112,9 +112,9 @@ export default function ImPage(): React.JSX.Element {
   }
 
   return (
-    <div className="page-scroll im-page">
+    <div className="im-section">
       <div className="im-head">
-        <h2 className="page-title">IM 渠道</h2>
+        <div className="st-title">IM 渠道（飞书机器人）</div>
         <button type="button" className="st-btn" onClick={startNew}>
           ＋ 接入飞书机器人
         </button>

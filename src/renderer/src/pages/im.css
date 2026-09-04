@@ -1,7 +1,8 @@
-/* ══════════ IM 渠道页(飞书机器人一期) ══════════ */
+/* ══════════ IM 渠道管理(嵌入 设置 → IM 渠道 tab) ══════════ */
 
-.im-page {
-  max-width: 1260px;
+.im-section {
+  display: flex;
+  flex-direction: column;
 }
 
 .im-head {
@@ -9,7 +10,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
+  margin: 2px 0 8px;
 }
 
 .im-guide {

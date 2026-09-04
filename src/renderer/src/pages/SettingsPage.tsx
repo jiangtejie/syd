@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SendStatusInfo } from '../../../shared/types'
 import WechatKeySection from '../components/settings/WechatKeySection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
+import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
 import './settings.css'
 
@@ -104,9 +105,9 @@ function formatBytes(n: number): string {
 }
 
 /** 设置页 Tab 板块 */
-type SettingsTab = 'wechat' | 'ai' | 'send' | 'other'
+type SettingsTab = 'wechat' | 'ai' | 'send' | 'other' | 'im'
 
-const SETTINGS_TAB_KEYS: readonly SettingsTab[] = ['wechat', 'ai', 'send', 'other']
+const SETTINGS_TAB_KEYS: readonly SettingsTab[] = ['wechat', 'ai', 'send', 'other', 'im']
 /** 记住上次所选 Tab（localStorage，首次进入默认「微信数据」） */
 const SETTINGS_TAB_KEY = 'cs.settingsTab'
 
@@ -384,7 +385,8 @@ function SettingsPage(): React.JSX.Element {
             ['wechat', '微信数据'],
             ['ai', 'AI 助手'],
             ['send', '发送与频控'],
-            ['other', '偏好与数据']
+            ['other', '偏好与数据'],
+            ['im', 'IM 渠道']
           ] as Array<[SettingsTab, string]>
         ).map(([key, label]) => (
           <button
@@ -399,6 +401,12 @@ function SettingsPage(): React.JSX.Element {
           </button>
         ))}
       </div>
+
+      {tab === 'im' && (
+        <div className="st-tab-panel">
+          <ImSection />
+        </div>
+      )}
 
       {tab === 'wechat' && (
         <div className="st-tab-panel">

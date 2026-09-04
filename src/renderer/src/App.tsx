@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useWorkbenchStore, type WorkbenchPage } from './stores/workbench'
 import Workbench from './pages/Workbench'
-import ImPage from './pages/ImPage'
 import MonitorPage from './pages/MonitorPage'
 import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
@@ -17,7 +16,7 @@ import './pages/shell.css'
  * 对话页（Workbench）始终保持挂载（隐藏不卸载），切页不丢滚动位置与输入状态。
  */
 
-type NavIconName = 'im' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
+type NavIconName = 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -32,14 +31,6 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
     strokeLinejoin: 'round' as const
   }
   switch (name) {
-    case 'im':
-      return (
-        <svg {...attrs}>
-          <rect x="3.5" y="5" width="17" height="12" rx="2.5" />
-          <path d="M8 12h1.2M12 12h1.2M15.8 12H17" />
-          <path d="m10.5 17-2 3h7l-2-3" />
-        </svg>
-      )
     case 'monitor':
       return (
         <svg {...attrs}>
@@ -89,7 +80,6 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
 }
 
 const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }> = [
-  { key: 'im', icon: 'im', label: 'IM' },
   { key: 'monitor', icon: 'monitor', label: '监控' },
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
@@ -250,11 +240,6 @@ function App(): React.JSX.Element {
             {page === 'export' && (
               <div className="app-page">
                 <ExportPage />
-              </div>
-            )}
-            {page === 'im' && (
-              <div className="app-page">
-                <ImPage />
               </div>
             )}
             {page === 'monitor' && (
