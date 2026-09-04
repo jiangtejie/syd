@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useWorkbenchStore, type WorkbenchPage } from './stores/workbench'
 import Workbench from './pages/Workbench'
+import AiChatPage from './pages/AiChatPage'
 import MonitorPage from './pages/MonitorPage'
 import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
@@ -16,7 +17,7 @@ import './pages/shell.css'
  * 对话页（Workbench）始终保持挂载（隐藏不卸载），切页不丢滚动位置与输入状态。
  */
 
-type NavIconName = 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
+type NavIconName = 'ai' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -31,6 +32,12 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
     strokeLinejoin: 'round' as const
   }
   switch (name) {
+    case 'ai':
+      return (
+        <svg {...attrs}>
+          <path d="M12 2.5 14 9l6.5 2-6.5 2-2 6.5L10 13l-6.5-2L10 9z" />
+        </svg>
+      )
     case 'monitor':
       return (
         <svg {...attrs}>
@@ -80,6 +87,7 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
 }
 
 const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }> = [
+  { key: 'ai', icon: 'ai', label: 'AI' },
   { key: 'monitor', icon: 'monitor', label: '监控' },
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
@@ -94,7 +102,14 @@ const wxApi = window.api?.cs?.wx
 /** 空占位人形图标（未连接 / 无头像时展示） */
 function PersonIcon(): React.JSX.Element {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
       <circle cx="12" cy="8.2" r="3.6" />
       <path d="M4.6 20c1.3-3.4 4.1-5.1 7.4-5.1s6.1 1.7 7.4 5.1" />
     </svg>
@@ -169,7 +184,8 @@ function App(): React.JSX.Element {
 
   // 任务栏/窗口标题带未读数
   useEffect(() => {
-    document.title = unread > 0 ? `（${unread > 99 ? '99+' : unread} 条未读）微信私域智能客服` : '微信私域智能客服'
+    document.title =
+      unread > 0 ? `（${unread > 99 ? '99+' : unread} 条未读）微信私域智能客服` : '微信私域智能客服'
   }, [unread])
 
   // 菜单导航（Ctrl+, 打开设置等）
@@ -228,6 +244,11 @@ function App(): React.JSX.Element {
             {page === 'export' && (
               <div className="app-page">
                 <ExportPage />
+              </div>
+            )}
+            {page === 'ai' && (
+              <div className="app-page">
+                <AiChatPage />
               </div>
             )}
             {page === 'monitor' && (

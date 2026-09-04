@@ -1,0 +1,509 @@
+/* ══════════ AI 助手页(DeepSeek 式对话) ══════════ */
+
+.aichat-page {
+  display: flex;
+  height: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+/* ── 会话侧栏 ── */
+.aichat-side {
+  width: 232px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-light);
+  background: var(--bg-hover);
+  padding: 10px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.aichat-new {
+  width: 100%;
+}
+
+.aichat-side-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.aichat-empty {
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px 4px;
+}
+
+.aichat-side-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.aichat-side-item:hover {
+  background: var(--bg-panel);
+  border-color: var(--border-light);
+}
+
+.aichat-side-item.is-active {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+}
+
+.aichat-side-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aichat-side-ops {
+  flex: none;
+  display: none;
+  gap: 4px;
+}
+
+.aichat-side-item:hover .aichat-side-ops {
+  display: flex;
+}
+
+.aichat-side-ops button {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 3px;
+}
+
+.aichat-side-ops button:hover {
+  color: var(--brand);
+}
+
+.aichat-side-tip {
+  font-size: 11px;
+  color: var(--warn-text);
+  background: var(--warn-soft);
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+  line-height: 1.5;
+}
+
+/* ── 主区 ── */
+.aichat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.aichat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.aichat-head-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.aichat-head-title b {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aichat-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.ai-select {
+  font-size: 12.5px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-panel);
+  outline: none;
+  cursor: pointer;
+  max-width: 200px;
+}
+
+.ai-select:focus {
+  border-color: var(--brand);
+}
+
+.ai-mini {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.ai-mini:hover {
+  color: var(--brand);
+}
+
+.ai-mini.danger:hover {
+  color: var(--danger);
+}
+
+.ai-mini:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── 消息区 ── */
+.aichat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 8px;
+}
+
+.aichat-welcome {
+  max-width: 520px;
+  margin: 12vh auto 0;
+  text-align: center;
+}
+
+.aichat-welcome-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.aichat-welcome-sub {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  line-height: 1.7;
+}
+
+.aichat-loading,
+.aichat-thinking {
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 8px 2px;
+}
+
+.aichat-thinking::after {
+  content: '';
+  animation: aichat-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes aichat-dots {
+  0% {
+    content: '';
+  }
+  25% {
+    content: '.';
+  }
+  50% {
+    content: '..';
+  }
+  75% {
+    content: '...';
+  }
+}
+
+.aichat-row {
+  display: flex;
+  margin: 4px 0 10px;
+}
+
+.aichat-row.is-user {
+  justify-content: flex-end;
+}
+
+.aichat-bubble {
+  max-width: min(760px, 82%);
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  font-size: 13.5px;
+  line-height: 1.65;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.aichat-row.is-user .aichat-bubble {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+  white-space: pre-wrap;
+}
+
+.aichat-row.is-error .aichat-bubble {
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+}
+
+.aichat-error-text {
+  color: var(--danger);
+}
+
+.aichat-plain {
+  white-space: pre-wrap;
+}
+
+/* markdown 内部排版 */
+.aichat-bubble p {
+  margin: 0 0 6px;
+}
+
+.aichat-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.aichat-bubble h1,
+.aichat-bubble h2,
+.aichat-bubble h3 {
+  font-size: 15px;
+  margin: 8px 0 4px;
+}
+
+.aichat-bubble ul,
+.aichat-bubble ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.aichat-bubble code {
+  background: var(--bg-hover);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 12px;
+}
+
+.aichat-bubble pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.aichat-bubble pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.aichat-bubble table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 12.5px;
+}
+
+.aichat-bubble th,
+.aichat-bubble td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+
+.aichat-bubble blockquote {
+  border-left: 3px solid var(--brand-line);
+  margin: 4px 0;
+  padding-left: 10px;
+  color: var(--text-2);
+}
+
+.aichat-caret {
+  display: inline-block;
+  width: 2px;
+  height: 15px;
+  background: var(--brand);
+  vertical-align: -2px;
+  margin-left: 2px;
+  animation: aichat-blink 1s steps(2) infinite;
+}
+
+@keyframes aichat-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ── 工具卡 ── */
+.aichat-toolcards {
+  margin: 2px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aichat-toolcard {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  padding: 6px 10px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.aichat-toolcard.is-done {
+  border-color: var(--success-line, var(--border));
+}
+
+.aichat-toolcard.is-fail {
+  border-color: var(--danger-line);
+}
+
+.aichat-toolcard-name {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.aichat-toolcard-args {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.aichat-toolcard-result {
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--bg-panel);
+  border-radius: 4px;
+  padding: 4px 6px;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.aichat-toolcard-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.aichat-pending-tip {
+  color: var(--warn-text);
+  font-size: 11.5px;
+}
+
+.aichat-tool-tag {
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+/* ── 错误条 ── */
+.aichat-error {
+  margin: 0 16px 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+/* ── 输入区 ── */
+.aichat-composer {
+  flex: none;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aichat-textarea {
+  width: 100%;
+  min-height: 60px;
+  max-height: 220px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  padding: 9px 11px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  outline: none;
+  font-family: inherit;
+}
+
+.aichat-textarea:focus {
+  border-color: var(--brand);
+}
+
+.aichat-composer-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.aichat-hint {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--text-4);
+}
+
+.ai-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-1);
+  border-radius: var(--r-md);
+  padding: 5px 16px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ai-btn:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.ai-btn.primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
+}
+
+.ai-btn.primary:hover:not(:disabled) {
+  background: var(--brand-hover);
+  color: var(--on-brand);
+}
+
+.ai-btn.sm {
+  padding: 2px 10px;
+  font-size: 11.5px;
+  border-radius: var(--r-sm);
+}
+
+.ai-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
