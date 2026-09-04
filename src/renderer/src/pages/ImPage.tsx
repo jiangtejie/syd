@@ -35,6 +35,27 @@ export default function ImPage(): React.JSX.Element {
     void load()
   }, [])
 
+  // 主进程推送的连接状态变化(连接成功/失败/重连)实时刷新列表
+  useEffect(() => {
+    if (!imApi?.onStatus) return
+    const off = imApi.onStatus((p) => {
+      setAccounts(
+        (prev) =>
+          prev &&
+          prev.map((a) =>
+            a.id === p.accountId
+              ? {
+                  ...a,
+                  status: (p.status as ImChannelAccount['status']) ?? a.status,
+                  statusText: p.statusText
+                }
+              : a
+          )
+      )
+    })
+    return off
+  }, [])
+
   const startNew = (): void => {
     setEditId(null)
     setForm({ name: '', channel: 'feishu', appId: '', appSecret: '', enabled: true })
@@ -61,7 +82,9 @@ export default function ImPage(): React.JSX.Element {
         toast.error((res as { error?: string } | null)?.error || '保存失败')
         return
       }
-      toast.success('账号已保存')
+      // 账号已保存,但自动连接失败时给出原因(如凭证/订阅配置问题)
+      if (res.error) toast.error(`已保存,但连接失败:${res.error}`)
+      else toast.success('账号已保存')
       setOpen(false)
       await load()
     } finally {
@@ -98,9 +121,11 @@ export default function ImPage(): React.JSX.Element {
       </div>
 
       <div className="im-guide">
-        使用前需在飞书开放平台创建「企业自建应用」:启用机器人能力;事件订阅选“长连接”(无需公网);
-        开启并发布这些权限:接收群聊中@机器人消息、读取用户发给机器人的单聊消息、给用户或群发送消息。Secret
-        由本机系统加密保存。
+        接入前需在飞书开放平台完成三步(缺一不可):① 创建「企业自建应用」并启用机器人能力;② 事件与回调
+        → 订阅方式选「使用长连接接收事件」,并添加事件 im.message.receive_v1;③
+        开通权限:接收群聊中@机器人消息、读取用户发给机器人的单聊消息、发送消息(含单聊/群聊),然后创建版本并发布。
+        保存后自动建立长连接,状态实时刷新;私聊直接发消息即可,群聊需 @ 机器人(一期仅支持文本)。
+        连接失败的原因会显示在下方状态里,也可查看日志文件 logs/im.log(位于用户数据目录)。
       </div>
 
       <div className="im-list">

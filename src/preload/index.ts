@@ -304,7 +304,22 @@ const api = {
       remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:im:remove', id),
       toggle: (id: number, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:im:toggle', id, enabled)
+        ipcRenderer.invoke('cs:im:toggle', id, enabled),
+      onStatus: (
+        callback: (payload: {
+          accountId: number
+          status?: string
+          statusText?: string
+          at?: number
+        }) => void
+      ): (() => void) => {
+        const listener = (
+          _e: Electron.IpcRendererEvent,
+          payload: { accountId: number; status?: string; statusText?: string; at?: number }
+        ): void => callback(payload)
+        ipcRenderer.on('cs:im:status', listener)
+        return () => ipcRenderer.removeListener('cs:im:status', listener)
+      }
     },
     export: {
       chat: (

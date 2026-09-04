@@ -18,16 +18,16 @@ import type { ImChannelAccountInput } from '../../shared/types'
 
 /** IM 渠道账号 IPC(一期:飞书)。凭证 appSecret 以 safeStorage enc1 密文落库。 */
 
-async function refreshAccount(id: number | undefined): Promise<void> {
-  if (id === undefined) return
+async function refreshAccount(id: number | undefined): Promise<{ ok: boolean; error?: string }> {
+  if (id === undefined) return { ok: true }
   const rows = listImAccounts()
   const row = rows.find((r) => r.id === id)
-  if (!row) return
+  if (!row) return { ok: true }
   if (row.enabled === 1) {
-    await startFeishuAccount(row.id, row.name)
-  } else {
-    stopFeishuAccount(row.id)
+    return await startFeishuAccount(row.id, row.name)
   }
+  stopFeishuAccount(row.id)
+  return { ok: true }
 }
 
 export function registerImHandlers(): void {
@@ -57,7 +57,9 @@ export function registerImHandlers(): void {
         }
       })
       if (!saved.ok || saved.id === undefined) return saved
-      await refreshAccount(saved.id)
+      const started = await refreshAccount(saved.id)
+      // 账号已落库;连接失败时把原因带给前端展示
+      if (!started.ok) return { ok: true as const, id: saved.id, error: started.error }
       return { ok: true as const, id: saved.id }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
@@ -79,7 +81,8 @@ export function registerImHandlers(): void {
     if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
     try {
       if (!setImAccountEnabled(id, !!enabled)) return { ok: false as const, error: '账号不存在' }
-      await refreshAccount(id)
+      const started = await refreshAccount(id)
+      if (!started.ok) return { ok: false as const, error: started.error }
       return { ok: true as const }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
