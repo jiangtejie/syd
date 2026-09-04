@@ -16,6 +16,7 @@ import {
 } from '../../../db/repos/chatRepo'
 import { ALL_TOOLS, findTool, toolInstructionsText, type ToolCtx } from './skills'
 import { findMcpTool, mcpToolInstructionText, mcpToolNames } from './mcp'
+import { customToolInstructionText, findCustomTool, listCustomToolDefs } from './customTools'
 import type { AiChatEvent, AiStyle, ChatMsgItem, ChatTurn } from '../../../../shared/types'
 
 /**
@@ -36,7 +37,7 @@ const STYLE_DESC: Record<AiStyle, string> = {
   brief: '语气简洁干练,少客套'
 }
 
-/** 人设 + 内置 skill + MCP 工具的 system 组装(async:MCP 需惰性握手) */
+/** 人设 + 内置 skill + 自定义工具 + MCP 工具的 system 组装(async:MCP 需惰性握手) */
 async function buildSystem(agentId?: string | null): Promise<string> {
   const base = agentSystemText(agentId)
   let mcpText = ''
@@ -45,8 +46,9 @@ async function buildSystem(agentId?: string | null): Promise<string> {
   } catch {
     /* MCP 不可用不阻塞对话 */
   }
-  const builtinText = toolInstructionsText()
-  const sections = [builtinText, mcpText].filter((s) => s.trim().length > 0)
+  const sections = [toolInstructionsText(), customToolInstructionText(), mcpText].filter(
+    (s) => s.trim().length > 0
+  )
   if (sections.length === 0) return `${base}\n\n直接回答用户问题。`
   return [
     base,
@@ -192,10 +194,14 @@ async function runTurn(opts: {
       })
       const intent = parseToolIntent(decision)
       if (!intent) break
-      const def = findTool(intent.tool) ?? findMcpTool(intent.tool)
+      const def = findTool(intent.tool) ?? findMcpTool(intent.tool) ?? findCustomTool(intent.tool)
       if (!def) {
         // 未知工具:回填可用列表让模型修正
-        const names = [...ALL_TOOLS.map((t) => t.name), ...mcpToolNames()]
+        const names = [
+          ...ALL_TOOLS.map((t) => t.name),
+          ...mcpToolNames(),
+          ...listCustomToolDefs().map((t) => t.name)
+        ]
         const err = `工具 ${intent.tool} 不存在。可用工具:${names.join('、')}`
         appendChatMessage(sessionId, 'user', 'tool_result', err)
         turns.push({ role: 'user', content: `[工具结果]\n${err}` })

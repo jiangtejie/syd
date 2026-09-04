@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react'
 import type { SendStatusInfo } from '../../../shared/types'
 import WechatKeySection from '../components/settings/WechatKeySection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
-import type { McpServerItem, McpServerInput } from '../../../shared/types'
+import type {
+  McpServerItem,
+  McpServerInput,
+  CustomToolItem,
+  CustomToolInput
+} from '../../../shared/types'
 import { toast } from '../stores/toast'
 import './settings.css'
 
@@ -585,6 +590,9 @@ function SettingsPage(): React.JSX.Element {
 
           {/* MCP 服务器（AI 助手外部能力） */}
           <McpServersSection />
+
+          {/* 自定义 HTTP 工具（AI 助手应用内开发工具） */}
+          <CustomToolsSection />
         </div>
       )}
 
@@ -1084,6 +1092,293 @@ function McpServersSection(): React.JSX.Element {
             </button>
             <button type="button" className="st-btn" disabled={saving} onClick={() => void save()}>
               {saving ? '保存中…' : '保存服务器'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 自定义 HTTP 工具管理（应用内开发：填接口即变 AI 可用工具） */
+function CustomToolsSection(): React.JSX.Element {
+  const [tools, setTools] = useState<CustomToolItem[] | null>(null)
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState<CustomToolInput>({
+    name: '',
+    label: '',
+    description: '',
+    method: 'GET',
+    url: '',
+    headers: {},
+    params: [],
+    timeoutSec: 20,
+    confirm: true,
+    enabled: true
+  })
+  const [paramsText, setParamsText] = useState('[]')
+  const [headersText, setHeadersText] = useState('{}')
+  const [saving, setSaving] = useState(false)
+
+  const load = async (): Promise<void> => {
+    const res = await window.api?.cs?.tool?.list().catch(() => null)
+    if (res?.ok && res.tools) setTools(res.tools as CustomToolItem[])
+    else setTools([])
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取自定义工具列表(全仓同款模式)
+    void load()
+  }, [])
+
+  const applyToForm = (t: CustomToolInput, paramsText0: string, headersText0: string): void => {
+    setForm(t)
+    setParamsText(paramsText0)
+    setHeadersText(headersText0)
+  }
+
+  const startNew = (): void => {
+    applyToForm(
+      {
+        name: '',
+        label: '',
+        description: '',
+        method: 'GET',
+        url: '',
+        timeoutSec: 20,
+        confirm: true,
+        enabled: true
+      },
+      '[]',
+      '{}'
+    )
+    setOpen(true)
+  }
+  const editTool = (t: CustomToolItem): void => {
+    applyToForm(
+      {
+        id: t.id,
+        name: t.name,
+        label: t.label ?? '',
+        description: t.description,
+        method: t.method,
+        url: t.url,
+        timeoutSec: t.timeoutSec,
+        confirm: t.confirm,
+        enabled: t.enabled
+      },
+      JSON.stringify(t.params ?? [], null, 1),
+      JSON.stringify(t.headers ?? {}, null, 1)
+    )
+    setOpen(true)
+  }
+
+  const save = async (): Promise<void> => {
+    setSaving(true)
+    try {
+      let params: CustomToolItem['params'] = []
+      let headers: Record<string, string> = {}
+      try {
+        params = JSON.parse(paramsText || '[]') as CustomToolItem['params']
+        if (!Array.isArray(params)) throw new Error('not array')
+      } catch {
+        toast.error('参数声明不是合法 JSON 数组(格式: [{"name":"q","desc":"…","required":true}] )')
+        return
+      }
+      try {
+        headers = JSON.parse(headersText || '{}') as Record<string, string>
+        if (!headers || Array.isArray(headers)) throw new Error('bad')
+      } catch {
+        toast.error('请求头不是合法 JSON 对象')
+        return
+      }
+      const res = await window.api?.cs?.tool?.save({ ...form, params, headers }).catch(() => null)
+      if (!res?.ok) {
+        toast.error((res as { error?: string } | null)?.error || '保存失败')
+        return
+      }
+      toast.success('自定义工具已保存(下一次对话即时生效)')
+      setOpen(false)
+      await load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const removeTool = async (t: CustomToolItem): Promise<void> => {
+    if (!window.confirm(`删除自定义工具「${t.name}」？`)) return
+    const res = await window.api?.cs?.tool?.remove(t.id).catch(() => null)
+    if (res?.ok) {
+      toast.success('已删除')
+      await load()
+    } else {
+      toast.error((res as { error?: string } | null)?.error || '删除失败')
+    }
+  }
+
+  return (
+    <div className="page-card st-section">
+      <div className="st-title">自定义 HTTP 工具（AI 助手可调用）</div>
+      <span className="st-hint">
+        把内部接口填成工具即可让 AI 使用,无需改代码: 工具名(给模型)+ 描述 + 方法与 URL +
+        参数声明。GET/HEAD 视为只读;写请求强制人工确认。保存后在新对话中即时可用。
+      </span>
+
+      <div className="mcp-list">
+        {tools === null ? (
+          <div className="st-hint">加载中…</div>
+        ) : tools.length === 0 ? (
+          <div className="st-hint">暂无自定义工具。示例:读取库存/物流单号查询等内部只读接口。</div>
+        ) : (
+          tools.map((t) => (
+            <div key={t.id} className="mcp-item">
+              <div className="mcp-item-main">
+                <b>{t.name}</b>
+                <span className="mcp-kind">{t.method}</span>
+                {t.enabled ? (
+                  <span className="mcp-on">启用</span>
+                ) : (
+                  <span className="mcp-off">停用</span>
+                )}
+                {t.confirm && <span className="mcp-confirm-tag">需确认</span>}
+                <span className="mcp-desc">
+                  {t.label ? `${t.label} · ` : ''}
+                  {t.description}（{t.url}）
+                </span>
+              </div>
+              <div className="mcp-item-ops">
+                <button type="button" className="st-btn ghost sm" onClick={() => editTool(t)}>
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  className="st-btn ghost danger sm"
+                  onClick={() => void removeTool(t)}
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+        <button type="button" className="st-btn ghost sm mcp-add" onClick={startNew}>
+          + 新建工具
+        </button>
+      </div>
+
+      {open && (
+        <div className="mcp-edit">
+          <label className="st-row">
+            <span className="st-label">工具名(标识)</span>
+            <input
+              className="st-input"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="如 query_stock(字母开头,下划线)"
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">显示名(可选)</span>
+            <input
+              className="st-input"
+              value={form.label ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+              placeholder="如：库存查询"
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">描述(给模型)</span>
+            <input
+              className="st-input"
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="描述用途与何时调用(模型据此决定是否使用)"
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">方法</span>
+            <select
+              className="st-input"
+              value={form.method}
+              onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))}
+            >
+              {['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <span className="st-hint-inline">非 GET/HEAD 视为写请求,强制人工确认</span>
+          </label>
+          <label className="st-row">
+            <span className="st-label">URL</span>
+            <input
+              className="st-input"
+              value={form.url}
+              onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+              placeholder="https://internal-api/x?k=v ;path 参数用 {name} 占位"
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">参数声明(JSON)</span>
+            <textarea
+              className="st-input st-ta"
+              rows={4}
+              value={paramsText}
+              onChange={(e) => setParamsText(e.target.value)}
+              placeholder={'[{"name":"q","desc":"订单号","required":true,"in":"query"}]'}
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">请求头(JSON)</span>
+            <textarea
+              className="st-input st-ta"
+              rows={3}
+              value={headersText}
+              onChange={(e) => setHeadersText(e.target.value)}
+              placeholder='{"X-Token":"…"}  勿保存密钥,建议使用需确认的只读接口'
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">超时(秒)</span>
+            <input
+              type="number"
+              min={3}
+              max={120}
+              className="st-input sm"
+              value={form.timeoutSec ?? 20}
+              onChange={(e) => setForm((f) => ({ ...f, timeoutSec: Number(e.target.value) }))}
+            />
+          </label>
+          <label className="st-row">
+            <span className="st-label">启用</span>
+            <input
+              type="checkbox"
+              checked={form.enabled ?? true}
+              onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+            />
+            <span className="st-hint-inline">停用后模型不可见</span>
+          </label>
+          <label className="st-row">
+            <span className="st-label">执行需人工确认</span>
+            <input
+              type="checkbox"
+              checked={form.confirm ?? true}
+              disabled={(form.method ?? 'GET') !== 'GET' && (form.method ?? '') !== 'HEAD'}
+              onChange={(e) => setForm((f) => ({ ...f, confirm: e.target.checked }))}
+            />
+            <span className="st-hint-inline">
+              {form.method !== 'GET' && form.method !== 'HEAD'
+                ? '写请求必须确认'
+                : '关闭后 GET/HEAD 请求由 AI 直接执行(谨慎,仍建议保持开启)'}
+            </span>
+          </label>
+          <div className="st-actions">
+            <button type="button" className="st-btn ghost" onClick={() => setOpen(false)}>
+              取消
+            </button>
+            <button type="button" className="st-btn" disabled={saving} onClick={() => void save()}>
+              {saving ? '保存中…' : '保存工具'}
             </button>
           </div>
         </div>

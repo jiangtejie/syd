@@ -185,6 +185,22 @@ const TABLES: string[] = [
     enabled INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
+  )`,
+  // AI 助手自定义 HTTP 工具(应用内“开发工具”:模型可调用任意内部/外部只读接口)
+  `CREATE TABLE IF NOT EXISTS ai_custom_tool (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    label TEXT DEFAULT '',
+    description TEXT NOT NULL,
+    method TEXT NOT NULL DEFAULT 'GET',
+    url TEXT NOT NULL,
+    headers TEXT DEFAULT '{}',
+    params TEXT DEFAULT '[]',
+    timeout_sec INTEGER NOT NULL DEFAULT 20,
+    confirm INTEGER NOT NULL DEFAULT 1,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
   )`
 ]
 

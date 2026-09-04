@@ -23,7 +23,9 @@ import type {
   ChatMsgItem,
   AiChatEvent,
   McpServerItem,
-  McpServerInput
+  McpServerInput,
+  CustomToolItem,
+  CustomToolInput
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -253,6 +255,11 @@ declare global {
         mcp: {
           list: () => Promise<Result<{ servers?: McpServerItem[] }>>
           save: (input: McpServerInput) => Promise<Result<{ item?: McpServerItem }>>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+        }
+        tool: {
+          list: () => Promise<Result<{ tools?: CustomToolItem[] }>>
+          save: (input: CustomToolInput) => Promise<Result<{ item?: CustomToolItem }>>
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
         }
         export: {

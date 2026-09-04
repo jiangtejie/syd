@@ -482,3 +482,40 @@ export interface McpServerInput {
   confirm?: boolean
   enabled?: boolean
 }
+
+/** 自定义 HTTP 工具(应用内开发;params 声明模型参数如何映射到请求) */
+export interface CustomToolItem {
+  id: number
+  name: string
+  label?: string
+  description: string
+  method: string
+  url: string
+  headers?: Record<string, string>
+  params?: Array<{
+    name: string
+    desc?: string
+    type?: string
+    required?: boolean
+    in?: 'query' | 'path' | 'body'
+  }>
+  timeoutSec: number
+  confirm: boolean
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CustomToolInput {
+  id?: number
+  name: string
+  label?: string
+  description: string
+  method?: string
+  url: string
+  headers?: Record<string, string>
+  params?: CustomToolItem['params']
+  timeoutSec?: number
+  confirm?: boolean
+  enabled?: boolean
+}
