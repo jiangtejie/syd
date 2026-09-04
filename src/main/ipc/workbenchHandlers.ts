@@ -8,6 +8,7 @@ import {
   renameChat
 } from '../db/repos/chatRepo'
 import {
+  resendWorkbenchMessage,
   retryWorkbenchMessage,
   sendWorkbenchMessage,
   stopWorkbenchChat
@@ -66,6 +67,15 @@ export function registerWorkbenchHandlers(): void {
     if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
     try {
       return await retryWorkbenchMessage(id, String(wxid || ''))
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('cs:wb:resend', async (_e, id: number, wxid: string, text: string) => {
+    if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
+    try {
+      return await resendWorkbenchMessage(id, String(wxid || ''), String(text ?? ''))
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }

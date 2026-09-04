@@ -312,6 +312,11 @@ declare global {
           ) => Promise<{ ok: boolean; id?: number; error?: string }>
           send: (id: number, wxid: string, text: string) => Promise<{ ok: boolean; error?: string }>
           retry: (id: number, wxid: string) => Promise<{ ok: boolean; error?: string }>
+          resend: (
+            id: number,
+            wxid: string,
+            text: string
+          ) => Promise<{ ok: boolean; error?: string }>
           stop: (id: number) => Promise<{ ok: boolean }>
           approve: (runId: string, ok: boolean) => Promise<{ ok: boolean }>
           rename: (id: number, title: string) => Promise<{ ok: boolean; error?: string }>

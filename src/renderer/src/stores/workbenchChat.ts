@@ -64,6 +64,10 @@ interface WbState {
   error: string | null
   /** 乐观回显(按会话):引擎已落库但列表尚未刷新,先上屏的用户消息 */
   pendingTexts: Record<number, string>
+  /** 上下文压缩标记(按会话):历史被压缩摘要,本轮起展示在消息流顶部(内存态) */
+  compactBySid: Record<number, string>
+  /** 编辑重发:正在改写最近一轮提问的会话(null=无) */
+  editingSid: number | null
 
   init: (wxid: string) => Promise<void>
   load: (id: number) => Promise<void>
@@ -73,10 +77,16 @@ interface WbState {
   rename: (id: number, title: string) => Promise<void>
   clear: (id: number) => Promise<void>
   send: (text: string) => Promise<void>
+  /** 编辑后重发:改写最近一轮提问(本地裁剪+引擎 resend) */
+  sendEdited: (text: string) => Promise<void>
   retry: () => Promise<void>
   stop: () => Promise<void>
   approve: (runId: string, ok: boolean) => Promise<void>
   resetActive: () => void
+  /** 进入编辑态:裁掉最近一轮(问题+回答),返回原问题文本供输入框改写;不可编辑返回 null */
+  beginEdit: () => string | null
+  /** 取消编辑:恢复会话原始记录 */
+  cancelEdit: () => void
 }
 
 const wbApi = window.api?.cs?.wb
@@ -183,6 +193,8 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   approvals: [],
   error: null,
   pendingTexts: {},
+  compactBySid: {},
+  editingSid: null,
 
   init: async (wxid) => {
     const key = wxid || ''
@@ -218,6 +230,8 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       approvals: [],
       error: null,
       pendingTexts: {},
+      compactBySid: {},
+      editingSid: null,
       busyIds: {},
       sessNew: {},
       sessErr: {}
@@ -266,6 +280,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       streamingBuf: '',
       reasoningBuf: '',
       error: null,
+      editingSid: null,
       sessNew: withoutKey(get().sessNew, id),
       sessErr: withoutKey(get().sessErr, id)
     })
@@ -296,12 +311,16 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     const busyIds = { ...get().busyIds }
     delete busyIds[id]
     const next = (get().chats ?? []).filter((c) => c.id !== id)
+    const compactBySid = { ...get().compactBySid }
+    delete compactBySid[id]
     set({
       chats: next,
       busyIds,
       sessNew: withoutKey(get().sessNew, id),
       sessErr: withoutKey(get().sessErr, id),
-      pendingTexts: withoutKeyStr(get().pendingTexts, id)
+      pendingTexts: withoutKeyStr(get().pendingTexts, id),
+      compactBySid,
+      editingSid: get().editingSid === id ? null : get().editingSid
     })
     if (get().activeId === id) {
       if (next.length > 0) void get().select(next[0].id)
@@ -330,7 +349,9 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       streamingBuf: '',
       reasoningBuf: '',
       error: null,
-      pendingTexts: {}
+      pendingTexts: {},
+      compactBySid: {},
+      editingSid: null
     })
   },
 
@@ -365,6 +386,62 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       })
       if (get().activeId === sid) void get().load(sid)
     }
+  },
+
+  /** 编辑后重发:改写最近一轮提问(引擎侧 pop 尾部 assistant+最后 user 后以新文本重发) */
+  sendEdited: async (text) => {
+    const { activeId, wxid, busyIds, editingSid } = get()
+    if (!activeId || activeId !== editingSid || busyIds[activeId]) return
+    const t = cleanStreamText(text.trim())
+    if (!t) return
+    const sid = activeId
+    bumpTurn(sid)
+    set({
+      busyIds: { ...busyIds, [sid]: true },
+      editingSid: null,
+      sessErr: withoutKey(get().sessErr, sid),
+      streamingBuf: '',
+      reasoningBuf: '',
+      toolCards: [],
+      approvals: [],
+      error: null,
+      pendingTexts: { ...get().pendingTexts, [sid]: t }
+    })
+    const res = await wbApi?.resend(sid, wxid, t).catch(() => null)
+    if (res && !res.ok && get().busyIds[sid]) {
+      set({
+        busyIds: { ...get().busyIds, [sid]: false },
+        error: res.error ?? '重发失败',
+        pendingTexts: withoutKeyStr(get().pendingTexts, sid)
+      })
+      if (get().activeId === sid) void get().load(sid)
+    }
+  },
+
+  /** 进入编辑态:裁掉本地最近一轮(问题与后续回答),返回原问题文本;条件不满足返回 null */
+  beginEdit: () => {
+    const sid = get().activeId
+    if (sid === null || get().busyIds[sid] || get().editingSid !== null) return null
+    const msgs = get().messages
+    let last = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        last = i
+        break
+      }
+    }
+    if (last < 0) return null
+    const text = msgs[last].content
+    set({ messages: msgs.slice(0, last), editingSid: sid })
+    return text
+  },
+
+  /** 取消编辑:复位编辑态并从服务端恢复会话记录 */
+  cancelEdit: () => {
+    const sid = get().editingSid
+    if (sid === null) return
+    set({ editingSid: null })
+    if (get().activeId === sid) void get().load(sid)
   },
 
   retry: async () => {
@@ -482,6 +559,14 @@ function handleWbEvent(raw: unknown): void {
     queueDelta(sid, 'text', e.token)
   } else if (e.type === 'reasoning' && e.token && isActive) {
     queueDelta(sid, 'reason', e.token)
+  } else if (e.type === 'compaction' && isActive) {
+    const cur = useWorkbenchChatStore.getState()
+    useWorkbenchChatStore.setState({
+      compactBySid: {
+        ...cur.compactBySid,
+        [sid]: e.text || '旧对话已自动压缩,仅保留最近一段。'
+      }
+    })
   } else if (e.type === 'done') {
     finishTurn(false)
   } else if (e.type === 'error') {

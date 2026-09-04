@@ -153,6 +153,27 @@ function useWaitElapsed(active: boolean): number {
   return sec
 }
 
+/** 上下文压缩标记:分隔线样式,点击展开摘要(历史被压缩的透明提示) */
+function CompactionMarker({ text }: { text: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="wb-compact">
+      <button
+        type="button"
+        className="wb-compact-head"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="wb-compact-line" />
+        <span className="wb-compact-label">旧对话已自动压缩{open ? '' : ' · 点击查看摘要'}</span>
+        <span className={`wb-compact-caret${open ? ' is-open' : ''}`}>▸</span>
+        <span className="wb-compact-line" />
+      </button>
+      {open && <div className="wb-compact-body">{text}</div>}
+    </div>
+  )
+}
+
 function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   const isUser = msg.role === 'user'
   const isError = msg.kind === 'error'
@@ -346,6 +367,9 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const store = useWorkbenchChatStore()
   const { chats, activeId, messages, loading, busyIds, streamingBuf, error, pendingTexts } = store
   const pendingText = activeId !== null ? (pendingTexts[activeId] ?? undefined) : undefined
+  const compactBySid = useWorkbenchChatStore((s) => s.compactBySid)
+  const editingSid = useWorkbenchChatStore((s) => s.editingSid)
+  const compactText = activeId !== null ? (compactBySid[activeId] ?? undefined) : undefined
   const toolCards = useWorkbenchChatStore((s) => s.toolCards)
   const approvals = useWorkbenchChatStore((s) => s.approvals)
   const reasoningBuf = useWorkbenchChatStore((s) => s.reasoningBuf)
@@ -365,6 +389,13 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     () => (startIdx > 0 ? messages.slice(startIdx) : messages),
     [messages, startIdx]
   )
+  // 最近一条用户提问(仅它允许「改写重发」)
+  const lastUserMsgId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') return messages[i].id
+    }
+    return null
+  }, [messages])
   // 底部跟随:整轮加载/追加后,窗口保持贴底(仅用户本就在底部时)
   useEffect(() => {
     if (!stickRef.current) return
@@ -492,9 +523,22 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     setStick(true)
     // 若用户正在翻更早历史,发送后回到贴底窗口
     setStartIdx(Math.max(0, messages.length - WB_WINDOW))
-    void store.send(t)
+    // 编辑态发送 = 改写最近一轮提问(resend),否则普通提问
+    if (activeId !== null && editingSid === activeId) void store.sendEdited(t)
+    else void store.send(t)
     // 按钮点击路径恢复输入焦点(回车路径焦点本就在输入框)
     requestAnimationFrame(() => taRef.current?.focus())
+  }
+
+  /** 改写最近一条自己的提问:裁掉该轮后填入输入框 */
+  const handleEditLastUser = (): void => {
+    const text = store.beginEdit()
+    if (text === null) return
+    setDraft(text)
+    requestAnimationFrame(() => {
+      growTextarea()
+      taRef.current?.focus()
+    })
   }
 
   /** 输入框随内容自动增高(上限 220px,由 CSS max-height 兜底) */
@@ -635,6 +679,10 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             </div>
           )}
           {loading && <div className="wb-loading">加载中…</div>}
+          {/* 上下文压缩透明标记(旧历史被摘要折叠) */}
+          {!loading && activeId !== null && compactText !== undefined && (
+            <CompactionMarker key={activeId} text={compactText} />
+          )}
           {!loading && startIdx > 0 && (
             <button type="button" className="wb-older" onClick={loadOlder}>
               ↑ 查看更早 {startIdx} 条
@@ -642,11 +690,32 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           )}
           {!loading &&
             activeId !== null &&
-            visible.map((m) => (
-              <div className="wb-msg-anchor" data-wid={m.id} key={m.id}>
-                <WbMessage msg={m} />
-              </div>
-            ))}
+            visible.map((m) => {
+              const editTarget =
+                m.role === 'user' &&
+                m.id === lastUserMsgId &&
+                activeBusy === false &&
+                editingSid === null
+              return (
+                <div
+                  className={`wb-msg-anchor${editTarget ? ' is-editable' : ''}`}
+                  data-wid={m.id}
+                  key={m.id}
+                >
+                  {editTarget && (
+                    <button
+                      type="button"
+                      className="wb-msg-edit"
+                      title="改写这个问题并重新提问"
+                      onClick={handleEditLastUser}
+                    >
+                      ✎ 改写
+                    </button>
+                  )}
+                  <WbMessage msg={m} />
+                </div>
+              )
+            })}
           {/* 乐观回显:本轮用户消息(引擎已落库,整轮结束刷新后被正式列表替换) */}
           {pendingText !== undefined && (
             <div className="wb-row is-user">
@@ -735,7 +804,10 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             rows={1}
             disabled={!activeId}
             onChange={(e) => {
-              setDraft(e.target.value)
+              const v = e.target.value
+              // 编辑态清空输入 = 放弃改写,恢复会话原始记录
+              if (!v && activeId !== null && editingSid === activeId) store.cancelEdit()
+              setDraft(v)
               requestAnimationFrame(growTextarea)
             }}
             onKeyDown={(e) => {

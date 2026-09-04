@@ -3,10 +3,10 @@
 /** 工具卡展示状态 */
 export type WbToolStatus = 'start' | 'pending' | 'done' | 'fail'
 
-/** ai:wb 事件(增量/推理/工具/审批/完成/错误/状态) */
+/** ai:wb 事件(增量/推理/工具/审批/压缩标记/完成/错误/状态) */
 export interface WbEvent {
   sessionId: number
-  type: 'delta' | 'reasoning' | 'tool' | 'approval' | 'done' | 'error' | 'status'
+  type: 'delta' | 'reasoning' | 'tool' | 'approval' | 'compaction' | 'done' | 'error' | 'status'
   token?: string
   tool?: string
   toolStatus?: WbToolStatus

@@ -178,6 +178,11 @@ export async function sendWorkbenchMessage(
     if (rows.length >= COMPRESS_THRESHOLD_ROWS && chars > COMPRESS_THRESHOLD_CHARS) {
       summary = await compressHistory(model, rows)
       rows = rows.slice(rows.length - Math.ceil(rows.length / 2))
+      // 压缩是「历史透明变更」:先于生成推送给渲染端,界面在消息流顶部展示可展开标记
+      emitWorkbenchEvent(sessionId, {
+        type: 'compaction',
+        text: summary ?? '旧对话过长已压缩,仅保留最近一段(摘要生成失败)。'
+      })
     }
     const messages: ModelMessage[] = historyToMessages(rows)
     const system = buildWorkbenchSystem(boundWxid, { summary })
@@ -316,4 +321,32 @@ export async function retryWorkbenchMessage(
   const text = lastUserMessage(sessionId)
   if (!text) return { ok: false, error: '没有可重试的消息' }
   return await sendWorkbenchMessage(sessionId, wxid, text)
+}
+
+/**
+ * 编辑后重发:清除尾部 assistant 行与最后一条用户行,以新文本重发。
+ * 语义:改写最近一轮提问(仅限最后一条用户消息,UI 端也做了同款限制)。
+ */
+export async function resendWorkbenchMessage(
+  sessionId: number,
+  wxid: string,
+  text: string
+): Promise<WbSendResult> {
+  if (running.get(sessionId)?.active) return { ok: false, error: '正在处理中' }
+  const newText = (text || '').trim()
+  if (!newText) return { ok: false, error: '消息为空' }
+  const rows = listChatMessages(sessionId)
+  while (rows.length > 0) {
+    const last = rows[rows.length - 1]
+    if (last.role === 'assistant') {
+      popLastChatMessage(sessionId)
+      rows.pop()
+      continue
+    }
+    break
+  }
+  const tail = rows[rows.length - 1]
+  if (!tail || tail.role !== 'user') return { ok: false, error: '没有可改写的问题' }
+  popLastChatMessage(sessionId)
+  return await sendWorkbenchMessage(sessionId, wxid, newText)
 }

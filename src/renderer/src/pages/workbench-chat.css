@@ -905,6 +905,102 @@
   border-color: var(--success-line);
 }
 
+/* ── 改写最近提问(用户消息 hover) ── */
+.wb-msg-anchor {
+  position: relative;
+  display: block;
+}
+
+.wb-msg-edit {
+  position: absolute;
+  right: 6px;
+  bottom: -2px;
+  z-index: 2;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  cursor: pointer;
+  opacity: 0;
+  box-shadow: 0 1px 4px rgba(31, 35, 41, 0.08);
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.wb-msg-anchor.is-editable:hover .wb-msg-edit,
+.wb-msg-edit:focus-visible {
+  opacity: 1;
+}
+
+.wb-msg-edit:hover {
+  color: var(--brand);
+  border-color: var(--brand-line);
+}
+
+/* ── 上下文压缩标记(透明化历史变更) ── */
+.wb-compact {
+  margin: 4px 0 8px;
+}
+
+.wb-compact-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.wb-compact-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-light);
+}
+
+.wb-compact-label {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.wb-compact-head:hover .wb-compact-label {
+  color: var(--info);
+}
+
+.wb-compact-caret {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  transition: transform 0.15s;
+}
+
+.wb-compact-caret.is-open {
+  transform: rotate(90deg);
+}
+
+.wb-compact-body {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  animation: wb-row-in 0.16s ease-out;
+}
+
 /* ── 常用提问预设 ── */
 .wb-presets {
   display: flex;

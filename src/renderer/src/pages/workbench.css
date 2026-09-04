@@ -997,6 +997,31 @@
   line-height: 1.6;
 }
 
+/* 建议生成依据引用(对方最新消息) */
+.wb-suggest-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  background: var(--bg-hover);
+  border-left: 3px solid var(--brand-line);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  user-select: text;
+}
+
+.wb-suggest-quote-label {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.wb-suggest-quote-text {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 /* 发送结果提示 */
 .wb-send-result {
   font-size: 12px;

@@ -293,6 +293,8 @@ const api = {
         ipcRenderer.invoke('cs:wb:send', id, wxid, text),
       retry: (id: number, wxid: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:wb:retry', id, wxid),
+      resend: (id: number, wxid: string, text: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:resend', id, wxid, text),
       stop: (id: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('cs:wb:stop', id),
       approve: (runId: string, ok: boolean): Promise<{ ok: boolean }> =>
         ipcRenderer.invoke('cs:wb:approve', runId, ok),

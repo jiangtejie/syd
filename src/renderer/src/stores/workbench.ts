@@ -56,6 +56,13 @@ interface WorkbenchState {
   /** 全局当前生效人设 id（由设置页维护；各 AI 通道统一取用，不再提供切换） */
   defaultAgentId: string | null
 
+  /** 建议自动生成去重键(最新对方消息 session::msgId),同一消息不重复触发 */
+  suggestAutoKey: string | null
+  /** 自动生成节流时间戳(仅新消息推送路径 ≥8s) */
+  suggestAutoAt: number
+  /** 依据「最新一条为对方消息」自动生成建议(quiet=推送路径带节流) */
+  considerSuggestAuto: (quiet?: boolean) => void
+
   /** 群问题（右栏「群问题」视图，仅群会话；数据来自 issue_feedback，与看板同源同状态） */
   groupIssues: FeedbackIssue[]
   groupIssueLoading: boolean
@@ -146,6 +153,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   agents: [],
   defaultAgentId: null,
+  suggestAutoKey: null,
+  suggestAutoAt: 0,
 
   groupIssues: [],
   groupIssueLoading: false,
@@ -215,7 +224,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
             nextCursor: res.nextCursor ?? null,
             loading: false
           })
-          void get().generateSuggestions()
+          void get().considerSuggestAuto()
           return
         }
       }
@@ -505,8 +514,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       const fresh = res.messages.filter((m) => !have.has(m.serverId || `l:${m.localId}`))
       if (fresh.length > 0) {
         set({ messages: [...get().messages, ...fresh] })
+        // 新消息到达:若对方刚发言,满足节流则自动生成建议(同一消息不重复触发)
+        void get().considerSuggestAuto(true)
       }
     }
+  },
+
+  /** 依据「最新一条为对方消息」自动生成建议;同一消息去重,推送路径 ≥8s 节流 */
+  considerSuggestAuto: (quiet) => {
+    const { wxid, activeSessionId, messages, suggestLoading } = get()
+    if (!wxid || !activeSessionId || suggestLoading || messages.length === 0) return
+    const last = messages[messages.length - 1]
+    if (!last || last.isSend) return // 最新是我方消息(或会话为空):不自动生成
+    const text = last.parsedContent?.trim()
+    if (!text) return // 非文本(图片等)不触发
+    const key = `${activeSessionId}::${last.serverId || `l:${last.localId}`}`
+    if (key === get().suggestAutoKey) return
+    if (quiet && Date.now() - (get().suggestAutoAt || 0) < 8000) return
+    set({ suggestAutoKey: key, suggestAutoAt: Date.now() })
+    void get().generateSuggestions()
   },
 
   generateSuggestions: async () => {
