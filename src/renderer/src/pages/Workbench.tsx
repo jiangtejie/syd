@@ -63,7 +63,10 @@ function Workbench(): React.JSX.Element {
         issueTimerRef.current = null
         const st = useWorkbenchStore.getState()
         if (p?.wxid && st.wxid && st.wxid !== p.wxid) return
-        void st.refreshGroupBadges()
+        // 当前打开的群直接刷新面板与徽标；其他群只刷徽标
+        const cur = st.sessions.find((s) => s.username === st.activeSessionId)
+        if (cur?.isGroup) void st.refreshGroupIssues()
+        else void st.refreshGroupBadges()
         const added = p && typeof p.added === 'number' ? p.added : 0
         const now = Date.now()
         if (added > 0 && !document.hasFocus() && now - issueNotifyAtRef.current >= 30_000) {

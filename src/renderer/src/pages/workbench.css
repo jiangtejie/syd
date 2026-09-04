@@ -868,7 +868,9 @@
   border-radius: var(--r-md);
   padding: 10px 12px;
   background: var(--bg-hover);
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .wb-suggest-card.is-chosen {
@@ -899,7 +901,9 @@
   background: var(--bg-panel);
   color: var(--brand);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .wb-suggest-btn:hover:not(:disabled) {
@@ -1039,8 +1043,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    repeating-conic-gradient(#f0f2f5 0% 25%, var(--bg-panel) 0% 50%) 0 0 / 20px 20px;
+  background: repeating-conic-gradient(#f0f2f5 0% 25%, var(--bg-panel) 0% 50%) 0 0 / 20px 20px;
   border-radius: 6px;
   cursor: zoom-in;
   user-select: none;
@@ -1245,6 +1248,59 @@
 
 .gip-stat.is-stalled {
   color: var(--warn-text);
+}
+
+.gip-stat.is-doubt {
+  color: var(--warn-text);
+  font-weight: 600;
+  background: var(--warn-soft);
+  border-radius: var(--r-pill);
+  padding: 1px 8px;
+}
+
+/* 疑似待确认提示条 */
+.gip-doubt-head {
+  font-size: 11px;
+  color: var(--warn-text);
+  background: var(--warn-soft);
+  border-radius: var(--r-sm);
+  padding: 5px 9px;
+  margin-bottom: 6px;
+}
+
+.gip-st.is-doubt {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  font-weight: 600;
+  border: 1px dashed var(--warn);
+}
+
+/* 严重度 / 复发标记 */
+.gip-sev {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  flex: none;
+  white-space: nowrap;
+}
+
+.gip-sev.is-urgent {
+  background: var(--danger);
+  color: var(--on-brand);
+  font-weight: 600;
+}
+
+.gip-sev.is-high {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.gip-sev.is-reopen {
+  background: var(--bg-hover);
+  color: var(--danger);
+  border: 1px solid var(--border);
 }
 
 .gip-meta {

@@ -28,7 +28,9 @@ function fmtTime(ts: number): string {
   const d = new Date(ts)
   const now = new Date()
   const sameDay = (a: Date, b: Date): boolean =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
   const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   if (sameDay(d, now)) return `今天 ${hhmm}`
   const yest = new Date(now.getTime() - 86_400_000)
@@ -37,14 +39,29 @@ function fmtTime(ts: number): string {
 }
 
 /** 展开区状态操作 */
-function StatusActions({ issue }: { issue: FeedbackIssue | FeedbackIssueDetail }): React.JSX.Element {
+function StatusActions({
+  issue
+}: {
+  issue: FeedbackIssue | FeedbackIssueDetail
+}): React.JSX.Element {
   const setStatus = useWorkbenchStore((s) => s.setGroupIssueStatus)
+  const confirmIssue = useWorkbenchStore((s) => s.confirmGroupIssue)
   const st = issue.status
   const act = (status: FeedbackIssueStatus): void => {
     void setStatus(issue.id, status)
   }
   return (
     <div className="gip-actions">
+      {issue.needConfirm && st === 'open' && (
+        <button
+          type="button"
+          className="gip-btn primary"
+          title="核实为真实问题：移出疑似桶并计入正式待办"
+          onClick={() => void confirmIssue(issue.id)}
+        >
+          ✓ 核实为真问题
+        </button>
+      )}
       {(st === 'open' || st === 'stalled') && (
         <button type="button" className="gip-btn primary" onClick={() => act('done')}>
           ✓ 标记已解决
@@ -102,7 +119,11 @@ function IssueTimeline({
             <div className="gip-tl-body">
               <div className="gip-tl-head">
                 <b>
-                  {m.isSend ? `我方 · ${m.senderName}` : m.senderIsTeam ? `团队 · ${m.senderName}` : m.senderName}
+                  {m.isSend
+                    ? `我方 · ${m.senderName}`
+                    : m.senderIsTeam
+                      ? `团队 · ${m.senderName}`
+                      : m.senderName}
                 </b>
                 <time>{fmtTime(m.time)}</time>
                 {i === 0 && <em className="gip-tag-mark">首现</em>}
@@ -179,14 +200,21 @@ function GroupIssuesPanel(): React.JSX.Element {
 
   const groups = useMemo(() => {
     const open: FeedbackIssue[] = []
+    const doubt: FeedbackIssue[] = []
     const history: FeedbackIssue[] = []
     const ignored: FeedbackIssue[] = []
     for (const it of issues) {
-      if (it.status === 'open') open.push(it)
-      else if (it.status === 'archived') ignored.push(it)
-      else history.push(it)
+      if (it.status === 'open' && it.needConfirm) {
+        doubt.push(it)
+      } else if (it.status === 'open') {
+        open.push(it)
+      } else if (it.status === 'archived') {
+        ignored.push(it)
+      } else {
+        history.push(it)
+      }
     }
-    return { open, history, ignored }
+    return { open, doubt, history, ignored }
   }, [issues])
 
   const toggle = (id: number): void => {
@@ -241,17 +269,20 @@ function GroupIssuesPanel(): React.JSX.Element {
       {rows.map((it) => {
         const expanded = expandedId === it.id
         const detail = activeDetail && activeDetail.id === it.id ? activeDetail : null
-        // 状态文案：open 区分 待处理/跟进中/跟进超时；done+autoDone=自动解决
+        // 状态文案：open 区分 待处理/跟进中/跟进超时；done+autoDone=自动解决；疑似桶优先
         const isOpen = it.status === 'open'
-        const stLabel = isOpen
-          ? it.followUp
-            ? it.followUpOverdue
-              ? '跟进超时'
-              : '跟进中'
-            : '待处理'
-          : it.status === 'done' && it.autoDone
-            ? '自动解决'
-            : (STATUS_LABEL[it.status] ?? it.status)
+        const doubtRow = !!(isOpen && it.needConfirm)
+        const stLabel = doubtRow
+          ? '疑似'
+          : isOpen
+            ? it.followUp
+              ? it.followUpOverdue
+                ? '跟进超时'
+                : '跟进中'
+              : '待处理'
+            : it.status === 'done' && it.autoDone
+              ? '自动解决'
+              : (STATUS_LABEL[it.status] ?? it.status)
         return (
           <div key={it.id}>
             <div
@@ -267,13 +298,23 @@ function GroupIssuesPanel(): React.JSX.Element {
               }}
             >
               <span
-                className={`gip-cell-st gip-st ${isOpen && it.followUp ? 'is-follow' : `is-${it.status}`}`}
+                className={`gip-cell-st gip-st ${isOpen && it.followUp ? 'is-follow' : `is-${it.status}`}${
+                  doubtRow ? ' is-doubt' : ''
+                }`}
               >
                 {stLabel}
               </span>
               <span className="gip-cell-main">
                 <span className="gip-title-line">
                   <i className={`gip-type t-${it.type}`}>{it.type}</i>
+                  {it.severity && it.severity !== '一般' && (
+                    <em className={`gip-sev is-${it.severity === '紧急' ? 'urgent' : 'high'}`}>
+                      {it.severity}
+                    </em>
+                  )}
+                  {(it.reopenCount ?? 0) > 0 && (
+                    <em className="gip-sev is-reopen">复发×{it.reopenCount}</em>
+                  )}
                   <b>{it.title}</b>
                 </span>
                 <span className="gip-sub-line">
@@ -350,11 +391,14 @@ function GroupIssuesPanel(): React.JSX.Element {
 
       {/* 统计 */}
       <div className="gip-stats">
+        {groups.doubt.length > 0 && (
+          <span className="gip-stat is-doubt">疑似 {groups.doubt.length}</span>
+        )}
         <span className="gip-stat is-open">
-          待处理 {issues.filter((i) => i.status === 'open' && !i.followUp).length}
+          待处理 {issues.filter((i) => i.status === 'open' && !i.followUp && !i.needConfirm).length}
         </span>
         <span className="gip-stat is-follow">
-          跟进中 {issues.filter((i) => i.status === 'open' && i.followUp).length}
+          跟进中 {issues.filter((i) => i.status === 'open' && i.followUp && !i.needConfirm).length}
         </span>
         <span className="gip-stat is-done">
           已解决 {issues.filter((i) => i.status === 'done').length}
@@ -393,6 +437,14 @@ function GroupIssuesPanel(): React.JSX.Element {
         </div>
       )}
 
+      {/* 疑似待确认（规则弱命中，核实后计入待办） */}
+      {groups.doubt.length > 0 && (
+        <div className="gip-doubt-head">
+          疑似待确认 {groups.doubt.length} 条 · 规则弱命中，展开核实为真问题或归档
+        </div>
+      )}
+      {groups.doubt.length > 0 && renderList(groups.doubt, '状态')}
+
       {/* 待处理组 */}
       {groups.open.length > 0 && renderList(groups.open, '状态')}
 
@@ -404,9 +456,7 @@ function GroupIssuesPanel(): React.JSX.Element {
             className="gip-fold-btn"
             onClick={() => setCollapsed((c) => ({ ...c, history: !c.history }))}
           >
-            <span>
-              已处理（{groups.history.length}）
-            </span>
+            <span>已处理（{groups.history.length}）</span>
             <span className="gip-caret">{collapsed.history ? '▸' : '▾'}</span>
           </button>
           {!collapsed.history && renderList(groups.history, '状态')}

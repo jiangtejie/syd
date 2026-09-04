@@ -622,3 +622,61 @@
 .mon-pager-ctrl .mon-select {
   width: auto;
 }
+
+/* ── 严重度 / 疑似 / 复发标记 ── */
+
+.mon-st.is-doubt {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  font-weight: 600;
+  border: 1px dashed var(--warn);
+}
+
+.mon-row-flags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.mon-sev,
+.mon-reopen {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+
+.mon-sev.is-urgent {
+  background: var(--danger);
+  color: var(--on-brand);
+  font-weight: 600;
+}
+
+.mon-sev.is-high {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.mon-reopen {
+  background: var(--bg-hover);
+  color: var(--danger);
+  border: 1px solid var(--danger-line, var(--border));
+}
+
+.mon-drawer-flags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 8px;
+}
+
+.mon-drawer-flags .mon-sev,
+.mon-drawer-flags .mon-reopen {
+  font-size: 10.5px;
+  padding: 3px 7px;
+}

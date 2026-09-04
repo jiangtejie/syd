@@ -100,6 +100,8 @@ interface WorkbenchState {
   openGroupIssue: (id: number | null) => Promise<void>
   /** 状态流转（open/done/stalled/archived），本地即时生效并回写主进程 */
   setGroupIssueStatus: (id: number, status: FeedbackIssueStatus) => Promise<void>
+  /** 疑似确认：核实为真问题 → 移出疑似桶并计入正式待办 */
+  confirmGroupIssue: (id: number) => Promise<void>
   /** 清理群问题状态（切到非群会话/换账号时） */
   resetGroupState: () => void
   /** 清空当前群全部问题记录(含已解决/归档与证据,不可恢复);随后可手动重新分析 */
@@ -368,6 +370,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (!res?.ok) {
       toast.error(res?.error || '状态更新失败')
       void get().refreshGroupIssues() // 回滚为真实状态
+    }
+  },
+
+  /** 疑似确认：核实为真问题 → 移出疑似桶并计入正式待办 */
+  confirmGroupIssue: async (id: number) => {
+    set((s) => ({
+      groupIssues: s.groupIssues.map((it) => (it.id === id ? { ...it, needConfirm: false } : it)),
+      groupActiveDetail:
+        s.groupActiveDetail && s.groupActiveDetail.id === id
+          ? { ...s.groupActiveDetail, needConfirm: false }
+          : s.groupActiveDetail
+    }))
+    const res = await issueApi?.confirmDoubt(id).catch(() => null)
+    if (!res?.ok) {
+      toast.error(res?.error || '确认失败')
+      void get().refreshGroupIssues()
+    } else {
+      void get().refreshGroupIssues()
+      void get().refreshGroupBadges()
     }
   },
 

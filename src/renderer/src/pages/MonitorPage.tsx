@@ -7,6 +7,7 @@ import { computeMonitorData, fmtTimeShort, ageText } from '../lib/monitorMetrics
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
+  FeedbackIssueSeverity,
   FeedbackIssueStatus,
   FeedbackIssueType,
   FeedbackAnalysisState,
@@ -20,7 +21,7 @@ import './monitor.css'
  * 数据源:本地 issue 库(cs:issue:list/detail/setStatus),无新增后端聚合。
  */
 
-type StatusFilter = 'open' | 'done' | 'stalled' | 'archived' | 'all'
+type StatusFilter = 'open' | 'doubt' | 'done' | 'stalled' | 'archived' | 'all'
 const TYPE_OPTIONS: FeedbackIssueType[] = ['客诉', '售后', '物流', '价格', '咨询', '建议', '其他']
 
 const RANGE_OPTIONS = [7, 14, 30]
@@ -35,6 +36,10 @@ const STATUS_CHIP: Record<FeedbackIssueStatus, { label: string; cls: string }> =
 }
 
 function statusChip(it: FeedbackIssue): { label: string; cls: string } {
+  // 疑似桶优先展示（不占正式口径文案）
+  if (it.needConfirm && it.status === 'open') {
+    return { label: '疑似', cls: 'is-doubt' }
+  }
   if (it.status === 'open') {
     if (it.followUp) {
       return {
@@ -145,6 +150,7 @@ function MonitorPage(): React.JSX.Element {
   const [members, setMembers] = useState<TeamMemberInfo[]>([])
   const [memberNames, setMemberNames] = useState<Record<string, string>>({})
   const [ownerFilter, setOwnerFilter] = useState('')
+  const [sevFilter, setSevFilter] = useState<'all' | FeedbackIssueSeverity>('all')
 
   const load = useCallback(async (): Promise<void> => {
     if (!connected || !issueApi) return
@@ -232,16 +238,31 @@ function MonitorPage(): React.JSX.Element {
     }
   }, [issueApi, load])
 
+  // 正式口径(排除疑似)与疑似桶:指标/图表/默认待办均只统计正式问题
+  const formalIssues = useMemo(() => issues.filter((i) => !i.needConfirm), [issues])
+  const doubtIssues = useMemo(() => issues.filter((i) => i.needConfirm), [issues])
+  const doubtOpen = doubtIssues.filter((i) => i.status === 'open').length
+
   const metrics = useMemo(
-    () => computeMonitorData(issues, range, { backlogHours: thresh.backlog }),
-    [issues, range, thresh.backlog]
+    () => computeMonitorData(formalIssues, range, { backlogHours: thresh.backlog }),
+    [formalIssues, range, thresh.backlog]
   )
+  // 严重度计数(正式 open):紧急/高危 卡片与筛选项
+  const sevCount = useMemo(() => {
+    const open = formalIssues.filter((i) => i.status === 'open')
+    return {
+      urgent: open.filter((i) => i.severity === '紧急').length,
+      high: open.filter((i) => i.severity === '高').length
+    }
+  }, [formalIssues])
 
   const filtered = useMemo(() => {
-    let list = issues
+    let list = statusFilter === 'doubt' ? doubtIssues : formalIssues
     if (statusFilter === 'open') list = list.filter((i) => i.status === 'open')
-    else if (statusFilter !== 'all') list = list.filter((i) => i.status === statusFilter)
+    else if (statusFilter !== 'all' && statusFilter !== 'doubt')
+      list = list.filter((i) => i.status === statusFilter)
     if (typeFilter !== 'all') list = list.filter((i) => i.type === typeFilter)
+    if (sevFilter !== 'all') list = list.filter((i) => (i.severity ?? '一般') === sevFilter)
     if (groupFilter) list = list.filter((i) => i.groupUsername === groupFilter)
     if (ownerFilter === '$none') list = list.filter((i) => !i.assignee)
     else if (ownerFilter) list = list.filter((i) => i.assignee === ownerFilter)
@@ -252,7 +273,16 @@ function MonitorPage(): React.JSX.Element {
       )
     }
     return list
-  }, [issues, statusFilter, typeFilter, groupFilter, ownerFilter, keyword])
+  }, [
+    formalIssues,
+    doubtIssues,
+    statusFilter,
+    typeFilter,
+    sevFilter,
+    groupFilter,
+    ownerFilter,
+    keyword
+  ])
 
   // 状态处置:乐观更新 + 回写,成功同步刷新
   const applyStatus = useCallback(
@@ -262,6 +292,22 @@ function MonitorPage(): React.JSX.Element {
       const res = await issueApi?.setStatus(id, status).catch(() => null)
       if (!res?.ok) {
         toast.error((res as { error?: string } | null)?.error || '状态更新失败')
+        void load()
+      }
+    },
+    [issueApi, load]
+  )
+
+  // 疑似确认:核实为真问题 → 清除疑似标记(正式进入待办口径)
+  const applyConfirmDoubt = useCallback(
+    async (id: number): Promise<void> => {
+      const patch = (it: FeedbackIssue): FeedbackIssue => ({ ...it, needConfirm: false })
+      setIssues((prev) => prev.map((it) => (it.id === id ? patch(it) : it)))
+      setActive((prev) => (prev && prev.id === id ? patch(prev) : prev))
+      setDetail((prev) => (prev && prev.id === id ? { ...prev, needConfirm: false } : prev))
+      const res = await issueApi?.confirmDoubt(id).catch(() => null)
+      if (!res?.ok) {
+        toast.error((res as { error?: string } | null)?.error || '确认失败')
         void load()
       }
     },
@@ -337,6 +383,9 @@ function MonitorPage(): React.JSX.Element {
           group: i.groupName || i.groupUsername,
           occurAt: i.occurAt,
           assignee: i.assignee ? ownerName(i.assignee) : null,
+          severity: i.severity ?? '一般',
+          needConfirm: i.needConfirm ?? false,
+          reopenCount: i.reopenCount ?? 0,
           msgCount: i.msgCount
         }))
       }
@@ -580,6 +629,12 @@ function MonitorPage(): React.JSX.Element {
         <>
           {/* KPI 大卡 */}
           <div className="mon-kpis">
+            <KpiCard
+              label="紧急待办"
+              value={sevCount.urgent}
+              hint={`另有 ${sevCount.high} 条高危`}
+              tone="danger"
+            />
             <KpiCard label="待处理(未回复)" value={metrics.kpis.pending} tone="danger" />
             <KpiCard
               label="跟进中"
@@ -622,6 +677,7 @@ function MonitorPage(): React.JSX.Element {
                   }}
                 >
                   <option value="open">只看待处理/跟进中</option>
+                  <option value="doubt">疑似待确认{doubtOpen > 0 ? `(${doubtOpen})` : ''}</option>
                   <option value="all">全部状态</option>
                   <option value="done">已解决</option>
                   <option value="stalled">已搁置</option>
@@ -641,6 +697,22 @@ function MonitorPage(): React.JSX.Element {
                       {t}
                     </option>
                   ))}
+                </select>
+                <select
+                  className="mon-select"
+                  value={sevFilter}
+                  onChange={(e) => {
+                    setSevFilter(e.target.value as 'all' | FeedbackIssueSeverity)
+                    setPage(1)
+                  }}
+                  title="按严重度筛选"
+                >
+                  <option value="all">全部严重度</option>
+                  <option value="紧急">
+                    紧急{sevCount.urgent > 0 ? `(${sevCount.urgent})` : ''}
+                  </option>
+                  <option value="高">高{sevCount.high > 0 ? `(${sevCount.high})` : ''}</option>
+                  <option value="一般">一般</option>
                 </select>
                 <select
                   className="mon-select"
@@ -711,6 +783,18 @@ function MonitorPage(): React.JSX.Element {
                           <span className={`mon-st ${chip.cls}`}>{chip.label}</span>
                           <span className="mon-row-type">{it.type}</span>
                           <span className="mon-row-main">
+                            <span className="mon-row-flags">
+                              {it.severity && it.severity !== '一般' && (
+                                <em
+                                  className={`mon-sev is-${it.severity === '紧急' ? 'urgent' : 'high'}`}
+                                >
+                                  {it.severity}
+                                </em>
+                              )}
+                              {(it.reopenCount ?? 0) > 0 && (
+                                <em className="mon-reopen">复发 ×{it.reopenCount}</em>
+                              )}
+                            </span>
                             <span className="mon-row-title">{it.title}</span>
                             <span className="mon-row-sub">
                               {it.groupName || it.groupUsername} · {fmtTimeShort(it.occurAt)} · 证据{' '}
@@ -816,6 +900,25 @@ function MonitorPage(): React.JSX.Element {
                 </div>
                 {active.summary && <div className="mon-drawer-summary">{active.summary}</div>}
 
+                {(active.severity && active.severity !== '一般') ||
+                (active.reopenCount ?? 0) > 0 ? (
+                  <div className="mon-drawer-flags">
+                    {active.severity && active.severity !== '一般' && (
+                      <em
+                        className={`mon-sev is-${active.severity === '紧急' ? 'urgent' : 'high'}`}
+                      >
+                        {active.severity}优先级
+                      </em>
+                    )}
+                    {(active.reopenCount ?? 0) > 0 && (
+                      <em className="mon-reopen">
+                        本议题第 {(active.reopenCount ?? 0) + 1} 次出现（含此前{' '}
+                        {active.reopenCount ?? 0} 次已闭环记录）
+                      </em>
+                    )}
+                  </div>
+                ) : null}
+
                 <div className="mon-drawer-owner">
                   <span className="mon-drawer-owner-label">跟进人</span>
                   <select
@@ -881,6 +984,16 @@ function MonitorPage(): React.JSX.Element {
                 </div>
 
                 <div className="mon-drawer-foot">
+                  {active.needConfirm && active.status === 'open' && (
+                    <button
+                      type="button"
+                      className="mon-btn primary"
+                      onClick={() => void applyConfirmDoubt(active.id)}
+                      title="核实为真实问题，移出疑似桶并计入待办"
+                    >
+                      ✓ 核实为真问题
+                    </button>
+                  )}
                   <IssueActions
                     issue={detail ?? active}
                     onSet={(s) => void applyStatus(active.id, s)}
