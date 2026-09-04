@@ -231,7 +231,8 @@
   flex-shrink: 0;
 }
 
-.wb-empty {
+/* 无会话占位（会话列表空态） */
+.wb-session-empty {
   padding: 24px;
   text-align: center;
   color: var(--text-3);
@@ -608,7 +609,8 @@
   align-self: flex-end;
 }
 
-.wb-loading {
+/* 消息区加载/空态提示（与 AI 工作台页 .wb-loading 不同名，避免跨页样式覆盖） */
+.wb-chat-hint {
   text-align: center;
   color: var(--text-3);
   padding: 40px;
@@ -719,7 +721,7 @@
   flex-direction: column;
 }
 
-.wb-side {
+.wb-pane {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -727,7 +729,7 @@
 }
 
 /* 视图切换（群会话时出现） */
-.wb-side-tabs {
+.wb-pane-tabs {
   flex: none;
   display: flex;
   align-items: center;
@@ -735,7 +737,7 @@
   padding: 10px 14px 0;
 }
 
-.wb-side-tab {
+.wb-pane-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -749,17 +751,17 @@
   cursor: pointer;
 }
 
-.wb-side-tab:hover {
+.wb-pane-tab:hover {
   background: var(--bg-hover);
 }
 
-.wb-side-tab.is-active {
+.wb-pane-tab.is-active {
   background: var(--brand-soft);
   color: var(--brand);
   font-weight: 600;
 }
 
-.wb-side-badge {
+.wb-pane-badge {
   font-style: normal;
   font-size: 10px;
   line-height: 14px;
@@ -771,7 +773,7 @@
   text-align: center;
 }
 
-.wb-side-content {
+.wb-pane-content {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -780,11 +782,11 @@
   scrollbar-color: #c9cdd4 transparent;
 }
 
-.wb-side-content::-webkit-scrollbar {
+.wb-pane-content::-webkit-scrollbar {
   width: 6px;
 }
 
-.wb-side-content::-webkit-scrollbar-thumb {
+.wb-pane-content::-webkit-scrollbar-thumb {
   background: #c9cdd4;
   border-radius: 3px;
 }

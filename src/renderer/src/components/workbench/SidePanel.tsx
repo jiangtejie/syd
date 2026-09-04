@@ -37,31 +37,33 @@ function SidePanel(): React.JSX.Element {
   }, [activeSessionId, isGroup])
 
   return (
-    <div className="wb-side">
+    <div className="wb-pane">
       {isGroup && (
-        <div className="wb-side-tabs" role="tablist" aria-label="右侧栏视图">
+        <div className="wb-pane-tabs" role="tablist" aria-label="右侧栏视图">
           <button
             type="button"
             role="tab"
             aria-selected={view === 'issues'}
-            className={`wb-side-tab${view === 'issues' ? ' is-active' : ''}`}
+            className={`wb-pane-tab${view === 'issues' ? ' is-active' : ''}`}
             onClick={() => setView('issues')}
           >
             群问题
-            {openCount > 0 && <em className="wb-side-badge">{openCount > 99 ? '99+' : openCount}</em>}
+            {openCount > 0 && (
+              <em className="wb-pane-badge">{openCount > 99 ? '99+' : openCount}</em>
+            )}
           </button>
           <button
             type="button"
             role="tab"
             aria-selected={view === 'suggest'}
-            className={`wb-side-tab${view === 'suggest' ? ' is-active' : ''}`}
+            className={`wb-pane-tab${view === 'suggest' ? ' is-active' : ''}`}
             onClick={() => setView('suggest')}
           >
             回复建议
           </button>
         </div>
       )}
-      <div className="wb-side-content">
+      <div className="wb-pane-content">
         {view === 'issues' && isGroup ? <GroupIssuesPanel /> : <SuggestionPanel />}
       </div>
     </div>

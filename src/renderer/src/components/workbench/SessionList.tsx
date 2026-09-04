@@ -322,7 +322,7 @@ function SessionList(): React.JSX.Element {
       </div>
       {rows}
       {filtered.length === 0 && (
-        <div className="wb-empty">
+        <div className="wb-session-empty">
           {keyword ? '没有匹配的会话' : '暂无会话，请先在 设置 → 微信数据与密钥 连接'}
         </div>
       )}

@@ -596,9 +596,9 @@ function MessagePanel(): React.JSX.Element {
       </div>
       <div className="wb-chat-body" ref={bodyRef} onScroll={onBodyScroll}>
         {loading && messages.length === 0 ? (
-          <div className="wb-loading">加载中...</div>
+          <div className="wb-chat-hint">加载中...</div>
         ) : messages.length === 0 ? (
-          <div className="wb-loading">暂无消息</div>
+          <div className="wb-chat-hint">暂无消息</div>
         ) : (
           <>
             {messagesHasMore ? (
