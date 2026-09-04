@@ -159,6 +159,15 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'issue_feedback', 'follow_up', 'INTEGER NOT NULL DEFAULT 0')
   // 增量列迁移：assignee（跟进人：团队客服成员 username，NULL = 未指派）
   ensureColumn(db, 'issue_feedback', 'assignee', 'TEXT')
+  // 增量列迁移：severity（严重度：紧急/高/一般，分析提取时写入）
+  ensureColumn(db, 'issue_feedback', 'severity', "TEXT NOT NULL DEFAULT '一般'")
+  // 增量列迁移：need_confirm（疑似桶：规则弱命中，人工确认或归档后退出）
+  ensureColumn(db, 'issue_feedback', 'need_confirm', 'INTEGER NOT NULL DEFAULT 0')
+  // 增量列迁移：reopen_count / reopened_from（复发计数与上次闭环议题 id）
+  ensureColumn(db, 'issue_feedback', 'reopen_count', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'issue_feedback', 'reopened_from', 'INTEGER')
+  // 增量列迁移：customers（涉及的客户昵称 JSON 数组，供复发/统计归一）
+  ensureColumn(db, 'issue_feedback', 'customers', 'TEXT')
   db.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
 

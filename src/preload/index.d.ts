@@ -193,6 +193,7 @@ declare global {
             status: FeedbackIssueStatus
           ) => Promise<{ ok: boolean; error?: string }>
           assign: (id: number, username: string | null) => Promise<{ ok: boolean; error?: string }>
+          confirmDoubt: (id: number) => Promise<{ ok: boolean; error?: string }>
           detail: (id: number) => Promise<Result<{ issue?: FeedbackIssueDetail }>>
           typeCounts: (wxid: string) => Promise<Result<{ counts?: FeedbackTypeCount[] }>>
           groupBadges: (

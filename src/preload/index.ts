@@ -180,6 +180,8 @@ const api = {
         ipcRenderer.invoke('cs:issue:setStatus', id, status),
       assign: (id: number, username: string | null): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:issue:assign', id, username),
+      confirmDoubt: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:confirmDoubt', id),
       detail: (id: number): Promise<{ ok: boolean; issue?: unknown; error?: string }> =>
         ipcRenderer.invoke('cs:issue:detail', id),
       typeCounts: (wxid: string): Promise<{ ok: boolean; counts?: unknown[]; error?: string }> =>

@@ -12,6 +12,8 @@ import {
   openIssueEvidenceTimes,
   openIssuesForGroup,
   clearOpenIssuesByGroup,
+  findReopenCandidate,
+  recentRejectedSamples,
   type NewIssue
 } from '../../db/repos/issueRepo'
 import { getConfig, setConfig } from '../../db/repos/config'
@@ -20,6 +22,7 @@ import type {
   FeedbackAnalysisState,
   FeedbackIssue,
   FeedbackIssueMsg,
+  FeedbackIssueSeverity,
   FeedbackIssueStatus,
   FeedbackIssueType
 } from '../../../shared/types'
@@ -96,6 +99,38 @@ const RULE_KEYWORDS: Array<{ type: FeedbackIssueType; keywords: string[] }> = [
       '支持吗'
     ]
   }
+]
+
+/** 严重度归一（收敛 LLM/规则输出；脏值回落 一般） */
+function normalizeSeverity(s: string | null | undefined): FeedbackIssueSeverity {
+  return s === '紧急' || s === '高' ? s : '一般'
+}
+
+/** 规则严重度基线：客诉/售后/物流默认 高，其余 一般 */
+const RULE_SEV_BASE: Record<FeedbackIssueType, FeedbackIssueSeverity> = {
+  客诉: '高',
+  售后: '高',
+  物流: '高',
+  价格: '一般',
+  咨询: '一般',
+  建议: '一般',
+  其他: '一般'
+}
+
+/** 规则情绪升级词：客户文本命中的任一即升 紧急（客服优先介入） */
+const RULE_SEV_BOOST = [
+  '马上',
+  '立刻',
+  '气死',
+  '曝光',
+  '12315',
+  '投诉到',
+  '退钱',
+  '赔',
+  '急',
+  '现在就要',
+  '必须处理',
+  '再也不买'
 ]
 
 /** 单条消息转人类可读文本（供 LLM 上下文与规则匹配） */
@@ -176,7 +211,9 @@ interface LlmIssue {
   type?: string
   title?: string
   summary?: string
-  /** 议题涉及客户（昵称，辅助理解；不作为存储主键） */
+  /** 严重度：紧急 | 高 | 一般 */
+  severity?: unknown
+  /** 议题涉及客户（昵称；持久化用于复发识别） */
   customers?: unknown
   /** 处理状态：未处理 | 跟进中 | 已解决 */
   status?: string
@@ -289,6 +326,13 @@ function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] {
             .slice(0, 90)
         : text0.slice(0, 80)
     for (const h of c) clusterAnchorTimes.add(h.m.createTime)
+    const sevText = c.map((h) => msgToText(h.m)).join(' ')
+    const severity: FeedbackIssueSeverity = RULE_SEV_BOOST.some((w) => sevText.includes(w))
+      ? '紧急'
+      : RULE_SEV_BASE[c[0].type as FeedbackIssueType]
+    // 弱命中疑似桶：单句 + 咨询类 + 短文本 + 客服未介入 → 疑似待人工确认（不进正式待办口径）
+    const weakConfirm = c.length === 1 && c[0].type === '咨询' && text0.length <= 14 && !replied
+    const customerNames = [label].filter((x) => !x.startsWith('我方'))
     issues.push({
       key: `${c[0].type}|${first.createTime}|${first.localId}`,
       wxid: '',
@@ -299,6 +343,9 @@ function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] {
       summary,
       occurAt: first.createTime,
       method: 'rule',
+      severity,
+      needConfirm: weakConfirm,
+      customers: customerNames,
       followUp: replied,
       msgs: evidMsgs.map((mm) => msgToSummaryMsg(mm, senderLabel(mm, team)))
     })
@@ -330,6 +377,8 @@ function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] {
       summary: '客户留言后未见客服（或团队）回复',
       occurAt: tail.createTime,
       method: 'rule',
+      severity: '一般',
+      customers: [senderLabel(tail, team)].filter((x) => !x.startsWith('我方')),
       msgs: [msgToSummaryMsg(tail, senderLabel(tail, team))]
     })
   }
@@ -413,6 +462,10 @@ function normalizeIssues(
     const needAction =
       raw.need_action !== false && String(raw.need_action ?? '').toLowerCase() !== 'false'
     const resolved = !needAction || rawStatus === '已解决' || rawStatus === '解决'
+    const rawCust = Array.isArray(raw.customers)
+      ? raw.customers.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+      : []
+    const customers = Array.from(new Set(rawCust.map((x) => x.trim()))).slice(0, 4)
     issues.push({
       key,
       wxid,
@@ -423,6 +476,8 @@ function normalizeIssues(
       summary: (raw.summary || '').slice(0, 90) || undefined,
       occurAt: first.createTime,
       method: 'llm',
+      severity: normalizeSeverity(String(raw.severity ?? '')),
+      customers,
       followUp,
       resolved,
       msgs: evidenceIdx.map((i) => {
@@ -483,6 +538,7 @@ function fmtRow(m: ChatMessage, team: Set<string>): LlmRow {
  * 议题级 LLM 分析（主区 = 本次新增/窗口内消息，按段排版；
  * 附录 = 历史/上下文行，行号 ≥ APX_BASE，供模型理解延续议题与闭环判断）。
  * openHints：本群现存待办议题标题（抑制重复建与标题漂移）。
+ * badExamples：近期被人工判定「不是问题」的样本（抑制同类误报）。
  */
 async function analyzeLlmIssues(
   wxid: string,
@@ -490,7 +546,8 @@ async function analyzeLlmIssues(
   groupName: string,
   mainRows: LlmRow[],
   apxRows: LlmRow[],
-  openHints: string[]
+  openHints: string[],
+  badExamples: string[] = []
 ): Promise<NewIssue[]> {
   const main =
     mainRows.length > LLM_LINES_CAP ? mainRows.slice(mainRows.length - LLM_LINES_CAP) : mainRows
@@ -532,17 +589,26 @@ async function analyzeLlmIssues(
           ...openHints.map((h, i) => `- 待办${i + 1}: ${h}`)
         ]
       : []),
+    ...(badExamples.length > 0
+      ? [
+          '',
+          '以下为近期被人工判定「不是问题/无需处理」的同群样本（反例）：',
+          ...badExamples.map((s, i) => `- 反例${i + 1}: ${s}`),
+          '除非新消息是与上述明显不同的确凿真实反馈，否则不要输出同类内容。'
+        ]
+      : []),
     '',
     '工作方法（先整体理解，再逐议题提炼）：',
     '1. 先整体阅读，识别“议题”（起因、多人附和、客服介入、追问与结果可跨行跨段合并为一条）；',
     '   同一客户围绕同一件事的多条消息必须串成一条议题，禁止一条消息单独成问题；',
-    '2. 对每个议题判断：谁在抱怨/咨询（customers）、客服/团队是否已介入、客户是否已收尾；',
+    '2. 对每个议题判断：谁在抱怨/咨询（customers）、客服/团队是否已介入、客户是否已收尾、紧急程度；',
     '3. 只需提取仍需要运营处理或值得记录的议题。已明确解答且客户致谢/确认满意的不要输出；纯闲聊、广告、表情、与运营无关的不输出。',
     '',
     '只输出严格 JSON 数组（不要 markdown、不要额外文字）：',
-    '[{"type":"客诉|售后|物流|价格|咨询|建议|其他","title":"不超过24字的概括","summary":"不超过70字的现象与进展","customers":["客户昵称"],"status":"未处理|跟进中|已解决","need_action":true,"evidence":[行号1,行号2]}]',
+    '[{"type":"客诉|售后|物流|价格|咨询|建议|其他","severity":"紧急|高|一般","title":"不超过24字的概括","summary":"不超过70字的现象与进展","customers":["客户昵称"],"status":"未处理|跟进中|已解决","need_action":true,"evidence":[行号1,行号2]}]',
     '字段约束：',
     '- evidence 给该议题全部关键行（可跨段、可含 ≥1000 的附录行，1~12 个），行号必须真实存在；',
+    '- severity：紧急=激烈投诉/资金与时效受损/扬言曝光维权等需立即介入；高=客诉/售后/物流等需主动处理；一般=普通咨询与其他；',
     '- status=已解决 或 need_action=false：已闭环/无需运营，不会出现在待办里；',
     '- status=跟进中：客服已回复但客户未确认闭环（如“查一下回复您”后无下文、客户仍不满）；',
     '- status=未处理：无人回复或明显遗漏；',
@@ -860,6 +926,20 @@ export async function analyzeGroupIssues(
       //    剩余消息用规则补读，避免高活跃群截断丢段，也避免整窗漏提）
       let method: 'llm' | 'rule' = 'rule'
       let n = 0
+      /** 客户身份回退：从证据行取非我方发送人昵称（LLM/规则均可能缺 customers） */
+      const deriveCustomers = (issue: NewIssue): string[] | undefined => {
+        if (issue.customers && issue.customers.length > 0) return issue.customers
+        const names = Array.from(
+          new Set(
+            issue.msgs
+              .map((m) => m.senderName)
+              .filter((x) => !!x && !x.startsWith('我方'))
+              .map((x) => x.trim())
+              .filter(Boolean)
+          )
+        ).slice(0, 4)
+        return names.length > 0 ? names : undefined
+      }
       const applyExtracted = (list: NewIssue[]): void => {
         for (const issue of list) {
           if (issue.resolved) {
@@ -869,10 +949,27 @@ export async function analyzeGroupIssues(
             }
             continue
           }
+          const customers = deriveCustomers(issue)
+          issue.customers = customers
+          // 复发识别：仅对全新行判定（同 key 已存在 = 同一轮/历史行，不重复计数）
+          if (!findIssueByKey(issue.key)) {
+            const cand = findReopenCandidate(
+              wxid,
+              groupUsername,
+              issue.type,
+              customers,
+              issue.occurAt
+            )
+            if (cand) {
+              issue.reopenCount = cand.reopenCount + 1
+              issue.reopenedFrom = cand.id
+            }
+          }
           upsertIssue(issue)
           n++
         }
       }
+      const llmBadExamples = (): string[] => recentRejectedSamples(wxid, groupUsername, 3)
       if (provider && mainRows.length > 0) {
         method = 'llm'
         // 最后成功消费的主区行（消息对象锚点），失败补读时据此切“剩余消息”
@@ -882,7 +979,10 @@ export async function analyzeGroupIssues(
           const chunk = chunks[ci]
           try {
             const openHints = openIssuesForGroup(wxid, groupUsername, 6).map(
-              (i) => `[${i.type}] ${i.title}${i.followUp ? '（跟进中）' : ''}`
+              (i) =>
+                `[${i.type}${i.severity && i.severity !== '一般' ? `·${i.severity}` : ''}] ${i.title}${
+                  i.followUp ? '（跟进中）' : ''
+                }`
             )
             const out = await analyzeLlmIssues(
               wxid,
@@ -890,7 +990,8 @@ export async function analyzeGroupIssues(
               groupName,
               chunk,
               apxRows,
-              openHints
+              openHints,
+              llmBadExamples()
             )
             applyExtracted(out)
             consumed = chunk[chunk.length - 1].msg

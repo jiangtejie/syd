@@ -4,6 +4,7 @@ import type {
   FeedbackIssue,
   FeedbackIssueDetail,
   FeedbackIssueMsg,
+  FeedbackIssueSeverity,
   FeedbackIssueStatus,
   FeedbackIssueType,
   FeedbackTypeCount
@@ -28,6 +29,11 @@ interface IssueRow {
   status: string
   method: string
   assignee: string | null
+  severity: string | null
+  need_confirm: number | null
+  reopen_count: number | null
+  reopened_from: number | null
+  customers: string | null
   auto_done?: number | null
   follow_up?: number | null
   created_at: number
@@ -60,8 +66,37 @@ export interface NewIssue {
   followUp?: boolean
   /** LLM 判定已解决/无需运营：true 时不新建，仅当同 key 已存在 open 时自动闭环 */
   resolved?: boolean
+  /** 严重度（LLM/规则判定） */
+  severity?: FeedbackIssueSeverity
+  /** 疑似待人工确认（规则弱命中） */
+  needConfirm?: boolean
+  /** 复发标记：提取方确认命中「同群同客户同类型且上次已闭环」后回填 */
+  reopenCount?: number
+  reopenedFrom?: number
+  /** 涉及的客户昵称（持久化，供复发识别与统计） */
+  customers?: string[]
   /** 关联消息（证据） */
   msgs: FeedbackIssueMsg[]
+}
+
+/** customers JSON 安全解析 */
+function parseCustomers(raw: string | null): string[] | undefined {
+  if (!raw) return undefined
+  try {
+    const v = JSON.parse(raw) as unknown
+    if (Array.isArray(v)) {
+      const arr = v.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+      return arr.length > 0 ? arr : undefined
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined
+}
+
+/** severity 归一（老数据/脏数据回落 一般） */
+function normSeverity(v: string | null | undefined): FeedbackIssueSeverity {
+  return v === '紧急' || v === '高' ? v : '一般'
 }
 
 function rowToIssue(r: IssueRow): FeedbackIssue {
@@ -77,6 +112,11 @@ function rowToIssue(r: IssueRow): FeedbackIssue {
     status: r.status as FeedbackIssueStatus,
     method: (r.method === 'llm' ? 'llm' : 'rule') as FeedbackIssue['method'],
     assignee: r.assignee ?? undefined,
+    severity: normSeverity(r.severity),
+    needConfirm: r.need_confirm === 1,
+    reopenCount: r.reopen_count ?? 0,
+    reopenedFrom: r.reopened_from ?? undefined,
+    customers: parseCustomers(r.customers),
     autoDone: r.auto_done === 1,
     followUp: r.follow_up === 1,
     createdAt: r.created_at,
@@ -108,10 +148,13 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
   const db = getDb()
   const now = Date.now()
   const followUp = issue.followUp ? 1 : 0
+  const severity = issue.severity ?? '一般'
+  const customers = issue.customers && issue.customers.length > 0 ? issue.customers : undefined
   db.prepare(
     `INSERT OR IGNORE INTO issue_feedback
-       (key, wxid, group_username, group_name, type, title, summary, occur_at, status, method, follow_up, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`
+       (key, wxid, group_username, group_name, type, title, summary, occur_at, status, method,
+        follow_up, severity, need_confirm, reopen_count, reopened_from, customers, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     issue.key,
     issue.wxid,
@@ -123,6 +166,11 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     issue.occurAt,
     issue.method,
     followUp,
+    severity,
+    issue.needConfirm ? 1 : 0,
+    issue.reopenCount ?? 0,
+    issue.reopenedFrom ?? null,
+    customers ? JSON.stringify(customers) : null,
     now,
     now
   )
@@ -137,11 +185,20 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     row.title === issue.title &&
     (row.summary ?? null) === (issue.summary ?? null) &&
     row.occur_at === issue.occurAt &&
-    (row.follow_up === 1) === !!issue.followUp
+    (row.follow_up === 1) === !!issue.followUp &&
+    normSeverity(row.severity) === severity &&
+    JSON.stringify(parseCustomers(row.customers) ?? []) === JSON.stringify(customers ?? [])
   const touchedAt = sameContent ? row.updated_at : now
+  // 疑似标记：仅对 open 行按本轮提取结果刷新；人工确认(need_confirm=0)过的行重析不再打扰；
+  // 已闭环/归档行不因重析复活疑似
+  const nextConfirm =
+    issue.needConfirm && row.status === 'open' && row.need_confirm !== 0
+      ? 1
+      : (row.need_confirm ?? 0)
   db.prepare(
     `UPDATE issue_feedback
-       SET group_name = ?, type = ?, title = ?, summary = ?, occur_at = ?, follow_up = ?, updated_at = ?
+       SET group_name = ?, type = ?, title = ?, summary = ?, occur_at = ?, follow_up = ?,
+           severity = ?, customers = ?, need_confirm = ?, updated_at = ?
      WHERE id = ?`
   ).run(
     issue.groupName,
@@ -150,6 +207,9 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     issue.summary ?? null,
     issue.occurAt,
     followUp,
+    severity,
+    customers ? JSON.stringify(customers) : null,
+    nextConfirm,
     touchedAt,
     row.id
   )
@@ -261,7 +321,7 @@ export function countOpenByGroup(wxid: string): Record<string, number> {
   const rows = getDb()
     .prepare(
       `SELECT group_username, COUNT(*) AS n FROM issue_feedback
-       WHERE wxid = ? AND status = 'open' GROUP BY group_username`
+       WHERE wxid = ? AND status = 'open' AND need_confirm = 0 GROUP BY group_username`
     )
     .all(wxid) as Array<{ group_username: string; n: number }>
   const out: Record<string, number> = {}
@@ -318,13 +378,15 @@ export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }
       ? getDb()
           .prepare(
             `SELECT * FROM issue_feedback WHERE wxid = ? AND status = ?
-             ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'stalled' THEN 1 WHEN 'done' THEN 2 ELSE 3 END, occur_at DESC`
+             ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'stalled' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
+                CASE severity WHEN '紧急' THEN 0 WHEN '高' THEN 1 ELSE 2 END, occur_at DESC`
           )
           .all(wxid, opts.status)
       : getDb()
           .prepare(
             `SELECT * FROM issue_feedback WHERE wxid = ?
-             ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'stalled' THEN 1 WHEN 'done' THEN 2 ELSE 3 END, occur_at DESC`
+             ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'stalled' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
+                CASE severity WHEN '紧急' THEN 0 WHEN '高' THEN 1 ELSE 2 END, occur_at DESC`
           )
           .all(wxid)
   ) as IssueRow[]
@@ -424,4 +486,72 @@ export function searchIssues(wxid: string, q: string, limit = 5): FeedbackIssue[
     decorateFollowUpOverdue(issue)
     return issue
   })
+}
+
+/** 疑似确认：人工确认为真问题 → 清除疑似标记（重析对已确认行不再重标） */
+export function confirmIssueDoubt(id: number): boolean {
+  const info = getDb().prepare(`UPDATE issue_feedback SET need_confirm = 0 WHERE id = ?`).run(id)
+  return info.changes > 0
+}
+
+export interface ReopenCandidate {
+  id: number
+  reopenCount: number
+}
+
+/**
+ * 复发识别：同群同类型、客户身份有交叠、且上次议题已闭环（done/stalled）的最近一条。
+ * 距上次间隔过短(≤2h,同一轮窗口内的连发)不算复发;身份交叠取两边的客户昵称集合。
+ */
+export function findReopenCandidate(
+  wxid: string,
+  groupUsername: string,
+  type: string,
+  customers: string[] | undefined,
+  occurAt: number
+): ReopenCandidate | null {
+  const names = new Set((customers ?? []).map((n) => n.trim()).filter(Boolean))
+  if (names.size === 0) return null
+  const minGap = 2 * 3600_000
+  const rows = getDb()
+    .prepare(
+      `SELECT id, occur_at, customers, reopen_count FROM issue_feedback
+       WHERE wxid = ? AND group_username = ? AND type = ?
+         AND status IN ('done', 'stalled')
+         AND occur_at <= ?
+       ORDER BY occur_at DESC LIMIT 12`
+    )
+    .all(wxid, groupUsername, type, occurAt - minGap) as Array<{
+    id: number
+    customers: string | null
+    reopen_count: number
+  }>
+  for (const r of rows) {
+    const prev = new Set((parseCustomers(r.customers) ?? []).map((n) => n.trim()))
+    let overlap = false
+    for (const n of names) {
+      if (prev.has(n)) {
+        overlap = true
+        break
+      }
+    }
+    if (overlap) return { id: r.id, reopenCount: r.reopen_count ?? 0 }
+  }
+  return null
+}
+
+/** 近期被人工「不是问题」归档的样本（供 LLM 反例提示抑制误报） */
+export function recentRejectedSamples(wxid: string, groupUsername: string, limit = 3): string[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT type, title FROM issue_feedback
+       WHERE wxid = ? AND group_username = ? AND status = 'archived'
+         AND updated_at >= ?
+       ORDER BY updated_at DESC LIMIT ?`
+    )
+    .all(wxid, groupUsername, Date.now() - 30 * 24 * 3600_000, limit) as Array<{
+    type: string
+    title: string
+  }>
+  return rows.map((r) => `[${r.type}] ${r.title}`)
 }

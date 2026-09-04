@@ -14,7 +14,8 @@ import {
   listIssuesByGroup,
   countOpenByGroup,
   clearIssuesByGroup,
-  setIssueAssignee
+  setIssueAssignee,
+  confirmIssueDoubt
 } from '../db/repos/issueRepo'
 import type { FeedbackIssueStatus } from '../../shared/types'
 
@@ -145,6 +146,18 @@ export function registerIssueHandlers(): void {
     if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
     try {
       if (!setIssueAssignee(id, username)) return { ok: false as const, error: '问题不存在' }
+      notifyChanged()
+      return { ok: true as const }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // 疑似确认：人工核实为真问题 → 清除疑似标记，正式进入待办口径
+  ipcMain.handle('cs:issue:confirmDoubt', (_e, id: number) => {
+    if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
+    try {
+      if (!confirmIssueDoubt(id)) return { ok: false as const, error: '问题不存在' }
       notifyChanged()
       return { ok: true as const }
     } catch (err) {

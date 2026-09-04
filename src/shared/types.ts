@@ -331,6 +331,9 @@ export type FeedbackIssueType = '客诉' | '售后' | '物流' | '价格' | '咨
 /** 处理状态：open 待处理 / done 已处理 / stalled 已搁置 / archived 已归档 */
 export type FeedbackIssueStatus = 'open' | 'done' | 'stalled' | 'archived'
 
+/** 严重度（分析提取：LLM 判定 + 规则情绪词升级；默认 一般） */
+export type FeedbackIssueSeverity = '紧急' | '高' | '一般'
+
 /** 提取方式：llm=OpenAI 兼容模型 / rule=本地关键词+未回复兜底 */
 export type FeedbackIssueMethod = 'llm' | 'rule'
 
@@ -366,7 +369,15 @@ export interface FeedbackIssue {
   followUp?: boolean
   /** 跟进超时：followUp 且客服最后回复距今超 12 小时仍未闭环（仅 open 行动态计算） */
   followUpOverdue?: boolean
-  /** 涉及的客户（LLM 输出 customers 归一；群内昵称） */
+  /** 严重度（提取写入；规则情绪词可升级） */
+  severity?: FeedbackIssueSeverity
+  /** 疑似待人工确认（规则弱命中；不计入正式待办口径与徽标） */
+  needConfirm?: boolean
+  /** 复发次数：同群同客户同类型、上次已闭环后又出现（0 = 首次） */
+  reopenCount?: number
+  /** 复发来源：上一次闭环议题 id（详情可回溯上次处理） */
+  reopenedFrom?: number
+  /** 涉及的客户（LLM 输出 customers / 规则发送人归一；已持久化供复发与统计） */
   customers?: string[]
   createdAt: number
   updatedAt: number
