@@ -432,6 +432,16 @@
   color: var(--text-1);
 }
 
+/* ReAct 显式思考(工具卡内小字) */
+.aichat-toolcard-thought {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-3);
+  line-height: 1.5;
+  border-left: 2px solid var(--warn);
+  padding-left: 8px;
+}
+
 .aichat-toolcard-args {
   font-size: 11px;
   color: var(--text-3);

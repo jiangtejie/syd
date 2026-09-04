@@ -14,6 +14,7 @@ export interface ToolCard {
   name: string
   status: 'start' | 'pending' | 'done' | 'fail'
   args?: string
+  thought?: string
   result?: string
   runId?: string
 }
@@ -243,16 +244,18 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
           name: evt.tool ?? '',
           status: evt.toolStatus ?? 'start',
           args: evt.args,
+          thought: evt.thought,
           result: evt.resultClip,
           runId: evt.toolStatus === 'pending' ? evt.text : undefined
         }
-        // 同名工具新一轮执行:更新最近一张
+        // 同名工具新一轮执行:更新最近一张(保留已有思考,防止 done/fail 事件覆盖)
         set((st) => {
           const idx = st.toolCards.findIndex(
             (c) => c.name === card.name && c.status !== 'done' && c.status !== 'fail'
           )
           const cards = [...st.toolCards]
-          if (idx >= 0) cards[idx] = card
+          if (idx >= 0)
+            cards[idx] = { ...cards[idx], ...card, thought: card.thought ?? cards[idx].thought }
           else cards.push(card)
           return { toolCards: cards.slice(-8) }
         })

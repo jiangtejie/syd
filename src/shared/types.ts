@@ -450,6 +450,8 @@ export interface AiChatEvent {
   tool?: string
   toolStatus?: 'start' | 'pending' | 'done' | 'fail'
   args?: string
+  /** ReAct 显式思考(工具调用前模型给出的判断,JSON 协议轮) */
+  thought?: string
   resultClip?: string
   messageId?: number
   text?: string

@@ -103,6 +103,19 @@ const runKeyOf = (wxid: string, chatId: number): string => `${wxid}|${chatId}`
 const pendingConfirm = new Map<string, { resolve: (v: boolean) => void; timer: NodeJS.Timeout }>()
 let confirmSeq = 0
 
+/** 从判定文本中提取 ReAct 显式思考(「思考:」行或 JSON 内 thought 字段) */
+function extractThought(text: string): string | undefined {
+  const m = /^\s*(?:\[思考\]|思考|Thought|Reasoning)[：:]\s*(.{1,120})$/m.exec(text)
+  if (m?.[1]?.trim()) return m[1].trim()
+  try {
+    const j = JSON.parse(text) as { thought?: unknown }
+    if (typeof j?.thought === 'string' && j.thought.trim()) return j.thought.trim().slice(0, 120)
+  } catch {
+    /* ignore */
+  }
+  return undefined
+}
+
 /** 从模型文本中识别工具 JSON 请求;非 JSON/非 tool 返回 null(视为正文) */
 function parseToolIntent(text: string): { tool: string; args: Record<string, unknown> } | null {
   let t = text.trim()
@@ -220,13 +233,14 @@ async function runTurn(opts: {
       if (signal.aborted) break
       let decision = ''
       const decide = await provider.streamChat([{ role: 'system', content: system }, ...turns], {
-        maxTokens: 300,
+        maxTokens: 800,
         signal,
         onDelta: (t) => {
           decision += t
         }
       })
       addUsage(decide.usage)
+      const thought = extractThought(decision)
       const intent = parseToolIntent(decision)
       if (!intent) break
       const def = findTool(intent.tool) ?? findMcpTool(intent.tool) ?? findCustomTool(intent.tool)
@@ -239,7 +253,10 @@ async function runTurn(opts: {
         ]
         const err = `工具 ${intent.tool} 不存在。可用工具:${names.join('、')}`
         appendChatMessage(sessionId, 'user', 'tool_result', err)
-        turns.push({ role: 'user', content: `[工具结果]\n${err}` })
+        turns.push({
+          role: 'user',
+          content: `[工具结果]\n${err}\n(请修正后重试或换用其它工具,或直接输出最终回答)`
+        })
         continue
       }
       const argsClip = JSON.stringify(intent.args ?? {}).slice(0, 300)
@@ -248,7 +265,8 @@ async function runTurn(opts: {
         chatId: sessionId,
         tool: def.name,
         toolStatus: 'start',
-        args: argsClip
+        args: argsClip,
+        thought
       })
 
       // 高危工具:渲染端人工确认(60s 超时按取消)
@@ -290,7 +308,11 @@ async function runTurn(opts: {
         tool: def.name
       })
       appendChatMessage(sessionId, 'user', 'tool_result', result, { tool: def.name })
-      turns.push({ role: 'user', content: `[工具结果]\n${result}` })
+      // ReAct 观察引导:先判断结果,再决定 继续/换工具/修正参数/直接回答
+      turns.push({
+        role: 'user',
+        content: `[工具结果]\n${result}\n(先判断该结果是否足以回答:不足则继续调用(可先给「思考:」)、换工具或修正参数;已足够则直接输出最终回答。)`
+      })
       sendEvent(wxid, {
         type: 'tool',
         chatId: sessionId,
@@ -369,7 +391,7 @@ function shouldUseNativeTools(): boolean {
 
 /** 原生轮 system:保留能力说明,但禁止文本 JSON 工具请求(工具由原生机制提供) */
 function nativeSystemText(base: string): string {
-  return `${base}\n\n可用工具已由系统原生提供,按需直接调用即可;不要输出 JSON 格式的工具请求,始终用自然语言作答。`
+  return `${base}\n\n工作方式:调用工具前先在内心想清楚“是否需要数据/如何调用”,逐步推进;工具结果返回后先判断是否足够,再决定继续调用或输出最终回答。工具由系统原生提供,不要输出 JSON 格式的工具请求。`
 }
 
 /** 工具参数 schema:有 params 声明生成精确 schema,否则宽松 object */

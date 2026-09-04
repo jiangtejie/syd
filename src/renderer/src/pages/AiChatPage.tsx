@@ -88,6 +88,7 @@ function ToolCardRow(): React.JSX.Element | null {
             {c.status === 'fail' && '✗ '}
             {c.name}
           </span>
+          {c.thought && <div className="aichat-toolcard-thought">思考: {c.thought}</div>}
           {c.args && <code className="aichat-toolcard-args">{c.args}</code>}
           {c.result && <div className="aichat-toolcard-result">{c.result}</div>}
           {c.status === 'pending' && c.runId && (
