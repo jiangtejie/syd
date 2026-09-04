@@ -1,5 +1,6 @@
 import { getConfig } from '../../db/repos/config'
 import { openSecret } from '../secrets'
+import type { ChatTurn } from '../../../shared/types'
 
 /**
  * LLM Provider 抽象（T7，方案 §4.4 AI 生成层）。
@@ -11,6 +12,16 @@ import { openSecret } from '../secrets'
 export interface AiProvider {
   /** 系统 + 用户消息，返回模型输出文本 */
   complete(system: string, user: string, opts?: { maxTokens?: number }): Promise<string>
+  /** 多轮流式对话（AI 助手用）：SSE 逐 token 回调，signal 可中断 */
+  streamChat(
+    messages: ChatTurn[],
+    opts?: {
+      maxTokens?: number
+      signal?: AbortSignal
+      onDelta?: (token: string) => void
+      onReasoning?: (token: string) => void
+    }
+  ): Promise<string>
   readonly name: string
 }
 
@@ -68,7 +79,10 @@ class OpenAiCompatProvider implements AiProvider {
     let res = await post(true)
     if (res.status === 400) {
       const errText = await res.text()
-      if (/temperature/i.test(errText) && /not support|unsupported|unexpected|invalid|不支持|不允许/i.test(errText)) {
+      if (
+        /temperature/i.test(errText) &&
+        /not support|unsupported|unexpected|invalid|不支持|不允许/i.test(errText)
+      ) {
         res = await post(false)
       } else {
         throw new Error(`LLM 调用失败 HTTP ${res.status}: ${errText.slice(0, 200)}`)
@@ -101,6 +115,101 @@ class OpenAiCompatProvider implements AiProvider {
           ? '模型思考过长耗尽输出预算、未生成正文（可重试或改用非思考模型）'
           : 'LLM 返回为空（响应结构异常或无内容）'
       )
+    }
+  }
+
+  /** 多轮流式：SSE 增量；外部 signal 可中断；400 且不支持 temperature 时自动去参重试一次 */
+  async streamChat(
+    messages: ChatTurn[],
+    opts: {
+      maxTokens?: number
+      signal?: AbortSignal
+      onDelta?: (token: string) => void
+      onReasoning?: (token: string) => void
+    } = {}
+  ): Promise<string> {
+    const model = this.cfg.model
+    const maxTokens = opts.maxTokens ?? 2000
+
+    const post = (withTemp: boolean): Promise<Response> =>
+      fetch(`${this.cfg.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.cfg.apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          stream: true,
+          ...(withTemp ? { temperature: 0.7 } : {}),
+          max_tokens: maxTokens
+        }),
+        signal: opts.signal
+      })
+
+    let res = await post(true)
+    if (res.status === 400) {
+      const errText = await res.text()
+      if (
+        /temperature/i.test(errText) &&
+        /not support|unsupported|unexpected|invalid|不支持|不允许/i.test(errText)
+      ) {
+        res = await post(false)
+      } else {
+        throw new Error(`LLM 调用失败 HTTP ${res.status}: ${errText.slice(0, 200)}`)
+      }
+    }
+    if (!res.ok) {
+      throw new Error(`LLM 调用失败 HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    }
+
+    if (!res.body) throw new Error('LLM 流式响应无 body')
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    let content = ''
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        for (;;) {
+          const cut = buf.indexOf('\n\n')
+          if (cut < 0) break
+          const chunk = buf.slice(0, cut)
+          buf = buf.slice(cut + 2)
+          for (const line of chunk.split('\n')) {
+            const s = line.trim()
+            if (!s.startsWith('data:')) continue
+            const data = s.slice(5).trim()
+            if (data === '[DONE]') return content
+            try {
+              const json = JSON.parse(data) as {
+                choices?: Array<{
+                  delta?: { content?: string | null; reasoning_content?: string | null }
+                }>
+              }
+              const delta = json.choices?.[0]?.delta
+              if (typeof delta?.content === 'string' && delta.content.length > 0) {
+                content += delta.content
+                opts.onDelta?.(delta.content)
+              }
+              if (
+                typeof delta?.reasoning_content === 'string' &&
+                delta.reasoning_content.length > 0
+              ) {
+                opts.onReasoning?.(delta.reasoning_content)
+              }
+            } catch {
+              /* 忽略无法解析的分片 */
+            }
+          }
+        }
+      }
+      return content
+    } finally {
+      reader.releaseLock()
     }
   }
 }
@@ -159,19 +268,24 @@ export async function testAiConnection(
     try {
       data = (await res.json()) as typeof data
     } catch {
-      return { ok: false, error: '接口已连通，但响应不是有效 JSON（请确认通道为 OpenAI 兼容 /chat/completions）' }
+      return {
+        ok: false,
+        error: '接口已连通，但响应不是有效 JSON（请确认通道为 OpenAI 兼容 /chat/completions）'
+      }
     }
     if (!Array.isArray(data.choices) || data.choices.length === 0 || !data.choices[0]?.message) {
-      return { ok: false, error: '接口已连通，但响应缺少 choices/message（请确认通道为 OpenAI 兼容格式）' }
+      return {
+        ok: false,
+        error: '接口已连通，但响应缺少 choices/message（请确认通道为 OpenAI 兼容格式）'
+      }
     }
     return { ok: true, latencyMs }
   } catch (e) {
-    const error =
-      ctrl.signal.aborted
-        ? `连接超时（${Math.round(timeoutMs / 1000)}s）`
-        : e instanceof Error
-          ? e.message
-          : String(e)
+    const error = ctrl.signal.aborted
+      ? `连接超时（${Math.round(timeoutMs / 1000)}s）`
+      : e instanceof Error
+        ? e.message
+        : String(e)
     return { ok: false, error }
   } finally {
     clearTimeout(timer)
@@ -221,16 +335,18 @@ export async function listRemoteModels(
       if (models.length >= 300) break // 防止极端大列表拖慢界面
     }
     if (models.length === 0) {
-      return { ok: false, error: '接口已连通，但未返回任何模型（请检查通道类型是否为 OpenAI 兼容）' }
+      return {
+        ok: false,
+        error: '接口已连通，但未返回任何模型（请检查通道类型是否为 OpenAI 兼容）'
+      }
     }
     return { ok: true, models }
   } catch (e) {
-    const error =
-      ctrl.signal.aborted
-        ? `连接超时（${Math.round(timeoutMs / 1000)}s）`
-        : e instanceof Error
-          ? e.message
-          : String(e)
+    const error = ctrl.signal.aborted
+      ? `连接超时（${Math.round(timeoutMs / 1000)}s）`
+      : e instanceof Error
+        ? e.message
+        : String(e)
     return { ok: false, error }
   } finally {
     clearTimeout(timer)

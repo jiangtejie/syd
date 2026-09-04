@@ -218,6 +218,48 @@ const api = {
       remove: (accountWxid: string, username: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:team:remove', accountWxid, username)
     },
+    aiChat: {
+      listChats: (wxid: string): Promise<{ ok: boolean; chats?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:aichat:listChats', wxid),
+      messages: (
+        sessionId: number
+      ): Promise<{ ok: boolean; messages?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:aichat:messages', sessionId),
+      renameChat: (sessionId: number, title: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:aichat:renameChat', sessionId, title),
+      removeChat: (sessionId: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:aichat:removeChat', sessionId),
+      clearChat: (sessionId: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:aichat:clearChat', sessionId),
+      send: (input: {
+        wxid: string
+        chatId?: number
+        agentId?: string | null
+        text: string
+      }): Promise<{ ok: boolean; chatId?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:aichat:send', input),
+      stop: (wxid: string, sessionId: number): Promise<{ ok: boolean }> =>
+        ipcRenderer.invoke('cs:aichat:stop', wxid, sessionId),
+      retry: (
+        wxid: string,
+        sessionId: number,
+        agentId?: string | null
+      ): Promise<{ ok: boolean; chatId?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:aichat:retry', wxid, sessionId, agentId),
+      confirmTool: (runId: string, ok: boolean): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:aichat:confirmTool', runId, ok),
+      setAgent: (
+        sessionId: number,
+        agentId: string | null
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:aichat:setAgent', sessionId, agentId),
+      onEvent: (callback: (evt: unknown) => void): (() => void) => {
+        const listener = (_e: Electron.IpcRendererEvent, payload: unknown): void =>
+          callback(payload)
+        ipcRenderer.on('ai:chat', listener)
+        return () => ipcRenderer.removeListener('ai:chat', listener)
+      }
+    },
     export: {
       chat: (
         wxid: string,

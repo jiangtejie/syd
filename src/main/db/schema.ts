@@ -148,7 +148,30 @@ const TABLES: string[] = [
     label TEXT DEFAULT '',
     created_at INTEGER,
     UNIQUE (account_wxid, username)
-  )`
+  )`,
+
+  // AI 助手会话（页面 AI 菜单;wxid 空 = 未连接账号的通用会话）
+  `CREATE TABLE IF NOT EXISTS chat_session (
+    id INTEGER PRIMARY KEY,
+    wxid TEXT DEFAULT '',
+    title TEXT NOT NULL,
+    agent_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  // AI 助手消息(role=user/assistant/system;kind=text/tool_call/tool_result/error;meta JSON)
+  `CREATE TABLE IF NOT EXISTS chat_message (
+    id INTEGER PRIMARY KEY,
+    session_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    kind TEXT DEFAULT 'text',
+    content TEXT NOT NULL DEFAULT '',
+    meta TEXT,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES chat_session(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_session_t ON chat_session(updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_msg_s ON chat_message(session_id, id)`
 ]
 
 export function migrate(db: Database.Database): void {

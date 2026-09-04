@@ -410,3 +410,47 @@ export interface TeamMemberInfo {
   /** 自定义备注（如「店长-小张」），展示用 */
   label?: string
 }
+
+// ── AI 对话助手（页面 AI 菜单）──
+
+export interface ChatSessionItem {
+  id: number
+  wxid: string
+  title: string
+  agentId?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export type ChatMsgRole = 'user' | 'assistant' | 'system'
+export type ChatMsgKind = 'text' | 'tool_call' | 'tool_result' | 'error'
+
+export interface ChatMsgItem {
+  id: number
+  sessionId: number
+  role: ChatMsgRole
+  kind: ChatMsgKind
+  content: string
+  meta?: string
+  createdAt: number
+}
+
+/** 多轮消息(发送给 LLM 的形态) */
+export interface ChatTurn {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+/** 会话工具执行事件(渲染端工具卡片) */
+export interface AiChatEvent {
+  type: 'delta' | 'tool' | 'done' | 'error' | 'status'
+  chatId: number
+  wxid?: string
+  token?: string
+  tool?: string
+  toolStatus?: 'start' | 'pending' | 'done' | 'fail'
+  args?: string
+  resultClip?: string
+  messageId?: number
+  text?: string
+}

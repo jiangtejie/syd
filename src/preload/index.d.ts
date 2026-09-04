@@ -18,7 +18,10 @@ import type {
   MessageCursor,
   RedEnvelopeStatus,
   FeedbackTypeCount,
-  TeamMemberInfo
+  TeamMemberInfo,
+  ChatSessionItem,
+  ChatMsgItem,
+  AiChatEvent
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -219,6 +222,31 @@ declare global {
             accountWxid: string,
             username: string
           ) => Promise<{ ok: boolean; error?: string }>
+        }
+        aiChat: {
+          listChats: (wxid: string) => Promise<Result<{ chats?: ChatSessionItem[] }>>
+          messages: (sessionId: number) => Promise<Result<{ messages?: ChatMsgItem[] }>>
+          renameChat: (sessionId: number, title: string) => Promise<{ ok: boolean; error?: string }>
+          removeChat: (sessionId: number) => Promise<{ ok: boolean; error?: string }>
+          clearChat: (sessionId: number) => Promise<{ ok: boolean; error?: string }>
+          send: (input: {
+            wxid: string
+            chatId?: number
+            agentId?: string | null
+            text: string
+          }) => Promise<{ ok: boolean; chatId?: number; error?: string }>
+          stop: (wxid: string, sessionId: number) => Promise<{ ok: boolean }>
+          retry: (
+            wxid: string,
+            sessionId: number,
+            agentId?: string | null
+          ) => Promise<{ ok: boolean; chatId?: number; error?: string }>
+          confirmTool: (runId: string, ok: boolean) => Promise<{ ok: boolean; error?: string }>
+          setAgent: (
+            sessionId: number,
+            agentId: string | null
+          ) => Promise<{ ok: boolean; error?: string }>
+          onEvent: (callback: (evt: AiChatEvent) => void) => () => void
         }
         export: {
           chat: (
