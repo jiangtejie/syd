@@ -470,11 +470,7 @@ function MessagePanel(): React.JSX.Element {
   const activeSession = sessions.find((s) => s.username === activeSessionId) || null
 
   const handleContextMenu = useCallback(
-    (
-      e: React.MouseEvent,
-      text: string,
-      sender?: { username: string; isTeam: boolean }
-    ): void => {
+    (e: React.MouseEvent, text: string, sender?: { username: string; isTeam: boolean }): void => {
       if (!text && !sender) return
       e.preventDefault()
       setCtxMenu({
@@ -544,12 +540,25 @@ function MessagePanel(): React.JSX.Element {
       return
     }
     const items = el.querySelectorAll<HTMLElement>('.wb-msg')
-    let lastIdx = -1
-    for (let i = 0; i < messages.length; i++) {
-      if (messages[i].createTime <= scrollHint.targetMs) lastIdx = i
-      else break
+    const targetMs = scrollHint.targetMs
+    // 命中取点：优先「第一条 >= 目标时间」的消息（与问题首条证据同秒的消息簇取最早一条，避免跳过证据）；
+    // 目标早于已加载窗口 → 定位到最早一条；晚于窗口 → 最新一条。
+    let idx = -1
+    if (messages.length > 0) {
+      if (targetMs < messages[0].createTime) {
+        idx = 0
+      } else if (targetMs > messages[messages.length - 1].createTime) {
+        idx = messages.length - 1
+      } else {
+        for (let i = 0; i < messages.length; i++) {
+          if (messages[i].createTime >= targetMs) {
+            idx = i
+            break
+          }
+        }
+      }
     }
-    const target = lastIdx >= 0 ? Math.min(lastIdx + 1, items.length - 1) : 0
+    const target = idx >= 0 ? idx : 0
     const node = items[target]
     if (node) {
       node.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -557,7 +566,6 @@ function MessagePanel(): React.JSX.Element {
       window.setTimeout(() => node.classList.remove('wb-msg-flash'), 2400)
     }
     useWorkbenchStore.setState({ scrollHint: null })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollHint, activeSessionId, messages])
 
   const handleSend = (): void => {

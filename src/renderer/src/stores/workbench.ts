@@ -179,7 +179,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         set({
           source: 'empty',
           sessions: [],
-          fallbackReason: sessionsRes.ok ? '当前账号暂无会话数据' : (sessionsRes.error || '未获取到微信数据'),
+          fallbackReason: sessionsRes.ok
+            ? '当前账号暂无会话数据'
+            : sessionsRes.error || '未获取到微信数据',
           loading: false
         })
         return
@@ -286,7 +288,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       groupIssueError: an
         ? an.ok
           ? an.skipped
-            ? an.error ?? get().groupIssueError
+            ? (an.error ?? get().groupIssueError)
             : null
           : (an.error ?? '分析失败')
         : get().groupIssueError
@@ -436,11 +438,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       await get().selectSession(sessionId)
       get().setPage('chat')
     }
-    // 逐页加载更早消息，直到最旧消息不晚于目标时间（上限 15 页防爆）
+    // 逐页加载更早消息，直到「最旧已加载消息」不晚于目标时间（窗口覆盖目标即停；上限 15 页防爆）
     for (let i = 0; i < 15; i++) {
       const { messages, messagesHasMore, nextCursor, loadingOlder } = get()
       if (messages.length === 0) break
-      if (messages[0].createTime <= targetMs) break
+      if (messages[messages.length - 1].createTime <= targetMs) break
       if (!messagesHasMore || !nextCursor || loadingOlder) break
       await get().loadOlder()
     }
@@ -449,7 +451,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   loadOlder: async () => {
     const { wxid, activeSessionId, nextCursor, loadingOlder, source } = get()
-    if (source !== 'wx' || !wxid || !activeSessionId || !nextCursor || loadingOlder || !wxApi) return
+    if (source !== 'wx' || !wxid || !activeSessionId || !nextCursor || loadingOlder || !wxApi)
+      return
     set({ loadingOlder: true })
     try {
       const res = await wxApi.getMessages(wxid, activeSessionId, 50, nextCursor)
@@ -501,7 +504,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const { wxid, activeSessionId, sessions, messages, agentId } = get()
     if (!wxid || !activeSessionId || messages.length === 0) return
     const session = sessions.find((s) => s.username === activeSessionId)
-    const sessionName = session?.displayName || session?.nickname || session?.remark || activeSessionId
+    const sessionName =
+      session?.displayName || session?.nickname || session?.remark || activeSessionId
     set({ suggestLoading: true, suggestError: null, chosenText: null })
     try {
       if (aiApi) {
@@ -534,10 +538,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const { wxid, activeSessionId, sessions } = get()
     if (!wxid || !activeSessionId || !text.trim()) return
     const session = sessions.find((s) => s.username === activeSessionId)
-    const targetName = session?.displayName || session?.nickname || session?.remark || activeSessionId
+    const targetName =
+      session?.displayName || session?.nickname || session?.remark || activeSessionId
     set({ sending: true })
     try {
-      let res: { ok: boolean; result?: { status: string; verified?: boolean; error?: string }; error?: string }
+      let res: {
+        ok: boolean
+        result?: { status: string; verified?: boolean; error?: string }
+        error?: string
+      }
       if (replyApi) {
         res = await replyApi.sendText({
           wxid,

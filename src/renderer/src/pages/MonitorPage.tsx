@@ -116,7 +116,7 @@ function IssueActions({
 function MonitorPage(): React.JSX.Element {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const source = useWorkbenchStore((s) => s.source)
-  const gotoSession = useWorkbenchStore((s) => s.gotoSession)
+  const locateIssueAt = useWorkbenchStore((s) => s.locateIssueAt)
   const connected = !!wxid && source === 'wx' && wxid !== 'wxid_demo'
   const issueApi = window.api?.cs?.issue
 
@@ -890,10 +890,10 @@ function MonitorPage(): React.JSX.Element {
                     className="mon-btn ghost"
                     onClick={() => {
                       if (wxid) {
-                        gotoSession(active.groupUsername)
+                        void locateIssueAt(active.groupUsername, active.occurAt)
                       }
                     }}
-                    title="跳到该群聊天并滚动定位"
+                    title="跳到该群聊天并滚动到问题首次出现的时间附近"
                   >
                     ◎ 在聊天中定位
                   </button>
