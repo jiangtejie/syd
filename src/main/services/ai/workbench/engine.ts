@@ -29,6 +29,15 @@ const COMPRESS_THRESHOLD_CHARS = 36_000
 /** 推理过程(思考内容)实时上屏上限:超限后不再推送/落库,避免消息体过大 */
 const REASON_CAP = 6000
 
+/** 剔除控制字符/零宽字符,避免干扰 markdown 解析与复制 */
+function cleanModelText(s: string): string {
+  /* eslint-disable no-control-regex -- 有意清理模型输出中的控制字符 */
+  return s
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+  /* eslint-enable no-control-regex */
+}
+
 interface RunHandle {
   controller: AbortController
   active: boolean
@@ -176,7 +185,7 @@ export async function sendWorkbenchMessage(
         emitWorkbenchEvent(sessionId, { type: 'delta', token: part.text })
       } else if (part.type === 'reasoning-delta') {
         // 思考型模型(reasoner)的推理过程:实时推送,收尾随 meta.reasoning 落库
-        const t = (part as { text?: string }).text ?? ''
+        const t = cleanModelText((part as { text?: string }).text ?? '')
         if (t) {
           const room = REASON_CAP - reasoning.length
           if (room > 0) {
@@ -226,7 +235,7 @@ export async function sendWorkbenchMessage(
       emitWorkbenchEvent(sessionId, { type: 'status', text: '已停止' })
       return { ok: true }
     }
-    const trimmed = content.trim()
+    const trimmed = cleanModelText(content).trim()
     if (!trimmed) {
       const err = '模型未返回内容(预算或通道问题),可重试。'
       appendChatMessage(sessionId, 'assistant', 'error', err)

@@ -6,8 +6,10 @@ import { useWorkbenchStore } from './workbench'
  * AI 工作台前端 store(事件通道 ai:wb;会话复用 chat 体系,busy 按会话维度)。
  * 流畅性设计:
  * - delta 事件按帧批量合并(zustand 每 token 一 set 会整页重渲染);
+ * - 帧队列带轮次号:done/error 先到时清空缓冲,迟到帧被丢弃,杜绝「结尾幽灵框」;
  * - 事件订阅常驻(singleton):切页/切会话不断线,busy/回显不会卡死;
- * - 发送后乐观回显用户消息(pendingUser),避免整轮结束才出现自己的消息;
+ * - 发送后乐观回显用户消息(pendingTexts 按会话),避免整轮结束才出现自己的消息,
+ *   也避免多会话并行时回显互相串台;load 成功以落库数据消解回显(不会重复上屏);
  * - load 带请求序号,防止慢响应覆盖后选的会话。
  * 多会话并行:
  * - busy 按会话,后台会话继续跑,整轮结束不丢(重新选中即全量刷新);
@@ -30,6 +32,15 @@ export interface WbApprovalCard {
   approvalText?: string
 }
 
+/** 剔除会干扰 markdown/布局的控制字符(保留 \t \n \r)与零宽字符 */
+export function cleanStreamText(s: string): string {
+  /* eslint-disable no-control-regex -- 有意清理模型输出中的控制字符 */
+  return s
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+  /* eslint-enable no-control-regex */
+}
+
 interface WbState {
   wxid: string
   chats: ChatSessionItem[] | null
@@ -48,8 +59,8 @@ interface WbState {
   toolCards: WbToolCard[]
   approvals: WbApprovalCard[]
   error: string | null
-  /** 乐观回显:引擎已落库但列表尚未刷新,先上屏的用户消息(仅当前轮) */
-  pendingUser: { sid: number; text: string } | null
+  /** 乐观回显(按会话):引擎已落库但列表尚未刷新,先上屏的用户消息 */
+  pendingTexts: Record<number, string>
 
   init: (wxid: string) => Promise<void>
   load: (id: number) => Promise<void>
@@ -77,6 +88,12 @@ function withoutKey<K extends string | number>(
   return next
 }
 
+function withoutKeyStr(rec: Record<number, string>, key: number): Record<number, string> {
+  const next = { ...rec }
+  delete next[key]
+  return next
+}
+
 /** 后台完成且窗口未聚焦:桌面提醒,点击直达工作台 */
 function notifyDone(sid: number): void {
   if (!('Notification' in window) || Notification.permission !== 'granted') return
@@ -97,11 +114,25 @@ function notifyDone(sid: number): void {
 /** load 请求序号:慢响应不得覆盖后选的会话 */
 let loadSeq = 0
 
+/**
+ * 轮次号(按会话):send/retry 递增。
+ * 帧队列入队时记录轮次,flush 时轮次不匹配或 busy 已复位 → 丢弃。
+ * 修复:done/error 收尾(清空缓冲+全量刷新)先于本帧 flush 时,旧 delta 尾巴
+ * (常见为收尾表情的单独一帧)不再被追加成「幽灵气泡」。
+ */
+const turnSeq = new Map<number, number>()
+function bumpTurn(sid: number): number {
+  const next = (turnSeq.get(sid) ?? 0) + 1
+  turnSeq.set(sid, next)
+  return next
+}
+
 /** delta 按帧批量(单路活动会话展示;text=正文,reason=推理过程) */
-let deltaQueue: Array<{ sid: number; kind: 'text' | 'reason'; token: string }> = []
+let deltaQueue: Array<{ sid: number; kind: 'text' | 'reason'; seq: number; token: string }> = []
 let flushHandle: number | null = null
 function queueDelta(sid: number, kind: 'text' | 'reason', token: string): void {
-  deltaQueue.push({ sid, kind, token })
+  if (!token) return
+  deltaQueue.push({ sid, kind, seq: turnSeq.get(sid) ?? 0, token: cleanStreamText(token) })
   if (flushHandle !== null) return
   const flush = (): void => {
     flushHandle = null
@@ -109,15 +140,21 @@ function queueDelta(sid: number, kind: 'text' | 'reason', token: string): void {
     deltaQueue = []
     for (const it of items) {
       const st = useWorkbenchChatStore.getState()
-      if (it.sid !== st.activeId) continue // 非活动会话的增量先丢弃,done 后整轮刷新兜底
+      if (it.sid !== st.activeId) continue // 非活动会话的增量丢弃,done 后整轮刷新兜底
+      if (!st.busyIds[it.sid]) continue // 已收尾:迟到帧丢弃(最终内容由 load 全量兜底)
+      if ((turnSeq.get(it.sid) ?? 0) !== it.seq) continue // 跨轮次旧帧:丢弃
       if (it.kind === 'text') {
-        if (st.pendingUser?.sid === it.sid) useWorkbenchChatStore.setState({ pendingUser: null })
+        if (st.pendingTexts[it.sid] !== undefined) {
+          useWorkbenchChatStore.setState({ pendingTexts: withoutKeyStr(st.pendingTexts, it.sid) })
+        }
+        const latest = useWorkbenchChatStore.getState()
         useWorkbenchChatStore.setState({
-          streamingBuf: st.streamingBuf + it.token
+          streamingBuf: latest.streamingBuf + it.token
         })
       } else {
+        const latest = useWorkbenchChatStore.getState()
         useWorkbenchChatStore.setState({
-          reasoningBuf: st.reasoningBuf + it.token
+          reasoningBuf: latest.reasoningBuf + it.token
         })
       }
     }
@@ -142,10 +179,11 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   toolCards: [],
   approvals: [],
   error: null,
-  pendingUser: null,
+  pendingTexts: {},
 
   init: async (wxid) => {
     const key = wxid || ''
+    turnSeq.clear()
     set({
       wxid: key,
       streamingBuf: '',
@@ -153,7 +191,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       toolCards: [],
       approvals: [],
       error: null,
-      pendingUser: null,
+      pendingTexts: {},
       busyIds: {},
       sessNew: {},
       sessErr: {}
@@ -175,7 +213,21 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     const res = await wbApi?.messages(id).catch(() => null)
     if (seq !== loadSeq) return // 期间已切换到别的会话,丢弃过期响应
     if (res?.ok && res.messages) {
-      set({ messages: res.messages as ChatMsgItem[], loading: false })
+      const msgs = res.messages as ChatMsgItem[]
+      set({ messages: msgs, loading: false })
+      // 回显消解:落库里已出现同内容的用户消息(引擎发送即落库),回显不再重复上屏
+      const st = useWorkbenchChatStore.getState()
+      const pending = st.pendingTexts[id]
+      if (pending !== undefined) {
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === 'user') {
+            if (msgs[i].content === pending) {
+              useWorkbenchChatStore.setState({ pendingTexts: withoutKeyStr(st.pendingTexts, id) })
+            }
+            break
+          }
+        }
+      }
     } else {
       set({ loading: false, error: (res as { error?: string } | null)?.error ?? '加载失败' })
     }
@@ -216,6 +268,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   remove: async (id) => {
     const res = await wbApi?.remove(id).catch(() => null)
     if (!res?.ok) return
+    turnSeq.delete(id)
     const busyIds = { ...get().busyIds }
     delete busyIds[id]
     const next = (get().chats ?? []).filter((c) => c.id !== id)
@@ -224,7 +277,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       busyIds,
       sessNew: withoutKey(get().sessNew, id),
       sessErr: withoutKey(get().sessErr, id),
-      pendingUser: get().pendingUser?.sid === id ? null : get().pendingUser
+      pendingTexts: withoutKeyStr(get().pendingTexts, id)
     })
     if (get().activeId === id) {
       if (next.length > 0) void get().select(next[0].id)
@@ -244,6 +297,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   },
 
   resetActive: () => {
+    turnSeq.clear()
     set({
       activeId: null,
       messages: [],
@@ -252,16 +306,17 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       streamingBuf: '',
       reasoningBuf: '',
       error: null,
-      pendingUser: null
+      pendingTexts: {}
     })
   },
 
   send: async (text) => {
     const { activeId, wxid, busyIds } = get()
     if (!activeId || busyIds[activeId]) return
-    const t = text.trim()
+    const t = cleanStreamText(text.trim())
     if (!t) return
     const sid = activeId
+    bumpTurn(sid)
     set({
       busyIds: { ...busyIds, [sid]: true },
       sessErr: withoutKey(get().sessErr, sid),
@@ -270,19 +325,19 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       toolCards: [],
       approvals: [],
       error: null,
-      pendingUser: { sid, text: t }
+      pendingTexts: { ...get().pendingTexts, [sid]: t }
     })
-    const res = await wbApi?.send(sid, wxid, t).catch(() => null)
     // 首轮发送时顺手请求通知权限(后台完成桌面提醒用,拒绝则静默降级为列表徽标)
     if ('Notification' in window && Notification.permission === 'default') {
       void Notification.requestPermission().catch(() => undefined)
     }
+    const res = await wbApi?.send(sid, wxid, t).catch(() => null)
     // 引擎整轮结束才 resolve;期间失败已由 error 事件处理。此处兜底:忙碌未被事件清除时按失败收尾
     if (res && !res.ok && get().busyIds[sid]) {
       set({
         busyIds: { ...get().busyIds, [sid]: false },
         error: res.error ?? '发送失败',
-        pendingUser: get().pendingUser?.sid === sid ? null : get().pendingUser
+        pendingTexts: withoutKeyStr(get().pendingTexts, sid)
       })
       if (get().activeId === sid) void get().load(sid)
     }
@@ -292,6 +347,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     const { activeId, wxid, busyIds } = get()
     if (!activeId || busyIds[activeId]) return
     const sid = activeId
+    bumpTurn(sid)
     // 引擎重试前会弹出尾部 assistant 行:先同步裁剪本地列表,避免旧气泡残留
     const msgs = get().messages
     let keep = -1
@@ -310,7 +366,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       approvals: [],
       error: null,
       messages: keep >= 0 ? msgs.slice(0, keep + 1) : msgs,
-      pendingUser: get().pendingUser?.sid === sid ? null : get().pendingUser
+      pendingTexts: withoutKeyStr(get().pendingTexts, sid)
     })
     const res = await wbApi?.retry(sid, wxid).catch(() => null)
     if (res && !res.ok && get().busyIds[sid]) {
@@ -336,7 +392,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
           busyIds: { ...st.busyIds, [sid]: false },
           streamingBuf: '',
           reasoningBuf: '',
-          pendingUser: st.pendingUser?.sid === sid ? null : st.pendingUser
+          pendingTexts: withoutKeyStr(st.pendingTexts, sid)
         })
         if (st.activeId === sid) void st.load(sid)
       }
@@ -368,17 +424,13 @@ function handleWbEvent(raw: unknown): void {
   if (sid === undefined) return
   const st = useWorkbenchChatStore.getState()
   const isActive = st.activeId === sid
-  const clearPending = (): void => {
-    const cur = useWorkbenchChatStore.getState().pendingUser
-    if (cur?.sid === sid) useWorkbenchChatStore.setState({ pendingUser: null })
-  }
   /** 收尾:复位 busy/回显;活动会话直接整刷,后台会话打徽标(重新选中时全量刷新兜底) */
   const finishTurn = (isErr: boolean, isStop = false): void => {
-    clearPending()
     const cur = useWorkbenchChatStore.getState()
-    if (cur.busyIds[sid]) {
-      useWorkbenchChatStore.setState({ busyIds: { ...cur.busyIds, [sid]: false } })
-    }
+    useWorkbenchChatStore.setState({
+      pendingTexts: withoutKeyStr(cur.pendingTexts, sid),
+      busyIds: cur.busyIds[sid] ? { ...cur.busyIds, [sid]: false } : cur.busyIds
+    })
     const latest = useWorkbenchChatStore.getState()
     if (latest.activeId === sid) {
       useWorkbenchChatStore.setState({

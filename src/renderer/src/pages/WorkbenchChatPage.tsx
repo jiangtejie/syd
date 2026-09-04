@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMsgItem } from '../../../shared/types'
 import {
+  cleanStreamText,
   ensureWorkbenchEvents,
   useWorkbenchChatStore,
   type WbToolCard
@@ -14,19 +15,52 @@ import './workbench-chat.css'
 /**
  * AI 工作台页:让 AI 调用产品原生能力(业务查询/软件状态)+ SKILL.md 业务口径。
  * 引擎基于 Vercel AI SDK(主进程),工具只读;写/危险操作会经确认桥弹窗(v2 启用)。
- * 交互优化:历史气泡 memo(流式时不重复解析 Markdown)、delta 按帧渲染、
+ * 交互优化:历史气泡 memo(流式时不重复解析 Markdown)、delta 按帧渲染(带轮次防幽灵帧)、
  * 发送后乐观回显、跟随滚动(用户上翻时不抢滚)、思考动画、中文输入法回车不误发、
  * reasoner 推理过程实时流+落库可折叠回看、超长会话消息窗口化。
+ * 回复渲染稳健性:控制字符清洗、链接外部打开、图片限高加载失败隐藏、表格横向滚动。
  */
 
 /** 消息窗口:只渲染最近 N 条(超长会话防整表重排);向上分页翻更早 */
 const WB_WINDOW = 200
 const WB_OLDER_STEP = 200
 
+/** 链接:应用内页面不可被模型输出导航走(主进程对 window.open 统一走系统浏览器) */
+function MdLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element {
+  const { href, children, ...rest } = props
+  return (
+    <a {...rest} href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  )
+}
+
+/** 图片:限高防撑爆气泡;加载失败就地隐藏(不显示裂图) */
+function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement>): React.JSX.Element | null {
+  const [failed, setFailed] = useState(false)
+  if (failed || !props.src) return null
+  return (
+    <img
+      {...props}
+      alt={props.alt ?? ''}
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
+/** 固定组件映射(模块级稳定引用):最终消息与流式缓冲共用同一套渲染语义 */
+const MD_COMPONENTS = {
+  a: MdLink,
+  img: MdImg
+}
+
 function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   const isUser = msg.role === 'user'
   const isError = msg.kind === 'error'
   const [reasonOpen, setReasonOpen] = useState(false)
+  const content = useMemo(() => cleanStreamText(msg.content), [msg.content])
   const meta = useMemo(() => {
     if (!msg.meta) return null
     try {
@@ -44,9 +78,9 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
     <div className={`wb-row${isUser ? ' is-user' : ''}${isError ? ' is-error' : ''}`}>
       <div className="wb-bubble">
         {isError ? (
-          <span className="wb-error-text">{msg.content}</span>
+          <span className="wb-error-text">{content}</span>
         ) : isUser ? (
-          <div className="wb-plain">{msg.content}</div>
+          <div className="wb-plain">{content}</div>
         ) : (
           <>
             {reasoningText && (
@@ -63,7 +97,9 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
                 {reasonOpen && <pre className="wb-reason-static">{reasoningText}</pre>}
               </div>
             )}
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+              {content}
+            </ReactMarkdown>
             {hasTokens && (
               <div className="wb-tokens-line">
                 {typeof t.input === 'number' ? `输入 ${t.input}` : ''}
@@ -148,7 +184,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const taRef = useRef<HTMLTextAreaElement | null>(null)
   const store = useWorkbenchChatStore()
-  const { chats, activeId, messages, loading, busyIds, streamingBuf, error, pendingUser } = store
+  const { chats, activeId, messages, loading, busyIds, streamingBuf, error, pendingTexts } = store
+  const pendingText = activeId !== null ? (pendingTexts[activeId] ?? undefined) : undefined
   const toolCards = useWorkbenchChatStore((s) => s.toolCards)
   const approvals = useWorkbenchChatStore((s) => s.approvals)
   const reasoningBuf = useWorkbenchChatStore((s) => s.reasoningBuf)
@@ -234,7 +271,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     const el = bodyRef.current
     if (!el) return
     if (stickRef.current) el.scrollTop = el.scrollHeight
-  }, [messages, streamingBuf, reasoningBuf, pendingUser, toolCards, approvals, loading, startIdx])
+  }, [messages, streamingBuf, reasoningBuf, pendingText, toolCards, approvals, loading, startIdx])
 
   const handleBodyScroll = (): void => {
     const el = bodyRef.current
@@ -439,10 +476,10 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               </div>
             ))}
           {/* 乐观回显:本轮用户消息(引擎已落库,整轮结束刷新后被正式列表替换) */}
-          {pendingUser && activeId === pendingUser.sid && (
+          {pendingText !== undefined && (
             <div className="wb-row is-user">
               <div className="wb-bubble">
-                <div className="wb-plain">{pendingUser.text}</div>
+                <div className="wb-plain">{pendingText}</div>
               </div>
             </div>
           )}
@@ -476,7 +513,9 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           {streamingBuf && (
             <div className="wb-row">
               <div className="wb-bubble">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingBuf}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+                  {streamingBuf}
+                </ReactMarkdown>
                 <span className="wb-caret" />
               </div>
             </div>
