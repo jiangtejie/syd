@@ -39,6 +39,13 @@ function rootOf(ctx: { sessionId?: string | undefined }): string | null {
 const NO_WS =
   '当前会话未绑定工作区。请先在工作台顶部「工作区」选择文件夹(或解除后重新绑定),再使用文件工具。'
 
+/** 前缀包含判断(兼容 Windows 反斜杠与正斜杠,忽略大小写) */
+function withinBase(base: string, target: string): boolean {
+  const b = base.replace(/[\\/]+$/, '').toLowerCase()
+  const t = target.toLowerCase()
+  return t === b || t.startsWith(`${b}\\`) || t.startsWith(`${b}/`)
+}
+
 /** 沙箱解析:相对路径必须落在 root 内;返回绝对路径,违规返回 null */
 function jailPath(root: string, rel: string): string | null {
   const p = String(rel ?? '')
@@ -52,9 +59,8 @@ function jailPath(root: string, rel: string): string | null {
   } catch {
     /* 根不可解析时退化为词法比较 */
   }
-  const prefix = base.replace(/[\\/]+$/, '') + '/'
   const abs = resolve(root, p)
-  if (abs !== root && !abs.startsWith(prefix)) return null
+  if (!withinBase(base, abs)) return null
   // 符号链接/目录联接逃逸:对已存在的路径段做 realpath 校验(均折算到真实根比较)
   let probe = abs
   for (;;) {
@@ -62,8 +68,7 @@ function jailPath(root: string, rel: string): string | null {
     if (parent === probe) break
     if (existsSync(probe)) {
       try {
-        const real = realpathSync(probe)
-        if (real !== base && !real.startsWith(prefix)) return null
+        if (!withinBase(base, realpathSync(probe))) return null
       } catch {
         return null
       }
