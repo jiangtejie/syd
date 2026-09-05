@@ -62,7 +62,8 @@ export function registerChannelFileHandlers(): void {
 
   ipcMain.handle('cs:files:policy', () => {
     try {
-      return { ok: true as const, ...files.filePolicy() }
+      const p = files.filePolicy()
+      return { ok: true as const, ...p }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }

@@ -151,3 +151,11 @@ export function expiredFileRecords(keepDays: number): FileRecordRow[] {
     .all(cutoff) as FileRow[]
   return rows.map(toRow)
 }
+
+/** 全量记录(升序;按账号差异化保留策略逐条判定用) */
+export function allFileRecords(): FileRecordRow[] {
+  const rows = getDb()
+    .prepare(`SELECT * FROM im_file_record ORDER BY created_at ASC`)
+    .all() as FileRow[]
+  return rows.map(toRow)
+}

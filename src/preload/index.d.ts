@@ -202,6 +202,7 @@ declare global {
             ok: boolean
             autoClean?: boolean
             keepDays?: number
+            maxMB?: number
             error?: string
           }>
         }

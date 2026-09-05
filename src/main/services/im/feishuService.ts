@@ -16,6 +16,7 @@ import {
 } from '../ai/chat/service'
 import { ensureBoundBusinessMounts } from '../ai/cap/mounts'
 import { openSecret } from '../secrets'
+import { maxFileBytes, maxFileHint } from './channelFiles'
 import { clipForChannel, feishuPlainText, isStopCommand } from './mdToPlain'
 import { toolCnName } from '../../../shared/types'
 import type { AiChatEvent } from '../../../shared/types'
@@ -660,6 +661,16 @@ async function handleInboundMedia(
     }
     const buf = await downloadFeishuResource(rt, messageId, meta.key, kind)
     if (!buf) return
+    // 单文件上限拦截:超限不落盘、不登记,并向发送者回执(避免数据膨胀)
+    const cap = maxFileBytes()
+    if (cap > 0 && buf.length > cap) {
+      imLog(
+        accountId,
+        `拒收超大${kind === 'image' ? '图片' : '文件'} ${messageId} size=${buf.length} cap=${cap}`
+      )
+      await safeReply(rt, messageId, `⚠️ ${maxFileHint()}。`)
+      return
+    }
     const ext = extOf(buf, kind, meta.name)
     const now = new Date()
     const day = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(

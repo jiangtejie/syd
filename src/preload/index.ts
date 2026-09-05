@@ -191,6 +191,7 @@ const api = {
         ok: boolean
         autoClean?: boolean
         keepDays?: number
+        maxMB?: number
         error?: string
       }> => ipcRenderer.invoke('cs:files:policy')
     },

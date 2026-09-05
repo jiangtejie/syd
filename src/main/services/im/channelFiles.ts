@@ -29,6 +29,26 @@ function keepDaysOf(): number {
   return Number.isFinite(n) && n >= 1 && n <= 365 ? Math.floor(n) : 30
 }
 
+/** 某账号的有效保留天数:账号覆盖(imFiles.keepDays.acct-<id>)优先,否则全局 */
+export function keepDaysOfAccount(accountId: number): number {
+  const n = Number(getConfig(`imFiles.keepDays.acct-${accountId}`))
+  return Number.isFinite(n) && n >= 1 && n <= 365 ? Math.floor(n) : keepDaysOf()
+}
+
+/** 单文件接收上限字节(imFiles.maxBytes,单位 MB;0=不限;默认 50MB) */
+export function maxFileBytes(): number {
+  const mb = Number(getConfig('imFiles.maxBytes'))
+  const safe = Number.isFinite(mb) ? mb : 50
+  if (safe <= 0) return 0
+  return Math.min(Math.max(Math.floor(safe), 1), 500) * 1024 * 1024
+}
+
+/** 超限提示文案(供拒收回执) */
+export function maxFileHint(): string {
+  const mb = maxFileBytes() / 1024 / 1024
+  return `文件超过 ${mb}MB 上限,已拒收;请压缩后重试`
+}
+
 /** 绝对路径(由登记的相对路径换算,目录迁移/更名后仍可用) */
 export function absOf(relPath: string): string {
   return join(fileRoot(), relPath)
@@ -66,15 +86,19 @@ export function revealFile(id: number): boolean {
   return true
 }
 
-/** 过期清理(按 keepDays;autoClean 关闭时返回跳过) */
+/** 过期清理(按各账号差异化保留天数;autoClean 关闭时返回跳过) */
 export function pruneExpired(force = false): { removed: number } {
   if (!force && !autoCleanEnabled()) return { removed: 0 }
-  const days = keepDaysOf()
-  const rows = repo.expiredFileRecords(days)
-  if (rows.length === 0) return { removed: 0 }
-  removeFiles(rows.map((r) => r.id))
-  fileLog.info(`过期清理:删除 ${rows.length} 个(保留 ${days} 天)` + (force ? '[手动]' : ''))
-  return { removed: rows.length }
+  const rows = repo.allFileRecords()
+  const due: repo.FileRecordRow[] = []
+  for (const r of rows) {
+    const days = keepDaysOfAccount(r.accountId)
+    if (Date.now() - r.createdAt >= days * 24 * 3600_000) due.push(r)
+  }
+  if (due.length === 0) return { removed: 0 }
+  removeFiles(due.map((r) => r.id))
+  fileLog.info(`过期清理:删除 ${due.length} 个(按账号保留策略)` + (force ? '[手动]' : ''))
+  return { removed: due.length }
 }
 
 /** 孤儿文件 GC:目录中存在、索引无记录、且超过保留期的文件直接删除 */
@@ -149,6 +173,10 @@ export function ensureFileRoot(): void {
 }
 
 /** 当前策略(设置页回显用) */
-export function filePolicy(): { autoClean: boolean; keepDays: number } {
-  return { autoClean: autoCleanEnabled(), keepDays: keepDaysOf() }
+export function filePolicy(): { autoClean: boolean; keepDays: number; maxMB: number } {
+  return {
+    autoClean: autoCleanEnabled(),
+    keepDays: keepDaysOf(),
+    maxMB: Math.floor(maxFileBytes() / 1024 / 1024)
+  }
 }

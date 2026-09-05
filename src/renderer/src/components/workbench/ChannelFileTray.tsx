@@ -47,6 +47,9 @@ export function ChannelFileTray(): React.JSX.Element {
   const [accountId, setAccountId] = useState<number | null>(null)
   const [autoClean, setAutoClean] = useState(true)
   const [keepDays, setKeepDays] = useState(30)
+  const [maxMB, setMaxMB] = useState(50)
+  /** 当前选中账号的保留覆盖(空=跟随全局;仅账号筛选时可见) */
+  const [acctKeepDays, setAcctKeepDays] = useState('')
 
   const load = useCallback(async (): Promise<void> => {
     const res = await filesApi
@@ -66,8 +69,20 @@ export function ChannelFileTray(): React.JSX.Element {
     if (p?.ok) {
       if (typeof p.autoClean === 'boolean') setAutoClean(p.autoClean)
       if (typeof p.keepDays === 'number') setKeepDays(p.keepDays)
+      if (typeof p.maxMB === 'number') setMaxMB(p.maxMB)
     }
   }, [])
+
+  /** 当前账号覆盖天数回显(空=跟随全局) */
+  const loadAcctOverride = useCallback(async (): Promise<void> => {
+    if (accountId === null) {
+      setAcctKeepDays('')
+      return
+    }
+    const cfg = await configApi?.getAll().catch(() => null)
+    const v = cfg?.[`imFiles.keepDays.acct-${accountId}`]
+    setAcctKeepDays(v && v !== '' ? String(v) : '')
+  }, [accountId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载拉取文件摘要与清理策略(全仓同款模式)
@@ -75,10 +90,16 @@ export function ChannelFileTray(): React.JSX.Element {
     void loadPolicy()
   }, [load, loadPolicy])
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 账号切换回显其保留覆盖(全仓同款模式)
+    void loadAcctOverride()
+  }, [loadAcctOverride])
+
   const openDialog = async (): Promise<void> => {
     setOpen(true)
     await load()
     await loadPolicy()
+    await loadAcctOverride()
   }
 
   const removeOne = async (f: FileItem): Promise<void> => {
@@ -116,14 +137,44 @@ export function ChannelFileTray(): React.JSX.Element {
     }
   }
 
+  /** 移除当前账号的保留覆盖(回到全局策略) */
+  const clearAcctOverride = async (): Promise<void> => {
+    if (accountId === null) return
+    await configApi?.set(`imFiles.keepDays.acct-${accountId}`, '')
+    setAcctKeepDays('')
+    toast.success('已清除该账号覆盖,跟随全局保留天数')
+  }
+
   const savePolicy = async (): Promise<void> => {
     const d = Math.min(Math.max(Math.floor(keepDays) || 30, 1), 365)
+    const mb = Math.min(Math.max(Math.floor(maxMB) || 0, 0), 500)
     setKeepDays(d)
-    await Promise.all([
+    setMaxMB(mb)
+    const sets: Array<Promise<unknown> | undefined> = [
       configApi?.set('imFiles.autoClean', autoClean ? '1' : '0'),
-      configApi?.set('imFiles.keepDays', String(d))
-    ])
-    toast.success(autoClean ? `已保存:保留 ${d} 天后自动清理` : '已保存:自动清理关闭')
+      configApi?.set('imFiles.keepDays', String(d)),
+      configApi?.set('imFiles.maxBytes', String(mb))
+    ]
+    // 当前账号保留覆盖(空串=清除,跟随全局)
+    if (accountId !== null) {
+      const v = acctKeepDays.trim()
+      const n = v === '' ? 0 : Math.floor(Number(v))
+      const valid = v === '' || (Number.isFinite(n) && n >= 1 && n <= 365)
+      if (valid) {
+        sets.push(configApi?.set(`imFiles.keepDays.acct-${accountId}`, v === '' ? '' : String(n)))
+      } else {
+        return toast.error('账号覆盖天数需为 1-365(留空=跟随全局)')
+      }
+    }
+    await Promise.all(sets)
+    const parts = [
+      autoClean ? `保留 ${d} 天自动清理` : '自动清理关闭',
+      mb > 0 ? `单文件上限 ${mb}MB` : '不限制文件大小'
+    ]
+    if (accountId !== null && acctKeepDays.trim() !== '') {
+      parts.push(`本账号保留 ${acctKeepDays.trim()} 天`)
+    }
+    toast.success(`已保存:${parts.join(';')}`)
   }
 
   const summary =
@@ -231,7 +282,7 @@ export function ChannelFileTray(): React.JSX.Element {
                 />
                 自动清理
               </label>
-              <span>保留</span>
+              <span>全局保留</span>
               <input
                 className="st-input wb-files-num"
                 type="number"
@@ -240,7 +291,41 @@ export function ChannelFileTray(): React.JSX.Element {
                 value={keepDays}
                 onChange={(e) => setKeepDays(Number(e.target.value))}
               />
-              <span>天(启动与每 6 小时清理一次;手动删除与「清空当前」立即生效)</span>
+              <span>天</span>
+              <span>单文件上限</span>
+              <input
+                className="st-input wb-files-num"
+                type="number"
+                min={0}
+                max={500}
+                value={maxMB}
+                onChange={(e) => setMaxMB(Number(e.target.value))}
+              />
+              <span>MB(0=不限,超限拒收并回执)</span>
+              {accountId !== null && (
+                <>
+                  <span>本账号保留覆盖</span>
+                  <input
+                    className="st-input wb-files-num"
+                    type="number"
+                    min={1}
+                    max={365}
+                    placeholder="空=全局"
+                    value={acctKeepDays}
+                    onChange={(e) => setAcctKeepDays(e.target.value)}
+                  />
+                  <span>天</span>
+                  {acctKeepDays.trim() !== '' && (
+                    <button
+                      type="button"
+                      className="st-btn ghost sm"
+                      onClick={() => void clearAcctOverride()}
+                    >
+                      清除覆盖
+                    </button>
+                  )}
+                </>
+              )}
               <button type="button" className="st-btn sm" onClick={() => void savePolicy()}>
                 保存策略
               </button>
