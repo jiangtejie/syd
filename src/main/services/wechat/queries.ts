@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- 读库层历史遗留宽类型,待专项重构收窄 */
 import { createHash } from 'node:crypto'
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
