@@ -333,6 +333,8 @@ export async function startFeishuAccount(
           accountId,
           `收到媒体 ${msg.message_id} type=${msg.chat_type} kind=${mtype} sender=${openId}`
         )
+        // 与文本一致:先给"思考中"表情即时反馈,处理完(保存/拒收/失败)再移除或回执
+        void addThinkingReaction(rt, msg.message_id!)
         void handleInboundMedia(
           accountId,
           rt,
@@ -709,12 +711,30 @@ async function handleInboundMedia(
         : `[收到文件] ${meta.name ?? '未命名'}`,
       { imFile: true, saved: file, bytes: buf.length }
     )
+    // 回执:让发送者确认机器人已收到(先前静默存档,用户误以为没响应)
+    const label = meta.name ? `「${meta.name}」` : ''
+    await safeReply(
+      rt,
+      messageId,
+      `已收到${kind === 'image' ? '图片' : '文件'} ${label}(${fmtBytes(buf.length)}),已保存 ✓`
+    )
+    void removeThinkingReaction(rt, messageId)
   } catch (e) {
     imLog(
       accountId,
       `媒体接收异常(${messageId}):${e instanceof Error ? (e.stack ?? e.message) : String(e)}`
     )
+    await safeReply(rt, messageId, '⚠️ 文件接收失败,请稍后重试或重新发送一次。')
+    void removeThinkingReaction(rt, messageId)
   }
+}
+
+/** 字节数 → 可读大小(飞书回执用) */
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
 /** 串行 drain:逐个处理队列中的最新消息(取时即删,天然只留最新) */
