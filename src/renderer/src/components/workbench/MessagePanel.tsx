@@ -490,6 +490,7 @@ function MessagePanel(): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [sendLabel, setSendLabel] = useState('')
+  const [attachMenu, setAttachMenu] = useState(false)
 
   const activeSession = sessions.find((s) => s.username === activeSessionId) || null
 
@@ -513,6 +514,7 @@ function MessagePanel(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话切换清空草稿与待发列表(全仓同款模式)
     setDraft('')
     setPendingFiles([])
+    setAttachMenu(false)
     if (lastSessionRef.current !== activeSessionId) {
       lastSessionRef.current = activeSessionId
       pendingScrollRef.current = true
@@ -725,28 +727,56 @@ function MessagePanel(): React.JSX.Element {
               ))}
             </div>
           )}
-          <div className="wb-chat-tools">
-            <button
-              type="button"
-              className="wb-chat-tool"
-              disabled={sending || !activeSession}
-              onClick={() => void pickImages()}
-            >
-              🖼 图片
-            </button>
-            <button
-              type="button"
-              className="wb-chat-tool"
-              disabled={sending || !activeSession}
-              onClick={() => void pickAnyFiles()}
-            >
-              📎 文件
-            </button>
-            <span className="wb-chat-tools-hint">
-              {sendLabel || '发送需微信窗口在前台;图片粘贴发送,其它格式按文件发送'}
-            </span>
-          </div>
+          {sendLabel && <div className="wb-chat-status">{sendLabel}</div>}
           <div className="wb-chat-composer-row">
+            {/* 附件入口:⊕ 弹出 图片/文件(主流布局:附件居左、正文居中、发送居右) */}
+            <div className="wb-chat-attach-wrap">
+              <button
+                type="button"
+                className="wb-chat-attach"
+                title="添加图片或文件"
+                aria-label="添加附件"
+                aria-expanded={attachMenu}
+                disabled={sending || !activeSession}
+                onClick={() => setAttachMenu((v) => !v)}
+              >
+                <span className="wb-chat-attach-plus">＋</span>
+              </button>
+              {attachMenu && (
+                <>
+                  <div className="wb-chat-menu-mask" onClick={() => setAttachMenu(false)} />
+                  <div className="wb-chat-attach-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={sending}
+                      onClick={() => {
+                        setAttachMenu(false)
+                        void pickImages()
+                      }}
+                    >
+                      🖼 图片
+                      <span>png/jpg/jpeg/bmp/gif/webp,可多选</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={sending}
+                      onClick={() => {
+                        setAttachMenu(false)
+                        void pickAnyFiles()
+                      }}
+                    >
+                      📎 文件
+                      <span>pdf/office/压缩包等,可多选</span>
+                    </button>
+                    <div className="wb-chat-attach-tip">
+                      发送需微信窗口在前台;图片按图片粘贴,其余按文件发送
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             <textarea
               className="wb-chat-textarea"
               placeholder="输入人工回复，Enter 发送，Shift+Enter 换行"
@@ -765,7 +795,11 @@ function MessagePanel(): React.JSX.Element {
               disabled={sending || (!draft.trim() && pendingFiles.length === 0)}
               onClick={() => void handleSend()}
             >
-              {sending ? '发送中…' : '发送'}
+              {sending
+                ? '发送中…'
+                : pendingFiles.length > 0 && !draft.trim()
+                  ? `发送(${pendingFiles.length})`
+                  : '发送'}
             </button>
           </div>
         </div>

@@ -2019,3 +2019,114 @@
   color: var(--text-4);
   max-width: 300px;
 }
+
+/* 单行对话框:⊕附件入口 + 浮层菜单 + 状态行 */
+.wb-chat-status {
+  align-self: flex-start;
+  font-size: 10.5px;
+  color: var(--brand);
+  margin-left: 44px;
+  animation: wb-run-pulse 1.1s ease-in-out infinite;
+}
+
+.wb-chat-attach-wrap {
+  position: relative;
+  flex: none;
+  align-self: flex-end;
+}
+
+.wb-chat-attach {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d9dce1;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.wb-chat-attach:hover:not(:disabled) {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.wb-chat-attach:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.wb-chat-attach-plus {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.wb-chat-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+}
+
+.wb-chat-attach-menu {
+  position: absolute;
+  left: 0;
+  bottom: 44px;
+  z-index: 10;
+  min-width: 200px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.14);
+  animation: wb-row-in 0.14s ease-out;
+}
+
+.wb-chat-attach-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-1);
+  cursor: pointer;
+  text-align: left;
+}
+
+.wb-chat-attach-menu > button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.wb-chat-attach-menu > button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wb-chat-attach-menu > button span {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+
+.wb-chat-attach-tip {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-light);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-4);
+}
