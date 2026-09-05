@@ -3,6 +3,9 @@ import { sendToChat, sendFileToChat, injectEnabled } from '../wechat/injector'
 import * as wxService from '../wechat/wxService'
 import { insertSendLog, countTodaySent } from '../../db/repos/sendLog'
 import { getConfigNumber, getConfigBoolean, setConfig } from '../../db/repos/config'
+import { createLogger } from '../logging'
+
+const sendLog = createLogger('send')
 
 /**
  * 发送执行层（T8，方案 §4.5）。
@@ -233,6 +236,14 @@ async function drain(): Promise<void> {
       verified: result.verified,
       createdAt: at
     })
+    sendLog.info(
+      `发送完成 ${job.source}/${job.mode} target=${job.targetName.slice(0, 24)} item=${auditText.slice(
+        0,
+        100
+      )} => status=${result.status} verified=${result.verified ?? 'n/a'}${
+        result.error ? ` err=${result.error.slice(0, 200)}` : ''
+      }`
+    )
 
     // 会话间间隔（随机 2.5~7s，仅当还有排队任务时）
     if (queue.length > 0 && getConfigBoolean('send.humanizeDelay', true)) {
@@ -265,6 +276,7 @@ export function resetCircuit(): void {
   halted = false
   failStreak = 0
   setConfig('send.halted', '0')
+  sendLog.info('熔断已复位')
 }
 
 export function getSendStatus(): SendStatusInfo {

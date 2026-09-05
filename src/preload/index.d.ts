@@ -162,6 +162,7 @@ declare global {
             minLevel?: 'debug' | 'info' | 'warn' | 'error'
             scope?: string
             query?: string
+            sinceMs?: number
             max?: number
           }) => Promise<{
             ok: boolean
@@ -170,6 +171,12 @@ declare global {
           }>
           openFolder: () => Promise<{ ok: boolean; error?: string }>
           clear: () => Promise<{ ok: boolean; removed?: number; error?: string }>
+          applyConfig: () => Promise<{
+            ok: boolean
+            keepDays?: number
+            ringMax?: number
+            error?: string
+          }>
         }
         media: {
           decryptImage: (opts: {

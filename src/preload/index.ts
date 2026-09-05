@@ -142,6 +142,7 @@ const api = {
         minLevel?: 'debug' | 'info' | 'warn' | 'error'
         scope?: string
         query?: string
+        sinceMs?: number
         max?: number
       }): Promise<{
         ok: boolean
@@ -151,7 +152,13 @@ const api = {
       openFolder: (): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:logs:openFolder'),
       clear: (): Promise<{ ok: boolean; removed?: number; error?: string }> =>
-        ipcRenderer.invoke('cs:logs:clear')
+        ipcRenderer.invoke('cs:logs:clear'),
+      applyConfig: (): Promise<{
+        ok: boolean
+        keepDays?: number
+        ringMax?: number
+        error?: string
+      }> => ipcRenderer.invoke('cs:logs:applyConfig')
     },
     media: {
       decryptImage: (opts: {

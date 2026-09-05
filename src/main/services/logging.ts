@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { getConfig } from '../db/repos/config'
 
 /**
  * 统一日志模块(主进程)。
@@ -24,14 +25,30 @@ export interface LogEntry {
 }
 
 const LEVEL_ORDER: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 }
-const KEEP_DAYS = 7
+
+let KEEP_DAYS = 7
 const MAX_DAY_BYTES = 6 * 1024 * 1024
-const RING_MAX = 1500
+let RING_MAX = 1500
 
 let dir = ''
 let dayKey = ''
 let fileSeq = 0
 const ring: LogEntry[] = []
+
+/** 读取 app_config(logs.keepDays/logs.ringMax)刷新模块参数;每次写入或设置变更时调用 */
+export function reconfigureLogs(): void {
+  const days = Math.floor(Number(getConfig('logs.keepDays')))
+  KEEP_DAYS = Number.isFinite(days) && days >= 1 && days <= 30 ? days : 7
+  const max = Math.floor(Number(getConfig('logs.ringMax')))
+  RING_MAX = Number.isFinite(max) && max >= 100 && max <= 5000 ? max : 1500
+  const exceed = ring.length - RING_MAX
+  if (exceed > 0) ring.splice(0, exceed)
+}
+
+/** 日志保留策略(供设置页回显) */
+export function logSettings(): { keepDays: number; ringMax: number } {
+  return { keepDays: KEEP_DAYS, ringMax: RING_MAX }
+}
 
 function now(): Date {
   return new Date()
@@ -154,13 +171,16 @@ export function recentLogs(opts: {
   minLevel?: LogLevel
   scope?: string
   query?: string
+  sinceMs?: number
   max?: number
 }): LogEntry[] {
   const min = opts.minLevel ? LEVEL_ORDER[opts.minLevel] : 0
   const q = (opts.query ?? '').trim().toLowerCase()
+  const since = typeof opts.sinceMs === 'number' && opts.sinceMs > 0 ? opts.sinceMs : 0
   const out: LogEntry[] = []
   for (let i = ring.length - 1; i >= 0; i--) {
     const e = ring[i]
+    if (e.ts < since) continue
     if (LEVEL_ORDER[e.level] < min) continue
     if (opts.scope && opts.scope !== 'all' && e.scope !== opts.scope) continue
     if (q && !`${e.scope} ${e.msg}`.toLowerCase().includes(q)) continue

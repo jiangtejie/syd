@@ -14,8 +14,10 @@ interface LogRow {
 }
 
 const logApi = window.api?.cs?.logs
+const configApi = window.api?.cs?.config
 const LEVELS = ['全部', 'error', 'warn', 'info'] as const
 const SCOPE_ALL = '__all__'
+const HOUR_MS = 3600_000
 
 function fmtTime(ts: number): string {
   const d = new Date(ts)
@@ -32,8 +34,21 @@ export function LogSection(): React.JSX.Element {
   const [scopes, setScopes] = useState<string[]>([])
   const [query, setQuery] = useState('')
   const [auto, setAuto] = useState(true)
+  const [hourOnly, setHourOnly] = useState(false)
+  const [keepDays, setKeepDays] = useState(7)
+  const [ringMax, setRingMax] = useState(1500)
   const [loading, setLoading] = useState(false)
   const qRef = useRef('')
+
+  // 初始回显日志策略(app_config;无配置用默认)
+  useEffect(() => {
+    void configApi?.getAll().then((cfg) => {
+      const d = Number(cfg['logs.keepDays'])
+      const m = Number(cfg['logs.ringMax'])
+      if (Number.isFinite(d) && d >= 1 && d <= 30) setKeepDays(Math.floor(d))
+      if (Number.isFinite(m) && m >= 100 && m <= 5000) setRingMax(Math.floor(m))
+    })
+  }, [])
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -43,6 +58,7 @@ export function LogSection(): React.JSX.Element {
           minLevel: level === '全部' ? 'debug' : (level as 'error' | 'warn' | 'info'),
           scope: scope === SCOPE_ALL ? undefined : scope,
           query: qRef.current.trim() || undefined,
+          sinceMs: hourOnly ? Date.now() - HOUR_MS : undefined,
           max: 800
         })
         .catch(() => null)
@@ -60,7 +76,7 @@ export function LogSection(): React.JSX.Element {
     } finally {
       setLoading(false)
     }
-  }, [level, scope])
+  }, [hourOnly, level, scope])
 
   // 自动刷新(3s);仅在 tab 挂载期间运行
   useEffect(() => {
@@ -102,6 +118,54 @@ export function LogSection(): React.JSX.Element {
       .writeText(line)
       .then(() => toast.success('已复制该条日志'))
       .catch(() => toast.error('复制失败'))
+  }
+
+  const linesOf = (list: LogRow[]): string =>
+    list.map((r) => `[${fmtTime(r.ts)}][${r.level.toUpperCase()}][${r.scope}] ${r.msg}`).join('\n')
+
+  const copyAll = async (): Promise<void> => {
+    const list = rows ?? []
+    if (list.length === 0) return toast.error('当前没有可复制的日志')
+    void navigator.clipboard
+      .writeText(linesOf(list))
+      .then(() => toast.success(`已复制 ${list.length} 条日志`))
+      .catch(() => toast.error('复制失败'))
+  }
+
+  const exportFile = async (): Promise<void> => {
+    const list = rows ?? []
+    if (list.length === 0) return toast.error('当前没有可导出的日志')
+    const d = new Date()
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(
+      d.getDate()
+    ).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(
+      2,
+      '0'
+    )}`
+    const blob = new Blob([`${linesOf(list)}\n`], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `app-logs-${stamp}.log`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000)
+    toast.success(`已导出 ${list.length} 条日志`)
+  }
+
+  /** 应用保留天数/内存条数(即时生效,无需重启) */
+  const savePolicy = async (): Promise<void> => {
+    const d = Math.min(Math.max(Math.floor(keepDays) || 7, 1), 30)
+    const m = Math.min(Math.max(Math.floor(ringMax) || 1500, 100), 5000)
+    setKeepDays(d)
+    setRingMax(m)
+    await Promise.all([
+      configApi?.set('logs.keepDays', String(d)),
+      configApi?.set('logs.ringMax', String(m))
+    ])
+    const r = await logApi?.applyConfig().catch(() => null)
+    toast.success(r?.ok ? '日志策略已应用' : (r?.error ?? '策略应用失败'))
   }
 
   return (
@@ -147,16 +211,56 @@ export function LogSection(): React.JSX.Element {
         >
           {loading ? '读取中…' : '刷新'}
         </button>
+        <label className="lg-auto">
+          <input
+            type="checkbox"
+            checked={hourOnly}
+            onChange={(e) => setHourOnly(e.target.checked)}
+          />
+          仅最近 1 小时
+        </label>
+        <label className="lg-auto">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+          自动刷新(3s)
+        </label>
+        <button type="button" className="st-btn ghost" onClick={() => void copyAll()}>
+          复制结果
+        </button>
+        <button type="button" className="st-btn ghost" onClick={() => void exportFile()}>
+          导出文件
+        </button>
         <button type="button" className="st-btn ghost" onClick={() => void openFolder()}>
           打开日志目录
         </button>
         <button type="button" className="st-btn ghost danger" onClick={() => void clearLogs()}>
           清空日志
         </button>
-        <label className="lg-auto">
-          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
-          自动刷新(3s)
-        </label>
+      </div>
+
+      <div className="lg-policy">
+        保留天数
+        <input
+          className="st-input lg-num"
+          type="number"
+          min={1}
+          max={30}
+          value={keepDays}
+          onChange={(e) => setKeepDays(Number(e.target.value))}
+        />
+        内存缓存条数
+        <input
+          className="st-input lg-num"
+          type="number"
+          min={100}
+          max={5000}
+          step={100}
+          value={ringMax}
+          onChange={(e) => setRingMax(Number(e.target.value))}
+        />
+        <button type="button" className="st-btn ghost sm" onClick={() => void savePolicy()}>
+          应用策略
+        </button>
+        <span className="lg-meta">按日文件保留天数与内存尾部条数,即时生效无需重启</span>
       </div>
 
       <div className="lg-meta">

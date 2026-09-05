@@ -3,6 +3,9 @@ import { analyzeGroupIssues, hasGroupWatermark, listFeedbackIssues } from './ana
 import { getSessions } from '../wechat/wxService'
 import { getConfig } from '../../db/repos/config'
 import { addDbChangeHook, type DbChangedPayload } from '../wechat/watchService'
+import { createLogger } from '../logging'
+
+const issueLog = createLogger('issue')
 
 /**
  * 群问题后台调度器（保守档）。
@@ -78,13 +81,19 @@ async function runPass(wxid: string): Promise<void> {
   if (runningPass.has(wxid) || !enabled()) return
   runningPass.add(wxid)
   lastPassAt.set(wxid, Date.now())
+  let added = 0
+  let llmGroups = 0
   try {
     const groups = listCandidates(wxid)
     for (const g of groups) {
       // 冷启动保护：尚无水位的群跳过（首次全量由打开群/手动分析触发），后台只做增量
       if (!hasGroupWatermark(wxid, g.username)) continue
-      const r = await analyzeGroupIssues(wxid, g.username, g.displayName).catch(() => null)
+      const r = await analyzeGroupIssues(wxid, g.username, g.displayName).catch((e: unknown) => {
+        issueLog.error(`增量分析失败 ${wxid} ${g.displayName}`, e)
+        return null
+      })
       if (r && r.ok && !r.skipped && r.count && r.count > 0) {
+        added += r.count
         const k = `${wxid}|${g.username}`
         const last = groupNotifiedAt.get(k)
         const now = Date.now()
@@ -94,8 +103,12 @@ async function runPass(wxid: string): Promise<void> {
         }
       }
       if (r && r.ok && !r.skipped && r.method === 'llm') {
+        llmGroups += 1
         await new Promise((res) => setTimeout(res, LLM_PACE_MS))
       }
+    }
+    if (groups.length > 0) {
+      issueLog.debug(`增量巡检 ${wxid} groups=${groups.length} added=${added} llm=${llmGroups}`)
     }
   } finally {
     runningPass.delete(wxid)
@@ -162,9 +175,12 @@ async function runEscalate(wxid: string): Promise<void> {
         fresh.push({ id: i.id, reason })
       }
     }
-    if (fresh.length > 0) sendChanged(wxid, { escalate: fresh.length })
-  } catch {
-    /* 读取/广播异常静默，下一轮重试 */
+    if (fresh.length > 0) {
+      sendChanged(wxid, { escalate: fresh.length })
+      issueLog.info(`盯办升级 ${wxid} n=${fresh.length} items=${fresh.map((f) => f.id).join(',')}`)
+    }
+  } catch (e) {
+    issueLog.error(`盯办巡检异常 ${wxid}`, e)
   } finally {
     runningEscalate.delete(wxid)
   }

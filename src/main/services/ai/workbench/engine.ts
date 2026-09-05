@@ -15,6 +15,9 @@ import { buildWorkbenchSystem } from './context'
 import { buildWorkbenchToolSet, type WbEvidenceRow } from './tools'
 import { emitWorkbenchEvent } from './events'
 import { describeModelError } from '../modelErrors'
+import { createLogger } from '../../logging'
+
+const wbLog = createLogger('wb')
 
 /**
  * 工作台引擎(AI SDK 原生工具循环;不自研 loop/协议/流式)。
@@ -274,6 +277,11 @@ export async function sendWorkbenchMessage(
   const handle: RunHandle = { controller: new AbortController(), active: true }
   running.set(sessionId, handle)
   const signal = handle.controller.signal
+  wbLog.info(
+    `[会话${sessionId}] 开始生成 q=${msg.slice(0, 120)}${
+      boundWxid ? ` wxid=${boundWxid}` : ''
+    }${images.length > 0 ? ` 附图${images.length}` : ''}`
+  )
 
   try {
     // 工具痕迹/压缩标记行仅用于展示,不进入模型上下文与压缩统计
@@ -291,6 +299,7 @@ export async function sendWorkbenchMessage(
       const compactText = summary ?? '旧对话过长已压缩,仅保留最近一段(摘要生成失败)。'
       appendChatMessage(sessionId, 'assistant', 'compact', compactText)
       emitWorkbenchEvent(sessionId, { type: 'compaction', text: compactText })
+      wbLog.info(`[会话${sessionId}] 上下文已压缩(rows=${allRows.length})`)
     }
     const messages: ModelMessage[] = historyToMessages(rows)
 
@@ -472,6 +481,7 @@ export async function sendWorkbenchMessage(
     flushSeg()
 
     if (signal.aborted) {
+      wbLog.info(`[会话${sessionId}] 已停止(用户中止,落库前)`)
       emitWorkbenchEvent(sessionId, { type: 'status', text: '已停止' })
       return { ok: true }
     }
@@ -525,17 +535,22 @@ export async function sendWorkbenchMessage(
     touchChat(sessionId)
     emitWorkbenchEvent(sessionId, { type: 'done', messageId })
     recordRel(true)
+    wbLog.info(
+      `[会话${sessionId}] 完成 msgId=${messageId} tools=${hasTool ? 'yes' : 'no'} tokens=${usageIn}/${usageOut}`
+    )
     // 默认标题会话:首轮回答落库后后台总结标题(不阻塞回复与事件)
     void maybeAutoTitle(sessionId, model, trimmed)
     return { ok: true }
   } catch (e) {
     const aborted = signal.aborted || (e instanceof Error && e.name === 'AbortError')
     if (aborted) {
+      wbLog.info(`[会话${sessionId}] 已停止(用户中止)`)
       emitWorkbenchEvent(sessionId, { type: 'status', text: '已停止' })
       return { ok: true }
     }
     const rawErr = e instanceof Error ? e.message : String(e)
     const errMsg = describeModelError(e) || rawErr
+    wbLog.error(`[会话${sessionId}] 生成失败: ${errMsg}`, e)
     recordRel(false, errMsg)
     appendChatMessage(sessionId, 'assistant', 'error', errMsg)
     emitWorkbenchEvent(sessionId, { type: 'error', text: errMsg })
