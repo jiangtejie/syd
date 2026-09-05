@@ -115,7 +115,8 @@ function registerMediaProtocol(): void {
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
-    height: 900,
+    // 默认高度取较高档位(1080p 屏含任务栏仍完整可见),让三栏消息区更舒展
+    height: 980,
     // 右栏(群问题/回复建议)加宽至 520px 后,消息区仍需保有可用宽度
     minWidth: 1240,
     minHeight: 720,
