@@ -205,6 +205,27 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
       }
     })
   }
+  // 历史行:上下文压缩标记(持久化展示,不再只存在于本轮内存)
+  if (!isUser && msg.kind === 'compact') {
+    return (
+      <div className="wb-row wb-row-compact">
+        <CompactionMarker text={content} />
+      </div>
+    )
+  }
+  // 历史行:工具痕迹(刷新/切走后可回看调用与结果)
+  if (!isUser && msg.kind === 'tool_call') {
+    const m = meta as Record<string, unknown> | null
+    const toolBlock: WbTurnBlock = {
+      id: msg.id,
+      kind: 'tool',
+      name: typeof m?.name === 'string' && m.name ? m.name : '工具',
+      status: m?.status === 'fail' ? 'fail' : 'done',
+      args: typeof m?.args === 'string' && m.args ? m.args : undefined,
+      output: typeof m?.output === 'string' && m.output ? m.output : undefined
+    }
+    return <WbToolCard b={toolBlock} />
+  }
   return (
     <div className={`wb-row${isUser ? ' is-user' : ''}${isError ? ' is-error' : ''}`}>
       <div className="wb-bubble">

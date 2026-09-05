@@ -267,6 +267,15 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     if (res?.ok && res.messages) {
       const msgs = res.messages as ChatMsgItem[]
       set({ messages: msgs, loading: false })
+      // 压缩标记已持久化为消息行:移除同会话的内存标记,避免双份展示
+      if (msgs.some((m) => m.kind === 'compact')) {
+        const stNow = useWorkbenchChatStore.getState()
+        if (stNow.compactBySid[id] !== undefined) {
+          const compactBySid = { ...stNow.compactBySid }
+          delete compactBySid[id]
+          useWorkbenchChatStore.setState({ compactBySid })
+        }
+      }
       // 回显消解:落库里已出现同内容的用户消息(引擎发送即落库),回显不再重复上屏
       const st = useWorkbenchChatStore.getState()
       const pending = st.pendingTexts[id]

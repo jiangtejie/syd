@@ -82,7 +82,13 @@ function historyToMessages(
 ): ModelMessage[] {
   const turns: ModelMessage[] = []
   for (const r of rows) {
-    if (r.kind === 'tool_call' || r.kind === 'tool_result' || r.kind === 'error') continue
+    if (
+      r.kind === 'tool_call' ||
+      r.kind === 'tool_result' ||
+      r.kind === 'compact' ||
+      r.kind === 'error'
+    )
+      continue
     if (r.role === 'user') {
       turns.push({ role: 'user', content: r.content } as ModelMessage)
     } else if (r.role === 'assistant') {
@@ -168,25 +174,66 @@ export async function sendWorkbenchMessage(
   const signal = handle.controller.signal
 
   try {
-    let rows = listChatMessages(sessionId).map((r) => ({
-      role: r.role,
-      kind: r.kind,
-      content: r.content
-    }))
+    // 工具痕迹/压缩标记行仅用于展示,不进入模型上下文与压缩统计
+    const allRows = listChatMessages(sessionId)
+    let rows = allRows
+      .filter((r) => r.kind !== 'tool_call' && r.kind !== 'tool_result' && r.kind !== 'compact')
+      .map((r) => ({ role: r.role, kind: r.kind, content: r.content }))
     let summary: string | null = null
     const chars = rows.reduce((n, r) => n + r.content.length, 0)
     if (rows.length >= COMPRESS_THRESHOLD_ROWS && chars > COMPRESS_THRESHOLD_CHARS) {
       summary = await compressHistory(model, rows)
       rows = rows.slice(rows.length - Math.ceil(rows.length / 2))
-      // 压缩是「历史透明变更」:先于生成推送给渲染端,界面在消息流顶部展示可展开标记
-      emitWorkbenchEvent(sessionId, {
-        type: 'compaction',
-        text: summary ?? '旧对话过长已压缩,仅保留最近一段(摘要生成失败)。'
-      })
+      // 压缩是「历史透明变更」:先于生成推送给渲染端,界面在消息流顶部展示可展开标记;
+      // 并落一条 compact 展示行,持久可回看(刷新/重开仍在,重试时随尾部一并清理)
+      const compactText = summary ?? '旧对话过长已压缩,仅保留最近一段(摘要生成失败)。'
+      appendChatMessage(sessionId, 'assistant', 'compact', compactText)
+      emitWorkbenchEvent(sessionId, { type: 'compaction', text: compactText })
     }
     const messages: ModelMessage[] = historyToMessages(rows)
     const system = buildWorkbenchSystem(boundWxid, { summary })
     const toolSet = buildWorkbenchToolSet(boundWxid, sessionId)
+
+    // 本轮时间线日志:正文按工具边界分段,工具痕迹带参数/结果;
+    // 只在整轮成功时落库(失败/中止不写半截痕迹)
+    interface TurnLogEntry {
+      kind: 'text' | 'tool'
+      text?: string
+      name?: string
+      args?: string
+      output?: string
+      status?: 'pending' | 'done' | 'fail'
+    }
+    const turnLog: TurnLogEntry[] = []
+    let seg = ''
+    const flushSeg = (): void => {
+      const s = seg.trim()
+      seg = ''
+      if (s) turnLog.push({ kind: 'text', text: s })
+    }
+    const reasonMeta = (): Record<string, unknown> | null => {
+      const r = reasoning.trim()
+      if (!r) return null
+      const m: Record<string, unknown> = { reasoning: r }
+      if (reasonStartedAt > 0) {
+        m.reasoningMs = Math.max(0, (reasonEndedAt || Date.now()) - reasonStartedAt)
+      }
+      return m
+    }
+    const pushTool = (name: string, args?: string): void => {
+      flushSeg()
+      turnLog.push({ kind: 'tool', name, args, status: 'pending' })
+    }
+    const finishTool = (name: string, output: string, status: 'done' | 'fail'): void => {
+      for (let i = turnLog.length - 1; i >= 0; i--) {
+        const e = turnLog[i]
+        if (e.kind === 'tool' && e.name === name && e.status === 'pending') {
+          e.output = output
+          e.status = status
+          return
+        }
+      }
+    }
 
     emitWorkbenchEvent(sessionId, { type: 'status', text: '生成中' })
     let content = ''
@@ -209,6 +256,7 @@ export async function sendWorkbenchMessage(
     for await (const part of result.fullStream) {
       if (part.type === 'text-delta') {
         content += part.text
+        seg += part.text
         emitWorkbenchEvent(sessionId, { type: 'delta', token: part.text })
       } else if (part.type === 'reasoning-delta') {
         // 思考型模型(reasoner)的推理过程:实时推送,收尾随 meta.reasoning 落库
@@ -226,6 +274,7 @@ export async function sendWorkbenchMessage(
         }
       } else if (part.type === 'tool-call') {
         const io = clipToolIO((part as { input?: unknown }).input)
+        pushTool(part.toolName, io.text)
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
           tool: part.toolName,
@@ -234,6 +283,7 @@ export async function sendWorkbenchMessage(
         })
       } else if (part.type === 'tool-result') {
         const io = clipToolIO((part as { output?: unknown }).output)
+        finishTool(part.toolName, io.text, 'done')
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
           tool: part.toolName,
@@ -244,6 +294,7 @@ export async function sendWorkbenchMessage(
       } else if (part.type === 'tool-error') {
         const msg =
           part.error instanceof Error ? part.error.message : String(part.error ?? '').trim()
+        finishTool(part.toolName, msg.slice(0, TOOL_IO_CAP) || '工具执行失败(无详情)', 'fail')
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
           tool: part.toolName,
@@ -259,6 +310,9 @@ export async function sendWorkbenchMessage(
       }
     }
 
+    // 落库前收尾:把最后一个文本段计入时间线日志
+    flushSeg()
+
     if (signal.aborted) {
       emitWorkbenchEvent(sessionId, { type: 'status', text: '已停止' })
       return { ok: true }
@@ -270,15 +324,43 @@ export async function sendWorkbenchMessage(
       emitWorkbenchEvent(sessionId, { type: 'error', text: err })
       return { ok: true }
     }
-    const meta: Record<string, unknown> = {}
-    if (usageIn || usageOut) meta.tokens = { input: usageIn, output: usageOut }
-    if (reasoning.trim()) {
-      meta.reasoning = reasoning.trim()
-      if (reasonStartedAt > 0) {
-        meta.reasoningMs = Math.max(0, (reasonEndedAt || Date.now()) - reasonStartedAt)
-      }
+    const hasTool = turnLog.some((e) => e.kind === 'tool')
+    const tokensMeta: Record<string, unknown> = {}
+    if (usageIn || usageOut) tokensMeta.tokens = { input: usageIn, output: usageOut }
+    const reason = reasonMeta()
+
+    let messageId: number
+    if (!hasTool) {
+      // 无工具:保持单条文本(现状),meta 附加 tokens/推理过程
+      const meta: Record<string, unknown> = { ...tokensMeta }
+      if (reason) Object.assign(meta, reason)
+      messageId = appendChatMessage(sessionId, 'assistant', 'text', trimmed, meta)
+    } else {
+      // 有工具:按发生顺序把时间线落库(文本分段 + 工具痕迹行),历史/刷新均可回看;
+      // 推理过程挂首段文本,用量挂末段文本
+      let reasonPlaced = false
+      let lastId = 0
+      turnLog.forEach((e, i) => {
+        const isLast = i === turnLog.length - 1
+        if (e.kind === 'text') {
+          const meta: Record<string, unknown> = {}
+          if (reason && !reasonPlaced) {
+            Object.assign(meta, reason)
+            reasonPlaced = true
+          }
+          if (isLast) Object.assign(meta, tokensMeta)
+          lastId = appendChatMessage(sessionId, 'assistant', 'text', e.text ?? '', meta)
+        } else {
+          appendChatMessage(sessionId, 'assistant', 'tool_call', '', {
+            name: e.name ?? '',
+            args: e.args ?? '',
+            output: e.output ?? '',
+            status: e.status === 'fail' ? 'fail' : 'done'
+          })
+        }
+      })
+      messageId = lastId
     }
-    const messageId = appendChatMessage(sessionId, 'assistant', 'text', trimmed, meta)
     touchChat(sessionId)
     emitWorkbenchEvent(sessionId, { type: 'done', messageId })
     return { ok: true }

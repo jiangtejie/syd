@@ -423,7 +423,7 @@ export interface ChatSessionItem {
 }
 
 export type ChatMsgRole = 'user' | 'assistant' | 'system'
-export type ChatMsgKind = 'text' | 'tool_call' | 'tool_result' | 'error'
+export type ChatMsgKind = 'text' | 'tool_call' | 'tool_result' | 'compact' | 'error'
 
 export interface ChatMsgItem {
   id: number

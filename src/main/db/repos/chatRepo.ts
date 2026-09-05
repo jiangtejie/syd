@@ -40,7 +40,7 @@ function rowToMsg(r: ChatMsgRow): ChatMsgItem {
     id: r.id,
     sessionId: r.session_id,
     role: (r.role === 'assistant' || r.role === 'system' ? r.role : 'user') as ChatMsgRole,
-    kind: (['text', 'tool_call', 'tool_result', 'error'].includes(r.kind)
+    kind: (['text', 'tool_call', 'tool_result', 'compact', 'error'].includes(r.kind)
       ? r.kind
       : 'text') as ChatMsgKind,
     content: r.content,
