@@ -1018,7 +1018,9 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               className={`wb-ctxline${ctxPct >= 90 ? ' is-hot' : ''}`}
               title="当前会话上下文估算占用;超过预算会先压缩旧对话再继续"
             >
-              <span className="wb-ctxline-label">上下文 {ctxPct}%{ctxPct >= 90 ? ' · 接近上限,新一轮将先压缩旧对话' : ''}</span>
+              <span className="wb-ctxline-label">
+                上下文 {ctxPct}%{ctxPct >= 90 ? ' · 接近上限,新一轮将先压缩旧对话' : ''}
+              </span>
               <span className="wb-ctxline-bar">
                 <i style={{ width: `${ctxPct}%` }} />
               </span>
