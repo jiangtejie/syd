@@ -717,12 +717,13 @@
   gap: 5px;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--text-3);
-  margin-bottom: 5px;
+  color: var(--info);
+  margin-bottom: 6px;
 }
 
-.wb-reason-text,
-.wb-reason-static {
+/* 思考内容统一为「提示性浅灰卡」:不受 .wb-bubble pre(代码块深底)影响 */
+.wb-bubble pre.wb-reason-text,
+.wb-bubble pre.wb-reason-static {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
@@ -730,23 +731,29 @@
   font-size: 12px;
   line-height: 1.65;
   color: var(--text-2);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  scrollbar-width: thin;
+  user-select: text;
 }
 
 .wb-reason-text {
   max-height: 240px;
   overflow-y: auto;
-  scrollbar-width: thin;
+  padding: 8px 10px;
 }
 
 .wb-reason-static {
   max-height: 300px;
   overflow-y: auto;
   padding: 8px 10px;
-  border-radius: var(--r-sm);
-  background: var(--bg-hover);
-  border: 1px solid var(--border-light);
-  scrollbar-width: thin;
   animation: wb-row-in 0.16s ease-out;
+}
+
+/* 实时推理卡:白色卡面衬托内部浅灰内容(与 markdown 代码块深底明确区分) */
+.wb-bubble.wb-reason-live {
+  background: var(--bg-panel);
 }
 
 .wb-reason-toggle {
