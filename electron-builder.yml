@@ -5,12 +5,16 @@ directories:
 files:
   - '!**/.vscode/*'
   - '!src/*'
+  - '!resources/**'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+extraResources:
+  # 注入脚本放到 app.asar 旁 resources/ps(运行时代码按 process.resourcesPath/ps 读取)
+  - from: resources/ps
+    to: ps
 asarUnpack:
-  - resources/**
   # AI SDK(ESM,主进程 external 加载):从真实路径加载避免 asar 内 ESM 限制
   - node_modules/ai/**
   - node_modules/@ai-sdk/**
