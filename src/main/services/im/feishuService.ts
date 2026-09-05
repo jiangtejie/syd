@@ -1,9 +1,10 @@
 import { appendFileSync, existsSync, mkdirSync, statSync, truncateSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import * as lark from '@larksuiteoapi/node-sdk'
 import { getImAccountConfig, listMappedSessionIds } from '../../db/repos/imRepo'
-import { listChatMessages } from '../../db/repos/chatRepo'
+import { appendChatMessage, listChatMessages } from '../../db/repos/chatRepo'
 import { createImSession } from './sessionBridge'
 import {
   confirmToolRun,
@@ -20,8 +21,10 @@ import type { AiChatEvent } from '../../../shared/types'
 
 /**
  * 飞书机器人通道(IM 一期)。
- * - 官方 WebSocket 长连接收消息;仅响应 私聊(p2p)或群内被 @ 本应用 的文本;
+ * - 官方 WebSocket 长连接收消息;响应 私聊(p2p)或群内被 @ 本应用 的 文本/图片/文件;
  * - 每个外部聊天自动映射一个本地 AI 会话(独立上下文,复用记忆/工具/ReAct 引擎);
+ * - 图片/文件:下载到 userData/im-files/acct-<账号>/user-<open_id>/<yyyyMMdd>/,
+ *   并在该会话上下文补一条「对方发送了图片/文件」留痕(不触发 AI 生成);
  * - 回复走原消息 reply;长文本按 3000 字分片;
  * - 事件处理立即 ack(长连接 3s 内需应答,超时平台会重推),AI 生成异步进行,结果用
  *   REST API 回发(与长连接状态无关),同一 message_id 去重防平台重推造成双回复。
@@ -316,10 +319,6 @@ export async function startFeishuAccount(
         )
         return
       }
-      if (msg.message_type !== 'text') {
-        imLog(accountId, `跳过:非文本消息 ${msg.message_type ?? ''}(${msg.message_id})`)
-        return
-      }
       if (senderType && senderType !== 'user') {
         imLog(accountId, `跳过:非用户消息 sender_type=${senderType}(${msg.message_id})`)
         return
@@ -335,19 +334,41 @@ export async function startFeishuAccount(
           return
         }
       }
-      const text = parseText(msg.content)
-      if (!text) {
-        imLog(accountId, `跳过:文本为空(${msg.message_id})`)
-        return
-      }
+      const openId = senderIds.openId ?? senderIds.unionId ?? senderIds.userId ?? '?'
       if (isDuplicate(rt, msg.message_id)) {
         imLog(accountId, `跳过:重复推送 ${msg.message_id}`)
         return
       }
-      const openId = senderIds.openId ?? senderIds.unionId ?? senderIds.userId ?? '?'
       // 业务白名单(绑定 + 配置后生效):名单外用户的消息整体忽略,不触发 AI
       if (!allowUser(rt, senderIds)) {
         imLog(accountId, `跳过:白名单外用户 ${openId}(${msg.message_id})`)
+        return
+      }
+      const mtype = msg.message_type ?? ''
+      if (mtype === 'image' || mtype === 'file') {
+        imLog(
+          accountId,
+          `收到媒体 ${msg.message_id} type=${msg.chat_type} kind=${mtype} sender=${openId}`
+        )
+        void handleInboundMedia(
+          accountId,
+          rt,
+          msg.chat_id!,
+          msg.message_id!,
+          mtype,
+          msg.content,
+          senderIds,
+          openId
+        )
+        return
+      }
+      if (mtype !== 'text') {
+        imLog(accountId, `跳过:暂不支持的媒体类型 ${mtype}(${msg.message_id})`)
+        return
+      }
+      const text = parseText(msg.content)
+      if (!text) {
+        imLog(accountId, `跳过:文本为空(${msg.message_id})`)
         return
       }
       imLog(
@@ -476,6 +497,139 @@ async function handleInbound(
       rt,
       replyMessageId,
       `处理失败:${clipForChannel(String(e instanceof Error ? e.message : e))}`
+    )
+  }
+}
+
+/* ── 图片/文件接收:下载到本地(按 账号/飞书用户/日期 隔离),并在会话上下文留痕 ── */
+
+/** 用户数据目录下的隔离根:im-files/acct-<账号id>/user-<open_id>/<yyyyMMdd>/ */
+function mediaRoot(): string {
+  return join(app.getPath('userData'), 'im-files')
+}
+
+/** 目录/文件名安全化(去路径分隔与空格,长度受限) */
+function safeSeg(s: string, fallback: string): string {
+  const t = (s || '')
+    .trim()
+    .replace(/[\\/:*?"<>|\r\n]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return (t || fallback).slice(0, 90)
+}
+
+/** 解析 image/file 消息 content(JSON) → {key, name} */
+function mediaKeyOf(
+  kind: 'image' | 'file',
+  contentRaw: string | undefined
+): { key: string; name?: string } | null {
+  try {
+    const obj = JSON.parse(contentRaw ?? '') as Record<string, unknown>
+    const key = kind === 'image' ? String(obj.image_key ?? '') : String(obj.file_key ?? '')
+    const name = typeof obj.file_name === 'string' ? obj.file_name : undefined
+    return key ? { key, name } : null
+  } catch {
+    return null
+  }
+}
+
+/** 文件扩展名推断:优先原文件名,失败按魔数(图片)/bin */
+function extOf(buf: Buffer, kind: 'image' | 'file', name?: string): string {
+  const fromName = name ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() || '' : ''
+  if (kind === 'file' && /^[a-z0-9]{1,8}$/.test(fromName)) return fromName
+  if (kind === 'image') {
+    if (buf.length > 12) {
+      const head = buf.subarray(0, 12).toString('latin1')
+      if (buf[0] === 0x89 && buf[1] === 0x50) return 'png'
+      if (buf[0] === 0xff && buf[1] === 0xd8) return 'jpg'
+      if (head.startsWith('GIF87a') || head.startsWith('GIF89a')) return 'gif'
+      if (buf[0] === 0x42 && buf[1] === 0x4d) return 'bmp'
+      if (head.startsWith('RIFF') && buf.subarray(8, 12).toString('latin1') === 'WEBP') {
+        return 'webp'
+      }
+    }
+    return fromName || 'bin'
+  }
+  return fromName || 'bin'
+}
+
+/** 下载飞书消息资源(im 消息资源接口),返回字节缓冲 */
+async function downloadFeishuResource(
+  rt: Runtime,
+  messageId: string,
+  fileKey: string,
+  kind: 'image' | 'file'
+): Promise<Buffer | null> {
+  const token = await (
+    rt.client as unknown as { tokenManager: { getTenantAccessToken(): Promise<string> } }
+  ).tokenManager.getTenantAccessToken()
+  const url = `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(
+    messageId
+  )}/resources/${encodeURIComponent(fileKey)}?type=${kind}`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) {
+    imLog(rt.accountId, `资源下载失败 msg=${messageId} key=${fileKey} http=${res.status}`)
+    return null
+  }
+  const buf = Buffer.from(await res.arrayBuffer())
+  if (buf.length === 0) {
+    imLog(rt.accountId, `资源下载为空 msg=${messageId} key=${fileKey}`)
+    return null
+  }
+  return buf
+}
+
+/**
+ * 收到 image/file 消息:按 账号 → 飞书用户 → 日期 隔离落盘,
+ * 并在该外部会话上下文补一条「对方发送了图片/文件」记录(供后续 AI 感知),不触发 AI 回复。
+ */
+async function handleInboundMedia(
+  accountId: number,
+  rt: Runtime,
+  chatId: string,
+  messageId: string,
+  kind: 'image' | 'file',
+  contentRaw: string | undefined,
+  _senderIds: SenderIds,
+  openId: string
+): Promise<void> {
+  try {
+    const meta = mediaKeyOf(kind, contentRaw)
+    if (!meta) {
+      imLog(accountId, `跳过:媒体消息缺 key(${messageId})`)
+      return
+    }
+    const buf = await downloadFeishuResource(rt, messageId, meta.key, kind)
+    if (!buf) return
+    const ext = extOf(buf, kind, meta.name)
+    const now = new Date()
+    const day = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
+      now.getDate()
+    ).padStart(2, '0')}`
+    const dir = join(mediaRoot(), `acct-${accountId}`, `user-${safeSeg(openId, 'unknown')}`, day)
+    await mkdir(dir, { recursive: true })
+    const base = safeSeg(meta.name ?? (kind === 'image' ? 'image' : 'file'), kind)
+    const file = join(dir, `${Date.now()}_${base}.${ext}`)
+    await writeFile(file, buf)
+    imLog(
+      accountId,
+      `已保存${kind === 'image' ? '图片' : '文件'} ${meta.name ?? ''}(${buf.length} B) -> ${file}`
+    )
+    // 对话感知:外部会话上下文补一条用户侧记录(不入 AI 生成,避免每次文件都烧 token)
+    const sessionId = await createImSession(accountId, chatId, `${rt.name}·${chatId.slice(-8)}`)
+    appendChatMessage(
+      sessionId,
+      'user',
+      'text',
+      kind === 'image'
+        ? `[收到图片] ${meta.name ?? '未命名'}`
+        : `[收到文件] ${meta.name ?? '未命名'}`,
+      { imFile: true, saved: file, bytes: buf.length }
+    )
+  } catch (e) {
+    imLog(
+      accountId,
+      `媒体接收异常(${messageId}):${e instanceof Error ? (e.stack ?? e.message) : String(e)}`
     )
   }
 }
