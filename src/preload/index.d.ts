@@ -341,6 +341,8 @@ declare global {
           rename: (id: number, title: string) => Promise<{ ok: boolean; error?: string }>
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
           clear: (id: number) => Promise<{ ok: boolean; error?: string }>
+          exportSession: (id: number) => Promise<{ ok: boolean; file?: string; error?: string }>
+          removeAll: (wxid: string) => Promise<{ ok: boolean; removed?: number; error?: string }>
           skills: () => Promise<
             Result<{
               skills?: Array<{

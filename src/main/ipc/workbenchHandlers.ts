@@ -1,7 +1,9 @@
-import { ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { writeFile } from 'node:fs/promises'
 import {
   clearChatMessages,
   createChat,
+  getChatById,
   listChatMessages,
   listChats,
   removeChat,
@@ -28,6 +30,62 @@ import { listSkills, setSkillEnabled, skillsRoot } from '../services/ai/workbenc
 /** 工作台会话存储命名空间:避免未绑定账号(wxid='')时与飞书 IM 映射会话混列 */
 function wbWxid(wxid: string): string {
   return `wb:${String(wxid || '')}`
+}
+
+/** 文件名安全化 */
+function safeName(s: string): string {
+  return s.replace(/[\\/:*?"<>|]/g, '-').slice(0, 60) || '工作台会话'
+}
+
+/** 会话 → Markdown(按时间线顺序:提问/文本段落/工具痕迹/压缩标记/错误) */
+function sessionToMarkdown(sessionId: number): { title: string; md: string } | { error: string } {
+  const session = getChatById(sessionId)
+  if (!session) return { error: '会话不存在' }
+  const rows = listChatMessages(sessionId)
+  const lines: string[] = []
+  lines.push(`# ${session.title || '工作台会话'}`)
+  lines.push('')
+  lines.push(`> 导出时间:${new Date().toLocaleString()} · 消息 ${rows.length} 条`)
+  lines.push('')
+  for (const r of rows) {
+    let meta: Record<string, unknown> | null = null
+    if (r.meta) {
+      try {
+        const p = JSON.parse(r.meta) as unknown
+        if (p && typeof p === 'object') meta = p as Record<string, unknown>
+      } catch {
+        meta = null
+      }
+    }
+    if (r.role === 'user') {
+      lines.push(`## 🙋 我`, '', r.content, '', '---', '')
+    } else if (r.kind === 'tool_call') {
+      const name = typeof meta?.name === 'string' ? meta.name : '工具'
+      const fail = meta?.status === 'fail'
+      lines.push(`### 🔧 工具调用:${name}${fail ? '(失败)' : ''}`, '')
+      if (typeof meta?.args === 'string' && meta.args) {
+        lines.push('- 参数', '', '```json', meta.args, '```', '')
+      }
+      if (typeof meta?.output === 'string' && meta.output) {
+        lines.push('- 结果', '', '```', meta.output, '```', '')
+      }
+      lines.push('---', '')
+    } else if (r.kind === 'compact') {
+      lines.push(`> 📌 旧对话已自动压缩`, '', r.content, '', '---', '')
+    } else if (r.kind === 'error') {
+      lines.push(`> ⚠️ ${r.content}`, '', '---', '')
+    } else {
+      let body = r.content
+      if (typeof meta?.reasoning === 'string' && meta.reasoning) {
+        body = `> 💭 思考过程\n>\n${meta.reasoning
+          .split('\n')
+          .map((l) => `> ${l}`)
+          .join('\n')}\n\n${body}`
+      }
+      lines.push(body, '', '---', '')
+    }
+  }
+  return { title: session.title || '工作台会话', md: lines.join('\n') }
 }
 
 export function registerWorkbenchHandlers(): void {
@@ -163,6 +221,44 @@ export function registerWorkbenchHandlers(): void {
     stopWorkbenchChat(id)
     clearChatMessages(id)
     return { ok: true as const }
+  })
+
+  /** 导出当前会话为 Markdown(选目录保存) */
+  ipcMain.handle('cs:wb:exportSession', async (e, id: number) => {
+    if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
+    try {
+      const out = sessionToMarkdown(id)
+      if ('error' in out) return { ok: false as const, error: out.error }
+      const win = BrowserWindow.fromWebContents(e.sender)
+      const saveOpts = {
+        title: '导出工作台会话',
+        defaultPath: `${safeName(out.title)}.md`,
+        filters: [{ name: 'Markdown', extensions: ['md'] }]
+      }
+      const pick = win
+        ? await dialog.showSaveDialog(win, saveOpts)
+        : await dialog.showSaveDialog(saveOpts)
+      if (pick.canceled || !pick.filePath) return { ok: false as const, error: '已取消' }
+      await writeFile(pick.filePath, out.md, 'utf8')
+      return { ok: true as const, file: pick.filePath }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  /** 清空当前账号的全部工作台会话(先停生成,不可恢复) */
+  ipcMain.handle('cs:wb:removeAll', async (_e, wxid: string) => {
+    try {
+      const chats = listChats(wbWxid(String(wxid || '')))
+      for (const c of chats) {
+        stopWorkbenchChat(c.id)
+        clearSessionToolAllowed(c.id)
+        removeChat(c.id)
+      }
+      return { ok: true as const, removed: chats.length }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle('cs:wb:skills', () => {

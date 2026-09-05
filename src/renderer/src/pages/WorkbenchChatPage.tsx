@@ -593,6 +593,37 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     })
   }
 
+  /** 导出当前会话(Markdown) */
+  const exportCurrent = async (): Promise<void> => {
+    if (activeId === null) return
+    const api = window.api?.cs?.wb
+    const res = await api?.exportSession(activeId).catch(() => null)
+    if (res?.ok && res.file) {
+      toast.success(`已导出:${res.file}`)
+    } else {
+      const msg = res && !res.ok ? res.error : '导出失败或已取消'
+      if (msg && msg !== '已取消') toast.error(msg)
+    }
+  }
+
+  /** 清空全部工作台会话(二次确认) */
+  const clearAllChats = async (): Promise<void> => {
+    const total = chats?.length ?? 0
+    if (total === 0) return
+    const ok = window.confirm(
+      `将删除当前账号下全部 ${total} 个工作台会话及其消息(含进行中生成,不可恢复)。确认继续?`
+    )
+    if (!ok) return
+    const api = window.api?.cs?.wb
+    const res = await api?.removeAll(accountKey).catch(() => null)
+    if (res?.ok) {
+      toast.success(`已清空 ${res.removed ?? total} 个会话`)
+      await store.init(accountKey)
+    } else {
+      toast.error(res?.error ?? '清空失败,请重试')
+    }
+  }
+
   return (
     <div className="wb-page">
       <aside className="wb-side">
@@ -660,6 +691,27 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               </div>
             </div>
           ))}
+        </div>
+        {/* 会话工具:导出当前 / 清空全部 */}
+        <div className="wb-side-foot">
+          <button
+            type="button"
+            className="st-btn ghost sm"
+            disabled={activeId === null || messages.length === 0}
+            title="把当前会话导出为 Markdown(含工具痕迹与思考过程)"
+            onClick={() => void exportCurrent()}
+          >
+            导出会话
+          </button>
+          <button
+            type="button"
+            className="st-btn ghost danger sm"
+            disabled={chats === null || chats.length === 0}
+            title="删除当前账号下的全部工作台会话(不可恢复)"
+            onClick={() => void clearAllChats()}
+          >
+            清空全部
+          </button>
         </div>
       </aside>
 

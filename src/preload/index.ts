@@ -324,6 +324,10 @@ const api = {
         ipcRenderer.invoke('cs:wb:remove', id),
       clear: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:wb:clear', id),
+      exportSession: (id: number): Promise<{ ok: boolean; file?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:exportSession', id),
+      removeAll: (wxid: string): Promise<{ ok: boolean; removed?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:removeAll', wxid),
       skills: (): Promise<{ ok: boolean; skills?: unknown[]; error?: string }> =>
         ipcRenderer.invoke('cs:wb:skills'),
       toggleSkill: (name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
