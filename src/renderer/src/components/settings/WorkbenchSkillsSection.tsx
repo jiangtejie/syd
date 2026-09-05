@@ -4,7 +4,7 @@ import { SettingsCard, Switch } from './ui'
 
 /**
  * 设置 → 工作台 tab:SKILL.md 业务技能管理(轻量:无市场/无安装向导)。
- * 目录:userData/skills/<name>/SKILL.md;启用(≤3 个)后按技能口径执行。
+ * 目录:userData/skills/<name>/SKILL.md;按「同时启用上限」(默认 3,可调 1~6)执行。
  */
 
 interface WbSkillRow {
@@ -20,11 +20,16 @@ const wbApi = window.api?.cs?.wb
 export default function WorkbenchSkillsSection(): React.JSX.Element {
   const [skills, setSkills] = useState<WbSkillRow[] | null>(null)
   const [dir, setDir] = useState('')
+  const [limit, setLimit] = useState(3)
+  const [limitSaving, setLimitSaving] = useState(false)
 
   const load = async (): Promise<void> => {
     const res = await wbApi?.skills().catch(() => null)
-    if (res?.ok && res.skills) setSkills(res.skills as WbSkillRow[])
-    else setSkills([])
+    if (res?.ok) {
+      if (res.skills) setSkills(res.skills as WbSkillRow[])
+      else setSkills([])
+      if (typeof res.maxOn === 'number') setLimit(res.maxOn)
+    } else setSkills([])
   }
 
   useEffect(() => {
@@ -49,27 +54,65 @@ export default function WorkbenchSkillsSection(): React.JSX.Element {
     }
   }
 
+  /** 调整同时启用上限(1~6),成功以主进程返回值为准 */
+  const changeLimit = async (n: number): Promise<void> => {
+    const prev = limit
+    setLimit(n)
+    setLimitSaving(true)
+    try {
+      const res = await wbApi?.setSkillLimit(n).catch(() => null)
+      if (res?.ok && typeof res.maxOn === 'number') {
+        setLimit(res.maxOn)
+        toast.success(`技能上限已调整为同时启用 ${res.maxOn} 个`)
+      } else {
+        setLimit(prev)
+        toast.error((res as { error?: string } | null)?.error ?? '设置失败')
+      }
+    } finally {
+      setLimitSaving(false)
+    }
+  }
+
   const sizeOf = (n: number): string => (n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`)
-  const MAX_ON = 3
   const list = skills ?? []
   const enabledN = list.filter((s) => s.enabled).length
-  const overLimit = enabledN > MAX_ON
+  const overLimit = enabledN > limit
 
   return (
     <div className="st-grid wb-skills-full">
       <SettingsCard
         title="业务技能(SKILL.md)"
-        desc="在技能目录放置 skills/名称/SKILL.md(frontmatter 需含 name/description),启用后 AI 会按该技能口径回答(最多同时启用 3 个,全文 ≤6k 字;无代码执行)。新会话即时生效。"
+        desc="在技能目录放置 skills/名称/SKILL.md(frontmatter 需含 name/description),启用后 AI 会按该技能口径回答;同时启用上限默认 3 个,可在右上角调至 1~6(注入预算随上限放大,无代码执行)。新会话即时生效。"
       >
         <div className="st-actions wb-skills-toolbar">
           <button type="button" className="st-btn ghost sm" onClick={() => void openDir()}>
             打开技能目录
           </button>
           {dir && <span className="st-hint wb-skills-dir">{dir}</span>}
+          {skills !== null && (
+            <span
+              className="wb-limit-pick"
+              title="同时最多启用几个技能(影响每次 AI 请求注入的技能全文量)"
+            >
+              <span className="wb-limit-tag">上限</span>
+              <select
+                className="st-input wb-limit-sel"
+                value={limit}
+                disabled={limitSaving}
+                onChange={(e) => void changeLimit(Number(e.target.value))}
+              >
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </span>
+          )}
           {skills !== null && list.length > 0 && (
             <span className={`wb-skills-count${overLimit ? ' over' : ''}`}>
               共 {list.length} 个 · 已启用 {enabledN}
-              {overLimit ? `(超过 ${MAX_ON} 个上限,请先停用多余技能)` : `/${MAX_ON}`}
+              {overLimit ? `(超过 ${limit} 个上限,请先停用多余技能)` : `/${limit}`}
             </span>
           )}
         </div>

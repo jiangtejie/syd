@@ -461,8 +461,10 @@ const api = {
         ipcRenderer.invoke('cs:wb:exportSession', id),
       removeAll: (wxid: string): Promise<{ ok: boolean; removed?: number; error?: string }> =>
         ipcRenderer.invoke('cs:wb:removeAll', wxid),
-      skills: (): Promise<{ ok: boolean; skills?: unknown[]; error?: string }> =>
+      skills: (): Promise<{ ok: boolean; skills?: unknown[]; maxOn?: number; error?: string }> =>
         ipcRenderer.invoke('cs:wb:skills'),
+      setSkillLimit: (n: number): Promise<{ ok: boolean; maxOn?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:setSkillLimit', n),
       toggleSkill: (name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:wb:toggleSkill', name, enabled),
       openSkillsDir: (): Promise<{ ok: boolean; path?: string; error?: string }> =>

@@ -475,8 +475,10 @@ declare global {
                 sizeBytes: number
                 dirName: string
               }>
+              maxOn?: number
             }>
           >
+          setSkillLimit: (n: number) => Promise<{ ok: boolean; maxOn?: number; error?: string }>
           toggleSkill: (name: string, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
           openSkillsDir: () => Promise<{ ok: boolean; path?: string; error?: string }>
           onEvent: (

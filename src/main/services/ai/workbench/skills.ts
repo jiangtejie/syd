@@ -8,17 +8,36 @@ import type { WbSkillInfo } from './types'
  * 轻量 SKILL.md(Claude Code 风格,无代码执行)。
  * - 目录:userData/skills/<name>/SKILL.md,frontmatter 必填 name/description;
  * - 校验:纯 markdown、≤32KB、frontmatter 合法、目录名安全;
- * - 启用集存 config(`wb.skills.enabled`,逗号名);注入量 ≤3 个 / 全文 ≤6k;
+ * - 启用集存 config(`wb.skills.enabled`,逗号名);
+ * - 同时启用上限:config `wb.skills.maxOn`,默认 3,可调 1~6;
+ *   注入预算随上限缩放(每技能约 2k 字,总注入 = 上限×2k ≤12k);
  * - 无市场/无安装向导:用户直接把目录放进去即可(设置页可打开目录)。
  */
 
 const MAX_SKILL_BYTES = 32 * 1024
-const MAX_ENABLED = 3
-const MAX_INJECT_CHARS = 6000
+const DEFAULT_MAX_ENABLED = 3
+const ABS_MAX_ENABLED = 6
+const MAX_PER_SKILL_CHARS = 2400
 const SKILL_DIR = 'skills'
 
 export function skillsRoot(): string {
   return join(app.getPath('userData'), SKILL_DIR)
+}
+
+/** 当前同时启用上限(默认 3,config wb.skills.maxOn 可调 1~6) */
+export function skillLimit(): number {
+  const n = Number(getConfig('wb.skills.maxOn'))
+  return Number.isFinite(n) && n >= 1 && n <= ABS_MAX_ENABLED ? Math.round(n) : DEFAULT_MAX_ENABLED
+}
+
+/** 调整同时启用上限(1~6);返回生效值 */
+export function setSkillLimit(n: number): { ok: boolean; error?: string; maxOn?: number } {
+  const v = Math.round(Number(n))
+  if (!Number.isFinite(v) || v < 1 || v > ABS_MAX_ENABLED) {
+    return { ok: false, error: `上限需在 1~${ABS_MAX_ENABLED} 之间` }
+  }
+  setConfig('wb.skills.maxOn', String(v))
+  return { ok: true, maxOn: v }
 }
 
 function safeDirName(name: string): boolean {
@@ -96,12 +115,13 @@ export function setSkillEnabled(name: string, enabled: boolean): { ok: boolean; 
   const list = listSkills()
   if (!list.some((s) => s.name === name)) return { ok: false, error: '技能不存在' }
   const set = enabledNames()
+  const max = skillLimit()
   if (enabled) {
-    // 与注入逻辑一致:最多同时启用 MAX_ENABLED 个
-    if (set.size >= MAX_ENABLED && !set.has(name)) {
+    // 与注入逻辑一致:同时启用不超过 skillLimit()(默认 3,可调 1~6)
+    if (set.size >= max && !set.has(name)) {
       return {
         ok: false,
-        error: `最多同时启用 ${MAX_ENABLED} 个技能,请先停用其他技能再启用「${name}」`
+        error: `同时启用的技能已达上限 ${max} 个,请先停用其他技能,或在卡片右上角把上限调大`
       }
     }
     set.add(name)
@@ -128,19 +148,24 @@ export function skillsCatalogText(): string {
     .join('\n')
 }
 
-/** 启用技能正文注入(≤3 个,总量 ≤6k) */
+/** 启用技能正文注入(≤ 上限个,总量 ≤ 上限×2k;默认上限 3 = 6k) */
 export function skillsInjectionText(): string {
+  const max = skillLimit()
   const list = listSkills()
     .filter((s) => s.enabled)
-    .slice(0, MAX_ENABLED)
+    .slice(0, max)
   if (list.length === 0) return ''
+  const budget = max * 2000
   const parts: string[] = []
   let total = 0
   for (const s of list) {
     const body = readSkillBody(s).trim()
     if (!body) continue
-    const piece = body.length > 2400 ? `${body.slice(0, 2400)}\n…(超长已截断)` : body
-    if (total + piece.length > MAX_INJECT_CHARS) break
+    const piece =
+      body.length > MAX_PER_SKILL_CHARS
+        ? `${body.slice(0, MAX_PER_SKILL_CHARS)}\n…(超长已截断)`
+        : body
+    if (total + piece.length > budget) break
     parts.push(`【技能:${s.name}】\n${piece}`)
     total += piece.length
   }

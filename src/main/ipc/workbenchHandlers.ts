@@ -33,6 +33,8 @@ import {
   ensureOfficeSkillsSeeded,
   listSkills,
   setSkillEnabled,
+  setSkillLimit,
+  skillLimit,
   skillsRoot
 } from '../services/ai/workbench/skills'
 import { readMemoNotes, writeMemoNotes } from '../services/ai/memo'
@@ -387,10 +389,17 @@ export function registerWorkbenchHandlers(): void {
 
   ipcMain.handle('cs:wb:skills', () => {
     try {
-      return { ok: true as const, skills: listSkills() }
+      return { ok: true as const, skills: listSkills(), maxOn: skillLimit() }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }
+  })
+
+  ipcMain.handle('cs:wb:setSkillLimit', (_e, n: number) => {
+    const r = setSkillLimit(Number(n))
+    return r.ok
+      ? { ok: true as const, maxOn: r.maxOn }
+      : { ok: false as const, error: r.error ?? '参数错误' }
   })
 
   ipcMain.handle('cs:wb:toggleSkill', (_e, name: string, enabled: boolean) => {
