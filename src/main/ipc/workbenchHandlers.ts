@@ -11,6 +11,7 @@ import {
   searchChatMessages
 } from '../db/repos/chatRepo'
 import {
+  getWorkbenchReliability,
   resendWorkbenchMessage,
   retryWorkbenchMessage,
   sendWorkbenchMessage,
@@ -242,6 +243,15 @@ export function registerWorkbenchHandlers(): void {
     stopWorkbenchChat(id)
     clearChatMessages(id)
     return { ok: true as const }
+  })
+
+  /** 本次运行 AI 通道可靠性统计 */
+  ipcMain.handle('cs:wb:reliability', () => {
+    try {
+      return { ok: true as const, stats: getWorkbenchReliability() }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   /** 导出当前会话为 Markdown(选目录保存) */

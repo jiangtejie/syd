@@ -340,6 +340,17 @@ const api = {
         ipcRenderer.invoke('cs:wb:remove', id),
       clear: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:wb:clear', id),
+      reliability: (): Promise<{
+        ok: boolean
+        stats?: {
+          total: number
+          ok: number
+          fail: number
+          rate: number | null
+          lastFailures: Array<{ at: number; err: string }>
+        }
+        error?: string
+      }> => ipcRenderer.invoke('cs:wb:reliability'),
       exportSession: (id: number): Promise<{ ok: boolean; file?: string; error?: string }> =>
         ipcRenderer.invoke('cs:wb:exportSession', id),
       removeAll: (wxid: string): Promise<{ ok: boolean; removed?: number; error?: string }> =>

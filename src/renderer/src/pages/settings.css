@@ -1,4 +1,4 @@
-﻿/* 璁剧疆椤碉紙棰滆壊/鍦嗚宸?token 鍖栵紝寮曠敤 assets/base.css 鐨勫叏灞€璁捐鍙橀噺锛?*/
+/* 璁剧疆椤碉紙棰滆壊/鍦嗚宸?token 鍖栵紝寮曠敤 assets/base.css 鐨勫叏灞€璁捐鍙橀噺锛?*/
 
 /* Tab 瀵艰埅锛堟寜鏉垮潡鍒囨崲锛屽噺灏戞嫢鎸わ級 */
 .st-tabs {
@@ -754,6 +754,77 @@ select.st-input {
   background: var(--bg-hover);
   border-radius: var(--r-sm);
   padding: 8px 10px;
+}
+
+/* ── AI 通道可靠性卡 ── */
+.rel-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 420px;
+}
+
+.rel-rate {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rel-rate.is-ok {
+  color: var(--success-strong);
+}
+
+.rel-rate.is-mid {
+  color: var(--warn-text);
+}
+
+.rel-rate.is-bad {
+  color: var(--danger);
+}
+
+.rel-rate.is-none {
+  color: var(--text-3);
+}
+
+.rel-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.rel-fails {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rel-fails-title {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.rel-fail {
+  display: flex;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.rel-fail time {
+  flex: none;
+  color: var(--text-4);
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+
+.rel-fail span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ag-head-title .ag-style {
   margin-left: 0;

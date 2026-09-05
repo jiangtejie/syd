@@ -356,6 +356,17 @@ declare global {
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
           clear: (id: number) => Promise<{ ok: boolean; error?: string }>
           exportSession: (id: number) => Promise<{ ok: boolean; file?: string; error?: string }>
+          reliability: () => Promise<
+            Result<{
+              stats?: {
+                total: number
+                ok: number
+                fail: number
+                rate: number | null
+                lastFailures: Array<{ at: number; err: string }>
+              }
+            }>
+          >
           removeAll: (wxid: string) => Promise<{ ok: boolean; removed?: number; error?: string }>
           skills: () => Promise<
             Result<{

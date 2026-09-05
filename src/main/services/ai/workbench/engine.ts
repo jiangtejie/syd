@@ -65,6 +65,45 @@ interface RunHandle {
 
 const running = new Map<number, RunHandle>()
 
+/* ══════════ 本次运行可靠性统计(成功/失败/最近失败原因) ══════════ */
+
+interface RelRecord {
+  at: number
+  ok: boolean
+  err?: string
+}
+
+const relHistory: RelRecord[] = []
+const REL_KEEP = 40
+
+function recordRel(ok: boolean, err?: string): void {
+  relHistory.push({ at: Date.now(), ok, err: err ? err.slice(0, 160) : undefined })
+  if (relHistory.length > REL_KEEP) relHistory.splice(0, relHistory.length - REL_KEEP)
+}
+
+export function getWorkbenchReliability(): {
+  total: number
+  ok: number
+  fail: number
+  rate: number | null
+  lastFailures: Array<{ at: number; err: string }>
+} {
+  const total = relHistory.length
+  const ok = relHistory.filter((r) => r.ok).length
+  const fail = total - ok
+  return {
+    total,
+    ok,
+    fail,
+    rate: total > 0 ? Math.round((ok / total) * 1000) / 10 : null,
+    lastFailures: relHistory
+      .filter((r) => !r.ok)
+      .slice(-5)
+      .reverse()
+      .map((r) => ({ at: r.at, err: r.err ?? '未知错误' }))
+  }
+}
+
 export interface WbSendResult {
   ok: boolean
   error?: string
@@ -252,71 +291,89 @@ export async function sendWorkbenchMessage(
     let reasonEndedAt = 0
     let usageIn = 0
     let usageOut = 0
-    const result = streamText({
-      model,
-      system,
-      messages,
-      tools: toolSet,
-      maxOutputTokens: 2400,
-      temperature: cfg.temperature,
-      abortSignal: signal,
-      stopWhen: stepCountIs(10)
-    })
 
-    for await (const part of result.fullStream) {
-      if (part.type === 'text-delta') {
-        content += part.text
-        seg += part.text
-        emitWorkbenchEvent(sessionId, { type: 'delta', token: part.text })
-      } else if (part.type === 'reasoning-delta') {
-        // 思考型模型(reasoner)的推理过程:实时推送,收尾随 meta.reasoning 落库
-        const t = cleanModelText((part as { text?: string }).text ?? '')
-        if (t) {
-          const now = Date.now()
-          if (reasonStartedAt === 0) reasonStartedAt = now
-          reasonEndedAt = now
-          const room = REASON_CAP - reasoning.length
-          if (room > 0) {
-            const chunk = room >= t.length ? t : t.slice(0, room)
-            reasoning += chunk
-            emitWorkbenchEvent(sessionId, { type: 'reasoning', token: chunk })
+    /** 单次流式请求(读/重试均走这里;失败/中止抛错由外层判断) */
+    const runStream = async (): Promise<void> => {
+      const result = streamText({
+        model,
+        system,
+        messages,
+        tools: toolSet,
+        maxOutputTokens: 2400,
+        temperature: cfg.temperature,
+        abortSignal: signal,
+        stopWhen: stepCountIs(10)
+      })
+
+      for await (const part of result.fullStream) {
+        if (part.type === 'text-delta') {
+          content += part.text
+          seg += part.text
+          emitWorkbenchEvent(sessionId, { type: 'delta', token: part.text })
+        } else if (part.type === 'reasoning-delta') {
+          // 思考型模型(reasoner)的推理过程:实时推送,收尾随 meta.reasoning 落库
+          const t = cleanModelText((part as { text?: string }).text ?? '')
+          if (t) {
+            const now = Date.now()
+            if (reasonStartedAt === 0) reasonStartedAt = now
+            reasonEndedAt = now
+            const room = REASON_CAP - reasoning.length
+            if (room > 0) {
+              const chunk = room >= t.length ? t : t.slice(0, room)
+              reasoning += chunk
+              emitWorkbenchEvent(sessionId, { type: 'reasoning', token: chunk })
+            }
           }
+        } else if (part.type === 'tool-call') {
+          const io = clipToolIO((part as { input?: unknown }).input)
+          pushTool(part.toolName, io.text)
+          emitWorkbenchEvent(sessionId, {
+            type: 'tool',
+            tool: part.toolName,
+            toolStatus: 'start',
+            args: io.text
+          })
+        } else if (part.type === 'tool-result') {
+          const io = clipToolIO((part as { output?: unknown }).output)
+          finishTool(part.toolName, io.text, 'done')
+          emitWorkbenchEvent(sessionId, {
+            type: 'tool',
+            tool: part.toolName,
+            toolStatus: 'done',
+            output: io.text,
+            outTrunc: io.truncated
+          })
+        } else if (part.type === 'tool-error') {
+          const msg =
+            part.error instanceof Error ? part.error.message : String(part.error ?? '').trim()
+          finishTool(part.toolName, msg.slice(0, TOOL_IO_CAP) || '工具执行失败(无详情)', 'fail')
+          emitWorkbenchEvent(sessionId, {
+            type: 'tool',
+            tool: part.toolName,
+            toolStatus: 'fail',
+            output: msg.slice(0, TOOL_IO_CAP) || '工具执行失败(无详情)',
+            outTrunc: msg.length > TOOL_IO_CAP
+          })
+        } else if (part.type === 'error') {
+          throw part.error
+        } else if (part.type === 'finish') {
+          usageIn = part.totalUsage?.inputTokens ?? 0
+          usageOut = part.totalUsage?.outputTokens ?? 0
         }
-      } else if (part.type === 'tool-call') {
-        const io = clipToolIO((part as { input?: unknown }).input)
-        pushTool(part.toolName, io.text)
-        emitWorkbenchEvent(sessionId, {
-          type: 'tool',
-          tool: part.toolName,
-          toolStatus: 'start',
-          args: io.text
-        })
-      } else if (part.type === 'tool-result') {
-        const io = clipToolIO((part as { output?: unknown }).output)
-        finishTool(part.toolName, io.text, 'done')
-        emitWorkbenchEvent(sessionId, {
-          type: 'tool',
-          tool: part.toolName,
-          toolStatus: 'done',
-          output: io.text,
-          outTrunc: io.truncated
-        })
-      } else if (part.type === 'tool-error') {
-        const msg =
-          part.error instanceof Error ? part.error.message : String(part.error ?? '').trim()
-        finishTool(part.toolName, msg.slice(0, TOOL_IO_CAP) || '工具执行失败(无详情)', 'fail')
-        emitWorkbenchEvent(sessionId, {
-          type: 'tool',
-          tool: part.toolName,
-          toolStatus: 'fail',
-          output: msg.slice(0, TOOL_IO_CAP) || '工具执行失败(无详情)',
-          outTrunc: msg.length > TOOL_IO_CAP
-        })
-      } else if (part.type === 'error') {
-        throw part.error
-      } else if (part.type === 'finish') {
-        usageIn = part.totalUsage?.inputTokens ?? 0
-        usageOut = part.totalUsage?.outputTokens ?? 0
+      }
+    }
+
+    // 瞬时失败自动重试:仅当首轮「零产出」(无正文/推理/工具)时,退避 700ms 重试一次;
+    // 已有部分产出或已执行工具不重试,避免重复副作用与重复审批
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await runStream()
+        break
+      } catch (e) {
+        const aborted = signal.aborted || (e instanceof Error && e.name === 'AbortError')
+        if (aborted) throw e
+        if (attempt > 0 || content !== '' || reasoning !== '' || turnLog.length > 0) throw e
+        await new Promise((r) => setTimeout(r, 700))
       }
     }
 
@@ -373,6 +430,7 @@ export async function sendWorkbenchMessage(
     }
     touchChat(sessionId)
     emitWorkbenchEvent(sessionId, { type: 'done', messageId })
+    recordRel(true)
     return { ok: true }
   } catch (e) {
     const aborted = signal.aborted || (e instanceof Error && e.name === 'AbortError')
@@ -381,6 +439,7 @@ export async function sendWorkbenchMessage(
       return { ok: true }
     }
     const errMsg = e instanceof Error ? e.message : String(e)
+    recordRel(false, errMsg)
     appendChatMessage(sessionId, 'assistant', 'error', errMsg)
     emitWorkbenchEvent(sessionId, { type: 'error', text: errMsg })
     return { ok: true }

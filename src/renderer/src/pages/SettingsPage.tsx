@@ -4,6 +4,7 @@ import WechatKeySection from '../components/settings/WechatKeySection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
 import { agentFormDirty } from '../components/settings/agentDirty'
 import WorkbenchApprovalSection from '../components/settings/WorkbenchApprovalSection'
+import WorkbenchReliabilitySection from '../components/settings/WorkbenchReliabilitySection'
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
 import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
@@ -620,6 +621,13 @@ function SettingsPage(): React.JSX.Element {
               需确认的写/外部工具的审批偏好；命中「始终允许」名单的工具不再询问。
             </span>
             <WorkbenchApprovalSection />
+          </div>
+
+          {/* AI 通道可靠性(本次运行) */}
+          <div className="page-card st-section">
+            <div className="st-title">AI 通道可靠性</div>
+            <span className="st-hint">本次运行内工作台生成请求的成功率与最近失败原因。</span>
+            <WorkbenchReliabilitySection />
           </div>
         </div>
       )}
