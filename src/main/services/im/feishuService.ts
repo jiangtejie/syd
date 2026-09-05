@@ -375,6 +375,8 @@ export async function startFeishuAccount(
         accountId,
         `收到消息 ${msg.message_id} type=${msg.chat_type} sender=${openId} len=${text.length}`
       )
+      // 立即给消息加"思考中"表情回应,避免用户以为机器人卡住;正式回复发出后移除
+      void addThinkingReaction(rt, msg.message_id!)
       void handleInbound(accountId, rt, msg.chat_id!, msg.message_id!, text)
     }
     dispatcher.register({ 'im.message.receive_v1': onReceive })
@@ -465,6 +467,7 @@ async function handleInbound(
         stopChat(rt.businessWxid, sessionId)
         imLog(accountId, `用户要求停止,已中止会话 ${sessionId}`)
         await safeReply(rt, replyMessageId, '已停止生成 ✅')
+        void removeThinkingReaction(rt, replyMessageId)
         return
       }
       imLog(accountId, `收到停止指令但无进行中的生成(当作普通消息处理)`)
@@ -479,6 +482,7 @@ async function handleInbound(
         imLog(accountId, `工具确认答复:${ok ? '同意' : '拒绝'} run=${pendingC.runId}`)
         confirmToolRun(pendingC.runId, ok)
         await safeReply(rt, replyMessageId, ok ? '已确认,继续执行…' : '已取消本次操作')
+        void removeThinkingReaction(rt, replyMessageId)
         return
       }
     }
@@ -498,6 +502,7 @@ async function handleInbound(
       replyMessageId,
       `处理失败:${clipForChannel(String(e instanceof Error ? e.message : e))}`
     )
+    void removeThinkingReaction(rt, replyMessageId)
   }
 }
 
@@ -553,6 +558,80 @@ function extOf(buf: Buffer, kind: 'image' | 'file', name?: string): string {
   return fromName || 'bin'
 }
 
+/* ── "思考中"表情回应:收到消息即加表情,正式回复发出后移除 ── */
+const thinkingReactions = new Map<string, string>()
+/** 表情候选(个别 emoji_type 可能不被租户/群允许,依序尝试直到成功) */
+const THINKING_EMOJIS = ['THINKING', 'THINK', 'HOURGLASS', 'SPARKLES', 'OK', 'SMILE']
+
+async function tenantToken(rt: Runtime): Promise<string> {
+  return await (
+    rt.client as unknown as { tokenManager: { getTenantAccessToken(): Promise<string> } }
+  ).tokenManager.getTenantAccessToken()
+}
+
+/** 给消息添加"思考中"表情回应;返回 reactionId(失败返回 null,不打扰流程) */
+async function addThinkingReaction(rt: Runtime, messageId: string): Promise<string | null> {
+  const key = `${rt.accountId}:${messageId}`
+  if (thinkingReactions.has(key)) return thinkingReactions.get(key) ?? null
+  try {
+    const token = await tenantToken(rt)
+    for (const emoji of THINKING_EMOJIS) {
+      try {
+        const res = await fetch(
+          `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(
+            messageId
+          )}/reactions`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ reaction_type: { emoji_type: emoji } })
+          }
+        )
+        if (!res.ok) continue
+        const body = (await res.json()) as { data?: { reaction_id?: string } }
+        const rid = body?.data?.reaction_id
+        if (rid) {
+          thinkingReactions.set(key, rid)
+          return rid
+        }
+      } catch {
+        /* 单个候选失败继续尝试下一个 */
+      }
+    }
+  } catch (e) {
+    imLog(
+      rt.accountId,
+      `添加思考表情失败(${messageId}):${e instanceof Error ? e.message : String(e)}`
+    )
+  }
+  return null
+}
+
+/** 移除思考表情(回复已发出/结束调用;失败静默,残留表情无害) */
+async function removeThinkingReaction(rt: Runtime, messageId: string): Promise<void> {
+  const key = `${rt.accountId}:${messageId}`
+  const rid = thinkingReactions.get(key)
+  if (!rid) return
+  thinkingReactions.delete(key)
+  try {
+    const token = await tenantToken(rt)
+    const res = await fetch(
+      `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(
+        messageId
+      )}/reactions/${encodeURIComponent(rid)}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+    )
+    if (!res.ok) {
+      imLog(rt.accountId, `移除思考表情失败(${messageId}) http=${res.status};表情保留`)
+    }
+  } catch {
+    /* 静默:残留表情可接受 */
+  }
+}
+
 /** 下载飞书消息资源(im 消息资源接口),返回字节缓冲 */
 async function downloadFeishuResource(
   rt: Runtime,
@@ -560,9 +639,7 @@ async function downloadFeishuResource(
   fileKey: string,
   kind: 'image' | 'file'
 ): Promise<Buffer | null> {
-  const token = await (
-    rt.client as unknown as { tokenManager: { getTenantAccessToken(): Promise<string> } }
-  ).tokenManager.getTenantAccessToken()
+  const token = await tenantToken(rt)
   const url = `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(
     messageId
   )}/resources/${encodeURIComponent(fileKey)}?type=${kind}`
@@ -644,15 +721,19 @@ async function drainInbound(sessionId: number, rt: Runtime): Promise<void> {
     const idle = await waitIdle(rt.businessWxid, sessionId)
     if (!idle) {
       await safeReply(rt, item.messageId, '上一轮生成仍在进行,已超过等待上限,请稍后重试')
+      void removeThinkingReaction(rt, item.messageId)
       continue
     }
     const out = await runAiTurn(sessionId, rt.businessWxid, item.text, rt, item.messageId)
     feishuConfirm.delete(String(sessionId))
     if (out === null) {
       await safeReply(rt, item.messageId, '处理超时(5 分钟),请稍后重试或直接在 AI 助手里查看')
+      void removeThinkingReaction(rt, item.messageId)
       continue
     }
     await safeReply(rt, item.messageId, out)
+    // 回复已发出:撤掉"思考中"表情(回答完成)
+    void removeThinkingReaction(rt, item.messageId)
   }
 }
 
