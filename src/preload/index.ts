@@ -301,6 +301,18 @@ const api = {
         ipcRenderer.invoke('cs:im:remove', id),
       toggle: (id: number, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:im:toggle', id, enabled),
+      clawQrStart: (
+        opts: unknown
+      ): Promise<{ ok: boolean; key?: string; qrImg?: string; qrUrl?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:im:clawQrStart', opts),
+      clawQrPoll: (
+        key: string
+      ): Promise<{
+        ok: boolean
+        status: 'waiting' | 'confirmed' | 'expired' | 'error'
+        accountId?: number
+        error?: string
+      }> => ipcRenderer.invoke('cs:im:clawQrPoll', key),
       onStatus: (
         callback: (payload: {
           accountId: number

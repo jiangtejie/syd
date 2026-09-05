@@ -1,5 +1,5 @@
 import { BrowserWindow } from 'electron'
-import { getImAccountConfig } from '../../db/repos/imRepo'
+import { getImAccountConfig, saveImAccount, listMappedSessionIds } from '../../db/repos/imRepo'
 import { appendChatMessage, listChatMessages } from '../../db/repos/chatRepo'
 import { createLogger } from '../logging'
 import { createImSession } from './sessionBridge'
@@ -11,8 +11,7 @@ import {
   stopChat
 } from '../ai/chat/service'
 import { ensureBoundBusinessMounts } from '../ai/cap/mounts'
-import { listMappedSessionIds } from '../../db/repos/imRepo'
-import { openSecret } from '../secrets'
+import { openSecret, sealSecret } from '../secrets'
 
 /**
  * 微信 ClawBot(官方 iLink)通道。
@@ -409,4 +408,142 @@ export function stopAllWechatClaw(): void {
 export function getWechatClawStatus(accountId: number): { status?: string; statusText?: string } {
   const r = runtimes.get(accountId)
   return r ? { status: r.status, statusText: r.lastError ?? r.statusText } : {}
+}
+
+/* ══════════ 扫码绑定:get_bot_qrcode → 轮询扫码 → 主进程自动建号(渲染端不见 token) ══════════ */
+
+interface QrSession {
+  qr: string
+  baseUrl: string
+  name: string
+  wxid?: string
+  allowUsers?: string
+  token?: string
+  /** 并发轮询去重:扫码确认后只建号一次 */
+  created?: Promise<number | null>
+  at: number
+}
+
+const qrSessions = new Map<string, QrSession>()
+let qrSeq = 0
+
+export async function clawQrStart(opts: {
+  name: string
+  baseUrl?: string
+  wxid?: string
+  allowUsers?: string
+}): Promise<{ ok: boolean; key?: string; qrImg?: string; qrUrl?: string; error?: string }> {
+  const baseUrl = (opts.baseUrl ?? '').trim() || DEFAULT_BASE
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/ilink/bot/get_bot_qrcode?bot_type=3`, {
+      signal: AbortSignal.timeout(20_000)
+    })
+    const data = (await res.json()) as Record<string, unknown>
+    const qr = String(data.qrcode ?? '')
+    if (!res.ok || !qr) {
+      return {
+        ok: false,
+        error:
+          `获取二维码失败 HTTP ${res.status} ${String(data.err_msg ?? data.message ?? '')}`.trim()
+      }
+    }
+    const key = `clawqr-${Date.now()}-${++qrSeq}`
+    qrSessions.set(key, {
+      qr,
+      baseUrl,
+      name: (opts.name ?? '').trim() || '微信 ClawBot',
+      wxid: (opts.wxid ?? '').trim() || undefined,
+      allowUsers: (opts.allowUsers ?? '').trim() || undefined,
+      at: Date.now()
+    })
+    for (const [k, s] of qrSessions) if (Date.now() - s.at > 3 * 60_000) qrSessions.delete(k)
+    const rawImg = data.qrcode_img_content ?? data.qr_img ?? data.img_content ?? data.qrcode_img
+    let qrImg: string | undefined
+    if (typeof rawImg === 'string' && rawImg) {
+      qrImg = rawImg.startsWith('data:image') ? rawImg : `data:image/png;base64,${rawImg}`
+    }
+    const qrUrl = typeof data.url === 'string' ? data.url : undefined
+    return { ok: true, key, qrImg, qrUrl }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function clawQrPoll(key: string): Promise<{
+  ok: boolean
+  status: 'waiting' | 'confirmed' | 'expired' | 'error'
+  accountId?: number
+  error?: string
+}> {
+  const s = qrSessions.get(key)
+  if (!s) return { ok: false, status: 'expired', error: '二维码会话已失效,请重新获取' }
+  // 已有建号在途(并发轮询):直接等它完成,避免重复建号
+  if (s.created) {
+    const accountId = await s.created
+    qrSessions.delete(key)
+    if (accountId === null) return { ok: false, status: 'error', error: '建号失败,请重试' }
+    return { ok: true, status: 'confirmed', accountId }
+  }
+  try {
+    const res = await fetch(
+      `${s.baseUrl.replace(/\/+$/, '')}/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(s.qr)}`,
+      { signal: AbortSignal.timeout(15_000) }
+    )
+    const data = (await res.json()) as Record<string, unknown>
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: 'error',
+        error: `HTTP ${res.status} ${String(data.err_msg ?? data.message ?? '')}`.trim()
+      }
+    }
+    const status = String(data.status ?? '')
+    if (status === 'confirmed') {
+      if (!s.created) {
+        if (!s.token) {
+          const token = String(data.bot_token ?? '')
+          if (!token) return { ok: false, status: 'error', error: '已确认但未返回 bot_token' }
+          s.token = token
+        }
+        if (typeof data.baseurl === 'string' && data.baseurl) s.baseUrl = data.baseurl
+        s.created = createClawAccountFromQr(s)
+      }
+      const accountId = await s.created
+      qrSessions.delete(key)
+      if (accountId === null) return { ok: false, status: 'error', error: '建号失败,请重试' }
+      return { ok: true, status: 'confirmed', accountId }
+    }
+    if (status === 'expired' || status === 'canceled' || status === 'cancelled') {
+      qrSessions.delete(key)
+      return { ok: true, status: 'expired' }
+    }
+    return { ok: true, status: 'waiting' }
+  } catch (e) {
+    return { ok: false, status: 'error', error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+async function createClawAccountFromQr(s: QrSession): Promise<number | null> {
+  try {
+    const r = saveImAccount({
+      channel: 'wechat_claw',
+      name: s.name,
+      enabled: true,
+      config: {
+        baseUrl: s.baseUrl,
+        clawToken: sealSecret(s.token ?? ''),
+        wxid: s.wxid,
+        allowUsers: s.allowUsers
+      }
+    })
+    if (!r.ok || r.id === undefined) return null
+    clawLog.info(`扫码绑定 ClawBot 成功,已建号 #${r.id}(${s.name})`)
+    // 与「保存账号」一致:建号后立即拉起长轮询
+    const st = await startWechatClawAccount(r.id, s.name)
+    if (!st.ok) clawLog.warn(`建号成功但启动失败 acct=${r.id}:${st.error ?? ''}`)
+    return r.id
+  } catch (e) {
+    clawLog.error('扫码建号失败', e)
+    return null
+  }
 }

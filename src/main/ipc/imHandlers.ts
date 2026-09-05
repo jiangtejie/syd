@@ -18,7 +18,9 @@ import {
   startWechatClawAccount,
   stopWechatClawAccount,
   getWechatClawStatus,
-  stopAllWechatClaw
+  stopAllWechatClaw,
+  clawQrStart,
+  clawQrPoll
 } from '../services/im/wechatClawService'
 import { sealSecret } from '../services/secrets'
 import type { ImChannelAccountInput, ImChannelKind } from '../../shared/types'
@@ -127,6 +129,36 @@ export function registerImHandlers(): void {
       return { ok: true as const }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // ── ClawBot 扫码绑定:获取二维码(渲染端只见图片/URL,token 只留在主进程) ──
+  ipcMain.handle(
+    'cs:im:clawQrStart',
+    async (_e, opts: { name: string; baseUrl?: string; wxid?: string; allowUsers?: string }) => {
+      try {
+        return await clawQrStart(opts ?? {})
+      } catch (err) {
+        return {
+          ok: false as const,
+          error: err instanceof Error ? err.message : String(err)
+        }
+      }
+    }
+  )
+
+  ipcMain.handle('cs:im:clawQrPoll', async (_e, key: string) => {
+    if (typeof key !== 'string' || !key) {
+      return { ok: false as const, status: 'error' as const, error: '参数错误' }
+    }
+    try {
+      return await clawQrPoll(key)
+    } catch (err) {
+      return {
+        ok: false as const,
+        status: 'error' as const,
+        error: err instanceof Error ? err.message : String(err)
+      }
     }
   })
 }

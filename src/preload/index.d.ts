@@ -295,6 +295,24 @@ declare global {
           ) => Promise<{ ok: boolean; id?: number; error?: string }>
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
           toggle: (id: number, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+          clawQrStart: (opts: {
+            name: string
+            baseUrl?: string
+            wxid?: string
+            allowUsers?: string
+          }) => Promise<{
+            ok: boolean
+            key?: string
+            qrImg?: string
+            qrUrl?: string
+            error?: string
+          }>
+          clawQrPoll: (key: string) => Promise<{
+            ok: boolean
+            status: 'waiting' | 'confirmed' | 'expired' | 'error'
+            accountId?: number
+            error?: string
+          }>
           onStatus: (
             callback: (payload: {
               accountId: number
