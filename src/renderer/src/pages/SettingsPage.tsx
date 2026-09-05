@@ -7,6 +7,7 @@ import WorkbenchApprovalSection from '../components/settings/WorkbenchApprovalSe
 import WorkbenchMemoSection from '../components/settings/WorkbenchMemoSection'
 import WorkbenchReliabilitySection from '../components/settings/WorkbenchReliabilitySection'
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
+import { SettingsCard, SwitchRow, FieldRow } from '../components/settings/ui'
 import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
 import './settings.css'
@@ -443,19 +444,18 @@ function SettingsPage(): React.JSX.Element {
 
       {tab === 'ai' && (
         <div className="st-tab-panel">
-          {/* AI 通道（独占一行） */}
-          <div className="page-card st-section">
-            <div className="st-title">AI 通道配置（OpenAI 兼容）</div>
-            <label className="st-row">
-              <span className="st-label">启用 AI 调用</span>
-              <input
-                type="checkbox"
-                checked={boolVal(form['ai.enabled'])}
-                onChange={(e) => patch('ai.enabled', boolStr(e.target.checked))}
-              />
-            </label>
-            <label className="st-row">
-              <span className="st-label">通道</span>
+          {/* AI 通道(独占一行) */}
+          <SettingsCard
+            title="AI 通道配置(OpenAI 兼容)"
+            desc="选择通道会自动填入官方接口地址(火山方舟需在控制台创建推理接入点后填写 ep-xxx);模型名可点「获取模型」拉取或手动填写。建议先「测试连接」通过后再保存。"
+          >
+            <SwitchRow
+              label="启用 AI 调用"
+              desc="关闭后回复建议不产出候选、群问题提取走本地规则降级。"
+              checked={boolVal(form['ai.enabled'])}
+              onChange={(v) => patch('ai.enabled', boolStr(v))}
+            />
+            <FieldRow label="通道">
               <select
                 className="st-input"
                 value={form['ai.provider']}
@@ -467,18 +467,16 @@ function SettingsPage(): React.JSX.Element {
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="st-row">
-              <span className="st-label">接口地址（Base URL）</span>
+            </FieldRow>
+            <FieldRow label="接口地址(Base URL)">
               <input
                 className="st-input"
                 value={form['ai.baseUrl']}
                 onChange={(e) => patch('ai.baseUrl', e.target.value)}
                 placeholder="https://api.openai.com/v1"
               />
-            </label>
-            <label className="st-row">
-              <span className="st-label">API Key</span>
+            </FieldRow>
+            <FieldRow label="API Key">
               <input
                 className="st-input"
                 type="password"
@@ -486,9 +484,8 @@ function SettingsPage(): React.JSX.Element {
                 onChange={(e) => patch('ai.apiKey', e.target.value)}
                 placeholder="sk-..."
               />
-            </label>
-            <label className="st-row">
-              <span className="st-label">模型名称</span>
+            </FieldRow>
+            <FieldRow label="模型名称">
               <span className="st-mrow">
                 {modelFree ? (
                   <input
@@ -544,7 +541,7 @@ function SettingsPage(): React.JSX.Element {
                   {aiModelsLoading ? '获取中…' : '获取模型'}
                 </button>
               </span>
-            </label>
+            </FieldRow>
             <div className="st-model-msg">
               {aiModelsMsg &&
                 (aiModelsMsg.ok ? (
@@ -580,17 +577,12 @@ function SettingsPage(): React.JSX.Element {
                 保存 AI 配置
               </button>
             </div>
-            <label className="st-row st-agent-row">
-              <span className="st-label">业务上下文增强</span>
-              <input
-                type="checkbox"
-                checked={boolVal(form['ai.agent'])}
-                onChange={(e) => patch('ai.agent', boolStr(e.target.checked))}
-              />
-              <span className="st-hint-inline">
-                生成建议时自动带上本群待处理问题与团队客服背景；模型必要时可调用只读工具(查历史问题/团队名单)再作答。关闭则仅用聊天记录。
-              </span>
-            </label>
+            <SwitchRow
+              label="业务上下文增强"
+              desc="生成建议时自动带上本群待处理问题与团队客服背景;模型必要时可调用只读工具(查历史问题/团队名单)再作答。关闭则仅用聊天记录。"
+              checked={boolVal(form['ai.agent'])}
+              onChange={(v) => patch('ai.agent', boolStr(v))}
+            />
             <div className="st-ai-test">
               {aiTestRes &&
                 (aiTestRes.ok ? (
@@ -599,46 +591,38 @@ function SettingsPage(): React.JSX.Element {
                   <span className="st-bad">✗ {aiTestRes.error}</span>
                 ))}
             </div>
-            <span className="st-hint">
-              选择通道会自动填入官方接口地址（火山方舟需在控制台创建推理接入点后填写
-              ep-xxx）；模型名不做预置，可点「获取模型」从当前通道拉取，或手动填写。建议先
-              「测试连接」通过后再保存；未启用或未配置 Key/模型名时：回复建议不产出候选并提示开启、
-              群问题反馈提取走本地规则降级。
-            </span>
-          </div>
-          {/* 智能体（统一人设） */}
-          <div className="page-card st-section">
-            <div className="st-title">智能体（统一人设）</div>
-            <span className="st-hint">
-              全应用统一使用同一条人设：智能分析（群问题/工作台）与智能回复（回复建议/IM
-              通道）都按此人设组织口径与话术，AI 界面不再提供人设选择或切换。修改后即时生效。
-            </span>
+          </SettingsCard>
+          {/* 智能体(统一人设) */}
+          <SettingsCard
+            title="智能体(统一人设)"
+            desc="全应用统一使用同一条人设:智能分析(群问题/工作台)与智能回复(回复建议/IM 通道)都按此人设组织口径与话术,修改后即时生效。"
+          >
             <AgentSettingsSection />
-          </div>
+          </SettingsCard>
+
           {/* 运营备忘(跨会话动态事实) */}
-          <div className="page-card st-section">
-            <div className="st-title">运营备忘</div>
-            <span className="st-hint">
-              跨会话动态事实:工作台分析、回复建议与 IM 自动回复每轮都会携带。
-            </span>
+          <SettingsCard
+            title="运营备忘"
+            desc="跨会话动态事实:工作台分析、回复建议与 IM 自动回复每轮都会携带。"
+          >
             <WorkbenchMemoSection />
-          </div>
+          </SettingsCard>
 
           {/* 工具审批策略(工作台写/外部工具预留) */}
-          <div className="page-card st-section">
-            <div className="st-title">工具审批策略</div>
-            <span className="st-hint">
-              需确认的写/外部工具的审批偏好；命中「始终允许」名单的工具不再询问。
-            </span>
+          <SettingsCard
+            title="工具审批策略"
+            desc="需确认的写/外部工具的审批偏好;命中「始终允许」名单的工具不再询问。"
+          >
             <WorkbenchApprovalSection />
-          </div>
+          </SettingsCard>
 
           {/* AI 通道可靠性(本次运行) */}
-          <div className="page-card st-section">
-            <div className="st-title">AI 通道可靠性</div>
-            <span className="st-hint">本次运行内工作台生成请求的成功率与最近失败原因。</span>
+          <SettingsCard
+            title="AI 通道可靠性"
+            desc="本次运行内工作台生成请求的成功率与最近失败原因。"
+          >
             <WorkbenchReliabilitySection />
-          </div>
+          </SettingsCard>
         </div>
       )}
 
@@ -646,10 +630,8 @@ function SettingsPage(): React.JSX.Element {
         <div className="st-tab-panel">
           <div className="st-grid">
             {/* 发送频控 */}
-            <div className="page-card st-section">
-              <div className="st-title">发送与频控</div>
-              <label className="st-row">
-                <span className="st-label">每日发送上限</span>
+            <SettingsCard title="发送与频控">
+              <FieldRow label="每日发送上限">
                 <input
                   className="st-input sm"
                   type="number"
@@ -658,23 +640,19 @@ function SettingsPage(): React.JSX.Element {
                   value={form['send.dailyLimit']}
                   onChange={(e) => patch('send.dailyLimit', e.target.value)}
                 />
-              </label>
-              <label className="st-row">
-                <span className="st-label">拟人化延迟（发送间隔随机化）</span>
-                <input
-                  type="checkbox"
-                  checked={boolVal(form['send.humanizeDelay'])}
-                  onChange={(e) => patch('send.humanizeDelay', boolStr(e.target.checked))}
-                />
-              </label>
-              <label className="st-row">
-                <span className="st-label">启用注入发送</span>
-                <input
-                  type="checkbox"
-                  checked={boolVal(form['inject.enabled'])}
-                  onChange={(e) => patch('inject.enabled', boolStr(e.target.checked))}
-                />
-              </label>
+              </FieldRow>
+              <SwitchRow
+                label="拟人化延迟(发送间隔随机化)"
+                desc="在节流区间内随机延迟后再发出,降低批量发送的机械感。"
+                checked={boolVal(form['send.humanizeDelay'])}
+                onChange={(v) => patch('send.humanizeDelay', boolStr(v))}
+              />
+              <SwitchRow
+                label="启用注入发送"
+                desc="关闭后所有发送请求会被拒绝(仅记录审计)。"
+                checked={boolVal(form['inject.enabled'])}
+                onChange={(v) => patch('inject.enabled', boolStr(v))}
+              />
               <div className="st-actions">
                 <button
                   type="button"
@@ -685,13 +663,14 @@ function SettingsPage(): React.JSX.Element {
                 >
                   保存发送配置
                 </button>
-                <span className="st-hint">关闭注入后所有发送请求会被拒绝（仅记录审计）</span>
               </div>
-            </div>
+            </SettingsCard>
 
             {/* 熔断状态 */}
-            <div className="page-card st-section">
-              <div className="st-title">发送通道状态</div>
+            <SettingsCard
+              title="发送通道状态"
+              desc="连续 2 次发送校验失败会自动熔断,复位前请先排查原因。"
+            >
               <div className="st-status">
                 <div className="st-kv">
                   <span>熔断状态</span>
@@ -719,9 +698,8 @@ function SettingsPage(): React.JSX.Element {
                 >
                   复位熔断
                 </button>
-                <span className="st-hint">连续 2 次发送校验失败会自动熔断，复位前请先排查原因</span>
               </div>
-            </div>
+            </SettingsCard>
           </div>
         </div>
       )}
@@ -730,8 +708,10 @@ function SettingsPage(): React.JSX.Element {
         <div className="st-tab-panel">
           <div className="st-grid">
             {/* 数据缓存目录 */}
-            <div className="page-card st-section">
-              <div className="st-title">数据与缓存</div>
+            <SettingsCard
+              title="数据与缓存"
+              desc="用于解密图片/附件缓存与导出文件。默认优先取非系统盘(无可用盘符时回退应用数据目录);本地数据库 cs.db 固定存于应用数据目录,不随此项迁移。"
+            >
               <div
                 className="st-cache-pick"
                 role="button"
@@ -771,83 +751,57 @@ function SettingsPage(): React.JSX.Element {
                   选择目录后立即生效；切换目录后仅新缓存/导出写入新位置，旧目录内容需手动迁移
                 </span>
               </div>
-              <div className="st-hint st-cache-hint">
-                用于解密图片/附件缓存与导出文件。默认优先取非系统盘（无可用盘符时回退应用数据目录）；
-                本地数据库 cs.db 固定存于应用数据目录，不随此项迁移。
-              </div>
-            </div>
+            </SettingsCard>
 
             {/* 通用（通知 / 开机自启） */}
-            <div className="page-card st-section">
-              <div className="st-title">通用</div>
-              <label className="st-row">
-                <span className="st-label">新消息系统通知</span>
-                <input
-                  type="checkbox"
-                  checked={boolVal(form['notify.enabled'])}
-                  onChange={(e) => {
-                    patch('notify.enabled', boolStr(e.target.checked))
-                    void configApi?.set('notify.enabled', boolStr(e.target.checked))
-                  }}
-                />
-              </label>
-              <label className="st-row">
-                <span className="st-label">开机自动启动</span>
-                <input
-                  type="checkbox"
-                  checked={autoLaunch}
-                  onChange={(e) => void toggleAutoLaunch(e.target.checked)}
-                />
-              </label>
-              <div className="st-hint st-cache-hint">
-                关闭窗口会最小化到系统托盘，可在托盘菜单中退出；
-                开机自启在打包安装后生效（开发模式下指向 Electron 本体）。
-              </div>
-            </div>
+            <SettingsCard title="通用">
+              <SwitchRow
+                label="新消息系统通知"
+                desc="后台消息到达时弹出系统通知(窗口未聚焦时)。"
+                checked={boolVal(form['notify.enabled'])}
+                onChange={(v) => {
+                  patch('notify.enabled', boolStr(v))
+                  void configApi?.set('notify.enabled', boolStr(v))
+                }}
+              />
+              <SwitchRow
+                label="开机自动启动"
+                desc="打包安装后生效(开发模式下指向 Electron 本体);关闭窗口会最小化到系统托盘,可在托盘菜单中退出。"
+                checked={autoLaunch}
+                onChange={(v) => void toggleAutoLaunch(v)}
+              />
+            </SettingsCard>
 
             {/* 问题监控口径 */}
-            <div className="page-card st-section">
-              <div className="st-title">问题监控口径</div>
-              <label className="st-row">
-                <span className="st-label">后台自动增量分析</span>
-                <input
-                  type="checkbox"
-                  checked={autoScanIssue}
-                  onChange={(e) => {
-                    setAutoScanIssue(e.target.checked)
-                    void configApi?.set('issue.autoScan.enabled', e.target.checked ? '1' : '0')
-                    toast.success(
-                      e.target.checked
-                        ? '已开启:新消息事件 + 60s 巡检自动提取'
-                        : '已关闭后台自动分析(仍可手动分析)'
-                    )
-                  }}
-                />
-                <span className="st-hint-inline">
-                  覆盖全部活跃群的新消息自动提取(不限于当前打开的群),无新消息时不消耗模型
-                </span>
-              </label>
-              <label className="st-row">
-                <span className="st-label">盯办升级提醒</span>
-                <input
-                  type="checkbox"
-                  checked={escalateIssue}
-                  onChange={(e) => {
-                    setEscalateIssue(e.target.checked)
-                    void configApi?.set('issue.escalate.enabled', e.target.checked ? '1' : '0')
-                    toast.success(
-                      e.target.checked
-                        ? '已开启:未指派超时/跟进超时自动提醒'
-                        : '已关闭盯办提醒(监控页仍可见)'
-                    )
-                  }}
-                />
-                <span className="st-hint-inline">
-                  未指派超时(紧急&gt;1h/其余&gt;4h)与跟进超时的问题,后台每分钟巡检、窗口未聚焦时桌面提醒
-                </span>
-              </label>
-              <label className="st-row">
-                <span className="st-label">积压超时阈值</span>
+            <SettingsCard
+              title="问题监控口径"
+              desc="应用于监控中心 KPI、群问题面板的逾期徽标与排序提示;数值失焦或回车保存,立即生效。"
+            >
+              <SwitchRow
+                label="后台自动增量分析"
+                desc="覆盖全部活跃群的新消息自动提取(不限于当前打开的群),无新消息时不消耗模型。"
+                checked={autoScanIssue}
+                onChange={(v) => {
+                  setAutoScanIssue(v)
+                  void configApi?.set('issue.autoScan.enabled', v ? '1' : '0')
+                  toast.success(
+                    v ? '已开启:新消息事件 + 60s 巡检自动提取' : '已关闭后台自动分析(仍可手动分析)'
+                  )
+                }}
+              />
+              <SwitchRow
+                label="盯办升级提醒"
+                desc="未指派超时(紧急>1h/其余>4h)与跟进超时的问题,后台每分钟巡检、窗口未聚焦时桌面提醒。"
+                checked={escalateIssue}
+                onChange={(v) => {
+                  setEscalateIssue(v)
+                  void configApi?.set('issue.escalate.enabled', v ? '1' : '0')
+                  toast.success(
+                    v ? '已开启:未指派超时/跟进超时自动提醒' : '已关闭盯办提醒(监控页仍可见)'
+                  )
+                }}
+              />
+              <FieldRow label="积压超时阈值" hint="小时:问题首现超过该时长未闭环即标为「积压超时」">
                 <input
                   type="number"
                   min={1}
@@ -860,12 +814,11 @@ function SettingsPage(): React.JSX.Element {
                     if (e.key === 'Enter') saveThreshold('monitor.backlogHours', backlogHours, 48)
                   }}
                 />
-                <span className="st-hint-inline">
-                  小时：问题首现超过该时长未闭环即标为「积压超时」
-                </span>
-              </label>
-              <label className="st-row">
-                <span className="st-label">跟进超时阈值</span>
+              </FieldRow>
+              <FieldRow
+                label="跟进超时阈值"
+                hint="小时:客服回复后超过该时长仍未闭环即标为「跟进超时」"
+              >
                 <input
                   type="number"
                   min={1}
@@ -878,18 +831,11 @@ function SettingsPage(): React.JSX.Element {
                     if (e.key === 'Enter') saveThreshold('monitor.followUpHours', followUpHours, 12)
                   }}
                 />
-                <span className="st-hint-inline">
-                  小时：客服回复后超过该时长仍未闭环即标为「跟进超时」
-                </span>
-              </label>
-              <div className="st-hint">
-                应用于监控中心 KPI、群问题面板的逾期徽标与排序提示；失焦或回车保存，立即生效。
-              </div>
-            </div>
+              </FieldRow>
+            </SettingsCard>
 
             {/* 数据管理 */}
-            <div className="page-card st-section">
-              <div className="st-title">数据管理</div>
+            <SettingsCard title="数据管理">
               <div className="st-kv">
                 <span>本地数据库</span>
                 <span>{dataStats ? formatBytes(dataStats.dbBytes) : '—'}</span>
@@ -909,7 +855,7 @@ function SettingsPage(): React.JSX.Element {
                 <span className="st-hint">仅清空缓存目录，不影响密钥、配置与审计数据</span>
               </div>
               <div className="st-version">微信私域智能客服 v{version || '—'}</div>
-            </div>
+            </SettingsCard>
           </div>
         </div>
       )}

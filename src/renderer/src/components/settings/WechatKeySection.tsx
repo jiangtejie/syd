@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { toast } from '../../stores/toast'
+import { SettingsCard } from './ui'
 import type { KeyAccountInfo, KeyStatusInfo } from '../../../../shared/types'
 
 /**
@@ -62,23 +63,20 @@ function WechatKeySection(): React.JSX.Element {
   const [lastError, setLastError] = useState('')
   const [busy, setBusy] = useState<'import' | 'test' | 'connect' | 'img' | null>(null)
 
-  const loadStatus = useCallback(
-    async (id: string) => {
-      if (!id.trim() || !keyStoreApi) {
-        setStatus(null)
-        return
-      }
-      const info = await keyStoreApi.getStatus(id.trim()).catch(() => null)
-      setStatus(info)
-      if (info?.hasKey && info.dbPath) setDbPath(info.dbPath)
-      const cfg = await configApi?.getAll().catch(() => null)
-      setLastError(cfg?.[`key:${id.trim()}:error`] ?? '')
-      setXorKey(cfg?.[`img:${id.trim()}:xorKey`] ?? '')
-      setAesKey(cfg?.[`img:${id.trim()}:aesKey`] ?? '')
-      setFfmpegPath(cfg?.['media.ffmpegPath'] ?? '')
-    },
-    []
-  )
+  const loadStatus = useCallback(async (id: string) => {
+    if (!id.trim() || !keyStoreApi) {
+      setStatus(null)
+      return
+    }
+    const info = await keyStoreApi.getStatus(id.trim()).catch(() => null)
+    setStatus(info)
+    if (info?.hasKey && info.dbPath) setDbPath(info.dbPath)
+    const cfg = await configApi?.getAll().catch(() => null)
+    setLastError(cfg?.[`key:${id.trim()}:error`] ?? '')
+    setXorKey(cfg?.[`img:${id.trim()}:xorKey`] ?? '')
+    setAesKey(cfg?.[`img:${id.trim()}:aesKey`] ?? '')
+    setFfmpegPath(cfg?.['media.ffmpegPath'] ?? '')
+  }, [])
 
   // wxid 输入后自动查询密钥状态（600ms 防抖）
   useEffect(() => {
@@ -91,12 +89,13 @@ function WechatKeySection(): React.JSX.Element {
     let list: KeyAccountInfo[] | null = null
     for (let i = 0; i < 5 && list === null; i++) {
       if (i > 0) await new Promise((r) => setTimeout(r, 1200))
-      list = await keyStoreApi?.list().catch(() => null) ?? null
+      list = (await keyStoreApi?.list().catch(() => null)) ?? null
     }
     setAccounts(list ?? [])
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取账号列表(全仓同款模式)
     void loadAccounts()
   }, [loadAccounts])
 
@@ -198,9 +197,7 @@ function WechatKeySection(): React.JSX.Element {
   const keyReady = !!status?.hasKey
 
   return (
-    <div className="page-card st-section">
-      <div className="st-title">微信数据与密钥</div>
-
+    <SettingsCard title="微信数据与密钥">
       {/* 当前账号：已保存密钥的账号下拉选择；无已导入账号或手动输入其他账号时展开文本输入 */}
       {accounts.length > 0 && (
         <label className="st-row">
@@ -226,7 +223,9 @@ function WechatKeySection(): React.JSX.Element {
 
       {(accounts.length === 0 || !accounts.some((a) => a.wxid === wxid)) && (
         <label className="st-row">
-          <span className="st-label">{accounts.length > 0 ? '账号 wxid（手动输入）' : '当前账号 wxid'}</span>
+          <span className="st-label">
+            {accounts.length > 0 ? '账号 wxid（手动输入）' : '当前账号 wxid'}
+          </span>
           <input
             className="st-input"
             value={wxid}
@@ -395,7 +394,7 @@ function WechatKeySection(): React.JSX.Element {
         标准解密驱动无法直开。当前解密层处于预留状态，「测试解密」在未接入自研解密前可能失败，
         工作台会自动降级为示例数据。取 key 请使用外部工具导出后手动导入。
       </div>
-    </div>
+    </SettingsCard>
   )
 }
 

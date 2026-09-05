@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ImChannelAccount, ImChannelAccountInput, KeyAccountInfo } from '../../../shared/types'
+import { SettingsCard, SwitchRow } from '../components/settings/ui'
 import { toast } from '../stores/toast'
 import './im.css'
 
@@ -150,67 +151,74 @@ export function ImSection(): React.JSX.Element {
         </button>
       </div>
 
-      <div className="im-guide">
-        接入前需在飞书开放平台完成三步(缺一不可):① 创建「企业自建应用」并启用机器人能力;② 事件与回调
-        → 订阅方式选「使用长连接接收事件」,并添加事件 im.message.receive_v1;③
-        开通权限:接收群聊中@机器人消息、读取用户发给机器人的单聊消息、发送消息(含单聊/群聊),然后创建版本并发布。
-        保存后自动建立长连接,状态实时刷新;私聊直接发消息即可,群聊需 @ 机器人(一期仅支持文本)。
-        连接失败的原因会显示在下方状态里,也可查看日志文件 logs/im.log(位于用户数据目录)。
-      </div>
-      <div className="im-guide">
-        可选「绑定微信业务账号」:绑定后,机器人对话会以该账号的上下文运行,具备与客服工作台一致的业务查询能力
-        (客户/群问题/监控/最近消息/统计等);不绑定则仅限通用对话,业务查询会被拒绝。
-        绑定后默认任何能私聊或在群里 @ 该机器人的飞书用户都能触发业务查询——如需限定范围,
-        请在下方表单填写「业务查询白名单」。
-      </div>
+      <SettingsCard title="接入说明" desc="三步接入飞书机器人,保存后自动建立长连接,状态实时刷新。">
+        <p>
+          ① 在飞书开放平台创建「企业自建应用」并启用机器人能力;② 事件与回调 →
+          订阅方式选「使用长连接接收事件」, 并添加事件 im.message.receive_v1;③
+          开通权限:接收群聊中@机器人消息、读取用户发给机器人的单聊消息、
+          发送消息(含单聊/群聊),然后创建版本并发布。
+        </p>
+        <p>
+          私聊直接发消息即可,群聊需 @ 机器人(一期仅支持文本)。连接失败的原因会显示在下方账号状态里,
+          也可查看日志文件 logs/im.log(位于用户数据目录)。
+        </p>
+        <p>
+          可选「绑定微信业务账号」:绑定后,机器人对话会以该账号的上下文运行,具备与客服工作台一致的业务查询能力
+          (客户/群问题/监控/最近消息/统计等);不绑定则仅限通用对话,业务查询会被拒绝。
+          绑定后默认任何能私聊或在群里 @
+          该机器人的飞书用户都能触发业务查询——如需限定范围,请填写「业务查询白名单」。
+        </p>
+      </SettingsCard>
 
-      <div className="im-list">
-        {accounts === null && <div className="st-hint">加载中…</div>}
-        {accounts !== null && accounts.length === 0 && (
-          <div className="st-hint">
-            暂无 IM 账号。创建飞书自建应用后,点「接入飞书机器人」填写 App ID / App Secret 即可。
-          </div>
-        )}
-        {accounts?.map((a) => (
-          <div key={a.id} className="mcp-item">
-            <div className="mcp-item-main">
-              <b>{a.name}</b>
-              <span className="mcp-kind">飞书</span>
-              {a.enabled ? (
-                <span className="mcp-on">启用</span>
-              ) : (
-                <span className="mcp-off">停用</span>
-              )}
-              <span className="mcp-desc">
-                状态:
-                {a.status === 'connected'
-                  ? '已连接'
-                  : a.status === 'connecting'
-                    ? '连接中…'
-                    : a.status === 'error'
-                      ? `连接失败:${a.statusText ?? ''}`
-                      : '未启动'}
-                {a.wxid ? ` · 绑定业务:${a.wxid}` : ''}
-              </span>
+      <SettingsCard title="已接入账号(飞书)">
+        <div className="im-list">
+          {accounts === null && <div className="st-hint">加载中…</div>}
+          {accounts !== null && accounts.length === 0 && (
+            <div className="st-hint">
+              暂无 IM 账号。创建飞书自建应用后,点「接入飞书机器人」填写 App ID / App Secret 即可。
             </div>
-            <div className="mcp-item-ops">
-              <button type="button" className="st-btn ghost sm" onClick={() => editAccount(a)}>
-                编辑
-              </button>
-              <button type="button" className="st-btn ghost sm" onClick={() => void toggle(a)}>
-                {a.enabled ? '停用' : '启用'}
-              </button>
-              <button
-                type="button"
-                className="st-btn ghost danger sm"
-                onClick={() => void remove(a)}
-              >
-                删除
-              </button>
+          )}
+          {accounts?.map((a) => (
+            <div key={a.id} className="mcp-item">
+              <div className="mcp-item-main">
+                <b>{a.name}</b>
+                <span className="mcp-kind">飞书</span>
+                {a.enabled ? (
+                  <span className="mcp-on">启用</span>
+                ) : (
+                  <span className="mcp-off">停用</span>
+                )}
+                <span className="mcp-desc">
+                  状态:
+                  {a.status === 'connected'
+                    ? '已连接'
+                    : a.status === 'connecting'
+                      ? '连接中…'
+                      : a.status === 'error'
+                        ? `连接失败:${a.statusText ?? ''}`
+                        : '未启动'}
+                  {a.wxid ? ` · 绑定业务:${a.wxid}` : ''}
+                </span>
+              </div>
+              <div className="mcp-item-ops">
+                <button type="button" className="st-btn ghost sm" onClick={() => editAccount(a)}>
+                  编辑
+                </button>
+                <button type="button" className="st-btn ghost sm" onClick={() => void toggle(a)}>
+                  {a.enabled ? '停用' : '启用'}
+                </button>
+                <button
+                  type="button"
+                  className="st-btn ghost danger sm"
+                  onClick={() => void remove(a)}
+                >
+                  删除
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </SettingsCard>
 
       {open && (
         <div className="mcp-edit">
@@ -300,15 +308,12 @@ export function ImSection(): React.JSX.Element {
             机器人的人都能查询业务数据;填写后只有名单内的飞书用户可触发,其余消息被忽略。
             获取自己的标识:logs/im.log 里每条入站会记录 sender=ou_…;也可在飞书后台查看。
           </div>
-          <label className="st-row">
-            <span className="st-label">保存后启用</span>
-            <input
-              type="checkbox"
-              checked={form.enabled ?? false}
-              onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-            />
-            <span className="st-hint-inline">启用即建立长连接开始接收消息</span>
-          </label>
+          <SwitchRow
+            label="保存后启用"
+            desc="启用即建立长连接开始接收消息。"
+            checked={form.enabled ?? false}
+            onChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
+          />
           <div className="st-actions">
             <button type="button" className="st-btn ghost" onClick={() => setOpen(false)}>
               取消
