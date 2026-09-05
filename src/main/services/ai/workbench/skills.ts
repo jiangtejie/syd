@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getConfig, setConfig } from '../../../db/repos/config'
 import type { WbSkillInfo } from './types'
@@ -136,4 +136,61 @@ export function skillsInjectionText(): string {
   }
   if (parts.length === 0) return ''
   return `# 业务技能(按此口径执行;仅相关内容时使用)\n${parts.join('\n\n')}`
+}
+
+/* ══════════ 内置技能(首次启动自动种子并默认启用) ══════════ */
+
+const SEEDED_KEY = 'wb.skills.seeded'
+
+/** 内置「回复排版」技能:教模型用客户端富文本组件组织回答,避免回复形式单一 */
+const BUILTIN_REPLY_FORMAT = {
+  dirName: 'reply-format',
+  name: '回复排版',
+  description: '用 Markdown 富文本组织回答:表格/清单/告警块/代码块,排版克制清晰',
+  md: `---
+name: 回复排版
+description: 用 Markdown 富文本组织回答:表格/清单/告警块/代码块,排版克制清晰
+---
+
+# 回复排版规范(富文本组件)
+
+客户端已支持以下 Markdown 富文本组件。根据内容选择合适的结构,不要一律输出大段文字:
+
+1. 表格:需要对比或列举多维数据时(如各群问题量、KPI、状态清单、口径对比),先给一句结论,再用表格呈现;表头尽量简短,列数不要超过 6 列。
+2. 任务清单:给「待办 / 建议动作 / 跟进事项」时,用勾选列表,如:
+   - [ ] 事项一
+   - [x] 已完成事项
+3. 告警块:需要强调的信息用 GitHub 风格告警(单独成段):
+   > [!NOTE] 补充说明
+   > [!TIP] 建议做法
+   > [!IMPORTANT] 必须注意/关键结论
+   > [!WARNING] 风险与提醒
+   > [!DANGER] 阻断性/危险事项
+4. 代码块/行内代码:文件名、命令、JSON、SQL、传参示例等用 \`\`\` 或 \` 包裹;中文正文叙述不要用代码块。
+5. 引用:引用客户原话、口径依据、SKILL 原文时用 > 引用,并标注来源。
+6. 标题与列表:结论先行,善用 ##/### 分节与有序/无序列表;每个小节只讲一件事。
+
+排版原则:轻量、克制。信息很少时一个自然段即可;不要为了“看起来丰富”堆砌组件,表格里不要放废话,告警块不要连续使用。`
+}
+
+/** 首次启动种子内置技能(用户已有自建技能则不打扰;执行一次后不再写) */
+export function ensureBuiltinSkillSeeded(): void {
+  try {
+    if (getConfig(SEEDED_KEY) === '1') return
+    const existing = listSkills()
+    if (existing.length > 0) {
+      setConfig(SEEDED_KEY, '1')
+      return
+    }
+    const dir = join(skillsRoot(), BUILTIN_REPLY_FORMAT.dirName)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'SKILL.md'), BUILTIN_REPLY_FORMAT.md, 'utf8')
+    // 默认启用(追加进启用集)
+    const enabled = enabledNames()
+    enabled.add(BUILTIN_REPLY_FORMAT.name)
+    setConfig('wb.skills.enabled', [...enabled].sort().join(','))
+    setConfig(SEEDED_KEY, '1')
+  } catch {
+    /* 种子失败不阻塞(下次启动重试) */
+  }
 }

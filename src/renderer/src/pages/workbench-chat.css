@@ -317,14 +317,18 @@
 
 .wb-bubble code {
   background: var(--bg-hover);
+  border: 1px solid var(--border-light);
   border-radius: 4px;
   padding: 1px 4px;
   font-size: 12px;
+  color: var(--text-1);
 }
 
+/* 代码块:浅色主题(与工作台浅色一致;reason 内容有自己的提示卡样式) */
 .wb-bubble pre {
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--bg-hover);
+  color: var(--text-1);
+  border: 1px solid var(--border-light);
   padding: 10px 12px;
   border-radius: var(--r-sm);
   overflow-x: auto;
@@ -333,15 +337,17 @@
 
 .wb-bubble pre code {
   background: transparent;
+  border: none;
   padding: 0;
   color: inherit;
 }
 
 .wb-bubble blockquote {
-  border-left: 3px solid var(--brand-line);
+  border-left: 3px solid var(--border);
   margin: 4px 0;
-  padding-left: 10px;
+  padding: 2px 12px;
   color: var(--text-2);
+  background: transparent;
 }
 
 .wb-caret {
@@ -782,30 +788,7 @@
   user-select: none;
 }
 
-/* ── 回复 Markdown 稳健渲染:表格横滚/图片限高/列表紧凑 ── */
-.wb-bubble table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  border-collapse: collapse;
-  margin: 6px 0;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.wb-bubble th,
-.wb-bubble td {
-  border: 1px solid var(--border);
-  padding: 4px 9px;
-  text-align: left;
-  word-break: break-word;
-}
-
-.wb-bubble th {
-  background: var(--bg-hover);
-  font-weight: 600;
-}
-
+/* ── 回复 Markdown:图片/分隔线(表格/列表/告警卡见文末「富文本组件主题」) ── */
 .wb-bubble img {
   display: block;
   max-width: 100%;
@@ -813,23 +796,6 @@
   object-fit: contain;
   border-radius: var(--r-sm);
   margin: 6px 0;
-}
-
-.wb-bubble ul,
-.wb-bubble ol {
-  padding-left: 22px;
-  margin: 4px 0;
-}
-
-.wb-bubble li {
-  margin: 2px 0;
-}
-
-.wb-bubble blockquote {
-  margin: 6px 0;
-  padding: 2px 12px;
-  color: var(--text-2);
-  border-left: 3px solid var(--border);
 }
 
 .wb-bubble hr {
@@ -1052,4 +1018,183 @@
 .wb-reason-text,
 .wb-reason-static {
   user-select: text;
+}
+
+/* ══════════ 富文本组件主题(表格/任务清单/告警卡/链接) ══════════ */
+
+/* 表格:紧凑、表头着色、斑马纹 */
+.wb-bubble table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  border-spacing: 0;
+}
+
+.wb-bubble th,
+.wb-bubble td {
+  border: 1px solid var(--border);
+  padding: 5px 9px;
+  text-align: left;
+  word-break: break-word;
+  vertical-align: top;
+}
+
+.wb-bubble thead th {
+  background: var(--bg-hover);
+  font-weight: 600;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.wb-bubble tbody tr:nth-child(even) {
+  background: var(--bg-hover);
+}
+
+/* 任务清单:自绘方框(只读展示) */
+.wb-bubble ul.contains-task-list,
+.wb-bubble ol.contains-task-list {
+  padding-left: 4px;
+  list-style: none;
+}
+
+.wb-bubble li.task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 3px 0;
+}
+
+.wb-bubble input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  margin: 2px 0 0;
+  flex: none;
+  border: 1.5px solid var(--text-4);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  cursor: default;
+  position: relative;
+}
+
+.wb-bubble input[type='checkbox']:checked {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.wb-bubble input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--on-brand);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+/* 告警块(>[!NOTE|TIP|IMPORTANT|WARNING|DANGER]):提示性彩色卡 */
+.wb-bubble blockquote.md-callout {
+  margin: 8px 0;
+  padding: 8px 12px 8px 34px;
+  border: 1px solid var(--border-light);
+  border-left-width: 3px;
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  position: relative;
+}
+
+.wb-bubble blockquote.md-callout::before {
+  position: absolute;
+  left: 10px;
+  top: 7px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.wb-bubble blockquote.md-callout p {
+  margin: 0 0 4px;
+}
+
+.wb-bubble blockquote.md-callout p:last-child {
+  margin-bottom: 0;
+}
+
+.wb-bubble blockquote.md-callout.is-note {
+  border-left-color: var(--info);
+  background: var(--info-soft);
+}
+
+.wb-bubble blockquote.md-callout.is-note::before {
+  content: 'ℹ️';
+}
+
+.wb-bubble blockquote.md-callout.is-tip {
+  border-left-color: var(--success-strong);
+  background: var(--success-soft);
+}
+
+.wb-bubble blockquote.md-callout.is-tip::before {
+  content: '💡';
+}
+
+.wb-bubble blockquote.md-callout.is-important {
+  border-left-color: #8b5cf6;
+  background: #f5f3ff;
+}
+
+.wb-bubble blockquote.md-callout.is-important::before {
+  content: '❗';
+}
+
+.wb-bubble blockquote.md-callout.is-warning {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.wb-bubble blockquote.md-callout.is-warning::before {
+  content: '⚠️';
+}
+
+.wb-bubble blockquote.md-callout.is-danger {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.wb-bubble blockquote.md-callout.is-danger::before {
+  content: '⛔';
+}
+
+/* 链接与其它小部件 */
+.wb-bubble a {
+  color: var(--info);
+  text-decoration: none;
+}
+
+.wb-bubble a:hover {
+  text-decoration: underline;
+}
+
+.wb-bubble kbd {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--text-1);
+}
+
+.wb-bubble mark {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  border-radius: 3px;
+  padding: 0 2px;
 }

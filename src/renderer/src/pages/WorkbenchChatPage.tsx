@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import type { ChatMsgItem } from '../../../shared/types'
 import {
   cleanStreamText,
@@ -10,6 +9,7 @@ import {
 } from '../stores/workbenchChat'
 import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
+import { MD_REMARK_PLUGINS } from '../components/workbench/mdPlugins'
 import './workbench-chat.css'
 
 /**
@@ -18,14 +18,14 @@ import './workbench-chat.css'
  * 交互优化:历史气泡 memo(流式时不重复解析 Markdown)、delta 按帧渲染(带轮次防幽灵帧)、
  * 发送后乐观回显、跟随滚动(用户上翻时不抢滚)、思考动画、中文输入法回车不误发、
  * reasoner 推理过程实时流+落库可折叠回看、超长会话消息窗口化。
- * 回复渲染稳健性:控制字符清洗、链接外部打开、图片限高加载失败隐藏、表格横向滚动。
+ * 回复渲染:富文本组件(表格/任务清单/告警块等)样式见「富文本组件主题」,插件集 mdPlugins。
  */
 
 /** 消息窗口:只渲染最近 N 条(超长会话防整表重排);向上分页翻更早 */
 const WB_WINDOW = 200
 const WB_OLDER_STEP = 200
 
-/** 链接:应用内页面不可被模型输出导航走(主进程对 window.open 统一走系统浏览器) */
+/** 链接:外部打开(主进程对 window.open 统一走系统浏览器),不在应用内导航 */
 function MdLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element {
   const { href, children, ...rest } = props
   return (
@@ -35,7 +35,7 @@ function MdLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX
   )
 }
 
-/** 图片:限高防撑爆气泡;加载失败就地隐藏(不显示裂图) */
+/** 图片:限高防撑爆气泡;加载失败就地隐藏;URL 流式成型时 src 变化自动复位 */
 function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement>): React.JSX.Element | null {
   const [failed, setFailed] = useState(false)
   const src = props.src
@@ -259,7 +259,7 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
                 {reasonOpen && <pre className="wb-reason-static">{reasoningText}</pre>}
               </div>
             )}
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+            <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
               {content}
             </ReactMarkdown>
             {hasTokens && (
@@ -845,7 +845,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             return (
               <div key={b.id} className="wb-row">
                 <div className="wb-bubble">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+                  <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
                     {b.text ?? ''}
                   </ReactMarkdown>
                   {isTail && <span className="wb-caret" />}
