@@ -678,6 +678,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     submit: (value: string) => void | Promise<void>
   }
   const [promptState, setPromptState] = useState<PromptState | null>(null)
+  /** 会话行 ✕ → 操作弹层(清空内容 / 删除会话) */
+  const [opsChat, setOpsChat] = useState<{ id: number; title: string } | null>(null)
   const [promptVal, setPromptVal] = useState('')
   const [promptBusy, setPromptBusy] = useState(false)
 
@@ -1189,10 +1191,10 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                     </button>
                     <button
                       type="button"
-                      title="删除会话"
+                      title="会话操作(清空内容/删除)"
                       onClick={(e) => {
                         e.stopPropagation()
-                        if (window.confirm(`删除会话「${c.title}」?`)) void store.remove(c.id)
+                        setOpsChat({ id: c.id, title: c.title })
                       }}
                     >
                       ✕
@@ -1231,34 +1233,6 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           <div className="wb-head-title">
             <b>{active?.title ?? '工作台'}</b>
             <span className="wb-head-sub">AI 工作台 · 调用产品能力</span>
-          </div>
-          <div className="wb-head-right">
-            <button
-              type="button"
-              className="st-btn ghost sm"
-              disabled={!activeId || messages.length === 0 || activeBusy}
-              onClick={() => void store.retry()}
-            >
-              重试
-            </button>
-            <button
-              type="button"
-              className="st-btn ghost sm"
-              disabled={!activeId}
-              onClick={() => void store.stop()}
-            >
-              停止
-            </button>
-            <button
-              type="button"
-              className="st-btn ghost danger sm"
-              disabled={!activeId || messages.length === 0 || activeBusy}
-              onClick={() => {
-                if (window.confirm('清空当前会话的消息记录?')) void store.clear(activeId!)
-              }}
-            >
-              清空
-            </button>
           </div>
         </div>
 
@@ -1373,7 +1347,16 @@ export default function WorkbenchChatPage(): React.JSX.Element {
         {/* 审批统一条:固定在输入区上方,不再随消息流滚动/埋没 */}
         <WbApprovals />
 
-        {error && <div className="wb-error">✗ {error}</div>}
+        {error && (
+          <div className="wb-error">
+            <span>✗ {error}</span>
+            {!activeBusy && (
+              <button type="button" className="wb-error-retry" onClick={() => void store.retry()}>
+                重试
+              </button>
+            )}
+          </div>
+        )}
 
         <div
           className="wb-composer"
@@ -1508,6 +1491,53 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                 onClick={() => void submitPrompt()}
               >
                 {promptState.okLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 会话行 ✕:清空内容 / 删除会话(范围与不可恢复性不同,分开展示确认) */}
+      {opsChat && (
+        <div className="confirm-mask" onClick={() => setOpsChat(null)}>
+          <div className="confirm-dialog wb-ops-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-title">会话操作</div>
+            <div className="wb-ops-name">{opsChat.title}</div>
+            <div className="wb-ops-list">
+              <button
+                type="button"
+                className="wb-ops-item"
+                onClick={() => {
+                  const c = opsChat
+                  setOpsChat(null)
+                  if (
+                    window.confirm(`清空会话「${c.title}」的全部消息记录?会话保留,可继续提问。`)
+                  ) {
+                    void store.clear(c.id)
+                  }
+                }}
+              >
+                <b>清空内容</b>
+                <span>删掉全部对话记录,会话保留;常用于重开一个干净话题</span>
+              </button>
+              <button
+                type="button"
+                className="wb-ops-item danger"
+                onClick={() => {
+                  const c = opsChat
+                  setOpsChat(null)
+                  if (window.confirm(`删除会话「${c.title}」?该操作不可恢复。`)) {
+                    void store.remove(c.id)
+                  }
+                }}
+              >
+                <b>删除会话</b>
+                <span>连同历史一起删除,不可恢复</span>
+              </button>
+            </div>
+            <div className="confirm-actions">
+              <button type="button" className="confirm-btn" onClick={() => setOpsChat(null)}>
+                取消
               </button>
             </div>
           </div>
