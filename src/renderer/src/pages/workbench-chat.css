@@ -1051,3 +1051,10 @@
   border-color: var(--brand-line);
   background: var(--brand-soft);
 }
+
+/* 工具参数/结果、推理过程等内容区允许选中复制(全局 user-select:none 下恢复) */
+.wb-toolcard-detail-pre,
+.wb-reason-text,
+.wb-reason-static {
+  user-select: text;
+}
