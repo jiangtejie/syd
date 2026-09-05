@@ -188,6 +188,26 @@ interface WbEvItem {
   line: string
 }
 
+/** 工具英文名 → 中文短名(展示友好;无映射时回退原英文名) */
+const TOOL_CN_NAMES: Record<string, string> = {
+  query_issues: '查询问题',
+  query_group_issues: '查询群问题',
+  search_issue_history: '搜索问题历史',
+  monitor_summary: '监控概览',
+  customer_lookup: '客户资料',
+  recent_messages: '最近消息',
+  list_team_members: '团队名单',
+  software_status: '软件状态',
+  data_scope: '数据范围',
+  bi_stats: '数据统计',
+  export_preview: '导出预览',
+  im_channels_status: 'IM 通道状态'
+}
+
+function toolCnName(name: string): string {
+  return TOOL_CN_NAMES[name] ?? name
+}
+
 /** 引用来源快照区(证据溯源):回答中的 [编号] 标注 → 该编号的工具行快照,可展开查看 */
 function WbEvidenceSources({ items }: { items: WbEvItem[] }): React.JSX.Element {
   const [open, setOpen] = useState(false)
@@ -209,7 +229,9 @@ function WbEvidenceSources({ items }: { items: WbEvItem[] }): React.JSX.Element 
           {items.map((it) => (
             <div className="wb-ev-item" key={it.n}>
               <span className="wb-ev-n">{it.n}</span>
-              <span className="wb-ev-tool">{it.tool}</span>
+              <span className="wb-ev-tool" title={`工具名:${it.tool}`}>
+                {toolCnName(it.tool)}
+              </span>
               <span className="wb-ev-line">{it.line}</span>
             </div>
           ))}
@@ -368,11 +390,17 @@ function WbToolCard({ b }: { b: WbTurnBlock }): React.JSX.Element {
     setOpen(!open)
   }
   const statusIcon = b.status === 'start' ? '⚙' : b.status === 'fail' ? '✗' : '✓'
+  const toolRaw = b.name || '工具'
+  const toolLabel = toolCnName(toolRaw)
   return (
     <div className={`wb-toolcard is-${b.status}`}>
       <button type="button" className="wb-toolcard-head" onClick={toggle} aria-expanded={open}>
-        <span className="wb-toolcard-name">
-          {statusIcon} {b.name}
+        <span className="wb-toolcard-kind">工具调用</span>
+        <span
+          className="wb-toolcard-name"
+          title={toolRaw !== toolLabel ? `工具名:${toolRaw}` : undefined}
+        >
+          {statusIcon} {toolLabel}
           {b.status === 'start' && <em className="wb-toolcard-state">执行中</em>}
         </span>
         <span className={`wb-toolcard-caret${open ? ' is-open' : ''}`}>▾</span>
@@ -407,8 +435,11 @@ function WbApprovals(): React.JSX.Element | null {
       {approvals.map((a) => (
         <div key={a.runId} className="wb-approval">
           <div className="wb-approval-main">
-            <span className="wb-approval-title">
-              请求执行工具:{a.tool}
+            <span
+              className="wb-approval-title"
+              title={a.tool !== toolCnName(a.tool) ? `工具名:${a.tool}` : undefined}
+            >
+              请求执行工具:{toolCnName(a.tool)}
               {a.approvalText && <em className="wb-approval-why">{a.approvalText}</em>}
             </span>
             {a.args && (

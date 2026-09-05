@@ -529,6 +529,15 @@
   color: var(--brand);
 }
 
+/* 工具调用类型标识:点明这行是什么(保持无背景无边框的提示文字风) */
+.wb-toolcard-kind {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-4);
+  user-select: none;
+}
+
 .wb-toolcard-name {
   display: inline-flex;
   align-items: center;
