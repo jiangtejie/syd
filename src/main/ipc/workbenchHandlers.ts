@@ -31,6 +31,7 @@ import {
   setSkillEnabled,
   skillsRoot
 } from '../services/ai/workbench/skills'
+import { readMemoNotes, writeMemoNotes } from '../services/ai/memo'
 
 /** AI 工作台 IPC(会话复用 chat 体系,存储 wxid 带 wb: 前缀与 IM 会话隔离;事件通道 ai:wb)。 */
 
@@ -243,6 +244,24 @@ export function registerWorkbenchHandlers(): void {
     stopWorkbenchChat(id)
     clearChatMessages(id)
     return { ok: true as const }
+  })
+
+  /** 跨会话运营备忘(所有 AI 通道共用注入) */
+  ipcMain.handle('cs:wb:getMemoNotes', () => {
+    try {
+      return { ok: true as const, notes: readMemoNotes() }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('cs:wb:setMemoNotes', (_e, notes: string) => {
+    try {
+      writeMemoNotes(String(notes ?? ''))
+      return { ok: true as const }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   /** 本次运行 AI 通道可靠性统计 */

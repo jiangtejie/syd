@@ -356,6 +356,8 @@ declare global {
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
           clear: (id: number) => Promise<{ ok: boolean; error?: string }>
           exportSession: (id: number) => Promise<{ ok: boolean; file?: string; error?: string }>
+          getMemoNotes: () => Promise<{ ok: boolean; notes?: string; error?: string }>
+          setMemoNotes: (notes: string) => Promise<{ ok: boolean; error?: string }>
           reliability: () => Promise<
             Result<{
               stats?: {

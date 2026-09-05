@@ -1,11 +1,12 @@
 import { getDefaultAgent } from '../../../db/repos/agentRepo'
 import { buildToolMenuText } from './tools'
 import { skillsCatalogText, skillsInjectionText } from './skills'
+import { memoSystemBlock } from '../memo'
 
 /**
  * 工作台 system 组装:
  * 固定段(人设+规则+工具组菜单+技能目录,跨轮不变 → prompt-cache 友好)
- * + 动态段(账号状态 + 启用技能全文;只在变化时改变)。
+ * + 动态段(账号状态 + 启用技能全文 + 运营备忘;只在变化时改变)。
  */
 
 const RULES = [
@@ -32,6 +33,8 @@ export function buildWorkbenchSystem(
   )
   const injection = skillsInjectionText()
   if (injection) parts.push(injection)
+  const memo = memoSystemBlock()
+  if (memo) parts.push(memo)
   if (extras.summary) {
     parts.push(`# 较早对话摘要(均发生在本次提问之前)\n${extras.summary}`)
   }

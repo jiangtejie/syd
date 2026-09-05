@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import { createAiProvider, readProviderConfig, type ToolSchema, type WireMsg } from '../provider'
 import { getConfig } from '../../../db/repos/config'
 import { getAgentById, getDefaultAgent } from '../../../db/repos/agentRepo'
+import { memoSystemBlock } from '../memo'
 import { getDb } from '../../../db/database'
 import {
   appendChatMessage,
@@ -172,7 +173,7 @@ function nativeRuleText(): string {
   )
 }
 
-/** 人设的 system 基座(记忆/知识功能已下线) */
+/** 人设的 system 基座(记忆/知识已下线;运营备忘随每轮注入) */
 function agentSystemText(agentId: string | null | undefined): string {
   const agent = agentId ? getAgentById(agentId) : getDefaultAgent()
   if (!agent) return SYSTEM_FALLBACK
@@ -182,6 +183,8 @@ function agentSystemText(agentId: string | null | undefined): string {
     `你是「${agent.name}」客服智能体${agent.description ? `,角色定位:${agent.description}` : ''}。${STYLE_DESC[agent.style ?? 'warm']}`
   )
   parts.push('回答要基于事实;不确定时明确说明,不编造。')
+  const memo = memoSystemBlock(1400)
+  if (memo) parts.push(memo)
   return parts.join('\n')
 }
 

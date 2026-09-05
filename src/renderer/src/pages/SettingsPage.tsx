@@ -4,6 +4,7 @@ import WechatKeySection from '../components/settings/WechatKeySection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
 import { agentFormDirty } from '../components/settings/agentDirty'
 import WorkbenchApprovalSection from '../components/settings/WorkbenchApprovalSection'
+import WorkbenchMemoSection from '../components/settings/WorkbenchMemoSection'
 import WorkbenchReliabilitySection from '../components/settings/WorkbenchReliabilitySection'
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
 import { ImSection } from './ImPage'
@@ -614,6 +615,15 @@ function SettingsPage(): React.JSX.Element {
             </span>
             <AgentSettingsSection />
           </div>
+          {/* 运营备忘(跨会话动态事实) */}
+          <div className="page-card st-section">
+            <div className="st-title">运营备忘</div>
+            <span className="st-hint">
+              跨会话动态事实:工作台分析、回复建议与 IM 自动回复每轮都会携带。
+            </span>
+            <WorkbenchMemoSection />
+          </div>
+
           {/* 工具审批策略(工作台写/外部工具预留) */}
           <div className="page-card st-section">
             <div className="st-title">工具审批策略</div>

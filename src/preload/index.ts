@@ -340,6 +340,10 @@ const api = {
         ipcRenderer.invoke('cs:wb:remove', id),
       clear: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:wb:clear', id),
+      getMemoNotes: (): Promise<{ ok: boolean; notes?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:getMemoNotes'),
+      setMemoNotes: (notes: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:setMemoNotes', notes),
       reliability: (): Promise<{
         ok: boolean
         stats?: {

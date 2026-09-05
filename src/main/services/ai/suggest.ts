@@ -10,6 +10,7 @@ import { getAgentById, getDefaultAgent } from '../../db/repos/agentRepo'
 import { getConfig } from '../../db/repos/config'
 import { runSuggestionAgent, toolsInstructionText } from './agentLoop'
 import { collectLocalFacts } from './agentTools'
+import { memoSystemBlock } from './memo'
 
 /**
  * AI 建议生成（T7，方案 §4.4）。
@@ -139,6 +140,8 @@ export async function generateSuggestions(
   }
 
   const system = agent ? buildSystemForAgent(agent) : SYSTEM_PROMPT
+  const memoBlock = memoSystemBlock(900)
+  const finalSystem = memoBlock ? `${system}\n\n${memoBlock}` : system
   const agentEnabled = getConfig('ai.agent') !== '0'
   // 本地已知背景（零 LLM 成本：群 open 问题 + 团队客服名单）
   const facts = agentEnabled ? collectLocalFacts({ wxid, sessionId }) : ''
@@ -146,7 +149,7 @@ export async function generateSuggestions(
 
   if (!agentEnabled) {
     try {
-      const raw = await provider.complete(system, userPrompt, { maxTokens: 1024 })
+      const raw = await provider.complete(finalSystem, userPrompt, { maxTokens: 1024 })
       const ai = parseCandidates(raw)
       if (ai && ai.length > 0) return { candidates: ai, llm: true }
       return { candidates: [], llm: true, error: 'AI 未返回有效候选，请点击重新生成或稍后重试' }
@@ -161,7 +164,7 @@ export async function generateSuggestions(
   try {
     const run = await runSuggestionAgent({
       ctx: { wxid, sessionId },
-      system,
+      system: finalSystem,
       userPrompt,
       complete: (s, u, o) => provider.complete(s, u, o),
       onEvent: (evt) => console.info('[ai] agent tool:', evt.name)
