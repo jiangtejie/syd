@@ -358,6 +358,29 @@ const WbMessage = memo(WbMessageInner, (prev, next) => {
   return a.id === b.id && a.role === b.role && a.kind === b.kind && a.content === b.content
 })
 
+/** 实时推理块:默认收起,生成中只显示「思考中…」,点击展开流式思考内容 */
+function WbLiveReason({ text, waitSec }: { text: string; waitSec: number }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="wb-bubble wb-reason-live">
+      <button
+        type="button"
+        className="wb-reason-live-head"
+        aria-expanded={open}
+        title={open ? '收起思考过程' : '展开实时思考过程'}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="wb-reason-live-label">
+          {open ? '💭 思考过程' : '💭 思考中'}
+          {!open && waitSec > 0 ? ` ${waitSec}s` : ''}
+        </span>
+        <span className={`wb-reason-live-caret${open ? ' is-open' : ''}`}>▸</span>
+      </button>
+      {open && <pre className="wb-reason-text">{text || (waitSec > 0 ? '正在整理思路…' : '')}</pre>}
+    </div>
+  )
+}
+
 function WbToolCard({ b }: { b: WbTurnBlock }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const openRef = useRef(false)
@@ -1271,12 +1294,10 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             if (b.kind === 'reason') {
               return (
                 <div key={b.id} className="wb-row">
-                  <div className="wb-bubble wb-reason-live">
-                    <div className="wb-reason-label">
-                      💭 思考过程{!hasLiveText && waitSec > 0 ? ` · ${waitSec}s` : ''}
-                    </div>
-                    <pre className="wb-reason-text">{b.text}</pre>
-                  </div>
+                  <WbLiveReason
+                    text={b.text ?? ''}
+                    waitSec={!hasLiveText && waitSec > 0 ? waitSec : 0}
+                  />
                 </div>
               )
             }

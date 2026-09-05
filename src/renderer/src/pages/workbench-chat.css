@@ -945,6 +945,56 @@
   background: var(--bg-panel);
 }
 
+/* 实时推理头部:默认收起为「思考中…」提示行,可点击展开 */
+.wb-reason-live-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.wb-reason-live-head:hover {
+  color: var(--brand);
+}
+
+.wb-reason-live-label {
+  font-weight: 500;
+}
+
+.wb-reason-live-label::after {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--info);
+  vertical-align: 1px;
+  animation: wb-run-pulse 1.1s ease-in-out infinite;
+}
+
+.wb-reason-live-head[aria-expanded='true'] .wb-reason-live-label::after {
+  display: none;
+}
+
+.wb-reason-live-caret {
+  display: inline-block;
+  font-size: 9px;
+  color: var(--text-4);
+  transition: transform 0.15s;
+}
+
+.wb-reason-live-caret.is-open {
+  transform: rotate(90deg);
+}
+
 .wb-reason-toggle {
   display: inline-flex;
   align-items: center;
