@@ -611,6 +611,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         }
         set({ messages: [...get().messages, msg] })
         toast.success(res.result.verified ? '已发送' : '已发送（待校验）')
+        // 稍后拉取真实消息列表,以微信库中的正式气泡替换本地乐观行
+        window.setTimeout(() => {
+          const st = get()
+          if (st.source === 'wx' && st.activeSessionId === activeSessionId && !st.sending) {
+            void st.refreshCurrentMessages()
+          }
+        }, 1600)
       } else {
         toast.error(res.error || result?.error || '发送失败')
       }
@@ -655,6 +662,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         toast.success(
           res.result.verified ? `${kind === 'image' ? '图片' : '文件'}已发送` : '已发送(待校验)'
         )
+        // 1.6s 后拉取真实消息(微信库落盘稍慢),让文件/图片正式气泡上屏
+        window.setTimeout(() => {
+          const st = get()
+          if (st.source === 'wx' && st.activeSessionId === activeSessionId && !st.sending) {
+            void st.refreshCurrentMessages()
+          }
+        }, 1600)
       } else {
         toast.error(res.error || result?.error || `发送失败:${name}`)
       }

@@ -4,9 +4,11 @@ import { readProviderConfig } from '../provider'
 import { getConfig } from '../../../db/repos/config'
 import {
   appendChatMessage,
+  getChatById,
   lastUserMessage,
   listChatMessages,
   popLastChatMessage,
+  renameChat,
   touchChat
 } from '../../../db/repos/chatRepo'
 import { buildWorkbenchSystem } from './context'
@@ -75,6 +77,34 @@ function citedItems(text: string, pool: WbEvidenceRow[]): WbEvidenceRow[] {
     }
   }
   return out
+}
+
+/* 会话自动起标题:仅当仍为默认标题时,用首条有实质内容的回答做一次 ≤14 字总结(失败静默回退) */
+const AUTO_TITLE_DEFAULTS = new Set(['工作台会话', '新对话', ''])
+
+async function maybeAutoTitle(sessionId: number, model: WbModel, answer: string): Promise<void> {
+  try {
+    const s = getChatById(sessionId)
+    if (!s) return
+    const cur = (s.title ?? '').trim()
+    if (!AUTO_TITLE_DEFAULTS.has(cur)) return
+    if ((answer ?? '').trim().length < 16) return
+    const res = await generateText({
+      model,
+      maxOutputTokens: 40,
+      system:
+        '你是会话标题生成器:用不超过 14 个汉字概括助手回答的主题(如「今日待跟进清单」「XX 客户咨询处理」)。只输出标题本身,不要引号、标点或解释。',
+      prompt: `助手刚才的回答:\n${answer.slice(0, 500)}`
+    })
+    const title = (res.text ?? '')
+      .trim()
+      .replace(/["'“”‘’。.!！?\s]+$/g, '')
+      .slice(0, 16)
+    if (!title || title.includes('\n')) return
+    renameChat(sessionId, title)
+  } catch {
+    /* 标题生成失败不影响会话 */
+  }
 }
 
 interface RunHandle {
@@ -495,6 +525,8 @@ export async function sendWorkbenchMessage(
     touchChat(sessionId)
     emitWorkbenchEvent(sessionId, { type: 'done', messageId })
     recordRel(true)
+    // 默认标题会话:首轮回答落库后后台总结标题(不阻塞回复与事件)
+    void maybeAutoTitle(sessionId, model, trimmed)
     return { ok: true }
   } catch (e) {
     const aborted = signal.aborted || (e instanceof Error && e.name === 'AbortError')

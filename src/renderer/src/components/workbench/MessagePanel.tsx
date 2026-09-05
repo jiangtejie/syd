@@ -4,6 +4,7 @@ import { avatarColor, formatTimeDivider, needTimeDivider } from '../../lib/ui'
 import type { ChatMessage, ChatRecordItem, RedEnvelopeStatus } from '../../../../shared/types'
 import AttachmentViewer, { BubbleImage, type Attachment } from './AttachmentViewer'
 import MessageContextMenu, { type ContextMenuState } from './MessageContextMenu'
+import { SkeletonLines, EmptyHint } from './placeholders'
 import { toast } from '../../stores/toast'
 
 const dialogApi = window.api?.cs?.dialog
@@ -488,6 +489,7 @@ function MessagePanel(): React.JSX.Element {
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [draft, setDraft] = useState('')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
+  const [sendLabel, setSendLabel] = useState('')
 
   const activeSession = sessions.find((s) => s.username === activeSessionId) || null
 
@@ -633,11 +635,14 @@ function MessagePanel(): React.JSX.Element {
     const files = pendingFiles
     setDraft('')
     setPendingFiles([])
+    setSendLabel(text ? '发送文本…' : '')
     if (text) await sendText(text, 'manual')
     for (const f of files) {
       if (!activeSessionId) break
+      setSendLabel(`发送${f.kind === 'image' ? '图片' : '文件'}:${f.name}…`)
       await sendFile(f.path, f.kind)
     }
+    setSendLabel('')
   }
 
   if (!activeSession) {
@@ -661,9 +666,13 @@ function MessagePanel(): React.JSX.Element {
       </div>
       <div className="wb-chat-body" ref={bodyRef} onScroll={onBodyScroll}>
         {loading && messages.length === 0 ? (
-          <div className="wb-chat-hint">加载中...</div>
+          <SkeletonLines rows={4} />
         ) : messages.length === 0 ? (
-          <div className="wb-chat-hint">暂无消息</div>
+          <EmptyHint
+            icon="💬"
+            title="暂无消息"
+            desc="本会话还没有可展示的消息;对方发言后会自动刷新。"
+          />
         ) : (
           <>
             {messagesHasMore ? (
@@ -734,7 +743,7 @@ function MessagePanel(): React.JSX.Element {
               📎 文件
             </button>
             <span className="wb-chat-tools-hint">
-              发送需微信窗口在前台;图片粘贴发送,其它格式按文件发送
+              {sendLabel || '发送需微信窗口在前台;图片粘贴发送,其它格式按文件发送'}
             </span>
           </div>
           <div className="wb-chat-composer-row">

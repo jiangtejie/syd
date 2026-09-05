@@ -196,6 +196,16 @@ const TABLES: string[] = [
 
 export function migrate(db: Database.Database): void {
   for (const sql of TABLES) db.exec(sql)
+  // 工作台回答反馈(有用/没用;每条消息至多一条,重复提交即覆盖)
+  db.exec(`CREATE TABLE IF NOT EXISTS wb_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    value INTEGER NOT NULL,
+    reason TEXT,
+    created_at INTEGER NOT NULL
+  )`)
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_feedback_msg ON wb_feedback (message_id)')
   // 历史版本曾临时内置话术库(phrase_book),功能已下线:清理旧库残留表
   db.exec('DROP TABLE IF EXISTS phrase_book')
   // 增量列迁移：issue_feedback.auto_done（自动闭环标记：unreplied 问题检测到回复后自动关闭）

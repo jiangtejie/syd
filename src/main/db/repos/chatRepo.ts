@@ -217,3 +217,26 @@ export function chatCapsPersisted(sessionId: number): boolean {
     { caps: string | null } | undefined
   return !!row && row.caps !== null
 }
+
+/* ── 工作台回答反馈(有用/没用;message_id 唯一,重复提交覆盖) ── */
+
+export function saveMessageFeedback(input: {
+  sessionId: number
+  messageId: number
+  value: 1 | -1
+  reason?: string
+}): void {
+  const db = getDb()
+  db.prepare(`DELETE FROM wb_feedback WHERE message_id = ?`).run(input.messageId)
+  db.prepare(
+    `INSERT INTO wb_feedback (session_id, message_id, value, reason, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(input.sessionId, input.messageId, input.value, input.reason ?? null, Date.now())
+}
+
+export function feedbackValueOf(messageId: number): 1 | -1 | null {
+  const row = getDb()
+    .prepare(`SELECT value FROM wb_feedback WHERE message_id = ?`)
+    .get(messageId) as { value: number } | undefined
+  return row ? (row.value === 1 ? 1 : -1) : null
+}

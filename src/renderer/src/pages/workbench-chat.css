@@ -1570,3 +1570,42 @@
   background: var(--brand-soft);
   color: var(--brand);
 }
+
+/* 回答反馈(有用/没用) */
+.wb-feedback {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.wb-fb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border-light);
+  background: transparent;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10.5px;
+  color: var(--text-4);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+  font-family: inherit;
+}
+
+.wb-fb-btn:hover {
+  color: var(--text-2);
+  border-color: var(--border);
+}
+
+.wb-fb-btn.is-on {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+
+.wb-fb-btn.is-on.no {
+  color: var(--danger);
+  border-color: var(--danger);
+}

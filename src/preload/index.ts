@@ -315,6 +315,12 @@ const api = {
       }> => ipcRenderer.invoke('cs:wb:searchChats', wxid, query),
       messages: (id: number): Promise<{ ok: boolean; messages?: unknown[]; error?: string }> =>
         ipcRenderer.invoke('cs:wb:messages', id),
+      feedback: (input: {
+        sessionId: number
+        messageId: number
+        value: number
+        reason?: string
+      }): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('cs:wb:feedback', input),
       create: (
         wxid: string,
         title: string

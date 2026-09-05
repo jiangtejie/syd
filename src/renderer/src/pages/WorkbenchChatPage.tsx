@@ -227,6 +227,54 @@ function WbEvidenceSources({ items }: { items: WbEvItem[] }): React.JSX.Element 
   )
 }
 
+/** 回答反馈:有用/没用(再次点击同一按钮=取消;落库供后续优化参考) */
+function WbFeedback({
+  sessionId,
+  messageId
+}: {
+  sessionId: number
+  messageId: number
+}): React.JSX.Element {
+  const [val, setVal] = useState<1 | -1 | null>(null)
+  const pick = (v: 1 | -1): void => {
+    const next = val === v ? null : v
+    setVal(next)
+    if (next === null) return
+    void window.api?.cs?.wb
+      ?.feedback({ sessionId, messageId, value: v })
+      .then((r) => {
+        if (!r?.ok) {
+          toast.error(r?.error || '反馈提交失败')
+          setVal(null)
+        }
+      })
+      .catch(() => {
+        toast.error('反馈提交失败')
+        setVal(null)
+      })
+  }
+  return (
+    <div className="wb-feedback">
+      <button
+        type="button"
+        className={`wb-fb-btn${val === 1 ? ' is-on' : ''}`}
+        title={val === 1 ? '取消反馈' : '这个回答有用'}
+        onClick={() => pick(1)}
+      >
+        👍 {val === 1 ? '已记' : '有用'}
+      </button>
+      <button
+        type="button"
+        className={`wb-fb-btn${val === -1 ? ' is-on no' : ''}`}
+        title={val === -1 ? '取消反馈' : '这个回答没帮助'}
+        onClick={() => pick(-1)}
+      >
+        👎 {val === -1 ? '已记' : '没用'}
+      </button>
+    </div>
+  )
+}
+
 function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   const isUser = msg.role === 'user'
   const isError = msg.kind === 'error'
@@ -344,6 +392,7 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
                 {typeof t.output === 'number' ? `输出 ${fmtThousand(t.output)}` : ''}
               </div>
             )}
+            <WbFeedback sessionId={msg.sessionId} messageId={msg.id} />
           </>
         )}
       </div>

@@ -333,6 +333,12 @@ declare global {
             }>
           >
           messages: (id: number) => Promise<Result<{ messages?: ChatMsgItem[] }>>
+          feedback: (input: {
+            sessionId: number
+            messageId: number
+            value: number
+            reason?: string
+          }) => Promise<{ ok: boolean; error?: string }>
           create: (
             wxid: string,
             title: string

@@ -58,19 +58,45 @@ export async function focusWeChatWindow(): Promise<{
   }
 }
 
+/** 注入错误 → 可行动中文提示(脚本/异常信息对普通用户不友好) */
+export function humanizeInjectError(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  if (/wechat window not found|window not found/i.test(raw)) {
+    return '未检测到微信窗口:请先登录桌面微信并保持打开(最小化也可以),再重试发送'
+  }
+  if (/focus stolen/i.test(raw)) {
+    return '微信窗口焦点被抢:发送期间请勿点击其它窗口或弹窗,稍后重试'
+  }
+  if (/clipboard busy/i.test(raw)) {
+    return '系统剪贴板正被占用,请稍等几秒重试'
+  }
+  if (/file not found/i.test(raw)) {
+    return '待发送的文件不存在或已被移动,请重新选择'
+  }
+  if (/timed out|timeout|timedout/i.test(raw)) {
+    return '微信未在限时内响应:请确认微信窗口可输入(未锁屏/未卡死)后重试'
+  }
+  if (!/[\u4e00-\u9fa5]/.test(raw) && /failed to|exception|error|输出异常/i.test(raw)) {
+    return `注入执行失败(${raw.slice(0, 90)})`
+  }
+  return undefined
+}
+
 /** 完整注入：搜索会话名 → 粘贴正文 → Enter 发送 */
 export async function sendToChat(targetName: string, text: string): Promise<InjectResult> {
   // 会话名过长时截断（搜索框有长度限制）
   const target = targetName.length > 30 ? targetName.slice(0, 30) : targetName
   try {
     const r = await runPs(['-Action', 'send', '-Target', target, '-Text', text])
+    const rawErr = r.error as string | undefined
     return {
       ok: !!r.ok,
-      error: r.error as string | undefined,
+      error: humanizeInjectError(rawErr) ?? rawErr,
       sent: r.sent as boolean | undefined
     }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    const raw = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: humanizeInjectError(raw) ?? raw }
   }
 }
 
@@ -124,12 +150,13 @@ export async function sendFileToChat(
     ])
     return {
       ok: !!r.ok,
-      error: r.error as string | undefined,
+      error: humanizeInjectError(r.error as string | undefined) ?? (r.error as string | undefined),
       sent: r.sent as boolean | undefined,
       asImage: r.asImage === true
     }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    const raw = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: humanizeInjectError(raw) ?? raw }
   }
 }
 

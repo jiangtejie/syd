@@ -8,6 +8,7 @@ import {
   listChats,
   removeChat,
   renameChat,
+  saveMessageFeedback,
   searchChatMessages
 } from '../db/repos/chatRepo'
 import {
@@ -131,6 +132,28 @@ export function registerWorkbenchHandlers(): void {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }
   })
+
+  /** 回答反馈:有用(1)/没用(-1),可附带原因;同一消息重复提交即覆盖 */
+  ipcMain.handle(
+    'cs:wb:feedback',
+    (_e, input: { sessionId?: number; messageId?: number; value?: number; reason?: string }) => {
+      if (!Number.isInteger(input?.sessionId) || !Number.isInteger(input?.messageId)) {
+        return { ok: false as const, error: '参数错误' }
+      }
+      const value = input?.value === -1 ? -1 : 1
+      try {
+        saveMessageFeedback({
+          sessionId: input.sessionId as number,
+          messageId: input.messageId as number,
+          value,
+          reason: typeof input?.reason === 'string' ? input.reason.slice(0, 300) : undefined
+        })
+        return { ok: true as const }
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
 
   ipcMain.handle('cs:wb:create', (_e, wxid: string, title: string) => {
     try {
