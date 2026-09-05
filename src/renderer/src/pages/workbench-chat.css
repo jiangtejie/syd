@@ -360,35 +360,37 @@
   }
 }
 
-/* ── 工具卡与审批(审批固定在输入区上方) ── */
+/* ── 工具调用(DeepSeek 式紧凑条:小字、低对比、细节按需展开) ── */
 .wb-toolcard {
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-hover);
-  padding: 6px 10px;
-  font-size: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  padding: 3px 8px;
+  font-size: 11px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  /* 时间线块:作为消息流的组成部分,自带呼吸间距 */
-  margin: 2px 0 12px;
+  gap: 2px;
+  /* 时间线块:作为消息流的组成部分,紧凑呼吸间距 */
+  margin: 2px 0 6px;
 }
 
 .wb-toolcard.is-done {
-  border-color: var(--success-line, var(--border));
+  border-color: var(--border-light);
+  background: var(--bg-hover);
 }
 
 .wb-toolcard.is-fail {
   border-color: var(--danger-line);
+  background: var(--danger-soft);
 }
 
-/* 工具卡头部(整行可点开合) */
+/* 工具卡头部(整行可点开合,低强调) */
 .wb-toolcard-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 0;
+  padding: 2px 0;
   border: none;
   background: transparent;
   font: inherit;
@@ -404,18 +406,28 @@
 .wb-toolcard-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  font-weight: 600;
-  color: var(--text-1);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
   transition: color 0.15s;
+}
+
+.wb-toolcard.is-done .wb-toolcard-name {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.wb-toolcard.is-fail .wb-toolcard-name {
+  color: var(--danger);
 }
 
 .wb-toolcard-state {
   font-style: normal;
-  font-size: 10px;
-  line-height: 1.4;
-  padding: 1px 7px;
+  font-size: 9.5px;
+  line-height: 1.2;
+  padding: 1px 6px;
   border-radius: var(--r-pill);
   background: var(--info-soft);
   color: var(--info);
@@ -425,8 +437,8 @@
 .wb-toolcard-caret {
   margin-left: auto;
   flex: none;
-  font-size: 11px;
-  color: var(--text-3);
+  font-size: 9px;
+  color: var(--text-4);
   transition: transform 0.15s;
 }
 
@@ -434,12 +446,12 @@
   transform: rotate(180deg);
 }
 
-/* 展开细节:参数/结果,默认随卡片收起,长内容截断+区内滚动 */
+/* 展开细节:小字紧凑,长内容截断+区内滚动 */
 .wb-toolcard-detail {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-top: 6px;
+  gap: 4px;
+  padding: 4px 0 2px;
   border-top: 1px dashed var(--border-light);
 }
 
@@ -451,25 +463,25 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
-  color: var(--text-3);
-  margin-bottom: 2px;
+  font-size: 9.5px;
+  color: var(--text-4);
+  margin-bottom: 1px;
 }
 
 .wb-toolcard-detail-pre {
   margin: 0;
-  max-height: 200px;
+  max-height: 160px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  font-size: 11px;
-  line-height: 1.55;
+  font-size: 10.5px;
+  line-height: 1.5;
   color: var(--text-2);
-  background: var(--bg-panel);
+  background: var(--bg);
   border: 1px solid var(--border-light);
   border-radius: 4px;
-  padding: 5px 7px;
+  padding: 3px 5px;
   scrollbar-width: thin;
 }
 
