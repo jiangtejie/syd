@@ -1,12 +1,14 @@
 import { app, shell } from 'electron'
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { getConfig } from '../../db/repos/config'
 import * as repo from '../../db/repos/imFileRepo'
+import { getFilesRootDir } from '../paths'
 import { createLogger } from '../logging'
 
 /**
  * 渠道接收文件服务:统一管理飞书等外部渠道下载的图片/文件。
+ * - 存放于缓存目录 files 分区(<cache>/files),随「清理缓存/更换缓存目录」统一管理
  * - 索引表 im_file_record 记录每个文件(channel/账号/发送人/相对路径/大小/时间)
  * - 清理策略:imFiles.autoClean(默认开)+ imFiles.keepDays(默认 30)
  * - 三类清理:过期文件(表内超期)、孤儿文件(目录里无登记且超期)、手动删除
@@ -16,8 +18,42 @@ import { createLogger } from '../logging'
 const fileLog = createLogger('files')
 let cleanupTimer: ReturnType<typeof setInterval> | null = null
 
+/** 渠道接收文件根:缓存目录 files 分区(随用户配置的缓存目录走) */
 export function fileRoot(): string {
-  return join(app.getPath('userData'), 'im-files')
+  return getFilesRootDir()
+}
+
+/**
+ * 历史布局迁移:旧版本文件在 userData/im-files,
+ * 新版统一迁入缓存目录 files 分区(相对路径不变,索引无需改动)。
+ */
+export function migrateLegacyChannelFiles(): void {
+  try {
+    const legacy = join(app.getPath('userData'), 'im-files')
+    const target = getFilesRootDir()
+    if (!existsSync(legacy)) return
+    if (!existsSync(target)) {
+      renameSync(legacy, target)
+      fileLog.info(`渠道文件目录已迁移:userData/im-files -> ${target}`)
+      return
+    }
+    // 目标已存在(部分新文件已写入):逐个搬入,重名跳过,最后尝试删除旧目录
+    let moved = 0
+    for (const name of readdirSync(legacy)) {
+      const from = join(legacy, name)
+      const to = join(target, name)
+      if (!existsSync(to)) {
+        renameSync(from, to)
+        moved += 1
+      }
+    }
+    if (moved > 0) fileLog.info(`渠道文件合并迁移 ${moved} 项到 ${target}`)
+    rmSync(legacy, { recursive: true, force: true })
+  } catch (e) {
+    fileLog.warn(
+      `渠道文件目录迁移失败(下次启动重试): ${e instanceof Error ? e.message : String(e)}`
+    )
+  }
 }
 
 function autoCleanEnabled(): boolean {
@@ -145,6 +181,12 @@ export function gcOrphans(): { removed: number } {
 /** 启动/每天定时清理(幂等:同一进程只挂一次) */
 export function startFileHousekeeping(): void {
   if (cleanupTimer) return
+  // 迁移历史 userData/im-files → 缓存 files 分区
+  try {
+    migrateLegacyChannelFiles()
+  } catch {
+    /* 迁移内部已容错 */
+  }
   cleanupTimer = setInterval(() => {
     pruneExpired()
     gcOrphans()

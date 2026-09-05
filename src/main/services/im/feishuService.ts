@@ -1,11 +1,12 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
-import { app, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
 import * as lark from '@larksuiteoapi/node-sdk'
 import { getImAccountConfig, listMappedSessionIds } from '../../db/repos/imRepo'
 import { appendChatMessage, listChatMessages } from '../../db/repos/chatRepo'
 import { insertFileRecord } from '../../db/repos/imFileRepo'
 import { createLogger } from '../logging'
+import { getFilesRootDir } from '../paths'
 import { createImSession } from './sessionBridge'
 import {
   confirmToolRun,
@@ -491,11 +492,11 @@ async function handleInbound(
   }
 }
 
-/* ── 图片/文件接收:下载到本地(按 账号/飞书用户/日期 隔离),并在会话上下文留痕 ── */
+/* ── 图片/文件接收:下载到缓存目录 files 分区(按账号/发送人/日期隔离)并在会话留痕 ── */
 
-/** 用户数据目录下的隔离根:im-files/acct-<账号id>/user-<open_id>/<yyyyMMdd>/ */
+/** 接收文件根:缓存目录 files 分区(随设置页「缓存目录」配置) */
 function mediaRoot(): string {
-  return join(app.getPath('userData'), 'im-files')
+  return getFilesRootDir()
 }
 
 /** 目录/文件名安全化(去路径分隔与空格,长度受限) */

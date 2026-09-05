@@ -11,6 +11,7 @@ import { getConfig } from '../db/repos/config'
  *   ├─ db/      解密后的微信明文库副本（源库路径 + key 相同则复用同名文件，每次打开会重新解密覆盖）
  *   ├─ media/   附件解码产物缓存（解密图片 / 视频），内部按 <wxid>/ 分账号存放
  *   │   └─ <wxid>/<md5>_<kind>.<ext>、<md5>_video.<ext>
+ *   ├─ files/   渠道接收文件(飞书等外部 IM 下载的图片/文件),按 acct-<账号>/user-<发送人>/日期 归档
  *   ├─ tmp/     一次性临时文件（转码中间产物等，随时可清，重启可删）
  *   └─ export/  用户主动导出的产物（随「清理缓存」一并清除，用于导出附件/报表等）
  *
@@ -27,7 +28,7 @@ const APP_DIR_NAME = 'wechat-cs-desktop'
 const LEGACY_PLAIN_DIR = 'wx-plain'
 
 /** 缓存目录顶层分区（新增用途前先在此登记，保证结构统一） */
-export const CACHE_SUB_DIRS = ['db', 'media', 'tmp', 'export'] as const
+export const CACHE_SUB_DIRS = ['db', 'media', 'files', 'tmp', 'export'] as const
 export type CacheSubDir = (typeof CACHE_SUB_DIRS)[number]
 
 /** 探测第一个可用的非系统盘根目录（如 D:\），不可用返回 null */
@@ -102,6 +103,11 @@ export function getMediaRootDir(): string {
 /** 某账号媒体缓存目录路径：<cache>/media/<wxid>（纯路径拼接，读取方自行容错；写入方需 mkdir） */
 export function getMediaCacheDir(wxid: string): string {
   return join(getCachePath(), 'media', wxid)
+}
+
+/** 渠道接收文件根目录：<cache>/files */
+export function getFilesRootDir(): string {
+  return getCacheSubPath('files')
 }
 
 /** 一次性临时文件目录：<cache>/tmp */
