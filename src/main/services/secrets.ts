@@ -1,5 +1,8 @@
 import { safeStorage } from 'electron'
 import { getConfig, setConfig } from '../db/repos/config'
+import { createLogger } from './logging'
+
+const secretsLog = createLogger('app')
 
 /**
  * app_config 中敏感值（如 ai.apiKey）的加密存取。
@@ -26,7 +29,7 @@ export function openSecret(stored: string | null | undefined): string {
   try {
     return safeStorage.decryptString(Buffer.from(stored.slice(ENC_PREFIX.length), 'base64'))
   } catch (e) {
-    console.error('[secrets] decrypt failed (data sealed on another machine/user?)', e)
+    secretsLog.error('secrets decrypt failed (data sealed on another machine/user?)', e)
     return ''
   }
 }

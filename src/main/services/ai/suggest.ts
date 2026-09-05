@@ -12,6 +12,9 @@ import { runSuggestionAgent, toolsInstructionText } from './agentLoop'
 import { collectLocalFacts } from './agentTools'
 import { memoSystemBlock } from './memo'
 import { describeModelError } from './modelErrors'
+import { createLogger } from '../logging'
+
+const aiLog = createLogger('ai')
 
 /**
  * AI 建议生成（T7，方案 §4.4）。
@@ -127,7 +130,7 @@ export async function generateSuggestions(
   try {
     provider = createAiProvider()
   } catch (e) {
-    console.warn('[ai] provider config error', e)
+    aiLog.warn(`provider config error: ${e instanceof Error ? e.message : String(e)}`)
   }
   if (!provider) {
     return {
@@ -155,7 +158,7 @@ export async function generateSuggestions(
       if (ai && ai.length > 0) return { candidates: ai, llm: true }
       return { candidates: [], llm: true, error: 'AI 未返回有效候选，请点击重新生成或稍后重试' }
     } catch (e) {
-      console.warn('[ai] llm generate failed', e)
+      aiLog.error('llm generate failed', e)
       const detail = describeModelError(e) || (e instanceof Error ? e.message : String(e))
       return { candidates: [], llm: false, error: `AI 生成失败：${detail}` }
     }
@@ -168,7 +171,7 @@ export async function generateSuggestions(
       system: finalSystem,
       userPrompt,
       complete: (s, u, o) => provider.complete(s, u, o),
-      onEvent: (evt) => console.info('[ai] agent tool:', evt.name)
+      onEvent: (evt) => aiLog.debug(`agent tool: ${evt.name}`)
     })
     const ai = parseCandidates(run.text)
     if (ai && ai.length > 0) {
@@ -180,7 +183,7 @@ export async function generateSuggestions(
       error: 'AI 未返回有效候选，请点击重新生成或稍后重试'
     }
   } catch (e) {
-    console.warn('[ai] agent generate failed', e)
+    aiLog.error('agent generate failed', e)
     const detail = describeModelError(e) || (e instanceof Error ? e.message : String(e))
     return { candidates: [], llm: false, error: `AI 生成失败：${detail}` }
   }

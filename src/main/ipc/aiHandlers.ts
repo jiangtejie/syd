@@ -2,6 +2,9 @@ import { ipcMain } from 'electron'
 import type { AiGenOptions, ChatMessage } from '../../shared/types'
 import { generateSuggestions } from '../services/ai/suggest'
 import { listRemoteModels, readProviderConfig, testAiConnection } from '../services/ai/provider'
+import { createLogger } from '../services/logging'
+
+const aiLog = createLogger('ai')
 
 /**
  * AI 建议生成 IPC（T7）。
@@ -38,7 +41,7 @@ export function registerAiHandlers(): void {
           toolsUsed: res.toolsUsed
         } as const
       } catch (e) {
-        console.error('[ai] generateReply failed', e)
+        aiLog.error('generateReply failed', e)
         return {
           ok: false,
           error: e instanceof Error ? e.message : '生成建议失败'

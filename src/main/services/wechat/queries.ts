@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type Database from 'better-sqlite3-multiple-ciphers'
+import { createLogger } from '../logging'
 import { openWxDbFile } from './wxDb'
 import { locateWeChatDbs } from './dbLocator'
 import {
@@ -37,6 +38,8 @@ import type {
   RedEnvelopeStatus,
   SessionSummary
 } from '../../../shared/types'
+
+const wxLog = createLogger('wx')
 
 /**
  * 微信读库查询层（自研实现）。
@@ -1085,13 +1088,8 @@ export function enrichMessagesWithSenders(
         if (contact) m.senderAvatarUrl = pickAvatarUrl(contact)
       }
       if (missingOpenim.length > 0) {
-        console.warn(
-          '[wx] openim senders without any name',
-          JSON.stringify(missingOpenim),
-          'contact rows:',
-          contactMap.size,
-          'group nicknames:',
-          groupNick?.size ?? 0
+        wxLog.warn(
+          `openim senders without any name: ${JSON.stringify(missingOpenim)}; contact rows: ${contactMap.size}; group nicknames: ${groupNick?.size ?? 0}`
         )
       }
 

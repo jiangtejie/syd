@@ -36,6 +36,9 @@ import { registerImHandlers, bootImAccounts, stopAllIm } from './ipc/imHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
 import { registerWorkbenchHandlers } from './ipc/workbenchHandlers'
 import { registerLogHandlers } from './ipc/logsHandlers'
+import { createLogger } from './services/logging'
+
+const appLog = createLogger('app')
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
 import { stopAll as stopIssueScheduler } from './services/feedback/scheduler'
 import { stopSending } from './services/send/sendService'
@@ -288,7 +291,7 @@ if (!app.requestSingleInstanceLock()) {
 
     // 初始化本地库
     const tables = listTables(getDb())
-    console.log('[db] ready, tables:', tables.join(', '))
+    appLog.info(`db ready, tables: ${tables.join(', ')}`)
 
     // 缓存目录规范化：迁移历史 wx-plain → db（幂等，启动时执行一次）
     migrateLegacyCacheLayout()
@@ -324,7 +327,7 @@ if (!app.requestSingleInstanceLock()) {
       optimizer.watchWindowShortcuts(window)
     })
 
-    ipcMain.on('ping', () => console.log('pong'))
+    ipcMain.on('ping', () => appLog.debug('ipc ping -> pong'))
 
     createWindow()
     // 菜单必须在窗口创建之后注册（CipherTalk 注释：否则 Ctrl+, 回调会撞出第二个窗口）
