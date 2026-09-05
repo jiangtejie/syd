@@ -206,6 +206,23 @@ export function migrate(db: Database.Database): void {
     created_at INTEGER NOT NULL
   )`)
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_feedback_msg ON wb_feedback (message_id)')
+  // 渠道接收文件索引(飞书等外部渠道下载的图片/文件):清理/统计/按渠道管理均基于此
+  db.exec(`CREATE TABLE IF NOT EXISTS im_file_record (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel TEXT NOT NULL,
+    account_id INTEGER NOT NULL,
+    message_id TEXT NOT NULL,
+    sender_id TEXT,
+    chat_id TEXT,
+    kind TEXT NOT NULL,
+    file_name TEXT,
+    rel_path TEXT NOT NULL,
+    bytes INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )`)
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_im_file_record_msg ON im_file_record (channel, message_id)'
+  )
   // 历史版本曾临时内置话术库(phrase_book),功能已下线:清理旧库残留表
   db.exec('DROP TABLE IF EXISTS phrase_book')
   // 增量列迁移：issue_feedback.auto_done（自动闭环标记：unreplied 问题检测到回复后自动关闭）

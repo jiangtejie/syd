@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import * as lark from '@larksuiteoapi/node-sdk'
 import { getImAccountConfig, listMappedSessionIds } from '../../db/repos/imRepo'
 import { appendChatMessage, listChatMessages } from '../../db/repos/chatRepo'
+import { insertFileRecord } from '../../db/repos/imFileRepo'
 import { createLogger } from '../logging'
 import { createImSession } from './sessionBridge'
 import {
@@ -669,6 +670,19 @@ async function handleInboundMedia(
     const base = safeSeg(meta.name ?? (kind === 'image' ? 'image' : 'file'), kind)
     const file = join(dir, `${Date.now()}_${base}.${ext}`)
     await writeFile(file, buf)
+    // 登记索引(渠道/账号/发送人/相对路径),供工作台文件管理与过期清理
+    insertFileRecord({
+      channel: 'feishu',
+      accountId,
+      messageId,
+      senderId: openId,
+      chatId,
+      kind,
+      fileName: (meta.name ?? `${base}.${ext}`).slice(0, 240),
+      relPath: relative(mediaRoot(), file).replace(/\\/g, '/'),
+      bytes: buf.length,
+      createdAt: Date.now()
+    })
     imLog(
       accountId,
       `已保存${kind === 'image' ? '图片' : '文件'} ${meta.name ?? ''}(${buf.length} B) -> ${file}`

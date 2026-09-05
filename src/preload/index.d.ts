@@ -178,6 +178,33 @@ declare global {
             error?: string
           }>
         }
+        files: {
+          list: (opts?: { channel?: string; accountId?: number; limit?: number }) => Promise<{
+            ok: boolean
+            files?: Array<{
+              id: number
+              channel: string
+              accountId: number
+              senderId?: string
+              kind: string
+              fileName: string
+              bytes: number
+              createdAt: number
+            }>
+            totals?: { count: number; bytes: number }
+            accounts?: Array<{ id: number; name: string }>
+            error?: string
+          }>
+          remove: (ids: number[]) => Promise<{ ok: boolean; removed?: number; error?: string }>
+          reveal: (id: number) => Promise<{ ok: boolean; error?: string }>
+          prune: (force?: boolean) => Promise<{ ok: boolean; removed?: number; error?: string }>
+          policy: () => Promise<{
+            ok: boolean
+            autoClean?: boolean
+            keepDays?: number
+            error?: string
+          }>
+        }
         media: {
           decryptImage: (opts: {
             wxid: string

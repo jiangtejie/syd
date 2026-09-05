@@ -36,7 +36,9 @@ import { registerImHandlers, bootImAccounts, stopAllIm } from './ipc/imHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
 import { registerWorkbenchHandlers } from './ipc/workbenchHandlers'
 import { registerLogHandlers } from './ipc/logsHandlers'
+import { registerChannelFileHandlers } from './ipc/channelFileHandlers'
 import { createLogger } from './services/logging'
+import { startFileHousekeeping } from './services/im/channelFiles'
 
 const appLog = createLogger('app')
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
@@ -315,10 +317,14 @@ if (!app.requestSingleInstanceLock()) {
     registerExportHandlers()
     registerWorkbenchHandlers()
     registerLogHandlers()
+    registerChannelFileHandlers()
     registerMediaProtocol()
 
     // IM 渠道(飞书等):恢复上次启用状态的账号连接
     void bootImAccounts()
+
+    // 渠道接收文件:启动即清一轮 + 每 6h 定时清理(防数据膨胀)
+    startFileHousekeeping()
 
     // 微信库变更 → 新消息提醒（节流 + 聚焦抑制）
     setOnDbChangedNotify(notifyNewMessage)

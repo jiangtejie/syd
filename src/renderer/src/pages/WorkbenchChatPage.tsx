@@ -10,6 +10,7 @@ import {
 } from '../stores/workbenchChat'
 import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
+import { ChannelFileTray } from '../components/workbench/ChannelFileTray'
 import { MD_REMARK_PLUGINS } from '../components/workbench/mdPlugins'
 import './workbench-chat.css'
 
@@ -1205,6 +1206,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             </>
           )}
         </div>
+        {/* 收到的渠道文件(飞书图片/文件):查看与管理,防数据膨胀 */}
+        <ChannelFileTray />
         {/* 会话工具:导出当前 / 清空全部 */}
         <div className="wb-side-foot">
           <button
