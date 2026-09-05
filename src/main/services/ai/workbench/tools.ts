@@ -63,7 +63,12 @@ const WS_TOOLS = [
   'workspace_file_info',
   'workspace_write',
   'workspace_mkdir',
-  'workspace_delete'
+  'workspace_delete',
+  'csv_read',
+  'csv_append',
+  'xlsx_preview',
+  'xlsx_write',
+  'site_scaffold'
 ]
 
 export const WORKBENCH_TOOL_GROUPS: WbToolGroup[] = [

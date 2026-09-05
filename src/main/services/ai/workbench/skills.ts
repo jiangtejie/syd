@@ -194,3 +194,104 @@ export function ensureBuiltinSkillSeeded(): void {
     /* 种子失败不阻塞(下次启动重试) */
   }
 }
+
+/* ══════════ 内置「工作区办公」技能(独立种子,不覆盖用户技能目录) ══════════ */
+
+const OFFICE_SEED_KEY = 'wb.skills.seeded.office'
+/** 默认启用前两个(回复排版+2 个办公技能恰为注入上限 3 个);文档整理进目录可手动启用 */
+const OFFICE_SKILLS: Array<{
+  dirName: string
+  name: string
+  description: string
+  md: string
+  defaultOn: boolean
+}> = [
+  {
+    dirName: 'wb-office-table',
+    name: '工作区表格处理',
+    description: 'CSV/Excel 操作规范:先预览再修改、只动目标列、改动前说明',
+    defaultOn: true,
+    md: `---
+name: 工作区表格处理
+description: CSV/Excel 操作规范:先预览再修改、只动目标列、改动前说明
+---
+
+# 工作区表格处理规范
+
+用户让"处理名单/表格/台账"时,按此流程:
+
+1. 先调用 csv_read / xlsx_preview 查看文件与表头,确认列含义,不要凭猜直接改;
+2. 只动与任务相关的列/行;涉及删除前必须说明将删哪些行,征得用户同意;
+3. 需要新增数据行时用 csv_append(逐行 CSV 格式,字段含逗号时用双引号包裹);
+4. 需要新建 Excel 时用 xlsx_write 输出 JSON 二维数组(第一行作为表头);
+5. 处理完用预览工具复核一遍结果再回复用户,附上"改动前后对比摘要";
+6. 若文件是二进制或工具返回失败,如实说明,不编造表格内容。
+`
+  },
+  {
+    dirName: 'wb-office-site',
+    name: '工作区静态建站',
+    description: '工作区内搭建/修改 HTML 静态站点的步骤与约束',
+    defaultOn: true,
+    md: `---
+name: 工作区静态建站
+description: 工作区内搭建/修改 HTML 静态站点的步骤与约束
+---
+
+# 工作区静态建站规范
+
+用户要求"建个网站/落地页/帮助页"且发生在工作区时:
+
+1. 优先用 site_scaffold 生成骨架(选单页或多页),再逐文件阅读与修改;
+2. 结构约定:页面 *.html、样式 style.css、脚本 app.js,资源一律相对路径(./),
+   不要引用本机绝对路径;
+3. 内容阶段:先用 workspace_list 看现状 → workspace_read 了解已有内容 →
+   workspace_write 修改,保持页面风格一致(复用同一 style.css);
+4. 不要引入外部框架/在线 CDN 除非用户明确要求;移动端优先(viewport 已内置于骨架);
+5. 完成:在浏览器打开 index.html 前先自查链接相对路径与文件名大小写,
+   回复用户给出站点结构与预览方式,附上修改摘要。
+`
+  },
+  {
+    dirName: 'wb-office-docs',
+    name: '工作区文档整理',
+    description: '多文件素材汇总/批量整理/命名规范(默认未启用,需要时开启)',
+    defaultOn: false,
+    md: `---
+name: 工作区文档整理
+description: 多文件素材汇总/批量整理/命名规范
+---
+
+# 工作区文档整理规范
+
+需要"帮我整理这堆文档/素材/草稿"时:
+
+1. 先 workspace_list 全量盘点,workspace_read 阅读关键文件,给出归类草案;
+2. 归类建议:按主题建目录(不超过两级),避免重命名用户已有习惯命名;
+3. 涉及移动/删除/批量改名时,先输出"计划操作清单",用户确认后再执行;
+4. 汇总输出:需要成文时在工作区新建 md 汇总文件(命名 yyyyMMdd-主题.md),
+   并给出摘要,不擅自覆盖原文件。
+`
+  }
+]
+
+/** 种子工作区办公技能(仅补缺失目录;默认启用前两个;执行一次) */
+export function ensureOfficeSkillsSeeded(): void {
+  try {
+    if (getConfig(OFFICE_SEED_KEY) === '1') return
+    const enabled = enabledNames()
+    for (const s of OFFICE_SKILLS) {
+      const dir = join(skillsRoot(), s.dirName)
+      const file = join(dir, 'SKILL.md')
+      if (!existsSync(file)) {
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(file, s.md, 'utf8')
+      }
+      if (s.defaultOn) enabled.add(s.name)
+    }
+    setConfig('wb.skills.enabled', [...enabled].sort().join(','))
+    setConfig(OFFICE_SEED_KEY, '1')
+  } catch {
+    /* 种子失败不阻塞(下次启动重试) */
+  }
+}

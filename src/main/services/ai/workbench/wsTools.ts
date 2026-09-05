@@ -361,12 +361,291 @@ export const WS_TOOLS: ToolDef[] = [
   )
 ]
 
+/* ── 办公能力:CSV / xlsx / 静态站点脚手架(写类均需逐次审批) ── */
+
+/** 简易 CSV 行解析(支持引号包裹的逗号与 "" 转义) */
+function parseCsvLine(line: string): string[] {
+  const out: string[] = []
+  let cur = ''
+  let inQ = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (inQ) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"'
+          i++
+        } else {
+          inQ = false
+        }
+      } else {
+        cur += ch
+      }
+    } else if (ch === '"') {
+      inQ = true
+    } else if (ch === ',') {
+      out.push(cur)
+      cur = ''
+    } else {
+      cur += ch
+    }
+  }
+  out.push(cur)
+  return out
+}
+
+/** CSV 预览:列头 + 抽样行(≤maxRows) */
+WS_TOOLS.push(
+  defOf(
+    'csv_read',
+    {
+      path: { type: 'string', required: true, desc: '相对 CSV 文件路径' },
+      maxRows: { type: 'number', desc: '预览行数(默认 100)' }
+    },
+    '预览工作区 CSV 文件:首行列头 + 抽样行(自动处理引号,上限 500 行)。' +
+      'args: {"path":"名单.csv","maxRows":100}',
+    async (ctx, args) => {
+      const root = rootOf(ctx)
+      if (!root) return NO_WS
+      const jail = jailPath(
+        root,
+        String(args?.path ?? '')
+          .trim()
+          .replace(/\\/g, '/')
+      )
+      if (!jail) return '路径越界。'
+      try {
+        if (!existsSync(jail) || !statSync(jail).isFile()) return `文件不存在:${args?.path}`
+        if (statSync(jail).size > 512 * 1024)
+          return 'CSV 超过 512KB,请先用 workspace_read 抽样查看。'
+        const maxRows = Math.min(Math.max(Math.floor(Number(args?.maxRows) || 100), 1), 500)
+        const text = readFileSync(jail, 'utf8')
+        const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '')
+        if (lines.length === 0) return '(空 CSV)'
+        const head = parseCsvLine(lines[0])
+        const parts = [`表头(${head.length} 列):${head.join(' | ')}`]
+        const total = lines.length - 1
+        for (let i = 1; i < lines.length && i <= maxRows; i++) {
+          const row = parseCsvLine(lines[i])
+          parts.push(`${i}: ${row.join(' | ')}`)
+        }
+        parts.push(`合计数据行 ${total} 行${total > maxRows ? `,仅显示前 ${maxRows} 行` : ''}`)
+        return parts.join('\n')
+      } catch (e) {
+        return `读取失败:${e instanceof Error ? e.message : String(e)}`
+      }
+    }
+  ),
+  defOf(
+    'csv_append',
+    {
+      path: { type: 'string', required: true, desc: '相对 CSV 文件路径' },
+      rows: {
+        type: 'string',
+        required: true,
+        desc: '要追加的行,每行一条 CSV(逗号分隔,字段含逗号用引号)'
+      }
+    },
+    '向工作区 CSV 文件追加数据行(写操作,需审批;列数应与表头一致,自动补换行)。' +
+      'args: {"path":"名单.csv","rows":"张三,待跟进,昨天\\n李四,已解决,今天"}',
+    async (ctx, args) => {
+      const root = rootOf(ctx)
+      if (!root) return NO_WS
+      const jail = jailPath(
+        root,
+        String(args?.path ?? '')
+          .trim()
+          .replace(/\\/g, '/')
+      )
+      if (!jail) return '路径越界。'
+      const rows = String(args?.rows ?? '').trim()
+      if (!rows) return '缺少 rows。'
+      try {
+        const existed = existsSync(jail) && statSync(jail).isFile()
+        const lines = rows.split(/\r?\n/).filter((l) => l.trim() !== '')
+        const text = existed ? readFileSync(jail, 'utf8') : ''
+        const body = text.replace(/\r?\n$/, '')
+        const headCount = existed && text.trim() ? parseCsvLine(text.split(/\r?\n/)[0]).length : 0
+        if (existed && headCount > 0) {
+          for (const l of lines) {
+            const cells = parseCsvLine(l)
+            if (cells.length !== headCount) {
+              return `存在行列数与表头(${headCount} 列)不一致,已中止,请检查待追加内容:「${l.slice(0, 60)}」`
+            }
+          }
+        }
+        const add = lines.join('\n')
+        writeFileSync(jail, `${body ? `${body}\n` : ''}${add}\n`, 'utf8')
+        wsLog.info(`CSV 追加 ${args?.path} rows=${lines.length}`)
+        return `已追加 ${lines.length} 行到 ${args?.path}${headCount > 0 ? `(表头 ${headCount} 列)` : '(新建文件)'}`
+      } catch (e) {
+        return `写入失败:${e instanceof Error ? e.message : String(e)}`
+      }
+    }
+  )
+)
+
+/** 工作表名安全化 */
+function sheetNameSafe(n: string): string {
+  return (n || 'Sheet1').replace(/[\\/:*?[\]]/g, '_').slice(0, 31) || 'Sheet1'
+}
+
+WS_TOOLS.push(
+  defOf(
+    'xlsx_preview',
+    {
+      path: { type: 'string', required: true, desc: '相对 .xlsx 文件路径' },
+      maxRows: { type: 'number', desc: '每表预览行数(默认 20)' }
+    },
+    '预览工作区 Excel(.xlsx):工作表清单 + 首表抽样(只读,不修改文件)。args: {"path":"台账.xlsx","maxRows":20}',
+    async (ctx, args) => {
+      const root = rootOf(ctx)
+      if (!root) return NO_WS
+      const jail = jailPath(
+        root,
+        String(args?.path ?? '')
+          .trim()
+          .replace(/\\/g, '/')
+      )
+      if (!jail) return '路径越界。'
+      try {
+        if (!existsSync(jail) || !statSync(jail).isFile()) return `文件不存在:${args?.path}`
+        const maxRows = Math.min(Math.max(Math.floor(Number(args?.maxRows) || 20), 1), 100)
+        const ExcelJS = await import('exceljs')
+        const wb = new ExcelJS.Workbook()
+        await wb.xlsx.readFile(jail)
+        const parts: string[] = []
+        const ws0 = wb.worksheets[0]
+        parts.push(`工作簿:${args?.path} · ${wb.worksheets.length} 个工作表`)
+        parts.push(`工作表:${wb.worksheets.map((w) => `${w.name}(${w.rowCount} 行)`).join('、')}`)
+        if (ws0) {
+          const rows: string[][] = []
+          ws0.eachRow({ includeEmpty: false }, (row) => {
+            rows.push((row.values as Array<unknown>).slice(1).map((v) => String(v ?? '')))
+          })
+          parts.push(`—— ${ws0.name} 前 ${Math.min(rows.length, maxRows)} 行 ——`)
+          rows.slice(0, maxRows).forEach((r, i) => parts.push(`${i + 1}: ${r.join(' | ')}`))
+        }
+        return parts.join('\n')
+      } catch (e) {
+        wsLog.error(`xlsx 预览失败 ${args?.path}`, e)
+        return `xlsx 读取失败:${e instanceof Error ? e.message : String(e)}(仅支持标准 xlsx)`
+      }
+    }
+  ),
+  defOf(
+    'xlsx_write',
+    {
+      path: { type: 'string', required: true, desc: '相对 .xlsx 输出路径(新建)' },
+      rows: {
+        type: 'string',
+        required: true,
+        desc: 'JSON 二维数组字符串,如 [["列1","列2"],["值1","值2"]]'
+      },
+      sheet: { type: 'string', desc: '工作表名(默认 Sheet1)' }
+    },
+    '生成工作区 Excel 文件(写操作,需审批):按 JSON 二维数组写入新工作簿;' +
+      '只支持新建(已存在则失败)。args: {"path":"输出.xlsx","rows":"[[...],[...]]"}',
+    async (ctx, args) => {
+      const root = rootOf(ctx)
+      if (!root) return NO_WS
+      const p = String(args?.path ?? '')
+        .trim()
+        .replace(/\\/g, '/')
+      const jail = jailPath(root, p)
+      if (!jail) return '路径越界。'
+      if (existsSync(jail)) return `文件已存在:${p}(xlsx_write 只支持新建)。`
+      let rows: unknown[][]
+      try {
+        const parsed = JSON.parse(String(args?.rows ?? '')) as unknown
+        if (
+          !Array.isArray(parsed) ||
+          parsed.length === 0 ||
+          parsed.some((r) => !Array.isArray(r))
+        ) {
+          return 'rows 需为非空二维数组 JSON。'
+        }
+        rows = parsed as unknown[][]
+      } catch {
+        return 'rows 不是合法 JSON 二维数组。'
+      }
+      try {
+        const ExcelJS = await import('exceljs')
+        const wb = new ExcelJS.Workbook()
+        const ws = wb.addWorksheet(sheetNameSafe(String(args?.sheet ?? '')))
+        ws.addRows(rows)
+        await wb.xlsx.writeFile(jail)
+        wsLog.info(`xlsx 生成 ${p} rows=${rows.length}`)
+        return `已生成 ${p}(${rows.length} 行 × ${rows[0].length} 列)`
+      } catch (e) {
+        wsLog.error(`xlsx 生成失败 ${p}`, e)
+        return `生成失败:${e instanceof Error ? e.message : String(e)}`
+      }
+    }
+  ),
+  defOf(
+    'site_scaffold',
+    {
+      dir: { type: 'string', required: true, desc: '相对目录名(将新建,字母/数字/_/-)' },
+      pages: { type: 'number', desc: '页面数:1=单页,>1=多页含 about 等(默认 1)' }
+    },
+    '在工作区创建静态网站骨架(写操作,需审批):index.html + style.css + app.js + README,' +
+      '多页模式额外生成 about.html 等。之后用 workspace_write 填充内容。args: {"dir":"landing","pages":1}',
+    async (ctx, args) => {
+      const root = rootOf(ctx)
+      if (!root) return NO_WS
+      const name = String(args?.dir ?? '').trim()
+      if (!/^[A-Za-z0-9_-]{1,60}$/.test(name)) return '目录名仅支持字母/数字/_/-,长度≤60。'
+      const pages = Math.min(Math.max(Math.floor(Number(args?.pages) || 1), 1), 6)
+      const indexJail = jailPath(root, `${name}/index.html`)
+      if (!indexJail) return '路径越界。'
+      if (existsSync(jailPath(root, name) as string)) return `目录已存在:${name}`
+      const base = String(args?.dir ?? '')
+      const files: Record<string, string> = {
+        'index.html': `<!doctype html>\n<html lang="zh-CN">\n<head>\n  <meta charset="utf-8" />\n  <meta name="viewport" content="width=device-width,initial-scale=1" />\n  <title>${name}</title>\n  <link rel="stylesheet" href="style.css" />\n</head>\n<body>\n  <header><h1>${name}</h1><nav><a href="index.html">首页</a></nav></header>\n  <main>\n    <p>在这里开始填写你的页面内容。</p>\n  </main>\n  <script src="app.js"></script>\n</body>\n</html>\n`,
+        'style.css': `:root{color-scheme:light dark}\nbody{margin:0;font-family:system-ui,sans-serif;line-height:1.6}\nheader{border-bottom:1px solid #ddd;padding:12px 24px}\nmain{max-width:760px;margin:24px auto;padding:0 16px}\n`,
+        'app.js': `// ${name} 交互脚本\nconsole.log('${name} ready')\n`,
+        'README.md': `# ${name}\n\n静态站点骨架(由工作区助手生成)。\n\n- 页面:${'index.html'}${
+          pages > 1 ? '、about.html' : ''
+        }\n- 样式:style.css\n- 脚本:app.js\n\n本地预览:直接双击 index.html,或起静态服务器。\n`
+      }
+      if (pages > 1) {
+        files['about.html'] =
+          `<!doctype html>\n<html lang="zh-CN">\n<head>\n  <meta charset="utf-8" />\n  <title>关于 · ${name}</title>\n  <link rel="stylesheet" href="style.css" />\n</head>\n<body>\n  <header><nav><a href="index.html">首页</a> · 关于</nav></header>\n  <main><h1>关于</h1><p>介绍这个站点。</p></main>\n</body>\n</html>\n`
+      }
+      try {
+        mkdirSync(jailPath(root, name) as string)
+        for (const [f, content] of Object.entries(files)) {
+          const fp = jailPath(root, `${base}/${f}`)
+          if (!fp) continue
+          writeFileSync(fp, content, 'utf8')
+        }
+        wsLog.info(`站点脚手架 ${base} pages=${pages}`)
+        const tree = Object.keys(files)
+          .map((f) => `- ${base}/${f}`)
+          .join('\n')
+        return `已创建站点骨架:\n${tree}\n\n可继续用 workspace_read/workspace_write 完善内容。`
+      } catch (e) {
+        wsLog.error(`站点脚手架失败 ${base}`, e)
+        return `创建失败:${e instanceof Error ? e.message : String(e)}`
+      }
+    }
+  )
+)
+
 export function findWsTool(name: string): ToolDef | undefined {
   return WS_TOOLS.find((t) => t.name === name)
 }
 
 /** 写/危险类工具:需要逐次审批 */
-const WRITE_NAMES = new Set(['workspace_write', 'workspace_mkdir', 'workspace_delete'])
+const WRITE_NAMES = new Set([
+  'workspace_write',
+  'workspace_mkdir',
+  'workspace_delete',
+  'csv_append',
+  'xlsx_write',
+  'site_scaffold'
+])
 export const WS_READONLY_NAMES = WS_TOOLS.map((t) => t.name).filter((n) => !WRITE_NAMES.has(n))
 export const WS_WRITE_NAMES = [...WRITE_NAMES]
 

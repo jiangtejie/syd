@@ -510,7 +510,12 @@ export const TOOL_CN_NAMES: Record<string, string> = {
   workspace_file_info: '文件信息',
   workspace_write: '写入文件',
   workspace_mkdir: '新建目录',
-  workspace_delete: '删除文件'
+  workspace_delete: '删除文件',
+  csv_read: 'CSV 预览',
+  csv_append: 'CSV 追加',
+  xlsx_preview: 'Excel 预览',
+  xlsx_write: '生成 Excel',
+  site_scaffold: '建站脚手架'
 }
 
 export function toolCnName(name: string): string {

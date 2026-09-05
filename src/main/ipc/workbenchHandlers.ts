@@ -30,6 +30,7 @@ import {
 } from '../services/ai/workbench/approval'
 import {
   ensureBuiltinSkillSeeded,
+  ensureOfficeSkillsSeeded,
   listSkills,
   setSkillEnabled,
   skillsRoot
@@ -104,8 +105,9 @@ function sessionToMarkdown(sessionId: number): { title: string; md: string } | {
 }
 
 export function registerWorkbenchHandlers(): void {
-  // 首次启动种子内置技能(回复排版),幂等
+  // 首次启动种子内置技能(回复排版 + 工作区办公技能),幂等
   ensureBuiltinSkillSeeded()
+  ensureOfficeSkillsSeeded()
 
   ipcMain.handle('cs:wb:listChats', (_e, wxid: string) => {
     try {
