@@ -282,6 +282,22 @@ const api = {
     wb: {
       listChats: (wxid: string): Promise<{ ok: boolean; chats?: unknown[]; error?: string }> =>
         ipcRenderer.invoke('cs:wb:listChats', wxid),
+      searchChats: (
+        wxid: string,
+        query: string
+      ): Promise<{
+        ok: boolean
+        hits?: Array<{
+          sessionId: number
+          sessionTitle: string
+          msgId: number
+          role: string
+          kind: string
+          content: string
+          createdAt: number
+        }>
+        error?: string
+      }> => ipcRenderer.invoke('cs:wb:searchChats', wxid, query),
       messages: (id: number): Promise<{ ok: boolean; messages?: unknown[]; error?: string }> =>
         ipcRenderer.invoke('cs:wb:messages', id),
       create: (

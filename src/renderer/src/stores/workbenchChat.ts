@@ -76,6 +76,8 @@ interface WbState {
   pendingTexts: Record<number, string>
   /** 上下文压缩标记(按会话):历史被压缩摘要,本轮起展示在消息流顶部(内存态) */
   compactBySid: Record<number, string>
+  /** 上下文占用(按会话,字符估算):用于输入区进度提示 */
+  contextBySid: Record<number, { used: number; cap: number }>
   /** 编辑重发:正在改写最近一轮提问的会话(null=无) */
   editingSid: number | null
 
@@ -212,6 +214,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   error: null,
   pendingTexts: {},
   compactBySid: {},
+  contextBySid: {},
   editingSid: null,
 
   init: async (wxid) => {
@@ -247,6 +250,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       error: null,
       pendingTexts: {},
       compactBySid: {},
+      contextBySid: {},
       editingSid: null,
       busyIds: {},
       sessNew: {},
@@ -336,6 +340,8 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     const next = (get().chats ?? []).filter((c) => c.id !== id)
     const compactBySid = { ...get().compactBySid }
     delete compactBySid[id]
+    const contextBySid = { ...get().contextBySid }
+    delete contextBySid[id]
     set({
       chats: next,
       busyIds,
@@ -343,6 +349,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       sessErr: withoutKey(get().sessErr, id),
       pendingTexts: withoutKeyStr(get().pendingTexts, id),
       compactBySid,
+      contextBySid,
       editingSid: get().editingSid === id ? null : get().editingSid
     })
     if (get().activeId === id) {
@@ -372,6 +379,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
       error: null,
       pendingTexts: {},
       compactBySid: {},
+      contextBySid: {},
       editingSid: null
     })
   },
@@ -541,6 +549,8 @@ function handleWbEvent(raw: unknown): void {
     output?: string
     outTrunc?: boolean
     resultClip?: string
+    usedChars?: number
+    capChars?: number
     runId?: string
     approvalText?: string
     messageId?: number
@@ -586,6 +596,14 @@ function handleWbEvent(raw: unknown): void {
       compactBySid: {
         ...cur.compactBySid,
         [sid]: e.text || '旧对话已自动压缩,仅保留最近一段。'
+      }
+    })
+  } else if (e.type === 'context' && isActive) {
+    const cur = useWorkbenchChatStore.getState()
+    useWorkbenchChatStore.setState({
+      contextBySid: {
+        ...cur.contextBySid,
+        [sid]: { used: e.usedChars ?? 0, cap: e.capChars ?? 24_000 }
       }
     })
   } else if (e.type === 'done') {

@@ -7,7 +7,8 @@ import {
   listChatMessages,
   listChats,
   removeChat,
-  renameChat
+  renameChat,
+  searchChatMessages
 } from '../db/repos/chatRepo'
 import {
   resendWorkbenchMessage,
@@ -100,6 +101,18 @@ export function registerWorkbenchHandlers(): void {
   ipcMain.handle('cs:wb:listChats', (_e, wxid: string) => {
     try {
       return { ok: true as const, chats: listChats(wbWxid(String(wxid || ''))) }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  /** 会话/消息全文检索(当前账号命名空间) */
+  ipcMain.handle('cs:wb:searchChats', (_e, wxid: string, query: string) => {
+    try {
+      return {
+        ok: true as const,
+        hits: searchChatMessages(wbWxid(String(wxid || '')), String(query || ''))
+      }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }

@@ -25,6 +25,13 @@ import './workbench-chat.css'
 const WB_WINDOW = 200
 const WB_OLDER_STEP = 200
 
+/** 命中片段:单行化 + 前后省略 */
+function snippet(content: string, width = 84): string {
+  const one = content.replace(/\s+/g, ' ').trim()
+  if (one.length <= width) return one
+  return `…${one.slice(0, width)}…`
+}
+
 /** 链接:外部打开(主进程对 window.open 统一走系统浏览器),不在应用内导航 */
 function MdLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element {
   const { href, children, ...rest } = props
@@ -399,8 +406,14 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const { chats, activeId, messages, loading, busyIds, error, pendingTexts } = store
   const pendingText = activeId !== null ? (pendingTexts[activeId] ?? undefined) : undefined
   const compactBySid = useWorkbenchChatStore((s) => s.compactBySid)
+  const contextBySid = useWorkbenchChatStore((s) => s.contextBySid)
   const editingSid = useWorkbenchChatStore((s) => s.editingSid)
   const compactText = activeId !== null ? (compactBySid[activeId] ?? undefined) : undefined
+  const ctxInfo = activeId !== null ? (contextBySid[activeId] ?? undefined) : undefined
+  const ctxPct =
+    ctxInfo && ctxInfo.cap > 0 && ctxInfo.used > 0
+      ? Math.min(100, Math.round((ctxInfo.used / ctxInfo.cap) * 100))
+      : 0
   const turnBlocks = useWorkbenchChatStore((s) => s.turnBlocks)
   const approvals = useWorkbenchChatStore((s) => s.approvals)
   const sessNew = useWorkbenchChatStore((s) => s.sessNew)
@@ -439,7 +452,11 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     if (id === null) return
     pendingAnchorRef.current = null
     const el = bodyRef.current?.querySelector(`[data-wid="${id}"]`)
-    el?.scrollIntoView({ block: 'start' })
+    if (el) {
+      el.scrollIntoView({ block: 'start' })
+      el.classList.add('wb-msg-flash')
+      window.setTimeout(() => el.classList.remove('wb-msg-flash'), 2400)
+    }
   }, [startIdx])
 
   /** 应用内输入弹窗（Electron 不支持 window.prompt：不弹窗且返回 undefined） */
@@ -624,6 +641,76 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     }
   }
 
+  /* ── 会话/消息检索 ── */
+  interface SearchHit {
+    sessionId: number
+    sessionTitle: string
+    msgId: number
+    role: string
+    kind: string
+    content: string
+    createdAt: number
+  }
+  const [searchQ, setSearchQ] = useState('')
+  const [hits, setHits] = useState<SearchHit[] | null>(null)
+  const [searchBusy, setSearchBusy] = useState(false)
+  const searchTimerRef = useRef<number | null>(null)
+
+  const runSearch = async (q: string): Promise<void> => {
+    const query = q.trim()
+    if (!query) {
+      setHits(null)
+      return
+    }
+    const api = window.api?.cs?.wb
+    setSearchBusy(true)
+    const res = await api?.searchChats(accountKey, query).catch(() => null)
+    setSearchBusy(false)
+    setHits(res?.ok && res.hits ? res.hits : [])
+  }
+
+  const onSearchInput = (v: string): void => {
+    setSearchQ(v)
+    if (searchTimerRef.current !== null) window.clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = window.setTimeout(() => {
+      searchTimerRef.current = null
+      void runSearch(v)
+    }, 500)
+  }
+
+  /** 命中定位:切会话并滚动到该消息行(窗口截断时调整起点),并高亮闪烁 */
+  const openHit = async (hit: SearchHit): Promise<void> => {
+    await store.select(hit.sessionId)
+    const msgs = useWorkbenchChatStore.getState().messages
+    let idx = -1
+    for (let i = 0; i < msgs.length; i++) {
+      if (msgs[i].id === hit.msgId) {
+        idx = i
+        break
+      }
+    }
+    if (idx >= 0) {
+      pendingAnchorRef.current = String(hit.msgId)
+      stickRef.current = false
+      setStartIdx(Math.max(0, idx - 3))
+    } else {
+      // 命中的消息未在本地(极端情况):正常打开会话即可
+      stickRef.current = true
+      setStartIdx(Math.max(0, msgs.length - WB_WINDOW))
+    }
+    setSearchQ('')
+    setHits(null)
+  }
+
+  const clearSearch = (): void => {
+    setSearchQ('')
+    setHits(null)
+    if (searchTimerRef.current !== null) {
+      window.clearTimeout(searchTimerRef.current)
+      searchTimerRef.current = null
+    }
+  }
+
   return (
     <div className="wb-page">
       <aside className="wb-side">
@@ -636,61 +723,119 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             : '未绑定账号:仅软件状态可用,业务查询会提示先连接。'}
         </div>
         <div className="wb-side-list">
-          {chats === null && <div className="wb-empty">加载中…</div>}
-          {chats !== null && chats.length === 0 && (
-            <div className="wb-empty">还没有会话。新建后即可让 AI 查数据、给口径、写总结。</div>
-          )}
-          {(chats ?? []).map((c) => (
-            <div
-              key={c.id}
-              className={`wb-side-item${activeId === c.id ? ' is-active' : ''}`}
-              onClick={() => void store.select(c.id)}
-            >
-              <div className="wb-side-main">
-                <div className="wb-side-title">{c.title}</div>
-                {c.id !== activeId && (busyIds[c.id] || sessNew[c.id] || sessErr[c.id]) && (
-                  <div className="wb-side-status">
-                    {busyIds[c.id] && (
-                      <span className="wb-side-run">
-                        <i className="wb-side-run-dot" />
-                        生成中
-                      </span>
+          <div className="wb-side-search">
+            <input
+              className="wb-side-search-input"
+              placeholder="搜索会话与消息…"
+              value={searchQ}
+              onChange={(e) => onSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  if (searchTimerRef.current !== null) {
+                    window.clearTimeout(searchTimerRef.current)
+                    searchTimerRef.current = null
+                  }
+                  void runSearch(searchQ)
+                } else if (e.key === 'Escape') {
+                  clearSearch()
+                }
+              }}
+            />
+            {searchQ && (
+              <button
+                type="button"
+                className="wb-search-clear"
+                title="清除搜索"
+                onClick={clearSearch}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {hits !== null ? (
+            <>
+              {searchBusy && <div className="wb-empty">搜索中…</div>}
+              {!searchBusy && hits.length === 0 && <div className="wb-empty">没有匹配的消息</div>}
+              {hits.map((h) => (
+                <button
+                  key={`${h.sessionId}:${h.msgId}`}
+                  type="button"
+                  className="wb-search-hit"
+                  onClick={() => void openHit(h)}
+                  title={`在「${h.sessionTitle}」中定位该消息`}
+                >
+                  <span className="wb-search-hit-title">
+                    {h.sessionTitle}
+                    <em className="wb-search-hit-role">
+                      {h.role === 'user' ? '我' : h.kind === 'tool_call' ? '工具' : '助手'}
+                    </em>
+                  </span>
+                  <span className="wb-search-hit-text">{snippet(h.content)}</span>
+                </button>
+              ))}
+            </>
+          ) : (
+            <>
+              {chats === null && <div className="wb-empty">加载中…</div>}
+              {chats !== null && chats.length === 0 && (
+                <div className="wb-empty">还没有会话。新建后即可让 AI 查数据、给口径、写总结。</div>
+              )}
+              {(chats ?? []).map((c) => (
+                <div
+                  key={c.id}
+                  className={`wb-side-item${activeId === c.id ? ' is-active' : ''}`}
+                  onClick={() => void store.select(c.id)}
+                >
+                  <div className="wb-side-main">
+                    <div className="wb-side-title">{c.title}</div>
+                    {c.id !== activeId && (busyIds[c.id] || sessNew[c.id] || sessErr[c.id]) && (
+                      <div className="wb-side-status">
+                        {busyIds[c.id] && (
+                          <span className="wb-side-run">
+                            <i className="wb-side-run-dot" />
+                            生成中
+                          </span>
+                        )}
+                        {!busyIds[c.id] && sessNew[c.id] && (
+                          <span className="wb-side-new">新回复</span>
+                        )}
+                        {sessErr[c.id] && <span className="wb-side-err">失败</span>}
+                      </div>
                     )}
-                    {!busyIds[c.id] && sessNew[c.id] && <span className="wb-side-new">新回复</span>}
-                    {sessErr[c.id] && <span className="wb-side-err">失败</span>}
                   </div>
-                )}
-              </div>
-              <div className="wb-side-ops">
-                <button
-                  type="button"
-                  title="重命名"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openPrompt({
-                      title: '重命名会话',
-                      placeholder: '输入新名称',
-                      okLabel: '保存',
-                      initial: c.title,
-                      submit: (t) => store.rename(c.id, t.trim())
-                    })
-                  }}
-                >
-                  改
-                </button>
-                <button
-                  type="button"
-                  title="删除会话"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (window.confirm(`删除会话「${c.title}」?`)) void store.remove(c.id)
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
+                  <div className="wb-side-ops">
+                    <button
+                      type="button"
+                      title="重命名"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openPrompt({
+                          title: '重命名会话',
+                          placeholder: '输入新名称',
+                          okLabel: '保存',
+                          initial: c.title,
+                          submit: (t) => store.rename(c.id, t.trim())
+                        })
+                      }}
+                    >
+                      改
+                    </button>
+                    <button
+                      type="button"
+                      title="删除会话"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (window.confirm(`删除会话「${c.title}」?`)) void store.remove(c.id)
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
         {/* 会话工具:导出当前 / 清空全部 */}
         <div className="wb-side-foot">
@@ -867,6 +1012,18 @@ export default function WorkbenchChatPage(): React.JSX.Element {
         {error && <div className="wb-error">✗ {error}</div>}
 
         <div className="wb-composer">
+          {/* 上下文占用(字符估算):接近预算时提示即将压缩 */}
+          {ctxPct > 0 && (
+            <div
+              className={`wb-ctxline${ctxPct >= 90 ? ' is-hot' : ''}`}
+              title="当前会话上下文估算占用;超过预算会先压缩旧对话再继续"
+            >
+              <span className="wb-ctxline-label">上下文 {ctxPct}%{ctxPct >= 90 ? ' · 接近上限,新一轮将先压缩旧对话' : ''}</span>
+              <span className="wb-ctxline-bar">
+                <i style={{ width: `${ctxPct}%` }} />
+              </span>
+            </div>
+          )}
           {activeId !== null && (
             <div className="wb-presets">
               <span className="wb-presets-tip">常用提问</span>

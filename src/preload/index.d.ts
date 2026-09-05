@@ -303,6 +303,22 @@ declare global {
         }
         wb: {
           listChats: (wxid: string) => Promise<Result<{ chats?: ChatSessionItem[] }>>
+          searchChats: (
+            wxid: string,
+            query: string
+          ) => Promise<
+            Result<{
+              hits?: Array<{
+                sessionId: number
+                sessionTitle: string
+                msgId: number
+                role: string
+                kind: string
+                content: string
+                createdAt: number
+              }>
+            }>
+          >
           messages: (id: number) => Promise<Result<{ messages?: ChatMsgItem[] }>>
           create: (
             wxid: string,

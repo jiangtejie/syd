@@ -191,6 +191,16 @@ export async function sendWorkbenchMessage(
       emitWorkbenchEvent(sessionId, { type: 'compaction', text: compactText })
     }
     const messages: ModelMessage[] = historyToMessages(rows)
+    // 上下文占用估算(字符口径,供界面进度提示):压缩后为保留段占比
+    const usedChars = messages.reduce((n, m) => {
+      const c = typeof m.content === 'string' ? m.content : ''
+      return n + c.length
+    }, 0)
+    emitWorkbenchEvent(sessionId, {
+      type: 'context',
+      usedChars,
+      capChars: MAX_CHARS
+    })
     const system = buildWorkbenchSystem(boundWxid, { summary })
     const toolSet = buildWorkbenchToolSet(boundWxid, sessionId)
 

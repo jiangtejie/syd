@@ -105,6 +105,52 @@ export function listChatMessages(sessionId: number): ChatMsgItem[] {
   return rows.map(rowToMsg)
 }
 
+/** 消息内容检索(某命名空间全部会话;子串匹配避开 LIKE 通配符,含上下文片段) */
+export function searchChatMessages(
+  wxid: string,
+  query: string,
+  limit = 100
+): Array<{
+  sessionId: number
+  sessionTitle: string
+  msgId: number
+  role: string
+  kind: string
+  content: string
+  createdAt: number
+}> {
+  const q = (query || '').trim()
+  if (!q) return []
+  const rows = getDb()
+    .prepare(
+      `SELECT m.id AS msgId, m.session_id AS sessionId, m.role, m.kind, m.content,
+              m.created_at AS createdAt, s.title AS sessionTitle
+       FROM chat_message m
+       JOIN chat_session s ON s.id = m.session_id
+       WHERE s.wxid = ? AND instr(m.content, ?) > 0
+       ORDER BY m.id DESC
+       LIMIT ?`
+    )
+    .all(wxid, q, Math.max(1, Math.min(limit, 200))) as Array<{
+    msgId: number
+    sessionId: number
+    role: string
+    kind: string
+    content: string
+    createdAt: number
+    sessionTitle: string
+  }>
+  return rows.map((r) => ({
+    sessionId: r.sessionId,
+    sessionTitle: r.sessionTitle ?? '',
+    msgId: r.msgId,
+    role: r.role,
+    kind: r.kind,
+    content: r.content,
+    createdAt: r.createdAt
+  }))
+}
+
 export function appendChatMessage(
   sessionId: number,
   role: ChatMsgRole,

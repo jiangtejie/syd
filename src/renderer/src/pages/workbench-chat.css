@@ -60,6 +60,141 @@
   width: 100%;
 }
 
+/* 会话/消息检索 */
+.wb-side-search {
+  position: relative;
+  flex: none;
+  padding: 0 0 6px;
+}
+
+.wb-side-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12px;
+  padding: 5px 26px 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-1);
+  outline: none;
+  user-select: text;
+}
+
+.wb-side-search-input:focus {
+  border-color: var(--brand);
+}
+
+.wb-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 4px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.wb-search-clear:hover {
+  color: var(--brand);
+}
+
+.wb-search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  cursor: pointer;
+  font: inherit;
+}
+
+.wb-search-hit:hover {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+}
+
+.wb-search-hit-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wb-search-hit-title em {
+  font-style: normal;
+  font-size: 9.5px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--bg-hover);
+  color: var(--text-3);
+  flex: none;
+}
+
+.wb-search-hit-text {
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  user-select: text;
+  word-break: break-word;
+}
+
+/* 上下文占用提示 */
+.wb-ctxline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wb-ctxline-label {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.wb-ctxline.is-hot .wb-ctxline-label {
+  color: var(--warn-text);
+}
+
+.wb-ctxline-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.wb-ctxline-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--info);
+  transition: width 0.3s ease;
+}
+
+.wb-ctxline.is-hot .wb-ctxline-bar i {
+  background: var(--warn);
+}
+
 .wb-empty {
   color: var(--text-3);
   font-size: 12px;
