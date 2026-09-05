@@ -94,6 +94,8 @@ interface WorkbenchState {
   generateSuggestions: () => Promise<void>
   adoptSuggestion: (text: string) => void
   sendText: (text: string, source?: string) => Promise<void>
+  /** 发送单条图片/文件(与文本同一串行队列) */
+  sendFile: (path: string, kind: 'image' | 'file') => Promise<void>
   /** 群问题视图：读取该群问题列表并自动触发窗口分析（主进程侧节流） */
   loadGroupIssues: (sessionId: string) => Promise<void>
   /** 手动强制重新分析当前群;reset=true 先清空本群待处理/跟进中记录再重扫(历史已解决/归档保留) */
@@ -624,6 +626,50 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     } catch (e) {
       console.error('[workbench] send failed', e)
       toast.error('发送失败')
+      set({ sending: false, sendResult: { ok: false, error: '发送失败', status: 'failed' } })
+    }
+  },
+
+  /** 发送单条图片/文件(走主进程同一串行队列;文件消息不在本地乐观回显,由监控推送对齐) */
+  sendFile: async (path: string, kind: 'image' | 'file') => {
+    const { wxid, activeSessionId, sessions, sending } = get()
+    if (!wxid || !activeSessionId || !path.trim() || sending) return
+    const session = sessions.find((s) => s.username === activeSessionId)
+    const targetName =
+      session?.displayName || session?.nickname || session?.remark || activeSessionId
+    set({ sending: true })
+    try {
+      const res = replyApi
+        ? await replyApi.sendFile({
+            wxid,
+            sessionId: activeSessionId,
+            targetName,
+            path: path.trim(),
+            kind,
+            source: 'manual'
+          })
+        : { ok: false, error: '发送通道未就绪' }
+      const result = res.ok && res.result ? res.result : null
+      const name = path.split(/[\\/]/).pop() ?? ''
+      if (res.ok && res.result?.status === 'sent') {
+        toast.success(
+          res.result.verified ? `${kind === 'image' ? '图片' : '文件'}已发送` : '已发送(待校验)'
+        )
+      } else {
+        toast.error(res.error || result?.error || `发送失败:${name}`)
+      }
+      set({
+        sending: false,
+        sendResult: {
+          ok: res.ok,
+          error: res.error || result?.error,
+          status: result?.status,
+          verified: result?.verified
+        }
+      })
+    } catch (e) {
+      console.error('[workbench] sendFile failed', e)
+      toast.error('文件发送失败')
       set({ sending: false, sendResult: { ok: false, error: '发送失败', status: 'failed' } })
     }
   },

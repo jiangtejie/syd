@@ -2,7 +2,9 @@ param(
   [string]$Action = 'focus',
   [string]$Keys = '',
   [string]$Target = '',
-  [string]$Text = ''
+  [string]$Text = '',
+  [string]$Path = '',
+  [string]$FileKind = 'file'
 )
 $ErrorActionPreference = 'Stop'
 
@@ -12,6 +14,7 @@ $ErrorActionPreference = 'Stop'
 #   isfocus-> check whether WeChat window is foreground, output {ok, focused}
 #   keys   -> send key sequence (Keys comma separated: ctrl+f / ctrl+a / delete / ctrl+v / enter / esc / tab)
 #   send   -> full injection: search session Target -> paste body Text -> Enter
+#   sendfile -> search session Target -> put file/image into clipboard -> paste -> Enter
 # Output: single-line JSON on stdout
 # NOTE: keep this file ASCII-only (PS 5.1 parses no-BOM scripts as ANSI).
 
@@ -43,6 +46,25 @@ $VK = @{
   'a' = 0x41; 'b' = 0x42; 'c' = 0x43; 'v' = 0x56; 'f' = 0x46; 'n' = 0x4E
 }
 $MOD = @{ 'ctrl' = 0x11; 'alt' = 0x12; 'shift' = 0x10 }
+
+# clipboard write helpers with retry (clipboard may be busy by other apps)
+function Invoke-ClipboardWithRetry([scriptblock]$fn) {
+  for ($i = 0; $i -lt 5; $i++) {
+    try { & $fn; return $true } catch { Start-Sleep -Milliseconds 250 }
+  }
+  return $false
+}
+
+function Set-ImageFileClipboard([string]$p) {
+  $img = [System.Drawing.Image]::FromFile($p)
+  try { [System.Windows.Forms.Clipboard]::SetImage($img) } finally { $img.Dispose() }
+}
+
+function Set-FileDropClipboard([string]$p) {
+  $list = New-Object System.Collections.Specialized.StringCollection
+  [void]$list.Add($p)
+  [System.Windows.Forms.Clipboard]::SetFileDropList($list)
+}
 
 # "WeChat" in Chinese (U+5FAE U+4FE1), built via code points to keep file ASCII
 $weChatTitle = [string][char]0x5FAE + [char]0x4FE1
@@ -144,6 +166,44 @@ try {
         Start-Sleep -Milliseconds 400
         Send-KeySeq 'enter'
         $out = @{ ok = $true; title = $win.title; sent = $true }
+      }
+      } elseif ($Action -eq 'sendfile') {
+      # send one file/image: search session -> put file into clipboard -> paste -> enter
+      Focus-WeChatWindow $hwnd | Out-Null
+      Start-Sleep -Milliseconds 150
+      Send-KeySeq 'ctrl+f'
+      Start-Sleep -Milliseconds 400
+      Send-KeySeq 'ctrl+a,delete'
+      [System.Windows.Forms.Clipboard]::SetText($Target)
+      Send-KeySeq 'ctrl+v'
+      Start-Sleep -Milliseconds 800
+      Send-KeySeq 'enter'
+      Start-Sleep -Milliseconds 900
+      if ([Win32]::GetForegroundWindow() -ne $hwnd) {
+        $out = @{ ok = $false; error = 'Focus stolen, send cancelled' }
+      } elseif (-not (Test-Path -LiteralPath $Path)) {
+        $out = @{ ok = $false; error = 'File not found: ' + $Path }
+      } else {
+        $ext = [System.IO.Path]::GetExtension($Path).ToLower()
+        $pasteAsImage = ($FileKind -eq 'image') -and ($ext -in '.png', '.jpg', '.jpeg', '.bmp', '.gif')
+        if ($pasteAsImage) {
+          Add-Type -AssemblyName System.Drawing
+          if (-not (Invoke-ClipboardWithRetry { Set-ImageFileClipboard $Path })) {
+            $out = @{ ok = $false; error = 'Clipboard busy (image)' }
+          }
+        } else {
+          if (-not (Invoke-ClipboardWithRetry { Set-FileDropClipboard $Path })) {
+            $out = @{ ok = $false; error = 'Clipboard busy (file)' }
+          }
+        }
+        if (-not $out.ok) {
+          # nothing more to do
+        } else {
+          Send-KeySeq 'ctrl+v'
+          Start-Sleep -Milliseconds ($(if ($pasteAsImage) { 1200 } else { 900 }))
+          Send-KeySeq 'enter'
+          $out = @{ ok = $true; title = $win.title; sent = $true; asImage = $pasteAsImage }
+        }
       }
     } else {
       $out.error = "Unknown action: $Action"

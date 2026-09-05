@@ -97,6 +97,15 @@ const api = {
         source?: string
       }): Promise<{ ok: boolean; result?: SendResult; error?: string }> =>
         ipcRenderer.invoke('cs:reply:sendText', args),
+      sendFile: (args: {
+        wxid: string
+        sessionId: string
+        targetName: string
+        path: string
+        kind: 'image' | 'file'
+        source?: string
+      }): Promise<{ ok: boolean; result?: SendResult; error?: string }> =>
+        ipcRenderer.invoke('cs:reply:sendFile', args),
       getSendStatus: (): Promise<SendStatusInfo> => ipcRenderer.invoke('cs:reply:getSendStatus'),
       stats7d: (): Promise<Array<{ day: string; sent: number; failed: number }>> =>
         ipcRenderer.invoke('cs:reply:stats7d'),
@@ -120,7 +129,13 @@ const api = {
         title?: string,
         defaultPath?: string
       ): Promise<{ ok: boolean; path?: string }> =>
-        ipcRenderer.invoke('cs:dialog:pickDirectory', title, defaultPath)
+        ipcRenderer.invoke('cs:dialog:pickDirectory', title, defaultPath),
+      pickFiles: (opts?: {
+        title?: string
+        multi?: boolean
+        filters?: Array<{ name: string; extensions: string[] }>
+      }): Promise<{ ok: boolean; paths?: string[] }> =>
+        ipcRenderer.invoke('cs:dialog:pickFiles', opts ?? {})
     },
     media: {
       decryptImage: (opts: {

@@ -4,6 +4,22 @@ import { avatarColor, formatTimeDivider, needTimeDivider } from '../../lib/ui'
 import type { ChatMessage, ChatRecordItem, RedEnvelopeStatus } from '../../../../shared/types'
 import AttachmentViewer, { BubbleImage, type Attachment } from './AttachmentViewer'
 import MessageContextMenu, { type ContextMenuState } from './MessageContextMenu'
+import { toast } from '../../stores/toast'
+
+const dialogApi = window.api?.cs?.dialog
+
+/** 待发送文件条目(会话输入区选择后排队发送) */
+interface PendingFile {
+  path: string
+  name: string
+  kind: 'image' | 'file'
+}
+
+const MAX_PENDING = 8
+const IMAGE_FILTER = {
+  name: '图片',
+  extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp']
+}
 
 /** 按需取头像（contact URL / head_image 本地 BLOB），带简单缓存与进行中去重；localOnly=远程 URL 已失败，强制取本地 */
 const avatarCache = new Map<string, string | null>()
@@ -47,6 +63,7 @@ function useAvatar(username?: string, localOnly = false): string | null {
   useEffect(() => {
     let alive = true
     if (!username || source !== 'wx' || !wxid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话/账号切换时清空头像(全仓同款模式)
       setUrl(null)
       return
     }
@@ -103,6 +120,7 @@ function useRedEnvelopeStatus(
   useEffect(() => {
     let alive = true
     if (!sendId || source !== 'wx' || !wxid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 切会话/账号时清空红包状态(全仓同款模式)
       setStatus(null)
       return
     }
@@ -160,6 +178,7 @@ function Avatar({
   const [failed, setFailed] = useState(false)
   const showImg = !!url && /^(https?:|data:image)/.test(url) && !failed
   // url 变化时重置失败状态（切会话/换人/换成本地兜底图后重试加载）
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- url 切换即重置图片失败标记(全仓同款模式)
   useEffect(() => setFailed(false), [url])
   if (showImg) {
     return (
@@ -268,6 +287,7 @@ const MessageBubble = memo(function MessageBubble({
 
   // 换消息/换发送人/换会话头像后重置失败标记
   useEffect(
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 消息切换即重置头像失败标记(全仓同款模式)
     () => setRecvUrlFailed(false),
     [
       message.localId,
@@ -460,12 +480,14 @@ function MessagePanel(): React.JSX.Element {
   const loadOlder = useWorkbenchStore((s) => s.loadOlder)
   const sending = useWorkbenchStore((s) => s.sending)
   const sendText = useWorkbenchStore((s) => s.sendText)
+  const sendFile = useWorkbenchStore((s) => s.sendFile)
   const bodyRef = useRef<HTMLDivElement>(null)
   const lastSessionRef = useRef<string | null>(null)
   const pendingScrollRef = useRef(false)
   const [attachment, setAttachment] = useState<Attachment | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [draft, setDraft] = useState('')
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
 
   const activeSession = sessions.find((s) => s.username === activeSessionId) || null
 
@@ -484,9 +506,11 @@ function MessagePanel(): React.JSX.Element {
     []
   )
 
-  // 切换会话：清空草稿 + 标记“消息加载完成后滚到底部”（消息是异步加载，此刻滚动无意义）
+  // 切换会话：清空草稿与待发文件 + 标记“消息加载完成后滚到底部”（消息是异步加载，此刻滚动无意义）
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话切换清空草稿与待发列表(全仓同款模式)
     setDraft('')
+    setPendingFiles([])
     if (lastSessionRef.current !== activeSessionId) {
       lastSessionRef.current = activeSessionId
       pendingScrollRef.current = true
@@ -568,11 +592,52 @@ function MessagePanel(): React.JSX.Element {
     useWorkbenchStore.setState({ scrollHint: null })
   }, [scrollHint, activeSessionId, messages])
 
-  const handleSend = (): void => {
+  /** 追加待发文件(去重,总数上限) */
+  const addPendingFiles = (paths: string[], kind: 'image' | 'file'): void => {
+    setPendingFiles((prev) => {
+      const next = [...prev]
+      for (const p of paths) {
+        if (next.length >= MAX_PENDING) {
+          toast.error(`一次最多发送 ${MAX_PENDING} 个文件`)
+          break
+        }
+        if (next.some((f) => f.path === p)) continue
+        const name = p.split(/[\\/]/).pop() || p
+        next.push({ path: p, name, kind })
+      }
+      return next
+    })
+  }
+
+  const pickImages = async (): Promise<void> => {
+    const r = await dialogApi
+      ?.pickFiles({ title: '选择要发送的图片（可多选）', multi: true, filters: [IMAGE_FILTER] })
+      .catch(() => null)
+    if (r?.ok && r.paths && r.paths.length > 0) addPendingFiles(r.paths, 'image')
+  }
+
+  const pickAnyFiles = async (): Promise<void> => {
+    const r = await dialogApi
+      ?.pickFiles({ title: '选择要发送的文件（可多选）', multi: true })
+      .catch(() => null)
+    if (r?.ok && r.paths && r.paths.length > 0) addPendingFiles(r.paths, 'file')
+  }
+
+  const removePending = (path: string): void => {
+    setPendingFiles((prev) => prev.filter((f) => f.path !== path))
+  }
+
+  const handleSend = async (): Promise<void> => {
     const text = draft.trim()
-    if (!text || sending) return
+    if (sending || (!text && pendingFiles.length === 0)) return
+    const files = pendingFiles
     setDraft('')
-    void sendText(text, 'manual')
+    setPendingFiles([])
+    if (text) await sendText(text, 'manual')
+    for (const f of files) {
+      if (!activeSessionId) break
+      await sendFile(f.path, f.kind)
+    }
   }
 
   if (!activeSession) {
@@ -637,26 +702,64 @@ function MessagePanel(): React.JSX.Element {
         )}
       </div>
       <div className="wb-chat-input">
-        <textarea
-          className="wb-chat-textarea"
-          placeholder="输入人工回复，Enter 发送，Shift+Enter 换行"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="wb-chat-send"
-          disabled={sending || !draft.trim()}
-          onClick={handleSend}
-        >
-          {sending ? '发送中…' : '发送'}
-        </button>
+        <div className="wb-chat-composer">
+          {pendingFiles.length > 0 && (
+            <div className="wb-chat-pending">
+              {pendingFiles.map((f) => (
+                <span key={f.path} className="wb-chat-pchip">
+                  <span className="wb-chat-pchip-kind">{f.kind === 'image' ? '图片' : '文件'}</span>
+                  <b title={f.path}>{f.name}</b>
+                  <button type="button" title="移除" onClick={() => removePending(f.path)}>
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="wb-chat-tools">
+            <button
+              type="button"
+              className="wb-chat-tool"
+              disabled={sending || !activeSession}
+              onClick={() => void pickImages()}
+            >
+              🖼 图片
+            </button>
+            <button
+              type="button"
+              className="wb-chat-tool"
+              disabled={sending || !activeSession}
+              onClick={() => void pickAnyFiles()}
+            >
+              📎 文件
+            </button>
+            <span className="wb-chat-tools-hint">
+              发送需微信窗口在前台;图片粘贴发送,其它格式按文件发送
+            </span>
+          </div>
+          <div className="wb-chat-composer-row">
+            <textarea
+              className="wb-chat-textarea"
+              placeholder="输入人工回复，Enter 发送，Shift+Enter 换行"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void handleSend()
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="wb-chat-send"
+              disabled={sending || (!draft.trim() && pendingFiles.length === 0)}
+              onClick={() => void handleSend()}
+            >
+              {sending ? '发送中…' : '发送'}
+            </button>
+          </div>
+        </div>
       </div>
       {attachment && (
         <AttachmentViewer attachment={attachment} onClose={() => setAttachment(null)} />

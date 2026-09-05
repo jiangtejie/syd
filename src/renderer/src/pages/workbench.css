@@ -711,6 +711,104 @@
   cursor: default;
 }
 
+/* 输入区:附文件工具与待发列表 */
+.wb-chat-composer {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wb-chat-composer-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.wb-chat-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wb-chat-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid #d9dce1;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.wb-chat-tool:hover:not(:disabled) {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+
+.wb-chat-tool:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wb-chat-tools-hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+
+.wb-chat-pending {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wb-chat-pchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.wb-chat-pchip .wb-chat-pchip-kind {
+  flex: none;
+  color: var(--brand);
+}
+
+.wb-chat-pchip b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.wb-chat-pchip button {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.wb-chat-pchip button:hover {
+  color: var(--danger);
+}
+
 /* ══════════ 右栏（宽栏）：双视图容器 ══════════ */
 .wb-suggest {
   min-height: 0; /* 关键：允许滚动 */

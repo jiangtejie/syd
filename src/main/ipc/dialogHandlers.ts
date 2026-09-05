@@ -29,4 +29,34 @@ export function registerDialogHandlers(): void {
     if (result.canceled || result.filePaths.length === 0) return { ok: false }
     return { ok: true, path: result.filePaths[0] }
   })
+
+  /** 选择文件(可多选,可带过滤器);返回绝对路径数组 */
+  ipcMain.handle(
+    'cs:dialog:pickFiles',
+    async (
+      e,
+      opts: {
+        title?: string
+        multi?: boolean
+        filters?: Array<{ name: string; extensions: string[] }>
+      } = {}
+    ) => {
+      const win = BrowserWindow.fromWebContents(e.sender)
+      const filters = Array.isArray(opts?.filters)
+        ? opts.filters.map((f) => ({
+            name: String(f?.name ?? ''),
+            extensions: Array.isArray(f?.extensions)
+              ? f.extensions.map((x) => String(x).replace(/^\./, ''))
+              : []
+          }))
+        : []
+      const result = await dialog.showOpenDialog(win!, {
+        title: opts?.title ?? '选择文件',
+        filters: filters.length > 0 ? filters : undefined,
+        properties: opts?.multi ? ['openFile', 'multiSelections'] : ['openFile']
+      })
+      if (result.canceled || result.filePaths.length === 0) return { ok: false }
+      return { ok: true, paths: result.filePaths }
+    }
+  )
 }

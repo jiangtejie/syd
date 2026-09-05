@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { join } from 'path'
 import { app } from 'electron'
+import { existsSync, statSync } from 'fs'
 import { getConfig } from '../../db/repos/config'
 
 /**
@@ -28,15 +29,7 @@ function scriptPath(): string {
 async function runPs(args: string[]): Promise<Record<string, unknown>> {
   const { stdout } = await execFileP(
     'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      scriptPath(),
-      ...args
-    ],
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath(), ...args],
     { timeout: 30_000, windowsHide: true }
   )
   const lines = stdout.trim().split(/\r?\n/)
@@ -48,7 +41,11 @@ async function runPs(args: string[]): Promise<Record<string, unknown>> {
 }
 
 /** 查找并抢前台（诊断用） */
-export async function focusWeChatWindow(): Promise<{ ok: boolean; title?: string; error?: string }> {
+export async function focusWeChatWindow(): Promise<{
+  ok: boolean
+  title?: string
+  error?: string
+}> {
   try {
     const r = await runPs(['-Action', 'focus'])
     return {
@@ -71,6 +68,65 @@ export async function sendToChat(targetName: string, text: string): Promise<Inje
       ok: !!r.ok,
       error: r.error as string | undefined,
       sent: r.sent as boolean | undefined
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/* ── 图片/文件发送 ── */
+
+/** 单文件发送上限(微信对文件/图片的常规限制内留余量) */
+const MAX_FILE_BYTES = 100 * 1024 * 1024
+/** kind=image 时的可粘贴位图格式;webp 等无法经 System.Drawing 解码,自动按文件发送 */
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'])
+
+export interface SendFileResult extends InjectResult {
+  /** true=按图片粘贴发送;false=按文件粘贴发送 */
+  asImage?: boolean
+}
+
+/** 本地校验文件(存在/类型/大小),通过才发起注入 */
+export function validateSendFile(path: string, kind: 'image' | 'file'): string | null {
+  if (!path || !path.trim()) return '文件路径为空'
+  const p = path.trim()
+  if (!existsSync(p)) return '文件不存在或已被移动'
+  const st = statSync(p)
+  if (!st.isFile()) return '不是文件'
+  if (st.size <= 0) return '文件为空'
+  if (st.size > MAX_FILE_BYTES) return `文件超过 ${MAX_FILE_BYTES / 1024 / 1024}MB 上限`
+  if (kind === 'image') {
+    const ext = p.slice(p.lastIndexOf('.')).toLowerCase()
+    if (!IMAGE_EXTS.has(ext)) return '不支持的图片格式(支持 png/jpg/jpeg/bmp/gif/webp)'
+  }
+  return null
+}
+
+/** 注入单个文件/图片:搜索会话 → 剪贴板(位图或文件列表) → Ctrl+V → Enter */
+export async function sendFileToChat(
+  targetName: string,
+  path: string,
+  kind: 'image' | 'file'
+): Promise<SendFileResult> {
+  const err = validateSendFile(path, kind)
+  if (err) return { ok: false, error: err }
+  const target = targetName.length > 30 ? targetName.slice(0, 30) : targetName
+  try {
+    const r = await runPs([
+      '-Action',
+      'sendfile',
+      '-Target',
+      target,
+      '-Path',
+      path,
+      '-FileKind',
+      kind
+    ])
+    return {
+      ok: !!r.ok,
+      error: r.error as string | undefined,
+      sent: r.sent as boolean | undefined,
+      asImage: r.asImage === true
     }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }

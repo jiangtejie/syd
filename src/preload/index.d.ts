@@ -123,6 +123,14 @@ declare global {
             text: string
             source?: string
           }) => Promise<{ ok: boolean; result?: SendResult; error?: string }>
+          sendFile: (args: {
+            wxid: string
+            sessionId: string
+            targetName: string
+            path: string
+            kind: 'image' | 'file'
+            source?: string
+          }) => Promise<{ ok: boolean; result?: SendResult; error?: string }>
           getSendStatus: () => Promise<SendStatusInfo>
           stats7d: () => Promise<Array<{ day: string; sent: number; failed: number }>>
           overview: () => Promise<{ ok: boolean; data?: SendOverview; error?: string }>
@@ -143,6 +151,11 @@ declare global {
             title?: string,
             defaultPath?: string
           ) => Promise<{ ok: boolean; path?: string }>
+          pickFiles: (opts?: {
+            title?: string
+            multi?: boolean
+            filters?: Array<{ name: string; extensions: string[] }>
+          }) => Promise<{ ok: boolean; paths?: string[] }>
         }
         media: {
           decryptImage: (opts: {
