@@ -46,3 +46,33 @@ textarea.im-allow-area {
   resize: vertical;
   font-family: inherit;
 }
+
+/* 渠道类型选择(接入新账号时) */
+.im-kind-pick {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.im-kind-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill, 999px);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.im-kind-btn:hover {
+  border-color: var(--brand-line, rgba(7, 193, 96, 0.5));
+  color: var(--brand);
+}
+
+.im-kind-btn.is-on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand, #fff);
+  font-weight: 500;
+}

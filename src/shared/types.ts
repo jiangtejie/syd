@@ -457,18 +457,21 @@ export interface AiChatEvent {
   text?: string
 }
 
-// ── IM 渠道(飞书机器人一期) ──
+// ── IM 渠道(飞书机器人 / 微信 ClawBot) ──
+
+/** 渠道类型:feishu=飞书机器人;wechat_claw=微信官方 ClawBot(iLink) */
+export type ImChannelKind = 'feishu' | 'wechat_claw'
 
 export interface ImChannelAccount {
   id: number
-  channel: 'feishu'
+  channel: ImChannelKind
   name: string
   enabled: boolean
   createdAt: number
   updatedAt: number
   /** 绑定的微信业务账号(wxid;设置后该渠道会话具备 L1 业务查询能力) */
   wxid?: string
-  /** 业务查询白名单(飞书 open_id/union_id/user_id,逗号分隔;绑定账号后非空即启用) */
+  /** 业务查询白名单(渠道用户标识,逗号分隔;绑定账号后非空即启用) */
   allowUsers?: string
   /** 实时连接状态(查询时由主进程填充) */
   status?: 'connected' | 'connecting' | 'stopped' | 'error'
@@ -477,10 +480,14 @@ export interface ImChannelAccount {
 
 export interface ImChannelAccountInput {
   id?: number
-  channel: 'feishu'
+  channel: ImChannelKind
   name: string
   appId: string
   appSecret: string
+  /** 微信 ClawBot 网关(默认 https://ilinkai.weixin.qq.com) */
+  baseUrl?: string
+  /** 微信 ClawBot bot_token(加密存储,不回显) */
+  clawToken?: string
   enabled?: boolean
   /** 绑定的微信业务账号(wxid;可空=通用对话) */
   wxid?: string

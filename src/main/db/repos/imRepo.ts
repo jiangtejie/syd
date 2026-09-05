@@ -1,5 +1,5 @@
 import { getDb } from '../database'
-import type { ImChannelAccount } from '../../../shared/types'
+import type { ImChannelAccount, ImChannelKind } from '../../../shared/types'
 
 /** im_channel_account / im_chat_map 持久化。 */
 
@@ -16,6 +16,10 @@ interface AccountRow {
 export interface ImAccountConfig {
   appId?: string
   appSecret?: string
+  /** 微信 ClawBot 网关(可选,默认官方地址) */
+  baseUrl?: string
+  /** 微信 ClawBot bot_token(sealed 密文) */
+  clawToken?: string
   /** 绑定的微信业务账号 wxid(可选;绑定后该渠道会话具备业务查询能力) */
   wxid?: string
   /** 业务查询白名单(逗号分隔用户标识;绑定账号后非空即启用) */
@@ -34,7 +38,7 @@ export function rowToAccount(r: AccountRow): ImChannelAccount {
   }
   return {
     id: r.id,
-    channel: r.channel === 'feishu' ? 'feishu' : 'feishu',
+    channel: (r.channel === 'wechat_claw' ? 'wechat_claw' : 'feishu') as ImChannelKind,
     name: r.name,
     enabled: r.enabled === 1,
     createdAt: r.created_at,
@@ -67,21 +71,30 @@ export function getImAccountConfig(id: number): ImAccountConfig {
 
 export function saveImAccount(input: {
   id?: number
+  channel: ImChannelKind
   name: string
   config: ImAccountConfig
   enabled?: boolean
 }): { ok: boolean; error?: string; id?: number } {
   const name = (input.name || '').trim()
   const cfg = input.config
+  const channel = input.channel === 'wechat_claw' ? 'wechat_claw' : 'feishu'
   if (!name) return { ok: false, error: '请填写账号名称' }
-  if (!cfg.appId?.trim() || !cfg.appSecret?.trim()) {
-    return { ok: false, error: '请填写飞书应用 App ID 与 App Secret' }
+  if (channel === 'feishu') {
+    if (!cfg.appId?.trim() || !cfg.appSecret?.trim()) {
+      return { ok: false, error: '请填写飞书应用 App ID 与 App Secret' }
+    }
+  } else if (!cfg.clawToken?.trim()) {
+    return { ok: false, error: '请填写 ClawBot bot_token(登录 ClawBot 后获取)' }
   }
   // 规范化:wxid 空串视为未绑定,不入库;allowUsers 空串视为未配置
   if (cfg.wxid) cfg.wxid = cfg.wxid.trim()
   else delete cfg.wxid
   if (cfg.allowUsers) cfg.allowUsers = cfg.allowUsers.trim()
   else delete cfg.allowUsers
+  if (cfg.baseUrl) cfg.baseUrl = cfg.baseUrl.trim()
+  else delete cfg.baseUrl
+  if (!cfg.clawToken) delete cfg.clawToken
   const db = getDb()
   const now = Date.now()
   const json = JSON.stringify(cfg)
@@ -97,9 +110,9 @@ export function saveImAccount(input: {
   const info = db
     .prepare(
       `INSERT INTO im_channel_account (channel, name, config, enabled, created_at, updated_at)
-       VALUES ('feishu', ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(name, json, input.enabled ? 1 : 0, now, now)
+    .run(channel, name, json, input.enabled ? 1 : 0, now, now)
   return { ok: true, id: Number(info.lastInsertRowid) }
 }
 

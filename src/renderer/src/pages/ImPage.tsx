@@ -15,6 +15,8 @@ import './im.css'
 const imApi = window.api?.cs?.im
 const keyStoreApi = window.api?.cs?.keyStore
 
+const CHAN_LABEL: Record<string, string> = { feishu: '飞书机器人', wechat_claw: '微信 ClawBot' }
+
 export function ImSection(): React.JSX.Element {
   const [accounts, setAccounts] = useState<ImChannelAccount[] | null>(null)
   const [open, setOpen] = useState(false)
@@ -82,6 +84,8 @@ export function ImSection(): React.JSX.Element {
       channel: 'feishu',
       appId: '',
       appSecret: '',
+      clawToken: '',
+      baseUrl: '',
       wxid: '',
       allowUsers: '',
       enabled: true
@@ -90,15 +94,17 @@ export function ImSection(): React.JSX.Element {
   }
   const editAccount = (a: ImChannelAccount): void => {
     setEditId(a.id)
-    // 编辑时 Secret 可不重填(留空沿用原密钥);绑定账号/白名单回显
+    // 编辑时密钥可不重填(留空沿用原密文);绑定账号/白名单回显
     const bound = a.wxid ?? ''
     setManualWx(!!bound && !wxAccounts.some((k) => k.wxid === bound))
     setForm({
       id: a.id,
       name: a.name,
-      channel: 'feishu',
+      channel: a.channel,
       appId: '',
       appSecret: '',
+      clawToken: '',
+      baseUrl: '',
       wxid: bound,
       allowUsers: a.allowUsers ?? '',
       enabled: a.enabled
@@ -147,11 +153,14 @@ export function ImSection(): React.JSX.Element {
       <div className="im-head">
         <div className="st-title">IM 渠道（飞书机器人）</div>
         <button type="button" className="st-btn" onClick={startNew}>
-          ＋ 接入飞书机器人
+          ＋ 接入 IM 账号
         </button>
       </div>
 
-      <SettingsCard title="接入说明" desc="三步接入飞书机器人,保存后自动建立长连接,状态实时刷新。">
+      <SettingsCard
+        title="接入说明"
+        desc="两种官方渠道:飞书机器人(自建应用长连接)与微信 ClawBot(腾讯官方 iLink 智能体机器人,需在微信内开通 ClawBot 并获取 bot_token)。保存后自动连接,状态实时刷新。"
+      >
         <p>
           ① 在飞书开放平台创建「企业自建应用」并启用机器人能力;② 事件与回调 →
           订阅方式选「使用长连接接收事件」, 并添加事件 im.message.receive_v1;③
@@ -168,21 +177,25 @@ export function ImSection(): React.JSX.Element {
           绑定后默认任何能私聊或在群里 @
           该机器人的飞书用户都能触发业务查询——如需限定范围,请填写「业务查询白名单」。
         </p>
+        <p>
+          微信 ClawBot:在微信内开通官方「ClawBot(智能体)」并按流程扫码登录后获取 bot_token,填入表单;
+          机器人经腾讯 iLink 官方通道收发文字消息,媒体(图片/文件)仅提示不解析,回复需本应用保持运行。
+        </p>
       </SettingsCard>
 
-      <SettingsCard title="已接入账号(飞书)">
+      <SettingsCard title="已接入账号(IM 渠道)">
         <div className="im-list">
           {accounts === null && <div className="st-hint">加载中…</div>}
           {accounts !== null && accounts.length === 0 && (
             <div className="st-hint">
-              暂无 IM 账号。创建飞书自建应用后,点「接入飞书机器人」填写 App ID / App Secret 即可。
+              暂无 IM 账号。点「接入 IM 账号」选择 飞书机器人 或 微信 ClawBot,按界面提示填写即可。
             </div>
           )}
           {accounts?.map((a) => (
             <div key={a.id} className="mcp-item">
               <div className="mcp-item-main">
                 <b>{a.name}</b>
-                <span className="mcp-kind">飞书</span>
+                <span className="mcp-kind">{CHAN_LABEL[a.channel] ?? a.channel}</span>
                 {a.enabled ? (
                   <span className="mcp-on">启用</span>
                 ) : (
@@ -222,35 +235,90 @@ export function ImSection(): React.JSX.Element {
 
       {open && (
         <div className="mcp-edit">
-          <div className="st-title">{editId ? '编辑飞书账号' : '接入飞书机器人'}</div>
+          <div className="st-title">
+            {editId ? '编辑账号' : '接入新账号'}
+            {form.channel ? ` · ${CHAN_LABEL[form.channel]}` : ''}
+          </div>
+          {!editId && (
+            <div className="im-kind-pick">
+              {(['feishu', 'wechat_claw'] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  className={`im-kind-btn${form.channel === k ? ' is-on' : ''}`}
+                  onClick={() => {
+                    if (form.channel === k) return
+                    setForm((f) => ({
+                      ...f,
+                      channel: k,
+                      appId: '',
+                      appSecret: '',
+                      clawToken: '',
+                      baseUrl: ''
+                    }))
+                  }}
+                >
+                  {CHAN_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          )}
           <label className="st-row">
             <span className="st-label">账号名称</span>
             <input
               className="st-input"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="如:客服助手-飞书"
+              placeholder={`如:客服助手-${form.channel === 'feishu' ? '飞书' : 'ClawBot'}`}
             />
           </label>
-          <label className="st-row">
-            <span className="st-label">App ID</span>
-            <input
-              className="st-input"
-              value={form.appId}
-              onChange={(e) => setForm((f) => ({ ...f, appId: e.target.value }))}
-              placeholder="cli_xxxxxxxx"
-            />
-          </label>
-          <label className="st-row">
-            <span className="st-label">App Secret</span>
-            <input
-              type="password"
-              className="st-input"
-              value={form.appSecret}
-              onChange={(e) => setForm((f) => ({ ...f, appSecret: e.target.value }))}
-              placeholder={editId ? '留空表示沿用原密钥' : '系统加密保存,不展示在界面上'}
-            />
-          </label>
+          {form.channel === 'feishu' ? (
+            <>
+              <label className="st-row">
+                <span className="st-label">App ID</span>
+                <input
+                  className="st-input"
+                  value={form.appId}
+                  onChange={(e) => setForm((f) => ({ ...f, appId: e.target.value }))}
+                  placeholder="cli_xxxxxxxx"
+                />
+              </label>
+              <label className="st-row">
+                <span className="st-label">App Secret</span>
+                <input
+                  type="password"
+                  className="st-input"
+                  value={form.appSecret}
+                  onChange={(e) => setForm((f) => ({ ...f, appSecret: e.target.value }))}
+                  placeholder={editId ? '留空表示沿用原密钥' : '系统加密保存,不展示在界面上'}
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <label className="st-row">
+                <span className="st-label">bot_token</span>
+                <input
+                  type="password"
+                  className="st-input"
+                  value={form.clawToken ?? ''}
+                  onChange={(e) => setForm((f) => ({ ...f, clawToken: e.target.value }))}
+                  placeholder={
+                    editId ? '留空表示沿用原 token' : '微信 ClawBot 登录后获取的 bot_token'
+                  }
+                />
+              </label>
+              <label className="st-row">
+                <span className="st-label">网关 Base URL(可选)</span>
+                <input
+                  className="st-input"
+                  value={form.baseUrl ?? ''}
+                  onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                  placeholder="默认 https://ilinkai.weixin.qq.com"
+                />
+              </label>
+            </>
+          )}
           <div className="st-row">
             <span className="st-label">绑定微信业务账号</span>
             {wxAccounts.length > 0 ? (
