@@ -13,7 +13,14 @@ import {
   sendWorkbenchMessage,
   stopWorkbenchChat
 } from '../services/ai/workbench/engine'
-import { resolveToolApproval } from '../services/ai/workbench/approval'
+import {
+  clearSessionToolAllowed,
+  getToolApprovalPrefs,
+  resolveToolApproval,
+  setSessionToolAllowed,
+  setToolApprovalPrefs,
+  type ToolApprovalMode
+} from '../services/ai/workbench/approval'
 import { listSkills, setSkillEnabled, skillsRoot } from '../services/ai/workbench/skills'
 
 /** AI 工作台 IPC(会话复用 chat 体系,存储 wxid 带 wb: 前缀与 IM 会话隔离;事件通道 ai:wb)。 */
@@ -91,6 +98,52 @@ export function registerWorkbenchHandlers(): void {
     return { ok: resolveToolApproval(runId, !!ok) }
   })
 
+  /** 审批信任:scope=session(本轮该会话免确认)/global(始终允许名单) */
+  ipcMain.handle('cs:wb:trustTool', (_e, sid: number, tool: string, scope: string) => {
+    if (!Number.isInteger(sid) || typeof tool !== 'string' || !tool) {
+      return { ok: false as const, error: '参数错误' }
+    }
+    if (scope === 'session') {
+      setSessionToolAllowed(sid, tool, true)
+    } else if (scope === 'global') {
+      const prefs = getToolApprovalPrefs()
+      if (!prefs.allow.includes(tool)) {
+        setToolApprovalPrefs({ ...prefs, allow: [...prefs.allow, tool] })
+      }
+      setSessionToolAllowed(sid, tool, true)
+    } else {
+      return { ok: false as const, error: '参数错误' }
+    }
+    return { ok: true as const }
+  })
+
+  /** 全局审批偏好(模式 + 信任/拒绝名单) */
+  ipcMain.handle('cs:wb:getApprovalPrefs', () => {
+    try {
+      return { ok: true as const, prefs: getToolApprovalPrefs() }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(
+    'cs:wb:setApprovalPrefs',
+    (_e, input: { mode?: string; allow?: string[]; deny?: string[] } | undefined) => {
+      const prefs = getToolApprovalPrefs()
+      const next: { mode: ToolApprovalMode; allow: string[]; deny: string[] } = {
+        mode: input?.mode === 'allow' || input?.mode === 'deny' ? input.mode : 'ask',
+        allow: Array.isArray(input?.allow) ? input.allow : prefs.allow,
+        deny: Array.isArray(input?.deny) ? input.deny : prefs.deny
+      }
+      try {
+        setToolApprovalPrefs(next)
+        return { ok: true as const, prefs: getToolApprovalPrefs() }
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
+
   ipcMain.handle('cs:wb:rename', (_e, id: number, title: string) => {
     if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
     return renameChat(id, String(title || ''))
@@ -101,6 +154,7 @@ export function registerWorkbenchHandlers(): void {
   ipcMain.handle('cs:wb:remove', (_e, id: number) => {
     if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
     stopWorkbenchChat(id)
+    clearSessionToolAllowed(id)
     return removeChat(id) ? { ok: true as const } : { ok: false as const, error: '会话不存在' }
   })
 

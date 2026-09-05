@@ -319,6 +319,25 @@ declare global {
           ) => Promise<{ ok: boolean; error?: string }>
           stop: (id: number) => Promise<{ ok: boolean }>
           approve: (runId: string, ok: boolean) => Promise<{ ok: boolean }>
+          trustTool: (
+            sid: number,
+            tool: string,
+            scope: 'session' | 'global'
+          ) => Promise<{ ok: boolean; error?: string }>
+          getApprovalPrefs: () => Promise<{
+            ok: boolean
+            prefs?: { mode: 'ask' | 'allow' | 'deny'; allow: string[]; deny: string[] }
+            error?: string
+          }>
+          setApprovalPrefs: (input: {
+            mode?: 'ask' | 'allow' | 'deny'
+            allow?: string[]
+            deny?: string[]
+          }) => Promise<{
+            ok: boolean
+            prefs?: { mode: 'ask' | 'allow' | 'deny'; allow: string[]; deny: string[] }
+            error?: string
+          }>
           rename: (id: number, title: string) => Promise<{ ok: boolean; error?: string }>
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
           clear: (id: number) => Promise<{ ok: boolean; error?: string }>

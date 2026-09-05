@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SendStatusInfo } from '../../../shared/types'
 import WechatKeySection from '../components/settings/WechatKeySection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
+import WorkbenchApprovalSection from '../components/settings/WorkbenchApprovalSection'
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
 import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
@@ -594,7 +595,6 @@ function SettingsPage(): React.JSX.Element {
               群问题反馈提取走本地规则降级。
             </span>
           </div>
-
           {/* 智能体（统一人设） */}
           <div className="page-card st-section">
             <div className="st-title">智能体（统一人设）</div>
@@ -603,6 +603,14 @@ function SettingsPage(): React.JSX.Element {
               通道）都按此人设组织口径与话术，AI 界面不再提供人设选择或切换。修改后即时生效。
             </span>
             <AgentSettingsSection />
+          </div>
+          {/* 工具审批策略(工作台写/外部工具预留) */}
+          <div className="page-card st-section">
+            <div className="st-title">工具审批策略</div>
+            <span className="st-hint">
+              需确认的写/外部工具的审批偏好；命中「始终允许」名单的工具不再询问。
+            </span>
+            <WorkbenchApprovalSection />
           </div>
         </div>
       )}

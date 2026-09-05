@@ -92,6 +92,8 @@ interface WbState {
   retry: () => Promise<void>
   stop: () => Promise<void>
   approve: (runId: string, ok: boolean) => Promise<void>
+  /** 信任放行:登记(本轮/始终允许)并放行当前单次 */
+  trustTool: (runId: string, tool: string, scope: 'session' | 'global') => Promise<void>
   resetActive: () => void
   /** 进入编辑态:裁掉最近一轮(问题+回答),返回原问题文本供输入框改写;不可编辑返回 null */
   beginEdit: () => string | null
@@ -514,6 +516,14 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
 
   approve: async (runId, ok) => {
     await wbApi?.approve(runId, ok).catch(() => null)
+    set({ approvals: get().approvals.filter((a) => a.runId !== runId) })
+  },
+
+  /** 信任放行:登记(本轮/始终允许)后立即放行当前单次请求 */
+  trustTool: async (runId, tool, scope) => {
+    const sid = get().activeId
+    if (sid !== null) await wbApi?.trustTool(sid, tool, scope).catch(() => null)
+    if (runId) await wbApi?.approve(runId, true).catch(() => null)
     set({ approvals: get().approvals.filter((a) => a.runId !== runId) })
   }
 }))

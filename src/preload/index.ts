@@ -298,6 +298,26 @@ const api = {
       stop: (id: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('cs:wb:stop', id),
       approve: (runId: string, ok: boolean): Promise<{ ok: boolean }> =>
         ipcRenderer.invoke('cs:wb:approve', runId, ok),
+      trustTool: (
+        sid: number,
+        tool: string,
+        scope: 'session' | 'global'
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:trustTool', sid, tool, scope),
+      getApprovalPrefs: (): Promise<{
+        ok: boolean
+        prefs?: { mode: string; allow: string[]; deny: string[] }
+        error?: string
+      }> => ipcRenderer.invoke('cs:wb:getApprovalPrefs'),
+      setApprovalPrefs: (input: {
+        mode?: string
+        allow?: string[]
+        deny?: string[]
+      }): Promise<{
+        ok: boolean
+        prefs?: { mode: string; allow: string[]; deny: string[] }
+        error?: string
+      }> => ipcRenderer.invoke('cs:wb:setApprovalPrefs', input),
       rename: (id: number, title: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:wb:rename', id, title),
       remove: (id: number): Promise<{ ok: boolean; error?: string }> =>

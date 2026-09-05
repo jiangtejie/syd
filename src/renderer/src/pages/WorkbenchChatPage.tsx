@@ -333,6 +333,7 @@ function WbToolCard({ b }: { b: WbTurnBlock }): React.JSX.Element {
 function WbApprovals(): React.JSX.Element | null {
   const approvals = useWorkbenchChatStore((s) => s.approvals)
   const approve = useWorkbenchChatStore((s) => s.approve)
+  const trustTool = useWorkbenchChatStore((s) => s.trustTool)
   if (approvals.length === 0) return null
   return (
     <div className="wb-approvals">
@@ -350,12 +351,33 @@ function WbApprovals(): React.JSX.Element | null {
             )}
           </div>
           <div className="wb-approval-ops">
-            <button type="button" className="st-btn sm" onClick={() => void approve(a.runId, true)}>
+            <button
+              type="button"
+              className="st-btn sm"
+              title="仅本次允许执行"
+              onClick={() => void approve(a.runId, true)}
+            >
               允许
             </button>
             <button
               type="button"
               className="st-btn ghost sm"
+              title="本会话本轮后续调用该工具不再询问"
+              onClick={() => void trustTool(a.runId, a.tool, 'session')}
+            >
+              本轮允许
+            </button>
+            <button
+              type="button"
+              className="st-btn ghost sm"
+              title="加入全局「始终允许」名单,之后不再询问(可在 设置 → AI 助手 中撤销)"
+              onClick={() => void trustTool(a.runId, a.tool, 'global')}
+            >
+              始终允许
+            </button>
+            <button
+              type="button"
+              className="st-btn ghost danger sm"
               onClick={() => void approve(a.runId, false)}
             >
               拒绝
