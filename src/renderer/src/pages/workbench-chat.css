@@ -360,37 +360,22 @@
   }
 }
 
-/* ── 工具调用(DeepSeek 式紧凑条:小字、低对比、细节按需展开) ── */
+/* ── 工具调用(纯提示文字行:无背景无边框,浅灰小字,细节按需展开) ── */
 .wb-toolcard {
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  padding: 3px 8px;
   font-size: 11px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  /* 时间线块:作为消息流的组成部分,紧凑呼吸间距 */
-  margin: 2px 0 6px;
+  gap: 1px;
+  margin: 1px 0 4px;
 }
 
-.wb-toolcard.is-done {
-  border-color: var(--border-light);
-  background: var(--bg-hover);
-}
-
-.wb-toolcard.is-fail {
-  border-color: var(--danger-line);
-  background: var(--danger-soft);
-}
-
-/* 工具卡头部(整行可点开合,低强调) */
+/* 工具行头部(整行可点开合) */
 .wb-toolcard-head {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 2px 0;
+  padding: 0;
   border: none;
   background: transparent;
   font: inherit;
@@ -408,15 +393,10 @@
   align-items: center;
   gap: 4px;
   min-width: 0;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-2);
-  transition: color 0.15s;
-}
-
-.wb-toolcard.is-done .wb-toolcard-name {
-  color: var(--text-3);
+  font-size: 11px;
   font-weight: 400;
+  color: var(--text-3);
+  transition: color 0.15s;
 }
 
 .wb-toolcard.is-fail .wb-toolcard-name {
@@ -425,12 +405,10 @@
 
 .wb-toolcard-state {
   font-style: normal;
-  font-size: 9.5px;
-  line-height: 1.2;
-  padding: 1px 6px;
-  border-radius: var(--r-pill);
-  background: var(--info-soft);
+  font-size: 10px;
   color: var(--info);
+  padding: 0;
+  background: none;
   animation: wb-run-pulse 1.1s ease-in-out infinite;
 }
 
@@ -446,13 +424,12 @@
   transform: rotate(180deg);
 }
 
-/* 展开细节:小字紧凑,长内容截断+区内滚动 */
+/* 展开细节:无框纯文字,长内容截断+区内滚动 */
 .wb-toolcard-detail {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px 0 2px;
-  border-top: 1px dashed var(--border-light);
+  gap: 2px;
+  padding: 2px 0 1px 2px;
 }
 
 .wb-toolcard-sec {
@@ -465,7 +442,6 @@
   gap: 4px;
   font-size: 9.5px;
   color: var(--text-4);
-  margin-bottom: 1px;
 }
 
 .wb-toolcard-detail-pre {
@@ -478,10 +454,10 @@
   font-size: 10.5px;
   line-height: 1.5;
   color: var(--text-2);
-  background: var(--bg);
-  border: 1px solid var(--border-light);
-  border-radius: 4px;
-  padding: 3px 5px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
   scrollbar-width: thin;
 }
 
