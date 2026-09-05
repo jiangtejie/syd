@@ -21,6 +21,7 @@ import { findTool, schemaFromParams, type ToolCtx, type ToolDef } from './skills
 import { describeModelError } from '../modelErrors'
 import { findSoftwareTool } from '../cap/software'
 import { expandMounted, capNameOfDef, isCapDisabled } from '../cap/registry'
+import { skillsInjectionText } from '../workbench/skills'
 import {
   beginTurn,
   isMounted,
@@ -132,6 +133,10 @@ async function assembleTurnSystem(opts: {
   const chunks: string[] = [agentSystemText(opts.agentId ?? null)]
   chunks.push(stateBlockText(bound, names, dropped, errors))
 
+  // 业务技能(与工作台同一启用集):回复排版/客服口径等 SKILL.md 全渠道生效
+  const skillsText = skillsInjectionText()
+  if (skillsText) chunks.push(skillsText)
+
   if (opts.native) {
     // 原生 function-calling:工具由 schemas 提供,无需文本工具段
     chunks.push(nativeRuleText())
@@ -184,7 +189,7 @@ function agentSystemText(agentId: string | null | undefined): string {
     `你是「${agent.name}」客服智能体${agent.description ? `,角色定位:${agent.description}` : ''}。${STYLE_DESC[agent.style ?? 'warm']}`
   )
   parts.push('回答要基于事实;不确定时明确说明,不编造。')
-  const memo = memoSystemBlock(1400)
+  const memo = memoSystemBlock()
   if (memo) parts.push(memo)
   return parts.join('\n')
 }

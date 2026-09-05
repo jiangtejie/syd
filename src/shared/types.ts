@@ -466,6 +466,8 @@ export interface ImChannelAccount {
   enabled: boolean
   createdAt: number
   updatedAt: number
+  /** 绑定的微信业务账号(wxid;设置后该渠道会话具备 L1 业务查询能力) */
+  wxid?: string
   /** 实时连接状态(查询时由主进程填充) */
   status?: 'connected' | 'connecting' | 'stopped' | 'error'
   statusText?: string
@@ -478,6 +480,8 @@ export interface ImChannelAccountInput {
   appId: string
   appSecret: string
   enabled?: boolean
+  /** 绑定的微信业务账号(wxid;可空=通用对话) */
+  wxid?: string
 }
 
 // ── 工作台工具名展示(渲染端工具卡/证据来源/审批条 + 主进程导出 Markdown 共用) ──

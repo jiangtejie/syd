@@ -176,3 +176,40 @@ export function beginTurn(sessionId: number, bound: boolean): { dropped: string[
 export function dropSession(sessionId: number): void {
   mem.delete(sessionId)
 }
+
+/**
+ * 账号绑定微信业务账号的显式动作后调用:把该账号映射会话的 L1 业务能力补齐。
+ * - 只并入“当前完全没有 L1”的会话(未绑定时创建的会话默认集为空);
+ * - 用户已手动卸载全部 L1(持久化 [] )的会话属于“显式清空”,但在“账号绑定”这一新
+ *   意图下视为可恢复,重复绑定不会重复并入(已有 L1 直接短路)。
+ */
+export function ensureBoundBusinessMounts(sessionId: number): void {
+  const all = listCaps()
+  const l1 = all.filter((c) => c.tier === 1 && !c.disabled)
+  if (l1.length === 0) return
+  // 内存已加载且含 L1:直接短路,避免每轮多一次 DB 读
+  const cached = mem.get(sessionId)
+  if (cached?.loaded && l1.some((c) => cached.names.has(c.name))) return
+  const cur = new Set<string>()
+  try {
+    for (const n of getChatCaps(sessionId)) {
+      const cap = all.find((c) => c.name === n)
+      if (cap && !cap.disabled) cur.add(n)
+    }
+  } catch {
+    return
+  }
+  if (l1.some((c) => cur.has(c.name))) return
+  for (const c of l1) {
+    if (cur.size >= MOUNT_MAX_ITEMS) break
+    cur.add(c.name)
+  }
+  const next = [...cur]
+  try {
+    setChatCaps(sessionId, next)
+  } catch {
+    return
+  }
+  const s = mem.get(sessionId)
+  if (s) s.names = new Set(next)
+}

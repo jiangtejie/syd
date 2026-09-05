@@ -16,16 +16,26 @@ interface AccountRow {
 export interface ImAccountConfig {
   appId?: string
   appSecret?: string
+  /** 绑定的微信业务账号 wxid(可选;绑定后该渠道会话具备业务查询能力) */
+  wxid?: string
 }
 
 export function rowToAccount(r: AccountRow): ImChannelAccount {
+  let wxid: string | undefined
+  try {
+    const cfg = JSON.parse(r.config) as ImAccountConfig
+    wxid = (cfg.wxid ?? '').trim() || undefined
+  } catch {
+    /* config 损坏时仅忽略绑定信息 */
+  }
   return {
     id: r.id,
     channel: r.channel === 'feishu' ? 'feishu' : 'feishu',
     name: r.name,
     enabled: r.enabled === 1,
     createdAt: r.created_at,
-    updatedAt: r.updated_at
+    updatedAt: r.updated_at,
+    wxid
   }
 }
 
@@ -62,6 +72,9 @@ export function saveImAccount(input: {
   if (!cfg.appId?.trim() || !cfg.appSecret?.trim()) {
     return { ok: false, error: '请填写飞书应用 App ID 与 App Secret' }
   }
+  // 规范化:wxid 空串视为未绑定,不入库
+  if (cfg.wxid) cfg.wxid = cfg.wxid.trim()
+  else delete cfg.wxid
   const db = getDb()
   const now = Date.now()
   const json = JSON.stringify(cfg)
@@ -119,4 +132,12 @@ export function getMappedSession(
   return getDb()
     .prepare(`SELECT session_id FROM im_chat_map WHERE account_id = ? AND external_chat_id = ?`)
     .get(accountId, externalChatId) as { session_id: number } | undefined
+}
+
+/** 某账号的全部映射会话 id(账号绑定业务账号时统一补齐 L1 默认挂载用) */
+export function listMappedSessionIds(accountId: number): number[] {
+  const rows = getDb()
+    .prepare(`SELECT session_id FROM im_chat_map WHERE account_id = ?`)
+    .all(accountId) as Array<{ session_id: number }>
+  return rows.map((r) => r.session_id)
 }

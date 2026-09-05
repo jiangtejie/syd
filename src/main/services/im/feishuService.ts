@@ -2,10 +2,11 @@ import { appendFileSync, existsSync, mkdirSync, statSync, truncateSync } from 'n
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import * as lark from '@larksuiteoapi/node-sdk'
-import { getImAccountConfig } from '../../db/repos/imRepo'
+import { getImAccountConfig, listMappedSessionIds } from '../../db/repos/imRepo'
 import { listChatMessages } from '../../db/repos/chatRepo'
 import { createImSession } from './sessionBridge'
 import { registerEventSink, sendChatMessage } from '../ai/chat/service'
+import { ensureBoundBusinessMounts } from '../ai/cap/mounts'
 import { openSecret } from '../secrets'
 import type { AiChatEvent } from '../../../shared/types'
 
@@ -59,6 +60,8 @@ interface ImMessage {
 interface Runtime {
   accountId: number
   appId: string
+  /** 绑定的微信业务账号 wxid(空 = 通用对话,业务工具不可用) */
+  businessWxid: string
   client: {
     im: {
       message: {
@@ -192,6 +195,7 @@ export async function startFeishuAccount(
     const rt: Runtime = {
       accountId,
       appId,
+      businessWxid: (cfg.wxid ?? '').trim(),
       client,
       wsc: null,
       name,
@@ -200,7 +204,27 @@ export async function startFeishuAccount(
       recent: new Map()
     }
     runtimes.set(accountId, rt)
-    imLog(accountId, `开始建立飞书长连接(appId=${appId})`)
+    imLog(
+      accountId,
+      `开始建立飞书长连接(appId=${appId}${
+        rt.businessWxid ? `,绑定业务账号=${rt.businessWxid}` : '(未绑定业务账号,仅通用对话)'
+      })`
+    )
+    // 绑定业务账号后,该账号已有映射会话补齐 L1 业务能力(历史通用会话立即具备查询能力)
+    if (rt.businessWxid) {
+      try {
+        const sids = listMappedSessionIds(accountId)
+        for (const sid of sids) ensureBoundBusinessMounts(sid)
+        if (sids.length > 0) {
+          imLog(
+            accountId,
+            `已为 ${sids.length} 个映射会话补齐微信业务能力(绑定 ${rt.businessWxid})`
+          )
+        }
+      } catch (e) {
+        imLog(accountId, `补齐映射会话能力失败:${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
 
     // 事件处理:只做准入与去重,随即异步跑 AI(handler 必须快速返回,3s 内 ack)
     const onReceive = (data: unknown): void => {
@@ -322,7 +346,7 @@ async function handleInbound(
 ): Promise<void> {
   try {
     const sessionId = await createImSession(accountId, chatId, `${rt.name}·${chatId.slice(-8)}`)
-    const out = await runAiTurn(sessionId, text)
+    const out = await runAiTurn(sessionId, rt.businessWxid, text)
     if (out === null) {
       await safeReply(rt, replyMessageId, '处理超时(5 分钟),请稍后重试或直接在 AI 助手里查看')
       return
@@ -334,8 +358,12 @@ async function handleInbound(
   }
 }
 
-/** 跑一轮 AI turn;返回要回复的文本(null = 超时/无输出) */
-async function runAiTurn(sessionId: number, text: string): Promise<string | null> {
+/** 跑一轮 AI turn;wxid 为渠道绑定的业务账号(空=通用对话);返回要回复的文本(null = 超时/无输出) */
+async function runAiTurn(
+  sessionId: number,
+  businessWxid: string,
+  text: string
+): Promise<string | null> {
   return await new Promise<string | null>((resolve) => {
     let finished = false
     const finish = (val: string | null): void => {
@@ -349,7 +377,8 @@ async function runAiTurn(sessionId: number, text: string): Promise<string | null
       imLog('ai', `会话 ${sessionId} 超时 5 分钟`)
       finish(null)
     }, 5 * 60_000)
-    const unreg = registerEventSink('', sessionId, (evt: AiChatEvent) => {
+    // sink 键需与 sendChatMessage 的事件 wxid 一致(绑定后为业务账号),否则收不到 done
+    const unreg = registerEventSink(businessWxid, sessionId, (evt: AiChatEvent) => {
       if (finished) return
       if (evt.type === 'done') {
         const rows = listChatMessages(sessionId)
@@ -361,7 +390,7 @@ async function runAiTurn(sessionId: number, text: string): Promise<string | null
         finish('已停止生成')
       }
     })
-    void sendChatMessage({ wxid: '', chatId: sessionId, text })
+    void sendChatMessage({ wxid: businessWxid, chatId: sessionId, text })
       .then((res) => {
         if (!res.ok) {
           imLog('ai', `会话 ${sessionId} 发送失败:${res.error ?? ''}`)

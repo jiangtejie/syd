@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ImChannelAccount, ImChannelAccountInput } from '../../../shared/types'
+import type { ImChannelAccount, ImChannelAccountInput, KeyAccountInfo } from '../../../shared/types'
 import { toast } from '../stores/toast'
 import './im.css'
 
@@ -7,18 +7,24 @@ import './im.css'
  * IM 渠道管理(一期:飞书机器人;嵌入 设置 → IM 渠道 tab)。
  * 机器人 = 本产品 AI 助手引擎通过飞书 WebSocket 长连接收发;
  * 私聊直接响应,群聊需 @;凭证 AppSecret 以系统加密存储。
+ * 可选「绑定微信业务账号」:绑定后该渠道会话按绑定账号上下文运行,
+ * 具备与客服工作台一致的业务查询能力(L1),否则仅通用对话。
  */
 
 const imApi = window.api?.cs?.im
+const keyStoreApi = window.api?.cs?.keyStore
 
 export function ImSection(): React.JSX.Element {
   const [accounts, setAccounts] = useState<ImChannelAccount[] | null>(null)
   const [open, setOpen] = useState(false)
+  const [wxAccounts, setWxAccounts] = useState<KeyAccountInfo[]>([])
+  const [manualWx, setManualWx] = useState(false)
   const [form, setForm] = useState<ImChannelAccountInput>({
     name: '',
     channel: 'feishu',
     appId: '',
     appSecret: '',
+    wxid: '',
     enabled: false
   })
   const [editId, setEditId] = useState<number | null>(null)
@@ -30,9 +36,20 @@ export function ImSection(): React.JSX.Element {
     else setAccounts([])
   }
 
+  /** 已导入密钥的微信账号(供绑定下拉;未就绪短暂重试) */
+  const loadWxAccounts = async (): Promise<void> => {
+    let list: KeyAccountInfo[] | null = null
+    for (let i = 0; i < 5 && list === null; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 1200))
+      list = (await keyStoreApi?.list().catch(() => null)) ?? null
+    }
+    setWxAccounts(list ?? [])
+  }
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取 IM 账号(全仓同款模式)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取 IM/微信账号(全仓同款模式)
     void load()
+    void loadWxAccounts()
   }, [])
 
   // 主进程推送的连接状态变化(连接成功/失败/重连)实时刷新列表
@@ -58,18 +75,22 @@ export function ImSection(): React.JSX.Element {
 
   const startNew = (): void => {
     setEditId(null)
-    setForm({ name: '', channel: 'feishu', appId: '', appSecret: '', enabled: true })
+    setManualWx(false)
+    setForm({ name: '', channel: 'feishu', appId: '', appSecret: '', wxid: '', enabled: true })
     setOpen(true)
   }
   const editAccount = (a: ImChannelAccount): void => {
     setEditId(a.id)
-    // 编辑时 secret 需重新输入(不会回显)
+    // 编辑时 Secret 可不重填(留空沿用原密钥);绑定账号回显
+    const bound = a.wxid ?? ''
+    setManualWx(!!bound && !wxAccounts.some((k) => k.wxid === bound))
     setForm({
       id: a.id,
       name: a.name,
       channel: 'feishu',
       appId: '',
       appSecret: '',
+      wxid: bound,
       enabled: a.enabled
     })
     setOpen(true)
@@ -127,6 +148,12 @@ export function ImSection(): React.JSX.Element {
         保存后自动建立长连接,状态实时刷新;私聊直接发消息即可,群聊需 @ 机器人(一期仅支持文本)。
         连接失败的原因会显示在下方状态里,也可查看日志文件 logs/im.log(位于用户数据目录)。
       </div>
+      <div className="im-guide">
+        可选「绑定微信业务账号」:绑定后,机器人对话会以该账号的上下文运行,具备与客服工作台一致的业务查询能力
+        (客户/群问题/监控/最近消息/统计等);不绑定则仅限通用对话,业务查询会被拒绝。
+        注意:绑定后任何能私聊或在群里 @
+        该机器人的飞书用户都能触发业务查询,请确认渠道可见范围后再绑定。
+      </div>
 
       <div className="im-list">
         {accounts === null && <div className="st-hint">加载中…</div>}
@@ -154,6 +181,7 @@ export function ImSection(): React.JSX.Element {
                     : a.status === 'error'
                       ? `连接失败:${a.statusText ?? ''}`
                       : '未启动'}
+                {a.wxid ? ` · 绑定业务:${a.wxid}` : ''}
               </span>
             </div>
             <div className="mcp-item-ops">
@@ -177,9 +205,7 @@ export function ImSection(): React.JSX.Element {
 
       {open && (
         <div className="mcp-edit">
-          <div className="st-title">
-            {editId ? '编辑飞书账号(Secret 需重新填写)' : '接入飞书机器人'}
-          </div>
+          <div className="st-title">{editId ? '编辑飞书账号' : '接入飞书机器人'}</div>
           <label className="st-row">
             <span className="st-label">账号名称</span>
             <input
@@ -205,9 +231,51 @@ export function ImSection(): React.JSX.Element {
               className="st-input"
               value={form.appSecret}
               onChange={(e) => setForm((f) => ({ ...f, appSecret: e.target.value }))}
-              placeholder="系统加密保存,不展示在界面上"
+              placeholder={editId ? '留空表示沿用原密钥' : '系统加密保存,不展示在界面上'}
             />
           </label>
+          <div className="st-row">
+            <span className="st-label">绑定微信业务账号</span>
+            {wxAccounts.length > 0 ? (
+              <select
+                className="st-input"
+                value={manualWx ? '__manual__' : (form.wxid ?? '')}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const manual = v === '__manual__'
+                  setManualWx(manual)
+                  setForm((f) => ({ ...f, wxid: manual ? '' : v }))
+                }}
+              >
+                <option value="">不绑定(仅通用对话)</option>
+                {wxAccounts.map((k) => (
+                  <option key={k.wxid} value={k.wxid}>
+                    {k.wxid}
+                    {k.source === 'manual' ? '(手动导入)' : ''}
+                  </option>
+                ))}
+                <option value="__manual__">手动输入 wxid…</option>
+              </select>
+            ) : (
+              <span className="st-hint-inline">
+                暂无可用账号,请先在「微信数据」页导入密钥后再回来绑定
+              </span>
+            )}
+          </div>
+          {(wxAccounts.length === 0 || manualWx) && (
+            <label className="st-row">
+              <span className="st-label">业务账号 wxid</span>
+              <input
+                className="st-input"
+                value={form.wxid ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, wxid: e.target.value.trim() }))}
+                placeholder="wxid_xxxxxxxx"
+              />
+            </label>
+          )}
+          <div className="st-hint-inline im-bind-hint">
+            绑定后该渠道的 AI 对话将以该账号查询客户/群问题/消息等业务数据,与客服工作台同源
+          </div>
           <label className="st-row">
             <span className="st-label">保存后启用</span>
             <input

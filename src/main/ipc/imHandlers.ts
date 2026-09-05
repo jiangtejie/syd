@@ -47,16 +47,21 @@ export function registerImHandlers(): void {
 
   ipcMain.handle('cs:im:save', async (_e, input: ImChannelAccountInput) => {
     try {
+      // 编辑场景:未新填 Secret 时沿用库中已加密值(只改绑定/名称无需重输密钥)
+      const prev = input?.id ? getImAccountConfig(input.id) : undefined
       const saved = saveImAccount({
         id: input?.id,
         name: input?.name ?? '',
         enabled: input?.enabled,
         config: {
-          appId: input?.appId?.trim() ?? '',
-          appSecret: input?.appSecret ? sealSecret(input.appSecret) : ''
+          appId: (input?.appId?.trim() || prev?.appId) ?? '',
+          appSecret: input?.appSecret ? sealSecret(input.appSecret) : (prev?.appSecret ?? ''),
+          wxid: (input?.wxid ?? '').trim() || undefined
         }
       })
       if (!saved.ok || saved.id === undefined) return saved
+      // 配置可能变更(绑定账号/凭证):先断开再按新配置重连,确保立即生效
+      if (input?.id) stopFeishuAccount(input.id)
       const started = await refreshAccount(saved.id)
       // 账号已落库;连接失败时把原因带给前端展示
       if (!started.ok) return { ok: true as const, id: saved.id, error: started.error }
