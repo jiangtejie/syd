@@ -17,7 +17,7 @@ import { describeModelError } from '../modelErrors'
 /**
  * 工作台引擎(AI SDK 原生工具循环;不自研 loop/协议/流式)。
  * - model = openai-compatible(沿用 ai.baseUrl/model/key 配置);
- * - tools = 产品原生只读能力(见 tools.ts);确认桥 v1 无写工具,为 v2 预留;
+ * - tools = 产品原生能力(见 tools.ts):只读查询 + 唯一写工具 send_message(逐次审批);
  * - 会话复用 chat_session/chat_message;事件通道 ai:wb;AbortController 停止;
  * - 上下文预算:历史 ≤40 条 / ≤24k 字符 / 单条 6k,超限用 generateText 压缩旧段。
  */

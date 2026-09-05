@@ -2,11 +2,13 @@ import { listFeedbackIssues } from '../../feedback/analyzer'
 import { listIssuesByGroup, searchIssues } from '../../../db/repos/issueRepo'
 import { listTeamMembers } from '../../../db/repos/teamRepo'
 import { getSessions, getMessages } from '../../wechat/wxService'
+import { enqueueSend } from '../../send/sendService'
+import { sendAgentEnabled } from '../sendGate'
 import type { ChatMessage } from '../../../../shared/types'
 
 /**
  * AI 助手工具注册表(内置业务 skill)。
- * 全部只读(group_analyze 类写操作不开放);输出统一截断;发送保持人工闸门。
+ * 查询工具全部只读;唯一写工具 send_message 需人工确认(总开关/审批开关见 sendGate)。
  * MCP(P1)将注册为 kind:'mcp' 的同一形态工具。
  */
 
@@ -335,6 +337,68 @@ export const BUILTIN_TOOLS: ToolDef[] = [
           return `${hm} ${who}: ${msgText(m)}`
         })
         .join('\n')
+    }
+  },
+  {
+    name: 'send_message',
+    kind: 'builtin',
+    needsWx: true,
+    confirm: true,
+    params: {
+      target: { type: 'string', required: true, desc: '接收方:客户/群的显示名或 username' },
+      text: { type: 'string', required: true, desc: '要发送的文本内容(≤2000 字)' }
+    },
+    description:
+      '向指定客户/群发送一条文本消息(写操作,执行前需人工确认;受发送频控/熔断/审计约束)。' +
+      'target 用客户或群的显示名/备注/昵称或 username(不确定时先用 customer_lookup/recent_messages 确认)。' +
+      'args: {"target":"客户显示名","text":"消息内容"}',
+    run: async (ctx, args) => {
+      if (!sendAgentEnabled()) {
+        return '智能体发送未开启(设置 → 发送 → 智能体发送开关)。请告知用户需先在软件中开启。'
+      }
+      const target = String(args.target || '').trim()
+      const text = String(args.text || '').trim()
+      if (!target) return '缺少参数 target(接收方)。'
+      if (!text) return '缺少参数 text(消息内容)。'
+      if (text.length > 2000) return 'text 过长(最多 2000 字),请精简后重试。'
+      if (!(ctx.wxid || '').trim()) return '当前未绑定微信账号,无法发送消息。'
+      const res = getSessions(ctx.wxid)
+      if (!res.ok || !res.sessions) {
+        return '无法读取会话列表(账号未连接或数据未就绪),暂不能发送。'
+      }
+      const k = target.toLowerCase()
+      const hit = res.sessions.find(
+        (s) =>
+          (s.displayName || '').toLowerCase() === k ||
+          (s.nickname || '').toLowerCase() === k ||
+          (s.remark || '').toLowerCase() === k ||
+          s.username.toLowerCase() === k
+      )
+      if (!hit) {
+        const names = res.sessions
+          .slice(0, 60)
+          .filter((s) =>
+            ((s.displayName || '') + (s.remark || '') + (s.nickname || ''))
+              .toLowerCase()
+              .includes(k)
+          )
+          .slice(0, 3)
+          .map((s) => s.displayName || s.username)
+        return `未找到会话「${target}」。${names.length > 0 ? `相近的会话:${names.join('、')}` : '可先用 customer_lookup 确认名称后重试。'}`
+      }
+      const targetName = hit.displayName || hit.remark || hit.nickname || hit.username
+      const r = await enqueueSend({
+        wxid: ctx.wxid,
+        sessionId: hit.username,
+        targetName,
+        text,
+        mode: 'confirm',
+        source: 'agent'
+      })
+      if (r.ok && r.status === 'sent') {
+        return `已发送给「${targetName}」${r.verified ? '(校验通过)' : '(待校验)'}。`
+      }
+      return `发送失败:${r.error ?? '未知原因'}`
     }
   }
 ]

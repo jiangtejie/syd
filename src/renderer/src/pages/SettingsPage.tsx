@@ -162,6 +162,9 @@ function SettingsPage(): React.JSX.Element {
   const [autoScanIssue, setAutoScanIssue] = useState(true)
   // 盯办提醒(未指派超时/跟进超时升级;默认开)
   const [escalateIssue, setEscalateIssue] = useState(true)
+  // 智能体发送微信消息:总开关与逐次审批(默认均开)
+  const [agentSendEnabled, setAgentSendEnabled] = useState(true)
+  const [agentSendApprove, setAgentSendApprove] = useState(true)
 
   /** 刷新缓存目录状态（生效目录/默认目录；effect 与路径变更共用） */
   const refreshCachePath = async (): Promise<void> => {
@@ -203,6 +206,8 @@ function SettingsPage(): React.JSX.Element {
       setFollowUpHours(hours(cfg['monitor.followUpHours'], 12))
       setAutoScanIssue(cfg['issue.autoScan.enabled'] !== '0')
       setEscalateIssue(cfg['issue.escalate.enabled'] !== '0')
+      setAgentSendEnabled(cfg['send.agentEnabled'] !== '0')
+      setAgentSendApprove(cfg['send.approve'] !== '0')
       setLoaded(true)
     })
     void replyApi
@@ -652,6 +657,26 @@ function SettingsPage(): React.JSX.Element {
                 desc="关闭后所有发送请求会被拒绝(仅记录审计)。"
                 checked={boolVal(form['inject.enabled'])}
                 onChange={(v) => patch('inject.enabled', boolStr(v))}
+              />
+              <SwitchRow
+                label="智能体发送消息"
+                desc="允许对话智能体(工作台/对话页/飞书)通过 send_message 代发微信消息;关闭后该工具直接返回未开启。"
+                checked={agentSendEnabled}
+                onChange={(v) => {
+                  setAgentSendEnabled(v)
+                  void configApi?.set('send.agentEnabled', v ? '1' : '0')
+                  toast.success(v ? '已开启智能体发送' : '已关闭智能体发送')
+                }}
+              />
+              <SwitchRow
+                label="发送需逐次审批"
+                desc="每次代发前人工确认(工作台审批条/飞书回复「确认」);关闭后确认通过即直接发送,仍受频控与审计。"
+                checked={agentSendApprove}
+                onChange={(v) => {
+                  setAgentSendApprove(v)
+                  void configApi?.set('send.approve', v ? '1' : '0')
+                  toast.success(v ? '已开启逐次审批' : '已关闭逐次审批(代发不再询问)')
+                }}
               />
               <div className="st-actions">
                 <button

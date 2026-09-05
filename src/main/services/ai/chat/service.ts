@@ -19,6 +19,7 @@ import {
 } from '../../../db/repos/chatRepo'
 import { findTool, schemaFromParams, type ToolCtx, type ToolDef } from './skills'
 import { describeModelError } from '../modelErrors'
+import { sendApproveEnabled, SEND_TOOL_NAME } from '../sendGate'
 import { findSoftwareTool } from '../cap/software'
 import { expandMounted, capNameOfDef, isCapDisabled } from '../cap/registry'
 import { skillsInjectionText } from '../workbench/skills'
@@ -508,8 +509,12 @@ async function runTurn(opts: {
         thought
       })
 
-      // 高危工具:渲染端人工确认(60s 超时按取消)
-      if (def.confirm) {
+      // 高危工具:渲染端人工确认(60s 超时按取消;发送开关关闭时直通;未绑定会话不发确认直接按不可用处理)
+      const needConfirm =
+        def.confirm &&
+        (def.name !== SEND_TOOL_NAME || sendApproveEnabled()) &&
+        !(def.needsWx && !bound)
+      if (needConfirm) {
         const runId = `c${++confirmSeq}`
         const confirmed = await new Promise<boolean>((resolve) => {
           const timer = setTimeout(() => {
@@ -756,7 +761,12 @@ async function executeNativeToolCalls(opts: {
         continue
       }
     }
-    if (def.confirm) {
+    // 发送类确认同样受总开关/逐次审批开关与绑定态约束
+    if (
+      def.confirm &&
+      (def.name !== SEND_TOOL_NAME || sendApproveEnabled()) &&
+      !(def.needsWx && !bound)
+    ) {
       const runId = `n${++confirmSeq}`
       const ok = await new Promise<boolean>((resolve) => {
         const timer = setTimeout(() => {

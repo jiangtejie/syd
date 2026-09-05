@@ -84,6 +84,10 @@ const WHEN_HINT: Record<string, { oneLine: string; when: string }> = {
   recent_messages: {
     oneLine: '读指定会话最近消息文本',
     when: '需要知道一个会话刚聊了什么时'
+  },
+  send_message: {
+    oneLine: '发送文本消息给指定客户/群(写操作,执行前需人工确认)',
+    when: '用户明确要求给某个客户/群发送微信消息时'
   }
 }
 
@@ -150,7 +154,7 @@ export function listCaps(): CapInfo[] {
       tier,
       group,
       kind: 'tool',
-      readOnly: true,
+      readOnly: name !== 'send_message',
       needsWx,
       oneLine,
       when,
@@ -192,7 +196,8 @@ export function listCaps(): CapInfo[] {
     findTool('list_team_members'),
     findTool('monitor_summary'),
     findTool('customer_lookup'),
-    findTool('recent_messages')
+    findTool('recent_messages'),
+    findTool('send_message')
   ]) {
     if (!def) continue
     const hint = WHEN_HINT[def.name]

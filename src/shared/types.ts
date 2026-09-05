@@ -498,6 +498,7 @@ export const TOOL_CN_NAMES: Record<string, string> = {
   customer_lookup: '客户资料',
   recent_messages: '最近消息',
   list_team_members: '团队名单',
+  send_message: '发送消息',
   software_status: '软件状态',
   data_scope: '数据范围',
   bi_stats: '数据统计',

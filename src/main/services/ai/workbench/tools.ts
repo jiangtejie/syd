@@ -4,13 +4,14 @@ import { findTool, type ToolDef, type ToolParamDecl } from '../chat/skills'
 import { findSoftwareTool } from '../cap/software'
 import type { WbToolGroup } from './types'
 import { requestToolApproval } from './approval'
+import { sendAgentEnabled, sendApproveEnabled } from '../sendGate'
 
 /**
  * 工作台工具注册表:产品原生能力 → AI SDK tool()。
  * - 高扩展:业务执行器沿用 chat/skills.ts 与 cap/software.ts 的 ToolDef(唯一实现),
  *   本层只负责“声明分组 + zod schema + 审批标记”;新增能力 = 注册 def + 加入分组;
  * - 账号上下文由引擎注入(ctx.wxid),不暴露给模型;
- * - v1 全部只读;危险(写/外部)工具通过 approval 表逐次人工确认。
+ * - 除 send_message(写,需逐次审批)外全部只读;写/外部工具统一经审批确认后执行。
  */
 
 interface WbToolSpec {
@@ -32,7 +33,7 @@ export interface WbEvidenceRow {
   line: string
 }
 
-/** 常驻组:微信业务(绑定账号) */
+/** 常驻组:微信业务(绑定账号;send_message 为受审批写工具) */
 const BUSINESS_TOOLS = [
   'query_issues',
   'query_group_issues',
@@ -40,7 +41,8 @@ const BUSINESS_TOOLS = [
   'monitor_summary',
   'customer_lookup',
   'recent_messages',
-  'list_team_members'
+  'list_team_members',
+  'send_message'
 ]
 
 /** 常驻组:软件自身状态(无账号也可用) */
@@ -55,7 +57,7 @@ const SOFTWARE_TOOLS = [
 export const WORKBENCH_TOOL_GROUPS: WbToolGroup[] = [
   {
     id: 'business',
-    label: '微信业务查询:问题/监控/客户/消息/团队(需绑定账号)',
+    label: '微信业务:问题/监控/客户/消息/团队查询与发送(需绑定账号;发送需审批)',
     tools: BUSINESS_TOOLS
   },
   { id: 'software', label: '软件状态:版本/账号/数据范围/统计/IM 状态', tools: SOFTWARE_TOOLS }
@@ -67,7 +69,8 @@ export function workbenchToolNames(): string[] {
 
 function resolveSpec(name: string): WbToolSpec | null {
   if (BUSINESS_TOOLS.includes(name)) {
-    return { resolve: () => findTool(name), approval: false }
+    // send_message 是唯一写工具:需要走审批(总开关/逐次审批开关在工具内二次判定)
+    return { resolve: () => findTool(name), approval: name === 'send_message' }
   }
   if (SOFTWARE_TOOLS.includes(name)) {
     return { resolve: () => findSoftwareTool(name), approval: false }
@@ -115,13 +118,31 @@ function toolFromDef(
     execute: async (args) => {
       const input = (args ?? {}) as Record<string, unknown>
       if (spec.approval) {
-        const ok = await requestToolApproval(
-          sessionId,
-          name,
-          JSON.stringify(input).slice(0, 300),
-          approvalTimeoutMs
-        )
-        if (!ok) return `工具 ${name} 未获确认(超时或被拒绝),已跳过。`
+        if (name === 'send_message') {
+          // 发送闸门:总开关关闭 → 直接不执行;审批开关关闭 → 跳过人工确认直通(仍走频控/审计)
+          if (!sendAgentEnabled()) {
+            return '智能体发送未开启(设置 → 发送 → 智能体发送开关),已跳过。'
+          }
+          if (!sendApproveEnabled()) {
+            // 直通:不询问(仍走频控/审计)
+          } else {
+            const ok = await requestToolApproval(
+              sessionId,
+              name,
+              JSON.stringify(input).slice(0, 300),
+              approvalTimeoutMs
+            )
+            if (!ok) return `工具 ${name} 未获确认(超时或被拒绝),已跳过。`
+          }
+        } else {
+          const ok = await requestToolApproval(
+            sessionId,
+            name,
+            JSON.stringify(input).slice(0, 300),
+            approvalTimeoutMs
+          )
+          if (!ok) return `工具 ${name} 未获确认(超时或被拒绝),已跳过。`
+        }
       }
       try {
         const result = await def.run({ wxid, sessionId: String(sessionId) }, input)

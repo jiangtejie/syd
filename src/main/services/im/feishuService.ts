@@ -5,7 +5,13 @@ import * as lark from '@larksuiteoapi/node-sdk'
 import { getImAccountConfig, listMappedSessionIds } from '../../db/repos/imRepo'
 import { listChatMessages } from '../../db/repos/chatRepo'
 import { createImSession } from './sessionBridge'
-import { isChatRunning, registerEventSink, sendChatMessage, stopChat } from '../ai/chat/service'
+import {
+  confirmToolRun,
+  isChatRunning,
+  registerEventSink,
+  sendChatMessage,
+  stopChat
+} from '../ai/chat/service'
 import { ensureBoundBusinessMounts } from '../ai/cap/mounts'
 import { openSecret } from '../secrets'
 import { clipForChannel, feishuPlainText, isStopCommand } from './mdToPlain'
@@ -103,8 +109,13 @@ interface PendingItem {
 const pendingQueue = new Map<number, PendingItem>()
 /** 正在执行 drain 的会话(防重复起循环) */
 const draining = new Set<number>()
+/** 高危工具二次确认:引擎已挂起等待桌面确认,由本会话用户在飞书里答复 */
+const feishuConfirm = new Map<string, { runId: string }>()
 /** 等待引擎空闲的最长时间:超过则放弃排队并提示 */
 const IDLE_WAIT_MS = 5 * 60_000
+
+const CONFIRM_YES = new Set(['确认', '确认发送', '同意', '同意发送', '确认执行', 'yes', 'ok', 'y'])
+const CONFIRM_NO = new Set(['取消', '拒绝', '不同意', '拒绝发送', '不发送', 'no', 'n', 'cancel'])
 
 /** 拆白名单配置(逗号/换行分隔) */
 function parseAllowUsers(raw: string | undefined): string[] {
@@ -437,6 +448,19 @@ async function handleInbound(
       }
       imLog(accountId, `收到停止指令但无进行中的生成(当作普通消息处理)`)
     }
+    // 高危工具二次确认:引擎正等人工确认(如代发微信),本条若为答复则消费并结束
+    const pendingC = feishuConfirm.get(String(sessionId))
+    if (pendingC) {
+      const norm = text.trim().toLowerCase()
+      if (CONFIRM_YES.has(norm) || CONFIRM_NO.has(norm)) {
+        feishuConfirm.delete(String(sessionId))
+        const ok = CONFIRM_YES.has(norm)
+        imLog(accountId, `工具确认答复:${ok ? '同意' : '拒绝'} run=${pendingC.runId}`)
+        confirmToolRun(pendingC.runId, ok)
+        await safeReply(rt, replyMessageId, ok ? '已确认,继续执行…' : '已取消本次操作')
+        return
+      }
+    }
     const capped =
       text.length > MAX_INBOUND_CHARS
         ? `${text.slice(0, MAX_INBOUND_CHARS)}\n…(消息过长已截断)`
@@ -468,7 +492,8 @@ async function drainInbound(sessionId: number, rt: Runtime): Promise<void> {
       await safeReply(rt, item.messageId, '上一轮生成仍在进行,已超过等待上限,请稍后重试')
       continue
     }
-    const out = await runAiTurn(sessionId, rt.businessWxid, item.text)
+    const out = await runAiTurn(sessionId, rt.businessWxid, item.text, rt, item.messageId)
+    feishuConfirm.delete(String(sessionId))
     if (out === null) {
       await safeReply(rt, item.messageId, '处理超时(5 分钟),请稍后重试或直接在 AI 助手里查看')
       continue
@@ -479,12 +504,15 @@ async function drainInbound(sessionId: number, rt: Runtime): Promise<void> {
 
 /**
  * 跑一轮 AI turn;wxid 为渠道绑定的业务账号(空=通用对话);
- * 返回要回复的文本(null = 超时/无输出);过程中聚合工具痕迹简报(⑤)。
+ * 返回要回复的文本(null = 超时/无输出);过程中聚合工具痕迹简报(⑤),
+ * 高危工具(pending)由本会话用户在飞书内二次确认。
  */
 async function runAiTurn(
   sessionId: number,
   businessWxid: string,
-  text: string
+  text: string,
+  rt: Runtime,
+  replyMessageId: string
 ): Promise<string | null> {
   return await new Promise<string | null>((resolve) => {
     let finished = false
@@ -492,6 +520,7 @@ async function runAiTurn(
     const finish = (val: string | null): void => {
       if (finished) return
       finished = true
+      feishuConfirm.delete(String(sessionId))
       clearTimeout(timer)
       unreg()
       resolve(val)
@@ -503,6 +532,17 @@ async function runAiTurn(
     // sink 键需与 sendChatMessage 的事件 wxid 一致(绑定后为业务账号),否则收不到 done
     const unreg = registerEventSink(businessWxid, sessionId, (evt: AiChatEvent) => {
       if (finished) return
+      if (evt.type === 'tool' && evt.toolStatus === 'pending' && evt.text) {
+        // 引擎挂起等人工确认:在本会话内询问,用户答复后由 handleInbound 消费
+        feishuConfirm.set(String(sessionId), { runId: evt.text })
+        const prompt = `⚠️ 需要你确认:智能体要执行「${
+          evt.tool ? toolCnName(evt.tool) : '未知操作'
+        }」${evt.args ? `\n参数:${clipForChannel(evt.args, 200)}` : ''}\n回复「确认」执行,回复「取消」拒绝。`
+        void safeReply(rt, replyMessageId, prompt).catch(() => {
+          /* 发送失败由 safeReply 内部记录 */
+        })
+        return
+      }
       if (evt.type === 'tool' && evt.tool && evt.toolStatus) {
         if (evt.toolStatus === 'done' || evt.toolStatus === 'fail') {
           tools.set(evt.tool, (tools.get(evt.tool) ?? 0) + 1)
