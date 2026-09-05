@@ -1861,3 +1861,23 @@
   max-width: 80px;
   height: 28px;
 }
+
+/* 工作区绑定条(头部右侧) */
+.wb-ws-box {
+  gap: 6px;
+  max-width: 46%;
+}
+
+.wb-ws-name {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-2);
+  padding: 2px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+}

@@ -503,7 +503,14 @@ export const TOOL_CN_NAMES: Record<string, string> = {
   data_scope: '数据范围',
   bi_stats: '数据统计',
   export_preview: '导出预览',
-  im_channels_status: 'IM 通道状态'
+  im_channels_status: 'IM 通道状态',
+  workspace_list: '浏览工作区',
+  workspace_read: '读取文件',
+  workspace_search: '搜索文件',
+  workspace_file_info: '文件信息',
+  workspace_write: '写入文件',
+  workspace_mkdir: '新建目录',
+  workspace_delete: '删除文件'
 }
 
 export function toolCnName(name: string): string {

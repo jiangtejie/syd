@@ -373,6 +373,12 @@ const api = {
       }> => ipcRenderer.invoke('cs:wb:searchChats', wxid, query),
       messages: (id: number): Promise<{ ok: boolean; messages?: unknown[]; error?: string }> =>
         ipcRenderer.invoke('cs:wb:messages', id),
+      getWorkspace: (id: number): Promise<{ ok: boolean; path?: string | null; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:getWorkspace', id),
+      setWorkspace: (id: number, dir: string | null): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:setWorkspace', id, dir),
+      openWorkspace: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:openWorkspace', id),
       feedback: (input: {
         sessionId: number
         messageId: number

@@ -242,6 +242,8 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'issue_feedback', 'customers', 'TEXT')
   // 增量列迁移：chat_session.caps（能力分层挂载集合 JSON：{v:1,names:[...]}，会话级渐进式工具可见性）
   ensureColumn(db, 'chat_session', 'caps', 'TEXT')
+  // 增量列迁移:chat_session.workspace(工作区任务绑定的真实目录;NULL=未绑定,仅查询模式)
+  ensureColumn(db, 'chat_session', 'workspace', 'TEXT')
   db.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
 

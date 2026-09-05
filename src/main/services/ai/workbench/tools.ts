@@ -2,6 +2,7 @@ import { tool, zodSchema, type Tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { findTool, type ToolDef, type ToolParamDecl } from '../chat/skills'
 import { findSoftwareTool } from '../cap/software'
+import { findWsTool, isWsWriteTool } from './wsTools'
 import type { WbToolGroup } from './types'
 import { requestToolApproval } from './approval'
 import { sendAgentEnabled, sendApproveEnabled } from '../sendGate'
@@ -54,23 +55,43 @@ const SOFTWARE_TOOLS = [
   'im_channels_status'
 ]
 
+/** 工作区组:绑定目录后的文件读写(写/删需逐次审批) */
+const WS_TOOLS = [
+  'workspace_list',
+  'workspace_read',
+  'workspace_search',
+  'workspace_file_info',
+  'workspace_write',
+  'workspace_mkdir',
+  'workspace_delete'
+]
+
 export const WORKBENCH_TOOL_GROUPS: WbToolGroup[] = [
   {
     id: 'business',
     label: '微信业务:问题/监控/客户/消息/团队查询与发送(需绑定账号;发送需审批)',
     tools: BUSINESS_TOOLS
   },
+  {
+    id: 'workspace',
+    label: '工作区文件:浏览/读取/搜索与写入/删除(需会话绑定工作区;写删需审批)',
+    tools: WS_TOOLS
+  },
   { id: 'software', label: '软件状态:版本/账号/数据范围/统计/IM 状态', tools: SOFTWARE_TOOLS }
 ]
 
 export function workbenchToolNames(): string[] {
-  return [...BUSINESS_TOOLS, ...SOFTWARE_TOOLS]
+  return [...BUSINESS_TOOLS, ...WS_TOOLS, ...SOFTWARE_TOOLS]
 }
 
 function resolveSpec(name: string): WbToolSpec | null {
   if (BUSINESS_TOOLS.includes(name)) {
     // send_message 是唯一写工具:需要走审批(总开关/逐次审批开关在工具内二次判定)
     return { resolve: () => findTool(name), approval: name === 'send_message' }
+  }
+  if (WS_TOOLS.includes(name)) {
+    // 工作区写/删工具需逐次审批;只读工具直接可用(沙箱内已限大小)
+    return { resolve: () => findWsTool(name), approval: isWsWriteTool(name) }
   }
   if (SOFTWARE_TOOLS.includes(name)) {
     return { resolve: () => findSoftwareTool(name), approval: false }

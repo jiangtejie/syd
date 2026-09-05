@@ -4,12 +4,14 @@ import {
   clearChatMessages,
   createChat,
   getChatById,
+  getChatWorkspace,
   listChatMessages,
   listChats,
   removeChat,
   renameChat,
   saveMessageFeedback,
-  searchChatMessages
+  searchChatMessages,
+  setChatWorkspace
 } from '../db/repos/chatRepo'
 import {
   getWorkbenchReliability,
@@ -34,6 +36,7 @@ import {
 } from '../services/ai/workbench/skills'
 import { readMemoNotes, writeMemoNotes } from '../services/ai/memo'
 import { toolCnName } from '../../shared/types'
+import { existsSync, statSync } from 'node:fs'
 
 /** AI 工作台 IPC(会话复用 chat 体系,存储 wxid 带 wb: 前缀与 IM 会话隔离;事件通道 ai:wb)。 */
 
@@ -128,6 +131,44 @@ export function registerWorkbenchHandlers(): void {
     if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
     try {
       return { ok: true as const, messages: listChatMessages(id) }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  /** 会话工作区:读取绑定目录 */
+  ipcMain.handle('cs:wb:getWorkspace', (_e, id: number) => {
+    if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
+    try {
+      return { ok: true as const, path: getChatWorkspace(id) }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  /** 会话工作区:绑定(校验真实目录)/解绑(null) */
+  ipcMain.handle('cs:wb:setWorkspace', (_e, id: number, dir: string | null) => {
+    if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
+    const d = String(dir ?? '').trim()
+    if (d && (!existsSync(d) || !statSync(d).isDirectory())) {
+      return { ok: false as const, error: '目录不存在或不是文件夹' }
+    }
+    try {
+      setChatWorkspace(id, d || null)
+      return { ok: true as const }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  /** 会话工作区:在文件管理器中打开 */
+  ipcMain.handle('cs:wb:openWorkspace', (_e, id: number) => {
+    if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
+    try {
+      const dir = getChatWorkspace(id)
+      if (!dir || !existsSync(dir)) return { ok: false as const, error: '未绑定或目录已不存在' }
+      void shell.openPath(dir)
+      return { ok: true as const }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }

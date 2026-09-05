@@ -218,6 +218,20 @@ export function chatCapsPersisted(sessionId: number): boolean {
   return !!row && row.caps !== null
 }
 
+/* ── 工作区(会话绑定的真实目录) ── */
+
+export function getChatWorkspace(sessionId: number): string | null {
+  const row = getDb().prepare(`SELECT workspace FROM chat_session WHERE id = ?`).get(sessionId) as
+    { workspace: string | null } | undefined
+  return row?.workspace?.trim() || null
+}
+
+export function setChatWorkspace(sessionId: number, dir: string | null): void {
+  getDb()
+    .prepare(`UPDATE chat_session SET workspace = ?, updated_at = ? WHERE id = ?`)
+    .run((dir ?? '').trim() || null, Date.now(), sessionId)
+}
+
 /* ── 工作台回答反馈(有用/没用;message_id 唯一,重复提交覆盖) ── */
 
 export function saveMessageFeedback(input: {

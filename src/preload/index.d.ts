@@ -382,6 +382,11 @@ declare global {
             }>
           >
           messages: (id: number) => Promise<Result<{ messages?: ChatMsgItem[] }>>
+          getWorkspace: (
+            id: number
+          ) => Promise<{ ok: boolean; path?: string | null; error?: string }>
+          setWorkspace: (id: number, dir: string | null) => Promise<{ ok: boolean; error?: string }>
+          openWorkspace: (id: number) => Promise<{ ok: boolean; error?: string }>
           feedback: (input: {
             sessionId: number
             messageId: number

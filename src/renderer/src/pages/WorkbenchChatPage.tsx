@@ -776,6 +776,50 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   }
 
   const canSend = !!activeId && !activeBusy
+  /* ── 工作区(会话绑定的真实目录,WorkBuddy 式文件工具) ── */
+  const [wsDir, setWsDir] = useState<string | null>(null)
+  useEffect(() => {
+    if (activeId === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 无会话时清空工作区(全仓同款模式)
+      setWsDir(null)
+      return
+    }
+    void window.api?.cs?.wb
+      ?.getWorkspace(activeId)
+      .then((r) => {
+        setWsDir(r?.ok ? (r.path ?? null) : null)
+      })
+      .catch(() => setWsDir(null))
+  }, [activeId])
+
+  const pickWorkspace = async (): Promise<void> => {
+    if (activeId === null) return
+    const r = await window.api?.cs?.dialog
+      ?.pickDirectory('选择本会话的工作区目录(智能体可读写其中的文本文件)')
+      .catch(() => null)
+    if (!r?.ok || !r.path) return
+    const s = await window.api?.cs?.wb?.setWorkspace(activeId, r.path).catch(() => null)
+    if (s?.ok) {
+      setWsDir(r.path)
+      toast.success(`已绑定工作区:${r.path.split(/[\\/]/).pop() || r.path}`)
+    } else {
+      toast.error((s as { error?: string } | null)?.error || '绑定失败')
+    }
+  }
+
+  const unbindWorkspace = async (): Promise<void> => {
+    if (activeId === null) return
+    if (!window.confirm('解除本会话的工作区绑定?文件工具将不可用(文件本身不会被删除)。')) return
+    const s = await window.api?.cs?.wb?.setWorkspace(activeId, null).catch(() => null)
+    if (s?.ok) {
+      setWsDir(null)
+      toast.success('已解除工作区绑定')
+    } else {
+      toast.error((s as { error?: string } | null)?.error || '操作失败')
+    }
+  }
+
+  const wsName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
   /* 待发附图(粘贴/拖入,压缩后 dataURL;改写模式不支持附图) */
   const [pendingImgs, setPendingImgs] = useState<string[]>([])
   const taPlaceholder =
@@ -1236,6 +1280,42 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           <div className="wb-head-title">
             <b>{active?.title ?? '工作台'}</b>
             <span className="wb-head-sub">AI 工作台 · 调用产品能力</span>
+          </div>
+          <div className="wb-head-right wb-ws-box">
+            <span className="wb-ws-name" title={wsDir ?? undefined}>
+              {wsDir ? `📁 ${wsName(wsDir)}` : '工作区未绑定'}
+            </span>
+            <button
+              type="button"
+              className="st-btn ghost sm"
+              disabled={!activeId}
+              title={
+                wsDir ? '更换工作区目录' : '选择文件夹作为本会话的工作区,智能体可读写其中文本文件'
+              }
+              onClick={() => void pickWorkspace()}
+            >
+              {wsDir ? '切换' : '绑定工作区'}
+            </button>
+            {wsDir && (
+              <>
+                <button
+                  type="button"
+                  className="st-btn ghost sm"
+                  title="在文件管理器中打开"
+                  onClick={() => void window.api?.cs?.wb?.openWorkspace(activeId!)}
+                >
+                  打开
+                </button>
+                <button
+                  type="button"
+                  className="st-btn ghost sm"
+                  title="解除绑定(文件不会被删除)"
+                  onClick={() => void unbindWorkspace()}
+                >
+                  ✕
+                </button>
+              </>
+            )}
           </div>
         </div>
 
