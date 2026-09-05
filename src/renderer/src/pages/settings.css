@@ -953,6 +953,119 @@ select.st-input {
   margin-bottom: 0;
 }
 
+/* ── 工作台:业务技能(SKILL.md)网格卡片 ── */
+.wb-skills-toolbar {
+  flex-wrap: wrap;
+  row-gap: 6px;
+  margin-top: 8px;
+}
+
+.wb-skills-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-skills-count {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.wb-skill-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.wb-skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-hover);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.wb-skill-card:hover {
+  border-color: var(--border);
+}
+
+.wb-skill-card.is-on {
+  border-color: var(--brand-line);
+  background: rgba(7, 193, 96, 0.05);
+}
+
+.wb-skill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wb-skill-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-skill-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wb-skill-meta {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 2px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.wb-skill-state {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+}
+
+.wb-skill-state.on {
+  color: var(--success-strong);
+  background: var(--success-soft);
+  border-color: var(--success-line);
+}
+
+.wb-skill-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── 日志 tab ── */
 .lg-root {
   display: flex;
