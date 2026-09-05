@@ -309,7 +309,7 @@ declare global {
           }>
           clawQrPoll: (key: string) => Promise<{
             ok: boolean
-            status: 'waiting' | 'confirmed' | 'expired' | 'error'
+            status: 'waiting' | 'scanned' | 'confirmed' | 'expired' | 'error'
             accountId?: number
             error?: string
           }>

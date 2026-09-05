@@ -12,6 +12,7 @@ import {
 } from '../ai/chat/service'
 import { ensureBoundBusinessMounts } from '../ai/cap/mounts'
 import { openSecret, sealSecret } from '../secrets'
+import QRCode from 'qrcode'
 
 /**
  * 微信 ClawBot(官方 iLink)通道。
@@ -436,7 +437,8 @@ export async function clawQrStart(opts: {
   const baseUrl = (opts.baseUrl ?? '').trim() || DEFAULT_BASE
   try {
     const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/ilink/bot/get_bot_qrcode?bot_type=3`, {
-      signal: AbortSignal.timeout(20_000)
+      signal: AbortSignal.timeout(20_000),
+      headers: { 'iLink-App-ClientVersion': '1' }
     })
     const data = (await res.json()) as Record<string, unknown>
     const qr = String(data.qrcode ?? '')
@@ -457,12 +459,34 @@ export async function clawQrStart(opts: {
       at: Date.now()
     })
     for (const [k, s] of qrSessions) if (Date.now() - s.at > 3 * 60_000) qrSessions.delete(k)
+    // 官方返回 qrcode_img_content 是「二维码内容(URL 字符串)」而非图片字节,
+    // 官方/社区实现均为取该字符串本地编码成二维码(如 Python 版 qr.add_data(qrcode_img_content))
     const rawImg = data.qrcode_img_content ?? data.qr_img ?? data.img_content ?? data.qrcode_img
     let qrImg: string | undefined
+    let qrUrl: string | undefined
     if (typeof rawImg === 'string' && rawImg) {
-      qrImg = rawImg.startsWith('data:image') ? rawImg : `data:image/png;base64,${rawImg}`
+      if (rawImg.startsWith('data:image')) {
+        qrImg = rawImg
+      } else if (/^https?:\/\//i.test(rawImg)) {
+        qrUrl = rawImg
+        try {
+          qrImg = await QRCode.toDataURL(rawImg, { width: 560, margin: 2 })
+        } catch (e) {
+          clawLog.warn(`二维码本地编码失败(将回退到链接):${e instanceof Error ? e.message : e}`)
+        }
+      } else if (!/[:/]/.test(rawImg)) {
+        // 兼容部分网关直接下发纯 base64 图片字节的情况
+        qrImg = `data:image/png;base64,${rawImg}`
+      } else {
+        qrUrl = rawImg
+        try {
+          qrImg = await QRCode.toDataURL(rawImg, { width: 560, margin: 2 })
+        } catch (e) {
+          clawLog.warn(`二维码本地编码失败(将回退到链接):${e instanceof Error ? e.message : e}`)
+        }
+      }
     }
-    const qrUrl = typeof data.url === 'string' ? data.url : undefined
+    qrUrl = qrUrl ?? (typeof data.url === 'string' ? data.url : undefined)
     return { ok: true, key, qrImg, qrUrl }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -471,7 +495,7 @@ export async function clawQrStart(opts: {
 
 export async function clawQrPoll(key: string): Promise<{
   ok: boolean
-  status: 'waiting' | 'confirmed' | 'expired' | 'error'
+  status: 'waiting' | 'scanned' | 'confirmed' | 'expired' | 'error'
   accountId?: number
   error?: string
 }> {
@@ -487,7 +511,10 @@ export async function clawQrPoll(key: string): Promise<{
   try {
     const res = await fetch(
       `${s.baseUrl.replace(/\/+$/, '')}/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(s.qr)}`,
-      { signal: AbortSignal.timeout(15_000) }
+      {
+        signal: AbortSignal.timeout(15_000),
+        headers: { 'iLink-App-ClientVersion': '1' }
+      }
     )
     const data = (await res.json()) as Record<string, unknown>
     if (!res.ok) {
@@ -517,6 +544,7 @@ export async function clawQrPoll(key: string): Promise<{
       qrSessions.delete(key)
       return { ok: true, status: 'expired' }
     }
+    if (status === 'scaned' || status === 'scanned') return { ok: true, status: 'scanned' }
     return { ok: true, status: 'waiting' }
   } catch (e) {
     return { ok: false, status: 'error', error: e instanceof Error ? e.message : String(e) }

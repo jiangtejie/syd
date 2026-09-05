@@ -111,8 +111,10 @@ export function ImSection(): React.JSX.Element {
             stopScanPoll()
             setScanErr(true)
             setScanMsg(poll.error || '授权确认失败,请重新获取')
+          } else if (poll.status === 'scanned') {
+            setScanMsg('已扫码,请在手机上点击确认绑定…')
           } else {
-            setScanMsg(ticks > 50 ? '请尽快完成扫码,二维码即将过期…' : '等待扫码确认中…')
+            setScanMsg(ticks > 50 ? '请尽快完成扫码,二维码即将过期…' : '等待扫码中…')
           }
         })
         .catch(() => undefined)
@@ -533,7 +535,7 @@ export function ImSection(): React.JSX.Element {
             </div>
             <ol className="im-qr-steps">
               <li>打开手机微信,搜索并进入官方「ClawBot(智能体)」</li>
-              <li>在 ClawBot 内选择扫码绑定/登录入口,扫描上方二维码</li>
+              <li>在 ClawBot 内选择扫码绑定/登录入口,用微信扫一扫上方二维码</li>
               <li>按页面提示确认授权;成功后本窗口自动创建账号并开始连接</li>
             </ol>
             <div className="st-actions">
