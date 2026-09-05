@@ -28,3 +28,21 @@
   flex-direction: column;
   gap: 6px;
 }
+
+/* IM 表单:白名单多行输入与顶对齐行 */
+.st-row-top {
+  align-items: flex-start;
+}
+
+.st-row-top .st-label {
+  padding-top: 7px;
+}
+
+textarea.im-allow-area {
+  height: auto;
+  min-height: 56px;
+  padding: 6px 10px;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: inherit;
+}

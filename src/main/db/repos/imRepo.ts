@@ -18,15 +18,19 @@ export interface ImAccountConfig {
   appSecret?: string
   /** 绑定的微信业务账号 wxid(可选;绑定后该渠道会话具备业务查询能力) */
   wxid?: string
+  /** 业务查询白名单(逗号分隔用户标识;绑定账号后非空即启用) */
+  allowUsers?: string
 }
 
 export function rowToAccount(r: AccountRow): ImChannelAccount {
   let wxid: string | undefined
+  let allowUsers: string | undefined
   try {
     const cfg = JSON.parse(r.config) as ImAccountConfig
     wxid = (cfg.wxid ?? '').trim() || undefined
+    allowUsers = (cfg.allowUsers ?? '').trim() || undefined
   } catch {
-    /* config 损坏时仅忽略绑定信息 */
+    /* config 损坏时仅忽略渠道扩展信息 */
   }
   return {
     id: r.id,
@@ -35,7 +39,8 @@ export function rowToAccount(r: AccountRow): ImChannelAccount {
     enabled: r.enabled === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-    wxid
+    wxid,
+    allowUsers
   }
 }
 
@@ -72,9 +77,11 @@ export function saveImAccount(input: {
   if (!cfg.appId?.trim() || !cfg.appSecret?.trim()) {
     return { ok: false, error: '请填写飞书应用 App ID 与 App Secret' }
   }
-  // 规范化:wxid 空串视为未绑定,不入库
+  // 规范化:wxid 空串视为未绑定,不入库;allowUsers 空串视为未配置
   if (cfg.wxid) cfg.wxid = cfg.wxid.trim()
   else delete cfg.wxid
+  if (cfg.allowUsers) cfg.allowUsers = cfg.allowUsers.trim()
+  else delete cfg.allowUsers
   const db = getDb()
   const now = Date.now()
   const json = JSON.stringify(cfg)

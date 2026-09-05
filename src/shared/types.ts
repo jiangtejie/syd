@@ -468,6 +468,8 @@ export interface ImChannelAccount {
   updatedAt: number
   /** 绑定的微信业务账号(wxid;设置后该渠道会话具备 L1 业务查询能力) */
   wxid?: string
+  /** 业务查询白名单(飞书 open_id/union_id/user_id,逗号分隔;绑定账号后非空即启用) */
+  allowUsers?: string
   /** 实时连接状态(查询时由主进程填充) */
   status?: 'connected' | 'connecting' | 'stopped' | 'error'
   statusText?: string
@@ -482,6 +484,8 @@ export interface ImChannelAccountInput {
   enabled?: boolean
   /** 绑定的微信业务账号(wxid;可空=通用对话) */
   wxid?: string
+  /** 业务查询白名单(逗号分隔的用户标识;空=不限制) */
+  allowUsers?: string
 }
 
 // ── 工作台工具名展示(渲染端工具卡/证据来源/审批条 + 主进程导出 Markdown 共用) ──

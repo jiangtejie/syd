@@ -969,6 +969,11 @@ export function stopChat(wxid: string, chatId: number): void {
   if (handle?.active) handle.controller.abort()
 }
 
+/** 会话是否正在生成(IM 渠道忙碌排队用;键与引擎一致) */
+export function isChatRunning(wxid: string, chatId: number): boolean {
+  return !!running.get(runKeyOf(wxid, chatId))?.active
+}
+
 /** 按会话 id 中止其运行(删除/清空会话前调用,防孤儿任务继续写已删会话) */
 export function stopChatById(chatId: number): void {
   for (const handle of running.values()) {

@@ -56,7 +56,8 @@ export function registerImHandlers(): void {
         config: {
           appId: (input?.appId?.trim() || prev?.appId) ?? '',
           appSecret: input?.appSecret ? sealSecret(input.appSecret) : (prev?.appSecret ?? ''),
-          wxid: (input?.wxid ?? '').trim() || undefined
+          wxid: (input?.wxid ?? '').trim() || undefined,
+          allowUsers: (input?.allowUsers ?? '').trim() || undefined
         }
       })
       if (!saved.ok || saved.id === undefined) return saved

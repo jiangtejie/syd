@@ -5,9 +5,11 @@ import * as lark from '@larksuiteoapi/node-sdk'
 import { getImAccountConfig, listMappedSessionIds } from '../../db/repos/imRepo'
 import { listChatMessages } from '../../db/repos/chatRepo'
 import { createImSession } from './sessionBridge'
-import { registerEventSink, sendChatMessage } from '../ai/chat/service'
+import { isChatRunning, registerEventSink, sendChatMessage, stopChat } from '../ai/chat/service'
 import { ensureBoundBusinessMounts } from '../ai/cap/mounts'
 import { openSecret } from '../secrets'
+import { clipForChannel, feishuPlainText, isStopCommand } from './mdToPlain'
+import { toolCnName } from '../../../shared/types'
 import type { AiChatEvent } from '../../../shared/types'
 
 /**
@@ -62,6 +64,8 @@ interface Runtime {
   appId: string
   /** 绑定的微信业务账号 wxid(空 = 通用对话,业务工具不可用) */
   businessWxid: string
+  /** 业务查询白名单(逗号分隔用户标识;绑定后非空即启用) */
+  allowUsers: string[]
   client: {
     im: {
       message: {
@@ -87,6 +91,45 @@ const runtimes = new Map<number, Runtime>()
 /** 事件 ack 后平台若 3s 内没收到应答会重推;去重窗口 10 分钟 */
 const DEDUP_MS = 10 * 60_000
 const CONNECT_TIMEOUT_MS = 20_000
+
+/* ── 忙碌续答(轻量队列):会话正在生成时新消息只保留「最新一条」,上一轮完成后自动续答 ── */
+
+interface PendingItem {
+  text: string
+  messageId: string
+}
+
+/** sessionId → 待续答内容(覆盖式:同会话多条只留最新) */
+const pendingQueue = new Map<number, PendingItem>()
+/** 正在执行 drain 的会话(防重复起循环) */
+const draining = new Set<number>()
+/** 等待引擎空闲的最长时间:超过则放弃排队并提示 */
+const IDLE_WAIT_MS = 5 * 60_000
+
+/** 拆白名单配置(逗号/换行分隔) */
+function parseAllowUsers(raw: string | undefined): string[] {
+  return (raw ?? '')
+    .split(/[,\s，]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+/** 绑定 + 配置白名单时,校验发送者是否可用(三种 id 任一命中即可) */
+function allowUser(rt: Runtime, senderIds: SenderIds): boolean {
+  if (!rt.businessWxid || rt.allowUsers.length === 0) return true
+  const ids = [senderIds.openId, senderIds.unionId, senderIds.userId].filter(Boolean)
+  return rt.allowUsers.some((w) => ids.includes(w))
+}
+
+/** 等待引擎对该会话空闲(轮询;超时返回 false) */
+async function waitIdle(wxid: string, sessionId: number): Promise<boolean> {
+  const deadline = Date.now() + IDLE_WAIT_MS
+  while (isChatRunning(wxid, sessionId)) {
+    if (Date.now() > deadline) return false
+    await new Promise((r) => setTimeout(r, 800))
+  }
+  return true
+}
 
 export function getImStatus(accountId: number): { status?: string; statusText?: string } {
   const r = runtimes.get(accountId)
@@ -129,22 +172,47 @@ function isDuplicate(rt: Runtime, messageId: string): boolean {
   return false
 }
 
+interface SenderIds {
+  openId?: string
+  unionId?: string
+  userId?: string
+}
+
 /**
  * 事件载荷两种可能形态都兼容:
  * - 长连接(当前 SDK):EventDispatcher 解包后直接是事件体 { sender, message, ... };
  * - webhook 信封 { schema, header, event }:取 event 字段。
  */
-function extractMessage(data: unknown): { msg?: ImMessage; senderType?: string } {
+function extractMessage(data: unknown): {
+  msg?: ImMessage
+  senderType?: string
+  senderIds: SenderIds
+} {
   const d = (data ?? {}) as {
     event?: unknown
-    sender?: { sender_type?: string }
+    sender?: {
+      sender_type?: string
+      sender_id?: { open_id?: string; union_id?: string; user_id?: string }
+    }
     message?: ImMessage
   }
   const body = (d.event && typeof d.event === 'object' ? d.event : d) as {
     message?: ImMessage
-    sender?: { sender_type?: string }
+    sender?: {
+      sender_type?: string
+      sender_id?: { open_id?: string; union_id?: string; user_id?: string }
+    }
   }
-  return { msg: body?.message, senderType: body?.sender?.sender_type }
+  const sid = body?.sender?.sender_id
+  return {
+    msg: body?.message,
+    senderType: body?.sender?.sender_type,
+    senderIds: {
+      openId: sid?.open_id,
+      unionId: sid?.union_id,
+      userId: sid?.user_id
+    }
+  }
 }
 
 function parseText(raw: string | undefined): string {
@@ -196,6 +264,7 @@ export async function startFeishuAccount(
       accountId,
       appId,
       businessWxid: (cfg.wxid ?? '').trim(),
+      allowUsers: parseAllowUsers(cfg.allowUsers),
       client,
       wsc: null,
       name,
@@ -208,7 +277,7 @@ export async function startFeishuAccount(
       accountId,
       `开始建立飞书长连接(appId=${appId}${
         rt.businessWxid ? `,绑定业务账号=${rt.businessWxid}` : '(未绑定业务账号,仅通用对话)'
-      })`
+      }${rt.businessWxid && rt.allowUsers.length > 0 ? `,白名单 ${rt.allowUsers.length} 人` : ''})`
     )
     // 绑定业务账号后,该账号已有映射会话补齐 L1 业务能力(历史通用会话立即具备查询能力)
     if (rt.businessWxid) {
@@ -226,9 +295,9 @@ export async function startFeishuAccount(
       }
     }
 
-    // 事件处理:只做准入与去重,随即异步跑 AI(handler 必须快速返回,3s 内 ack)
+    // 事件处理:只做准入/白名单/去重,随即异步入队(handler 必须快速返回,3s 内 ack)
     const onReceive = (data: unknown): void => {
-      const { msg, senderType } = extractMessage(data)
+      const { msg, senderType, senderIds } = extractMessage(data)
       if (!msg?.message_id || !msg.chat_id) {
         imLog(
           accountId,
@@ -264,7 +333,16 @@ export async function startFeishuAccount(
         imLog(accountId, `跳过:重复推送 ${msg.message_id}`)
         return
       }
-      imLog(accountId, `收到消息 ${msg.message_id} type=${msg.chat_type} len=${text.length}`)
+      const openId = senderIds.openId ?? senderIds.unionId ?? senderIds.userId ?? '?'
+      // 业务白名单(绑定 + 配置后生效):名单外用户的消息整体忽略,不触发 AI
+      if (!allowUser(rt, senderIds)) {
+        imLog(accountId, `跳过:白名单外用户 ${openId}(${msg.message_id})`)
+        return
+      }
+      imLog(
+        accountId,
+        `收到消息 ${msg.message_id} type=${msg.chat_type} sender=${openId} len=${text.length}`
+      )
       void handleInbound(accountId, rt, msg.chat_id!, msg.message_id!, text)
     }
     dispatcher.register({ 'im.message.receive_v1': onReceive })
@@ -336,7 +414,10 @@ export function stopAllFeishu(): void {
   for (const id of [...runtimes.keys()]) stopFeishuAccount(id)
 }
 
-/** 外部聊天 → 本地会话 → AI 生成 → 结果回发 */
+/** 入站文本上限(与引擎单条历史截断一致;防超长粘贴烧 token) */
+const MAX_INBOUND_CHARS = 6000
+
+/** 外部聊天 → 本地会话 → 排队/续答 → AI 生成 → 结果回发 */
 async function handleInbound(
   accountId: number,
   rt: Runtime,
@@ -346,19 +427,60 @@ async function handleInbound(
 ): Promise<void> {
   try {
     const sessionId = await createImSession(accountId, chatId, `${rt.name}·${chatId.slice(-8)}`)
-    const out = await runAiTurn(sessionId, rt.businessWxid, text)
-    if (out === null) {
-      await safeReply(rt, replyMessageId, '处理超时(5 分钟),请稍后重试或直接在 AI 助手里查看')
-      return
+    // 「停止」命令:会话正在生成则中止并确认;空闲时按普通消息交给 AI 解释
+    if (isStopCommand(text)) {
+      if (isChatRunning(rt.businessWxid, sessionId)) {
+        stopChat(rt.businessWxid, sessionId)
+        imLog(accountId, `用户要求停止,已中止会话 ${sessionId}`)
+        await safeReply(rt, replyMessageId, '已停止生成 ✅')
+        return
+      }
+      imLog(accountId, `收到停止指令但无进行中的生成(当作普通消息处理)`)
     }
-    await safeReply(rt, replyMessageId, out)
+    const capped =
+      text.length > MAX_INBOUND_CHARS
+        ? `${text.slice(0, MAX_INBOUND_CHARS)}\n…(消息过长已截断)`
+        : text
+    // 队列:生成中到达的新消息只保留最新一条,由 drain 在空闲后续答
+    pendingQueue.set(sessionId, { text: capped, messageId: replyMessageId })
+    if (draining.has(sessionId)) return
+    draining.add(sessionId)
+    void drainInbound(sessionId, rt).finally(() => draining.delete(sessionId))
   } catch (e) {
     imLog(accountId, `处理入站消息异常:${e instanceof Error ? (e.stack ?? e.message) : String(e)}`)
-    await safeReply(rt, replyMessageId, `处理失败:${e instanceof Error ? e.message : String(e)}`)
+    await safeReply(
+      rt,
+      replyMessageId,
+      `处理失败:${clipForChannel(String(e instanceof Error ? e.message : e))}`
+    )
   }
 }
 
-/** 跑一轮 AI turn;wxid 为渠道绑定的业务账号(空=通用对话);返回要回复的文本(null = 超时/无输出) */
+/** 串行 drain:逐个处理队列中的最新消息(取时即删,天然只留最新) */
+async function drainInbound(sessionId: number, rt: Runtime): Promise<void> {
+  for (;;) {
+    const item = pendingQueue.get(sessionId)
+    if (!item) return
+    pendingQueue.delete(sessionId)
+    // 上一轮引擎未结束时新消息已入队:等空闲再跑,避免忙碌报错刷屏
+    const idle = await waitIdle(rt.businessWxid, sessionId)
+    if (!idle) {
+      await safeReply(rt, item.messageId, '上一轮生成仍在进行,已超过等待上限,请稍后重试')
+      continue
+    }
+    const out = await runAiTurn(sessionId, rt.businessWxid, item.text)
+    if (out === null) {
+      await safeReply(rt, item.messageId, '处理超时(5 分钟),请稍后重试或直接在 AI 助手里查看')
+      continue
+    }
+    await safeReply(rt, item.messageId, out)
+  }
+}
+
+/**
+ * 跑一轮 AI turn;wxid 为渠道绑定的业务账号(空=通用对话);
+ * 返回要回复的文本(null = 超时/无输出);过程中聚合工具痕迹简报(⑤)。
+ */
 async function runAiTurn(
   sessionId: number,
   businessWxid: string,
@@ -366,6 +488,7 @@ async function runAiTurn(
 ): Promise<string | null> {
   return await new Promise<string | null>((resolve) => {
     let finished = false
+    const tools = new Map<string, number>()
     const finish = (val: string | null): void => {
       if (finished) return
       finished = true
@@ -380,26 +503,41 @@ async function runAiTurn(
     // sink 键需与 sendChatMessage 的事件 wxid 一致(绑定后为业务账号),否则收不到 done
     const unreg = registerEventSink(businessWxid, sessionId, (evt: AiChatEvent) => {
       if (finished) return
+      if (evt.type === 'tool' && evt.tool && evt.toolStatus) {
+        if (evt.toolStatus === 'done' || evt.toolStatus === 'fail') {
+          tools.set(evt.tool, (tools.get(evt.tool) ?? 0) + 1)
+        }
+        return
+      }
       if (evt.type === 'done') {
         const rows = listChatMessages(sessionId)
         const last = [...rows].reverse().find((m) => m.role === 'assistant' && m.kind === 'text')
-        finish(last?.content ?? '(已生成,无文本内容)')
+        const body = last?.content?.trim() || '(已生成,无文本内容)'
+        // 过程简报:列出本回答依赖的工具查询(中文短名,重复计次)
+        if (tools.size > 0) {
+          const brief = [...tools.entries()]
+            .map(([n, c]) => `${toolCnName(n)}${c > 1 ? `×${c}` : ''}`)
+            .join('、')
+          finish(`${body}\n\n—— 以上依据工具查询:${brief} 生成`)
+        } else {
+          finish(body)
+        }
       } else if (evt.type === 'error') {
-        finish(`⚠ ${evt.text ?? '生成失败'}`)
+        finish(`⚠ ${clipForChannel(evt.text ?? '生成失败', 300)}`)
       } else if (evt.type === 'status' && evt.text === '已停止') {
-        finish('已停止生成')
+        finish('已停止生成 ✅')
       }
     })
     void sendChatMessage({ wxid: businessWxid, chatId: sessionId, text })
       .then((res) => {
         if (!res.ok) {
           imLog('ai', `会话 ${sessionId} 发送失败:${res.error ?? ''}`)
-          finish(res.error ?? '引擎发送失败')
+          finish(`⚠ ${clipForChannel(res.error ?? '引擎发送失败', 300)}`)
         }
       })
       .catch((e) => {
         imLog('ai', `会话 ${sessionId} 引擎异常:${e instanceof Error ? e.message : String(e)}`)
-        finish(`引擎异常:${e instanceof Error ? e.message : String(e)}`)
+        finish(`引擎异常:${clipForChannel(String(e instanceof Error ? e.message : e), 300)}`)
       })
   })
 }
@@ -422,16 +560,17 @@ async function safeReply(rt: Runtime, messageId: string, text: string): Promise<
   }
 }
 
-/** 原消息回复,长文本分片 */
+/** 原消息回复:先做 Markdown → 飞书可读纯文本降级,再长文本分片 */
 async function sendTextReply(rt: Runtime, messageId: string, text: string): Promise<void> {
+  const plain = feishuPlainText(text)
   const chunks: string[] = []
-  let rest = (text ?? '').trim()
+  let rest = plain
   while (rest.length > 0) {
     chunks.push(rest.slice(0, 3000))
     rest = rest.slice(3000)
   }
   const list = chunks.length > 0 ? chunks : ['(空)']
-  imLog(rt.accountId, `回发 ${list.length} 片 共 ${(text ?? '').length} 字 -> ${messageId}`)
+  imLog(rt.accountId, `回发 ${list.length} 片 共 ${plain.length} 字 -> ${messageId}`)
   for (const chunk of list) {
     await rt.client.im.message.reply({
       path: { message_id: messageId },

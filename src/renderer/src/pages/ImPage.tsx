@@ -76,12 +76,20 @@ export function ImSection(): React.JSX.Element {
   const startNew = (): void => {
     setEditId(null)
     setManualWx(false)
-    setForm({ name: '', channel: 'feishu', appId: '', appSecret: '', wxid: '', enabled: true })
+    setForm({
+      name: '',
+      channel: 'feishu',
+      appId: '',
+      appSecret: '',
+      wxid: '',
+      allowUsers: '',
+      enabled: true
+    })
     setOpen(true)
   }
   const editAccount = (a: ImChannelAccount): void => {
     setEditId(a.id)
-    // 编辑时 Secret 可不重填(留空沿用原密钥);绑定账号回显
+    // 编辑时 Secret 可不重填(留空沿用原密钥);绑定账号/白名单回显
     const bound = a.wxid ?? ''
     setManualWx(!!bound && !wxAccounts.some((k) => k.wxid === bound))
     setForm({
@@ -91,6 +99,7 @@ export function ImSection(): React.JSX.Element {
       appId: '',
       appSecret: '',
       wxid: bound,
+      allowUsers: a.allowUsers ?? '',
       enabled: a.enabled
     })
     setOpen(true)
@@ -151,8 +160,8 @@ export function ImSection(): React.JSX.Element {
       <div className="im-guide">
         可选「绑定微信业务账号」:绑定后,机器人对话会以该账号的上下文运行,具备与客服工作台一致的业务查询能力
         (客户/群问题/监控/最近消息/统计等);不绑定则仅限通用对话,业务查询会被拒绝。
-        注意:绑定后任何能私聊或在群里 @
-        该机器人的飞书用户都能触发业务查询,请确认渠道可见范围后再绑定。
+        绑定后默认任何能私聊或在群里 @ 该机器人的飞书用户都能触发业务查询——如需限定范围,
+        请在下方表单填写「业务查询白名单」。
       </div>
 
       <div className="im-list">
@@ -275,6 +284,21 @@ export function ImSection(): React.JSX.Element {
           )}
           <div className="st-hint-inline im-bind-hint">
             绑定后该渠道的 AI 对话将以该账号查询客户/群问题/消息等业务数据,与客服工作台同源
+          </div>
+          <div className="st-row st-row-top">
+            <span className="st-label">业务查询白名单(可选)</span>
+            <textarea
+              className="st-input im-allow-area"
+              rows={3}
+              value={form.allowUsers ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, allowUsers: e.target.value }))}
+              placeholder="ou_xxxxxxxx,ou_yyyyyyyy(每行一个或逗号分隔)"
+            />
+          </div>
+          <div className="st-hint-inline im-bind-hint">
+            仅当已绑定微信业务账号时生效:留空 = 所有能 @
+            机器人的人都能查询业务数据;填写后只有名单内的飞书用户可触发,其余消息被忽略。
+            获取自己的标识:logs/im.log 里每条入站会记录 sender=ou_…;也可在飞书后台查看。
           </div>
           <label className="st-row">
             <span className="st-label">保存后启用</span>
