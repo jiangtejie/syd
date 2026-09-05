@@ -1,10 +1,10 @@
-import { appendFileSync, existsSync, mkdirSync, statSync, truncateSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import * as lark from '@larksuiteoapi/node-sdk'
 import { getImAccountConfig, listMappedSessionIds } from '../../db/repos/imRepo'
 import { appendChatMessage, listChatMessages } from '../../db/repos/chatRepo'
+import { createLogger } from '../logging'
 import { createImSession } from './sessionBridge'
 import {
   confirmToolRun,
@@ -34,29 +34,10 @@ import type { AiChatEvent } from '../../../shared/types'
  * 导致“看似已启用其实从未建立长连接”,即历史 Bug)。
  */
 
-/** 磁盘日志(打包后无控制台,用于远程排查) */
+/** 飞书通道日志:统一走主进程 logger(scope=im,消息带账号前缀;控制台/磁盘由 logger 负责) */
+const imLogger = createLogger('im')
 function imLog(accountId: number | string, text: string): void {
-  try {
-    const dir = join(app.getPath('userData'), 'logs')
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    const file = join(dir, 'im.log')
-    if (existsSync(file)) {
-      try {
-        if (statSync(file).size > 512 * 1024) truncateSync(file, 0)
-      } catch {
-        /* ignore */
-      }
-    }
-    const line = `[${new Date().toISOString()}] [acct=${accountId}] ${text}\n`
-    appendFileSync(file, line, 'utf-8')
-  } catch {
-    /* 日志失败不影响功能 */
-  }
-  try {
-    console.log(`[im] acct=${accountId} ${text}`)
-  } catch {
-    /* ignore */
-  }
+  imLogger.info(`${accountId === 'ai' ? 'ai' : `acct=${accountId}`} ${text}`)
 }
 
 interface ImMessage {

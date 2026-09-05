@@ -157,6 +157,20 @@ declare global {
             filters?: Array<{ name: string; extensions: string[] }>
           }) => Promise<{ ok: boolean; paths?: string[] }>
         }
+        logs: {
+          recent: (opts?: {
+            minLevel?: 'debug' | 'info' | 'warn' | 'error'
+            scope?: string
+            query?: string
+            max?: number
+          }) => Promise<{
+            ok: boolean
+            entries?: Array<{ ts: number; level: string; scope: string; msg: string }>
+            error?: string
+          }>
+          openFolder: () => Promise<{ ok: boolean; error?: string }>
+          clear: () => Promise<{ ok: boolean; removed?: number; error?: string }>
+        }
         media: {
           decryptImage: (opts: {
             wxid: string

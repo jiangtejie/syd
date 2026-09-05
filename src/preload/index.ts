@@ -137,6 +137,22 @@ const api = {
       }): Promise<{ ok: boolean; paths?: string[] }> =>
         ipcRenderer.invoke('cs:dialog:pickFiles', opts ?? {})
     },
+    logs: {
+      recent: (opts?: {
+        minLevel?: 'debug' | 'info' | 'warn' | 'error'
+        scope?: string
+        query?: string
+        max?: number
+      }): Promise<{
+        ok: boolean
+        entries?: Array<{ ts: number; level: string; scope: string; msg: string }>
+        error?: string
+      }> => ipcRenderer.invoke('cs:logs:recent', opts ?? {}),
+      openFolder: (): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:logs:openFolder'),
+      clear: (): Promise<{ ok: boolean; removed?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:logs:clear')
+    },
     media: {
       decryptImage: (opts: {
         wxid: string
