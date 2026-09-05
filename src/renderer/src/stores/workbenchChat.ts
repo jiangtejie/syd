@@ -88,7 +88,7 @@ interface WbState {
   remove: (id: number) => Promise<void>
   rename: (id: number, title: string) => Promise<void>
   clear: (id: number) => Promise<void>
-  send: (text: string) => Promise<void>
+  send: (text: string, images?: string[]) => Promise<void>
   /** 编辑后重发:改写最近一轮提问(本地裁剪+引擎 resend) */
   sendEdited: (text: string) => Promise<void>
   retry: () => Promise<void>
@@ -384,7 +384,7 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     })
   },
 
-  send: async (text) => {
+  send: async (text, images) => {
     const { activeId, wxid, busyIds } = get()
     if (!activeId || busyIds[activeId]) return
     const t = cleanStreamText(text.trim())
@@ -403,7 +403,8 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
     if ('Notification' in window && Notification.permission === 'default') {
       void Notification.requestPermission().catch(() => undefined)
     }
-    const res = await wbApi?.send(sid, wxid, t).catch(() => null)
+    const imgList = Array.isArray(images) && images.length > 0 ? images : undefined
+    const res = await wbApi?.send(sid, wxid, t, imgList).catch(() => null)
     // 引擎整轮结束才 resolve;期间失败已由 error 事件处理。此处兜底:忙碌未被事件清除时按失败收尾
     if (res && !res.ok && get().busyIds[sid]) {
       set({

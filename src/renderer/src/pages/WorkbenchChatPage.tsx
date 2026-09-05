@@ -624,17 +624,105 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   }
 
   const canSend = !!activeId && !activeBusy
+  /* 待发附图(粘贴/拖入,压缩后 dataURL;改写模式不支持附图) */
+  const [pendingImgs, setPendingImgs] = useState<string[]>([])
+  const taPlaceholder =
+    activeId === null
+      ? '先新建一个会话'
+      : pendingImgs.length > 0
+        ? '已附图片,补充问题后发送…'
+        : '输入问题…(可粘贴/拖入图片)'
+
+  /** 图片文件 → 压缩 dataURL(最长边 1280,JPEG 质量自适应 ≤约1.6MB) */
+  const compressImage = (file: File): Promise<string | null> =>
+    new Promise((resolve) => {
+      if (!file.type.startsWith('image/')) {
+        resolve(null)
+        return
+      }
+      const reader = new FileReader()
+      reader.onerror = (): void => resolve(null)
+      reader.onload = (): void => {
+        const img = new Image()
+        img.onerror = (): void => resolve(null)
+        img.onload = (): void => {
+          const max = 1280
+          const scale = Math.min(1, max / Math.max(img.width, img.height))
+          const w = Math.max(1, Math.round(img.width * scale))
+          const h = Math.max(1, Math.round(img.height * scale))
+          const canvas = document.createElement('canvas')
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            resolve(null)
+            return
+          }
+          ctx.drawImage(img, 0, 0, w, h)
+          let q = 0.82
+          let url = canvas.toDataURL('image/jpeg', q)
+          while (url.length > 1_600_000 && q > 0.5) {
+            q -= 0.1
+            url = canvas.toDataURL('image/jpeg', q)
+          }
+          resolve(url.length < 2_600_000 ? url : null)
+        }
+        if (typeof reader.result === 'string') img.src = reader.result
+        else resolve(null)
+      }
+      reader.readAsDataURL(file)
+    })
+
+  const addPendingImage = async (file: File): Promise<void> => {
+    if (pendingImgs.length >= 3) {
+      toast.error('最多同时附带 3 张图片')
+      return
+    }
+    if (editingSid === activeId) {
+      toast.error('改写模式下暂不支持附图')
+      return
+    }
+    const url = await compressImage(file)
+    if (!url) {
+      toast.error('图片无效或过大(≤8MB,需可解码)')
+      return
+    }
+    setPendingImgs((prev) => (prev.length >= 3 ? prev : [...prev, url]))
+  }
+
+  const onComposerPaste = async (e: React.ClipboardEvent): Promise<void> => {
+    const item = Array.from(e.clipboardData.items).find((it) => it.type.startsWith('image/'))
+    if (!item) return
+    e.preventDefault()
+    const file = item.getAsFile()
+    if (file) void addPendingImage(file)
+  }
+
+  const onComposerDrop = async (e: React.DragEvent): Promise<void> => {
+    const files = Array.from(e.dataTransfer.files ?? []).filter((f) => f.type.startsWith('image/'))
+    if (files.length === 0) return
+    e.preventDefault()
+    for (const f of files.slice(0, 3 - pendingImgs.length)) void addPendingImage(f)
+  }
+
   const send = (): void => {
     const t = draft.trim()
-    if (!t || !canSend) return
+    if (!canSend) return
+    if (!t) {
+      if (pendingImgs.length === 0) return
+      toast.error('附带图片时请同时输入问题文字')
+      return
+    }
+    const imgs = pendingImgs
     setDraft('')
+    setPendingImgs([])
     stickRef.current = true
     setStick(true)
     // 若用户正在翻更早历史,发送后回到贴底窗口
     setStartIdx(Math.max(0, messages.length - WB_WINDOW))
-    // 编辑态发送 = 改写最近一轮提问(resend),否则普通提问
+    // 编辑态发送 = 改写最近一轮提问(resend),否则普通提问(可附图)
     if (activeId !== null && editingSid === activeId) void store.sendEdited(t)
-    else void store.send(t)
+    else void store.send(t, imgs)
     // 按钮点击路径恢复输入焦点(回车路径焦点本就在输入框)
     requestAnimationFrame(() => taRef.current?.focus())
   }
@@ -1140,7 +1228,16 @@ export default function WorkbenchChatPage(): React.JSX.Element {
 
         {error && <div className="wb-error">✗ {error}</div>}
 
-        <div className="wb-composer">
+        <div
+          className="wb-composer"
+          onPaste={(e) => {
+            void onComposerPaste(e)
+          }}
+          onDrop={(e) => {
+            void onComposerDrop(e)
+          }}
+          onDragOver={(e) => e.preventDefault()}
+        >
           {/* 上下文占用(字符估算):接近预算时提示即将压缩 */}
           {ctxPct > 0 && (
             <div
@@ -1173,10 +1270,26 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               </div>
             </div>
           )}
+          {pendingImgs.length > 0 && (
+            <div className="wb-img-row">
+              {pendingImgs.map((u, i) => (
+                <span key={i} className="wb-img-chip">
+                  <img src={u} alt="" />
+                  <button
+                    type="button"
+                    title="移除"
+                    onClick={() => setPendingImgs((prev) => prev.filter((_, j) => j !== i))}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             ref={taRef}
             className="wb-textarea"
-            placeholder={activeId ? '输入问题…(Enter 发送,Shift+Enter 换行)' : '先新建一个会话'}
+            placeholder={taPlaceholder}
             value={draft}
             rows={1}
             disabled={!activeId}

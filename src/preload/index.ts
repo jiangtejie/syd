@@ -305,8 +305,13 @@ const api = {
         title: string
       ): Promise<{ ok: boolean; id?: number; error?: string }> =>
         ipcRenderer.invoke('cs:wb:create', wxid, title),
-      send: (id: number, wxid: string, text: string): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:wb:send', id, wxid, text),
+      send: (
+        id: number,
+        wxid: string,
+        text: string,
+        images?: string[]
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wb:send', id, wxid, text, images),
       retry: (id: number, wxid: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:wb:retry', id, wxid),
       resend: (id: number, wxid: string, text: string): Promise<{ ok: boolean; error?: string }> =>

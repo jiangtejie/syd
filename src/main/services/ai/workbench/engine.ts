@@ -173,14 +173,28 @@ async function compressHistory(
   }
 }
 
-/** 发送一条工作台消息;wxid 为会话绑定的微信账号(未绑定传空串) */
+/** 发送一条工作台消息;wxid 为会话绑定的微信账号(未绑定传空串);images=本轮附图(data URL) */
 export async function sendWorkbenchMessage(
   sessionId: number,
   wxid: string,
-  text: string
+  text: string,
+  opts: { images?: string[] } = {}
 ): Promise<WbSendResult> {
   const msg = (text || '').trim()
   if (!msg) return { ok: false, error: '消息为空' }
+
+  /** 校验并解析本轮附图(data:image/xxx;base64,…),仅保留合规项 */
+  const images: Array<{ mediaType: string; base64: string }> = []
+  const rawImages = Array.isArray(opts.images) ? opts.images.slice(0, 3) : []
+  let totalLen = 0
+  for (const raw of rawImages) {
+    if (typeof raw !== 'string' || raw.length > 2_600_000) continue
+    const m = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(raw)
+    if (!m) continue
+    totalLen += raw.length
+    if (totalLen > 5_200_000) break
+    images.push({ mediaType: m[1], base64: m[2] })
+  }
   if (running.get(sessionId)?.active) {
     return { ok: false, error: '正在处理中,请等待或先停止' }
   }
@@ -230,6 +244,28 @@ export async function sendWorkbenchMessage(
       emitWorkbenchEvent(sessionId, { type: 'compaction', text: compactText })
     }
     const messages: ModelMessage[] = historyToMessages(rows)
+
+    // 附图:把本轮用户消息(末尾 user 行)替换为多模态 parts(图片仅本轮生效,不入库回看)
+    if (images.length > 0) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i]
+        if (m.role === 'user' && typeof m.content === 'string') {
+          messages[i] = {
+            role: 'user',
+            content: [
+              { type: 'text' as const, text: m.content },
+              ...images.map((img) => ({
+                type: 'file' as const,
+                mediaType: img.mediaType,
+                data: img.base64
+              }))
+            ]
+          } as ModelMessage
+          break
+        }
+      }
+    }
+
     // 上下文占用估算(字符口径,供界面进度提示):压缩后为保留段占比
     const usedChars = messages.reduce((n, m) => {
       const c = typeof m.content === 'string' ? m.content : ''

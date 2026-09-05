@@ -87,8 +87,8 @@ declare global {
             wxid: string,
             usernames: string[]
           ) => Promise<{ ok: boolean; names?: Record<string, string>; error?: string }>
-          startWatch: (wxid: string) => Promise<Result<{}>>
-          stopWatch: (wxid: string) => Promise<Result<{}>>
+          startWatch: (wxid: string) => Promise<{ ok: boolean; error?: string }>
+          stopWatch: (wxid: string) => Promise<{ ok: boolean; error?: string }>
           opsStats: (
             wxid: string,
             rangeDays?: number
@@ -324,7 +324,12 @@ declare global {
             wxid: string,
             title: string
           ) => Promise<{ ok: boolean; id?: number; error?: string }>
-          send: (id: number, wxid: string, text: string) => Promise<{ ok: boolean; error?: string }>
+          send: (
+            id: number,
+            wxid: string,
+            text: string,
+            images?: string[]
+          ) => Promise<{ ok: boolean; error?: string }>
           retry: (id: number, wxid: string) => Promise<{ ok: boolean; error?: string }>
           resend: (
             id: number,

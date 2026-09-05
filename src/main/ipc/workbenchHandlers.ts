@@ -142,14 +142,19 @@ export function registerWorkbenchHandlers(): void {
     }
   })
 
-  ipcMain.handle('cs:wb:send', async (_e, id: number, wxid: string, text: string) => {
-    if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
-    try {
-      return await sendWorkbenchMessage(id, String(wxid || ''), String(text ?? ''))
-    } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+  ipcMain.handle(
+    'cs:wb:send',
+    async (_e, id: number, wxid: string, text: string, images?: string[]) => {
+      if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
+      try {
+        return await sendWorkbenchMessage(id, String(wxid || ''), String(text ?? ''), {
+          images: Array.isArray(images) ? images : []
+        })
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      }
     }
-  })
+  )
 
   ipcMain.handle('cs:wb:retry', async (_e, id: number, wxid: string) => {
     if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
