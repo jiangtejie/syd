@@ -734,6 +734,42 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     }
   }
 
+  /* ── 全局快捷键(本页激活期间):Ctrl+N 新建 / Ctrl+Shift+E 导出 / Ctrl+L 聚焦输入 ── */
+  const shortcutRef = useRef<{
+    promptOpen: boolean
+    create: () => void
+    exportCur: () => Promise<void>
+    focusInput: () => void
+  }>({ promptOpen: false, create: () => {}, exportCur: async () => {}, focusInput: () => {} })
+  // 渲染后同步最新回调(避免 render 期间写 ref)
+  useEffect(() => {
+    shortcutRef.current = {
+      promptOpen: promptState !== null,
+      create: createChat,
+      exportCur: exportCurrent,
+      focusInput: () => taRef.current?.focus()
+    }
+  })
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const k = e.key.toLowerCase()
+      if (k === 'n' && !e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        if (shortcutRef.current.promptOpen) return
+        shortcutRef.current.create()
+      } else if (k === 'e' && e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        void shortcutRef.current.exportCur()
+      } else if (k === 'l' && !e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        shortcutRef.current.focusInput()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   /* ── 会话/消息检索 ── */
   interface SearchHit {
     sessionId: number
@@ -1159,7 +1195,9 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             }}
           />
           <div className="wb-composer-ops">
-            <span className="wb-hint">Enter 发送 · Shift+Enter 换行 · 业务查询只读</span>
+            <span className="wb-hint">
+              Enter 发送 · Shift+Enter 换行 · Ctrl+N 新建 · Ctrl+Shift+E 导出 · Ctrl+L 聚焦输入
+            </span>
             {activeBusy ? (
               <button type="button" className="st-btn" onClick={() => void store.stop()}>
                 停止生成
