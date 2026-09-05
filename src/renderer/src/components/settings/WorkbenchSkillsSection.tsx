@@ -50,9 +50,13 @@ export default function WorkbenchSkillsSection(): React.JSX.Element {
   }
 
   const sizeOf = (n: number): string => (n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`)
+  const MAX_ON = 3
+  const list = skills ?? []
+  const enabledN = list.filter((s) => s.enabled).length
+  const overLimit = enabledN > MAX_ON
 
   return (
-    <div className="st-grid">
+    <div className="st-grid wb-skills-full">
       <SettingsCard
         title="业务技能(SKILL.md)"
         desc="在技能目录放置 skills/名称/SKILL.md(frontmatter 需含 name/description),启用后 AI 会按该技能口径回答(最多同时启用 3 个,全文 ≤6k 字;无代码执行)。新会话即时生效。"
@@ -62,22 +66,23 @@ export default function WorkbenchSkillsSection(): React.JSX.Element {
             打开技能目录
           </button>
           {dir && <span className="st-hint wb-skills-dir">{dir}</span>}
-          {skills !== null && skills.length > 0 && (
-            <span className="wb-skills-count">
-              共 {skills.length} 个 · 已启用 {skills.filter((s) => s.enabled).length}/3
+          {skills !== null && list.length > 0 && (
+            <span className={`wb-skills-count${overLimit ? ' over' : ''}`}>
+              共 {list.length} 个 · 已启用 {enabledN}
+              {overLimit ? `(超过 ${MAX_ON} 个上限,请先停用多余技能)` : `/${MAX_ON}`}
             </span>
           )}
         </div>
         {skills === null && <div className="st-hint">加载中…</div>}
-        {skills !== null && skills.length === 0 && (
+        {skills !== null && list.length === 0 && (
           <div className="st-hint">
             暂无技能。把含 SKILL.md
             的目录放进技能目录后,点“打开技能目录”查看并重启该设置页即可识别。
           </div>
         )}
-        {skills !== null && skills.length > 0 && (
+        {skills !== null && list.length > 0 && (
           <div className="wb-skill-grid">
-            {skills.map((s) => (
+            {list.map((s) => (
               <div key={s.name} className={`wb-skill-card${s.enabled ? ' is-on' : ''}`}>
                 <div className="wb-skill-head">
                   <b className="wb-skill-name" title={s.name}>

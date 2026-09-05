@@ -954,6 +954,11 @@ select.st-input {
 }
 
 /* ── 工作台:业务技能(SKILL.md)网格卡片 ── */
+/* 业务技能独占整行(宽度随窗口自适应),不用双列栅格 */
+.wb-skills-full {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .wb-skills-toolbar {
   flex-wrap: wrap;
   row-gap: 6px;
@@ -973,6 +978,10 @@ select.st-input {
   font-size: 12px;
   color: var(--text-3);
   white-space: nowrap;
+}
+
+.wb-skills-count.over {
+  color: var(--danger);
 }
 
 .wb-skill-grid {

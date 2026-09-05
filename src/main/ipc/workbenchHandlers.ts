@@ -395,9 +395,8 @@ export function registerWorkbenchHandlers(): void {
 
   ipcMain.handle('cs:wb:toggleSkill', (_e, name: string, enabled: boolean) => {
     if (typeof name !== 'string' || !name) return { ok: false as const, error: '参数错误' }
-    return setSkillEnabled(name, !!enabled)
-      ? { ok: true as const }
-      : { ok: false as const, error: '技能不存在' }
+    const r = setSkillEnabled(name, !!enabled)
+    return r.ok ? { ok: true as const } : { ok: false as const, error: r.error ?? '操作失败' }
   })
 
   ipcMain.handle('cs:wb:openSkillsDir', async () => {

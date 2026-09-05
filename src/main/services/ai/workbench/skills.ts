@@ -92,14 +92,24 @@ export function listSkills(): WbSkillInfo[] {
   return out
 }
 
-export function setSkillEnabled(name: string, enabled: boolean): boolean {
+export function setSkillEnabled(name: string, enabled: boolean): { ok: boolean; error?: string } {
   const list = listSkills()
-  if (!list.some((s) => s.name === name)) return false
+  if (!list.some((s) => s.name === name)) return { ok: false, error: '技能不存在' }
   const set = enabledNames()
-  if (enabled) set.add(name)
-  else set.delete(name)
+  if (enabled) {
+    // 与注入逻辑一致:最多同时启用 MAX_ENABLED 个
+    if (set.size >= MAX_ENABLED && !set.has(name)) {
+      return {
+        ok: false,
+        error: `最多同时启用 ${MAX_ENABLED} 个技能,请先停用其他技能再启用「${name}」`
+      }
+    }
+    set.add(name)
+  } else {
+    set.delete(name)
+  }
   setConfig('wb.skills.enabled', [...set].sort().join(','))
-  return true
+  return { ok: true }
 }
 
 /** 读取技能正文(校验通过后) */
