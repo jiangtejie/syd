@@ -181,6 +181,44 @@ function CompactionMarker({ text }: { text: string }): React.JSX.Element {
   )
 }
 
+/** 引用来源条目(meta.evidence 快照:编号 + 工具名 + 行原文) */
+interface WbEvItem {
+  n: number
+  tool: string
+  line: string
+}
+
+/** 引用来源快照区(证据溯源):回答中的 [编号] 标注 → 该编号的工具行快照,可展开查看 */
+function WbEvidenceSources({ items }: { items: WbEvItem[] }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="wb-ev">
+      <button
+        type="button"
+        className="wb-ev-toggle"
+        aria-expanded={open}
+        title="展开查看本段回答引用的工具结果原文行"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="wb-ev-icon">◇</span>
+        引用来源 · {items.length} 处
+        <span className={`wb-ev-caret${open ? ' is-open' : ''}`}>▸</span>
+      </button>
+      {open && (
+        <div className="wb-ev-list">
+          {items.map((it) => (
+            <div className="wb-ev-item" key={it.n}>
+              <span className="wb-ev-n">{it.n}</span>
+              <span className="wb-ev-tool">{it.tool}</span>
+              <span className="wb-ev-line">{it.line}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   const isUser = msg.role === 'user'
   const isError = msg.kind === 'error'
@@ -202,6 +240,27 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
     !isUser && !isError && typeof meta?.reasoningMs === 'number' ? meta.reasoningMs : undefined
   const t = meta?.tokens as { input?: number; output?: number } | undefined
   const hasTokens = !!t && (typeof t.input === 'number' || typeof t.output === 'number')
+  /** 引用来源快照(meta.evidence → 校验后的条目列表) */
+  const evItems = useMemo(() => {
+    const raw = meta?.evidence
+    if (!Array.isArray(raw)) return []
+    const out: WbEvItem[] = []
+    for (const it of raw) {
+      if (out.length >= 12) break
+      if (!it || typeof it !== 'object') continue
+      const r = it as Record<string, unknown>
+      if (
+        typeof r.n === 'number' &&
+        typeof r.tool === 'string' &&
+        r.tool.length > 0 &&
+        typeof r.line === 'string' &&
+        r.line.length > 0
+      ) {
+        out.push({ n: r.n, tool: r.tool, line: r.line })
+      }
+    }
+    return out
+  }, [meta])
 
   const onCopy = (): void => {
     if (copied) return
@@ -269,6 +328,7 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
             <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
               {content}
             </ReactMarkdown>
+            {evItems.length > 0 && <WbEvidenceSources items={evItems} />}
             {hasTokens && (
               <div className="wb-tokens-line">
                 {typeof t.input === 'number' ? `输入 ${t.input}` : ''}

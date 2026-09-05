@@ -18,6 +18,20 @@ interface WbToolSpec {
   approval: boolean
 }
 
+/** 引用行编号(本回合内跨工具累加,行号与模型看到的文本前缀一一对应) */
+interface WbLineState {
+  next: number
+  max: number
+}
+
+/** 工具输出行 → 行级证据条目(引擎收集,供回答引用解析落库) */
+export interface WbEvidenceRow {
+  n: number
+  tool: string
+  /** 行原文(≤240 字快照) */
+  line: string
+}
+
 /** 常驻组:微信业务(绑定账号) */
 const BUSINESS_TOOLS = [
   'query_issues',
@@ -91,7 +105,9 @@ function toolFromDef(
   wxid: string,
   sessionId: number,
   spec: WbToolSpec,
-  approvalTimeoutMs: number
+  approvalTimeoutMs: number,
+  lines: WbLineState,
+  onRow?: (row: WbEvidenceRow) => void
 ): Tool {
   return tool({
     description: def.description,
@@ -109,7 +125,8 @@ function toolFromDef(
       }
       try {
         const result = await def.run({ wxid, sessionId: String(sessionId) }, input)
-        return result ?? '(无返回)'
+        const text = result ?? '(无返回)'
+        return evidenceNumbered(name, text, lines, onRow)
       } catch (e) {
         return `工具执行失败:${e instanceof Error ? e.message : String(e)}`
       }
@@ -117,20 +134,50 @@ function toolFromDef(
   })
 }
 
+/** 证据溯源 MVP:多行工具结果为每行注入 [n] 前缀(模型据此引用,编号与回调行一致) */
+function evidenceNumbered(
+  tool: string,
+  text: string,
+  lines: WbLineState,
+  onRow?: (row: WbEvidenceRow) => void
+): string {
+  const parts = text.split('\n')
+  const nonEmpty = parts.filter((p) => p.trim().length > 0)
+  if (nonEmpty.length < 2) return text
+  const out: string[] = []
+  for (const raw of parts) {
+    const t = raw.trim()
+    if (!t) {
+      out.push('')
+      continue
+    }
+    if (lines.next <= lines.max) {
+      out.push(`[${lines.next}] ${t}`)
+      if (onRow) onRow({ n: lines.next, tool, line: t.slice(0, 240) })
+      lines.next += 1
+    } else {
+      out.push(t)
+    }
+  }
+  return out.join('\n')
+}
+
 /** 构建工作台 ToolSet(引擎每轮使用;wxid/sessionId 由引擎闭包注入) */
 export function buildWorkbenchToolSet(
   wxid: string,
   sessionId: number,
-  opts: { approvalTimeoutMs?: number } = {}
+  opts: { approvalTimeoutMs?: number; onEvidenceRow?: (row: WbEvidenceRow) => void } = {}
 ): ToolSet {
   const timeout = opts.approvalTimeoutMs ?? 60_000
+  /** 本轮行号状态:跨工具累加(与模型看到的 [n] 前缀一致);上限 200 行 */
+  const lines: WbLineState = { next: 1, max: 200 }
   const out: ToolSet = {}
   for (const name of workbenchToolNames()) {
     const spec = resolveSpec(name)
     if (!spec) continue
     const def = spec.resolve()
     if (!def) continue
-    out[name] = toolFromDef(name, def, wxid, sessionId, spec, timeout)
+    out[name] = toolFromDef(name, def, wxid, sessionId, spec, timeout, lines, opts.onEvidenceRow)
   }
   return out
 }

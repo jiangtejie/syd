@@ -10,7 +10,7 @@ import {
   touchChat
 } from '../../../db/repos/chatRepo'
 import { buildWorkbenchSystem } from './context'
-import { buildWorkbenchToolSet } from './tools'
+import { buildWorkbenchToolSet, type WbEvidenceRow } from './tools'
 import { emitWorkbenchEvent } from './events'
 
 /**
@@ -56,6 +56,24 @@ function cleanModelText(s: string): string {
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
   /* eslint-enable no-control-regex */
+}
+
+/** 段落引用编号 → 证据快照条目(仅解析本回合真实存在的行号;排除 markdown 链接 [n](url)) */
+function citedItems(text: string, pool: WbEvidenceRow[]): WbEvidenceRow[] {
+  const out: WbEvidenceRow[] = []
+  const seen = new Set<number>()
+  const re = /\[(\d{1,3})\](?!\()/g
+  for (const m of text.matchAll(re)) {
+    const n = Number(m[1])
+    if (seen.has(n)) continue
+    seen.add(n)
+    const row = pool.find((p) => p.n === n)
+    if (row) {
+      out.push(row)
+      if (out.length >= 12) break
+    }
+  }
+  return out
 }
 
 interface RunHandle {
@@ -277,7 +295,13 @@ export async function sendWorkbenchMessage(
       capChars: MAX_CHARS
     })
     const system = buildWorkbenchSystem(boundWxid, { summary })
-    const toolSet = buildWorkbenchToolSet(boundWxid, sessionId)
+    /** 本回合行级证据池:编号与模型看到的 [n] 前缀一致,供回答引用解析 */
+    const evPool: WbEvidenceRow[] = []
+    const toolSet = buildWorkbenchToolSet(boundWxid, sessionId, {
+      onEvidenceRow: (row) => {
+        if (evPool.length < 200) evPool.push(row)
+      }
+    })
 
     // 本轮时间线日志:正文按工具边界分段,工具痕迹带参数/结果;
     // 只在整轮成功时落库(失败/中止不写半截痕迹)
@@ -452,6 +476,9 @@ export async function sendWorkbenchMessage(
             reasonPlaced = true
           }
           if (isLast) Object.assign(meta, tokensMeta)
+          // 证据溯源:该段落引用的工具行快照(编号 → 原文行),随消息落库可回看
+          const ev = citedItems(e.text ?? '', evPool)
+          if (ev.length > 0) meta.evidence = ev
           lastId = appendChatMessage(sessionId, 'assistant', 'text', e.text ?? '', meta)
         } else {
           appendChatMessage(sessionId, 'assistant', 'tool_call', '', {
