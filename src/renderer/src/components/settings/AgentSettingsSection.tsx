@@ -3,6 +3,7 @@ import type { AiAgent, AiAgentInput, AiStyle } from '../../../../shared/types'
 import { toast } from '../../stores/toast'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { avatarColor } from '../../lib/ui'
+import { setAgentFormDirty } from './agentDirty'
 
 /** 变更成功后同步工作台 store（对话页常驻挂载，仅首挂载拉取会陈旧/悬空） */
 function syncWorkbenchAgents(): void {
@@ -84,6 +85,14 @@ function AgentSettingsSection(): React.JSX.Element {
   }, [reload])
 
   const dirty = snapshot !== snapshotOf(name, description, style, prompt)
+
+  // 同步模块级脏标记(供设置页板块切换拦截);卸载时复位,避免残留误拦
+  useEffect(() => {
+    setAgentFormDirty(dirty)
+    return () => {
+      setAgentFormDirty(false)
+    }
+  }, [dirty])
 
   const save = async (): Promise<void> => {
     if (!agentApi || !person?.id) {

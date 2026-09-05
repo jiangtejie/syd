@@ -361,13 +361,6 @@
 }
 
 /* ── 工具卡与审批(审批固定在输入区上方) ── */
-.wb-toolcards {
-  margin: 2px 0 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .wb-toolcard {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);

@@ -646,9 +646,3 @@ export function ensureWorkbenchEvents(): void {
   eventsBound = true
   wbApi?.onEvent?.(handleWbEvent)
 }
-
-/** 兼容旧调用(页面卸载不再摘除) */
-export function subscribeWorkbenchEvents(): () => void {
-  ensureWorkbenchEvents()
-  return (): void => {}
-}

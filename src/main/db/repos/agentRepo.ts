@@ -119,25 +119,3 @@ export function saveAgent(input: AiAgentInput): AiAgent {
   if (!getConfig(DEFAULT_AGENT_ID_KEY)) setConfig(DEFAULT_AGENT_ID_KEY, id)
   return created
 }
-
-/** 删除智能体；最后一个不可删除；删掉的是默认时自动把默认指到剩余首个 */
-export function removeAgent(id: string): { ok: true; defaultId: string | null } {
-  const agents = listAgents()
-  const target = agents.find((a) => a.id === id)
-  if (!target) throw new Error('智能体不存在')
-  if (agents.length <= 1) throw new Error('至少保留一个智能体')
-  getDb().prepare(`DELETE FROM ai_agent WHERE id = ?`).run(id)
-  const rest = agents.filter((a) => a.id !== id)
-  const defaultId = getConfig(DEFAULT_AGENT_ID_KEY)
-  if (defaultId === id || !rest.some((a) => a.id === defaultId)) {
-    setConfig(DEFAULT_AGENT_ID_KEY, rest[0].id)
-    return { ok: true, defaultId: rest[0].id }
-  }
-  return { ok: true, defaultId }
-}
-
-export function setDefaultAgent(id: string): void {
-  const agents = listAgents()
-  if (!agents.some((a) => a.id === id)) throw new Error('智能体不存在')
-  setConfig(DEFAULT_AGENT_ID_KEY, id)
-}

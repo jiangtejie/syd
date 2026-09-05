@@ -281,8 +281,6 @@ declare global {
         agent: {
           list: () => Promise<Result<{ agents?: AiAgent[]; defaultId?: string | null }>>
           save: (input: AiAgentInput) => Promise<Result<{ agent?: AiAgent }>>
-          remove: (id: string) => Promise<{ ok: boolean; error?: string }>
-          setDefault: (id: string) => Promise<{ ok: boolean; error?: string }>
         }
         app: {
           onNavigate: (callback: (page: string) => void) => () => void

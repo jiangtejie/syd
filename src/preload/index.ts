@@ -349,11 +349,7 @@ const api = {
         error?: string
       }> => ipcRenderer.invoke('cs:agent:list'),
       save: (input: AiAgentInput): Promise<{ ok: boolean; agent?: AiAgent; error?: string }> =>
-        ipcRenderer.invoke('cs:agent:save', input),
-      remove: (id: string): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:agent:remove', id),
-      setDefault: (id: string): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:agent:setDefault', id)
+        ipcRenderer.invoke('cs:agent:save', input)
     },
     app: {
       /** 菜单/托盘等触发的页面导航（如 Ctrl+, 打开设置） */

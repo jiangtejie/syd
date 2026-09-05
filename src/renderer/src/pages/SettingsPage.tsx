@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SendStatusInfo } from '../../../shared/types'
 import WechatKeySection from '../components/settings/WechatKeySection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
+import { agentFormDirty } from '../components/settings/agentDirty'
 import WorkbenchApprovalSection from '../components/settings/WorkbenchApprovalSection'
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
 import { ImSection } from './ImPage'
@@ -281,6 +282,14 @@ function SettingsPage(): React.JSX.Element {
 
   /** 切换设置 Tab 并记忆选择（下次进入直接定位） */
   const switchTab = (key: SettingsTab): void => {
+    // 人设存在未保存修改时先确认,避免切换板块丢失编辑
+    if (
+      key !== tab &&
+      agentFormDirty() &&
+      !window.confirm('智能体人设还有未保存的修改,切换板块将丢失。确定继续?')
+    ) {
+      return
+    }
     setTab(key)
     try {
       localStorage.setItem(SETTINGS_TAB_KEY, key)

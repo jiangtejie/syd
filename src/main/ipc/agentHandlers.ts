@@ -1,16 +1,11 @@
 import { ipcMain } from 'electron'
 import type { AiAgentInput } from '../../shared/types'
-import {
-  getDefaultAgent,
-  listAgents,
-  removeAgent,
-  saveAgent,
-  setDefaultAgent
-} from '../db/repos/agentRepo'
+import { getDefaultAgent, listAgents, saveAgent } from '../db/repos/agentRepo'
 
 /**
- * 智能体（客服人设）IPC。
- * cs:agent:list / save / remove / setDefault / default
+ * 智能体（统一人设）IPC。
+ * cs:agent:list / save
+ * 收敛说明:全端共用单条人设,「删除/设默认/多智能体」入口已下线(数据层函数已随 UI 移除)。
  */
 
 export function registerAgentHandlers(): void {
@@ -29,25 +24,6 @@ export function registerAgentHandlers(): void {
     try {
       const agent = saveAgent(input)
       return { ok: true as const, agent }
-    } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
-    }
-  })
-
-  ipcMain.handle('cs:agent:remove', (_e, id: string) => {
-    if (!id) return { ok: false as const, error: '参数错误' }
-    try {
-      return removeAgent(id)
-    } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
-    }
-  })
-
-  ipcMain.handle('cs:agent:setDefault', (_e, id: string) => {
-    if (!id) return { ok: false as const, error: '参数错误' }
-    try {
-      setDefaultAgent(id)
-      return { ok: true as const }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }
