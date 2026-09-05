@@ -425,6 +425,67 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const [stick, setStick] = useState(true)
   const stickRef = useRef(true)
 
+  /* ── 选区快捷条(追问这段/复制):作用于气泡正文选区 ── */
+  const [quickAsk, setQuickAsk] = useState<{ x: number; y: number; text: string } | null>(null)
+  const [quickCopied, setQuickCopied] = useState(false)
+  useEffect(() => {
+    const updateFromSelection = (): void => {
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
+      const txt = sel
+        .toString()
+        .replace(/\u00a0/g, ' ')
+        .trim()
+      if (txt.length < 2) return
+      let node: Node | null = sel.anchorNode
+      let inBubble = false
+      for (let i = 0; i < 5 && node; i++) {
+        if (node instanceof Element) {
+          if (node.classList.contains('wb-bubble')) {
+            inBubble = true
+            break
+          }
+          node = node.parentElement
+        } else {
+          node = node.parentElement
+        }
+      }
+      if (!inBubble) return
+      const rect = sel.getRangeAt(0).getBoundingClientRect()
+      if (!rect || (rect.width <= 0 && rect.height <= 0)) return
+      const cx = Math.min(Math.max(rect.left + rect.width / 2, 80), window.innerWidth - 80)
+      const cy = Math.max(rect.top - 42, 8)
+      setQuickAsk({ x: cx, y: cy, text: txt })
+    }
+    const onMouseUp = (): void => {
+      window.setTimeout(updateFromSelection, 0)
+    }
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (
+        e.shiftKey &&
+        (e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight' ||
+          e.key === 'ArrowUp' ||
+          e.key === 'ArrowDown')
+      ) {
+        window.setTimeout(updateFromSelection, 0)
+      }
+    }
+    const onPointerDown = (e: PointerEvent): void => {
+      const t = e.target as Element | null
+      if (t && t.closest('.wb-quickbar')) return
+      setQuickAsk(null)
+    }
+    document.addEventListener('mouseup', onMouseUp)
+    document.addEventListener('keyup', onKeyUp)
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      document.removeEventListener('mouseup', onMouseUp)
+      document.removeEventListener('keyup', onKeyUp)
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [])
+
   /** 消息窗口化:只渲染最近 WB_WINDOW 条,防止超长会话整表重排;向上可翻更早 */
   // lazy 初始化:切页再回来时组件状态重置,首帧即按当前消息数截尾,避免先全量渲染再校正
   const [startIdx, setStartIdx] = useState(() => Math.max(0, messages.length - WB_WINDOW))
@@ -607,6 +668,38 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     requestAnimationFrame(() => {
       growTextarea()
       taRef.current?.focus()
+    })
+  }
+
+  /** 选区追问:把选中内容以引用块带入输入框,用户补充提问后发送 */
+  const quoteSelection = (): void => {
+    if (!quickAsk) return
+    const block = quickAsk.text
+      .split('\n')
+      .map((l) => `> ${l}`)
+      .join('\n')
+    const base = draft.trim()
+    const next = base ? `${base}\n\n${block}\n\n` : `${block}\n\n`
+    setDraft(next)
+    setQuickAsk(null)
+    requestAnimationFrame(() => {
+      growTextarea()
+      const el = taRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    })
+  }
+
+  /** 选区复制 */
+  const copySelection = (): void => {
+    if (!quickAsk) return
+    void copyToClipboard(quickAsk.text).then((ok) => {
+      if (ok) {
+        setQuickCopied(true)
+        window.setTimeout(() => setQuickCopied(false), 1500)
+      }
     })
   }
 
@@ -1120,6 +1213,22 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 选区快捷条:追问这段 / 复制 */}
+      {quickAsk && (
+        <div
+          className="wb-quickbar"
+          style={{ left: quickAsk.x, top: quickAsk.y }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <button type="button" className="wb-quickbar-btn" onClick={quoteSelection}>
+            ⛭ 追问这段
+          </button>
+          <button type="button" className="wb-quickbar-btn" onClick={copySelection}>
+            {quickCopied ? '✓ 已复制' : '⧉ 复制'}
+          </button>
         </div>
       )}
     </div>

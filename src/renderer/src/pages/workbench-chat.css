@@ -719,6 +719,9 @@
 /* ── 对话交互细化：消息入场 / 长文本断行 / 审批提示 ── */
 .wb-bubble {
   overflow-wrap: anywhere;
+  /* 正文可选中(支持选区追问/复制;全局 user-select:none 下恢复) */
+  user-select: text;
+  cursor: text;
 }
 
 .wb-plain {
@@ -1332,4 +1335,39 @@
   color: var(--warn-text);
   border-radius: 3px;
   padding: 0 2px;
+}
+
+/* 选区快捷条(追问这段/复制) */
+.wb-quickbar {
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  box-shadow: 0 3px 14px rgba(31, 35, 41, 0.16);
+  user-select: none;
+}
+
+.wb-quickbar-btn {
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--text-2);
+  padding: 4px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wb-quickbar-btn:hover {
+  background: var(--brand-soft);
+  color: var(--brand);
 }
