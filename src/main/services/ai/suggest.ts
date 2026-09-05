@@ -11,6 +11,7 @@ import { getConfig } from '../../db/repos/config'
 import { runSuggestionAgent, toolsInstructionText } from './agentLoop'
 import { collectLocalFacts } from './agentTools'
 import { memoSystemBlock } from './memo'
+import { describeModelError } from './modelErrors'
 
 /**
  * AI 建议生成（T7，方案 §4.4）。
@@ -155,7 +156,7 @@ export async function generateSuggestions(
       return { candidates: [], llm: true, error: 'AI 未返回有效候选，请点击重新生成或稍后重试' }
     } catch (e) {
       console.warn('[ai] llm generate failed', e)
-      const detail = e instanceof Error ? e.message : String(e)
+      const detail = describeModelError(e) || (e instanceof Error ? e.message : String(e))
       return { candidates: [], llm: false, error: `AI 生成失败：${detail}` }
     }
   }
@@ -180,7 +181,7 @@ export async function generateSuggestions(
     }
   } catch (e) {
     console.warn('[ai] agent generate failed', e)
-    const detail = e instanceof Error ? e.message : String(e)
+    const detail = describeModelError(e) || (e instanceof Error ? e.message : String(e))
     return { candidates: [], llm: false, error: `AI 生成失败：${detail}` }
   }
 }

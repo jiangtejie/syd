@@ -12,6 +12,7 @@ import {
 import { buildWorkbenchSystem } from './context'
 import { buildWorkbenchToolSet, type WbEvidenceRow } from './tools'
 import { emitWorkbenchEvent } from './events'
+import { describeModelError } from '../modelErrors'
 
 /**
  * 工作台引擎(AI SDK 原生工具循环;不自研 loop/协议/流式)。
@@ -501,7 +502,8 @@ export async function sendWorkbenchMessage(
       emitWorkbenchEvent(sessionId, { type: 'status', text: '已停止' })
       return { ok: true }
     }
-    const errMsg = e instanceof Error ? e.message : String(e)
+    const rawErr = e instanceof Error ? e.message : String(e)
+    const errMsg = describeModelError(e) || rawErr
     recordRel(false, errMsg)
     appendChatMessage(sessionId, 'assistant', 'error', errMsg)
     emitWorkbenchEvent(sessionId, { type: 'error', text: errMsg })

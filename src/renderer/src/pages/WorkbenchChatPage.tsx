@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { ChatMsgItem } from '../../../shared/types'
+import { toolCnName } from '../../../shared/types'
 import {
   cleanStreamText,
   ensureWorkbenchEvents,
@@ -99,6 +100,11 @@ function fmtDur(ms: number): string {
   return `${Math.floor(s / 60)} 分 ${s % 60} 秒`
 }
 
+/** 数字 → 千分位(大数值更易读) */
+function fmtThousand(n: number): string {
+  return Math.round(n).toLocaleString('zh-CN')
+}
+
 /**
  * 常用业务提问预设:点击把规范句式填入输入框(工作台按绑定账号实际数据作答)。
  * 模板与 SKILL.md 口径解耦,只负责把问题问清楚。
@@ -186,26 +192,6 @@ interface WbEvItem {
   n: number
   tool: string
   line: string
-}
-
-/** 工具英文名 → 中文短名(展示友好;无映射时回退原英文名) */
-const TOOL_CN_NAMES: Record<string, string> = {
-  query_issues: '查询问题',
-  query_group_issues: '查询群问题',
-  search_issue_history: '搜索问题历史',
-  monitor_summary: '监控概览',
-  customer_lookup: '客户资料',
-  recent_messages: '最近消息',
-  list_team_members: '团队名单',
-  software_status: '软件状态',
-  data_scope: '数据范围',
-  bi_stats: '数据统计',
-  export_preview: '导出预览',
-  im_channels_status: 'IM 通道状态'
-}
-
-function toolCnName(name: string): string {
-  return TOOL_CN_NAMES[name] ?? name
 }
 
 /** 引用来源快照区(证据溯源):回答中的 [编号] 标注 → 该编号的工具行快照,可展开查看 */
@@ -352,10 +338,10 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
             </ReactMarkdown>
             {evItems.length > 0 && <WbEvidenceSources items={evItems} />}
             {hasTokens && (
-              <div className="wb-tokens-line">
-                {typeof t.input === 'number' ? `输入 ${t.input}` : ''}
-                {typeof t.input === 'number' && typeof t.output === 'number' ? ' / ' : ''}
-                {typeof t.output === 'number' ? `输出 ${t.output}` : ''} tokens
+              <div className="wb-tokens-line" title="本段模型 Token 用量">
+                输入 {fmtThousand(t.input ?? 0)}
+                {typeof t.input === 'number' && typeof t.output === 'number' ? ' · ' : ''}
+                {typeof t.output === 'number' ? `输出 ${fmtThousand(t.output)}` : ''}
               </div>
             )}
           </>

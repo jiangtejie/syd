@@ -18,6 +18,7 @@ import {
   touchChat
 } from '../../../db/repos/chatRepo'
 import { findTool, schemaFromParams, type ToolCtx, type ToolDef } from './skills'
+import { describeModelError } from '../modelErrors'
 import { findSoftwareTool } from '../cap/software'
 import { expandMounted, capNameOfDef, isCapDisabled } from '../cap/registry'
 import {
@@ -598,7 +599,7 @@ async function runTurn(opts: {
     touchChat(sessionId)
     sendEvent(wxid, { type: 'done', chatId: sessionId, messageId })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
+    const msg = describeModelError(e) || (e instanceof Error ? e.message : String(e))
     appendChatMessage(sessionId, 'assistant', 'error', msg)
     sendEvent(wxid, { type: 'error', chatId: sessionId, text: msg })
   } finally {
@@ -896,7 +897,7 @@ async function runTurnNative(opts: {
       })
       return
     }
-    const msg = e instanceof Error ? e.message : String(e)
+    const msg = describeModelError(e) || (e instanceof Error ? e.message : String(e))
     appendChatMessage(sessionId, 'assistant', 'error', msg)
     sendEvent(wxid, { type: 'error', chatId: sessionId, text: msg })
   } finally {

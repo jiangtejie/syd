@@ -32,6 +32,7 @@ import {
   skillsRoot
 } from '../services/ai/workbench/skills'
 import { readMemoNotes, writeMemoNotes } from '../services/ai/memo'
+import { toolCnName } from '../../shared/types'
 
 /** AI 工作台 IPC(会话复用 chat 体系,存储 wxid 带 wb: 前缀与 IM 会话隔离;事件通道 ai:wb)。 */
 
@@ -68,9 +69,11 @@ function sessionToMarkdown(sessionId: number): { title: string; md: string } | {
     if (r.role === 'user') {
       lines.push(`## 🙋 我`, '', r.content, '', '---', '')
     } else if (r.kind === 'tool_call') {
-      const name = typeof meta?.name === 'string' ? meta.name : '工具'
+      const nameRaw = typeof meta?.name === 'string' && meta.name ? meta.name : ''
+      const nameShow = nameRaw ? toolCnName(nameRaw) : '工具'
+      const nameRawSuffix = nameRaw && nameRaw !== nameShow ? `(${nameRaw})` : ''
       const fail = meta?.status === 'fail'
-      lines.push(`### 🔧 工具调用:${name}${fail ? '(失败)' : ''}`, '')
+      lines.push(`### 🔧 工具调用:${nameShow}${nameRawSuffix}${fail ? '(失败)' : ''}`, '')
       if (typeof meta?.args === 'string' && meta.args) {
         lines.push('- 参数', '', '```json', meta.args, '```', '')
       }

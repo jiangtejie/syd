@@ -479,3 +479,24 @@ export interface ImChannelAccountInput {
   appSecret: string
   enabled?: boolean
 }
+
+// ── 工作台工具名展示(渲染端工具卡/证据来源/审批条 + 主进程导出 Markdown 共用) ──
+/** 工具英文标识 → 中文短名(无映射回退英文原标识) */
+export const TOOL_CN_NAMES: Record<string, string> = {
+  query_issues: '查询问题',
+  query_group_issues: '查询群问题',
+  search_issue_history: '搜索问题历史',
+  monitor_summary: '监控概览',
+  customer_lookup: '客户资料',
+  recent_messages: '最近消息',
+  list_team_members: '团队名单',
+  software_status: '软件状态',
+  data_scope: '数据范围',
+  bi_stats: '数据统计',
+  export_preview: '导出预览',
+  im_channels_status: 'IM 通道状态'
+}
+
+export function toolCnName(name: string): string {
+  return TOOL_CN_NAMES[name] ?? name
+}
