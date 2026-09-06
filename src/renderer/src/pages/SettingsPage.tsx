@@ -12,6 +12,7 @@ import { LogSection } from '../components/settings/LogSection'
 import { SettingsCard, SwitchRow, FieldRow } from '../components/settings/ui'
 import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
+import { confirmAsk } from '../stores/confirmDialog'
 import { setIssueAlertPref } from '../lib/issueAlert'
 import './settings.css'
 
@@ -326,20 +327,26 @@ function SettingsPage(): React.JSX.Element {
 
   /** 切换设置 Tab 并记忆选择（下次进入直接定位） */
   const switchTab = (key: SettingsTab): void => {
+    const go = (): void => {
+      setTab(key)
+      try {
+        localStorage.setItem(SETTINGS_TAB_KEY, key)
+      } catch {
+        /* localStorage 不可用（隐私模式等）时仅本次生效 */
+      }
+    }
     // 人设存在未保存修改时先确认,避免切换板块丢失编辑
-    if (
-      key !== tab &&
-      agentFormDirty() &&
-      !window.confirm('智能体人设还有未保存的修改,切换板块将丢失。确定继续?')
-    ) {
+    if (key !== tab && agentFormDirty()) {
+      void confirmAsk({
+        title: '切换设置板块',
+        message: '智能体人设还有未保存的修改,切换板块将丢失。确定继续?',
+        confirmText: '仍要切换'
+      }).then((ok) => {
+        if (ok) go()
+      })
       return
     }
-    setTab(key)
-    try {
-      localStorage.setItem(SETTINGS_TAB_KEY, key)
-    } catch {
-      /* localStorage 不可用（隐私模式等）时仅本次生效 */
-    }
+    go()
   }
 
   const save = async (keys: Array<keyof FormState>): Promise<void> => {

@@ -9,6 +9,7 @@ import ExportPage from './pages/ExportPage'
 import SettingsPage from './pages/SettingsPage'
 import TitleBar from './components/TitleBar'
 import ToastHost from './components/ToastHost'
+import ConfirmHost from './components/ConfirmHost'
 import ErrorBoundary from './components/ErrorBoundary'
 import { installIssueAlertSound } from './lib/issueAlert'
 import './pages/shell.css'
@@ -279,6 +280,7 @@ function App(): React.JSX.Element {
           </div>
         </div>
         <ToastHost />
+        <ConfirmHost />
       </div>
     </ErrorBoundary>
   )

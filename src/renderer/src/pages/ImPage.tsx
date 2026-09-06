@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ImChannelAccount, ImChannelAccountInput, KeyAccountInfo } from '../../../shared/types'
 import { SettingsCard, SwitchRow } from '../components/settings/ui'
 import { toast } from '../stores/toast'
+import { confirmAsk } from '../stores/confirmDialog'
 import './im.css'
 
 /**
@@ -220,7 +221,13 @@ export function ImSection(): React.JSX.Element {
     }
   }
   const remove = async (a: ImChannelAccount): Promise<void> => {
-    if (!window.confirm(`删除 IM 账号「${a.name}」?`)) return
+    const ok = await confirmAsk({
+      title: '删除 IM 账号',
+      message: `删除 IM 账号「${a.name}」?其会话映射与接收文件索引将一并删除。`,
+      confirmText: '删除',
+      danger: true
+    })
+    if (!ok) return
     const res = await imApi?.remove(a.id).catch(() => null)
     if (res?.ok) {
       toast.success('已删除')

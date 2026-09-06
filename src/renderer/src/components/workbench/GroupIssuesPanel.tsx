@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
+import { confirmAsk } from '../../stores/confirmDialog'
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
@@ -229,11 +230,14 @@ function GroupIssuesPanel(): React.JSX.Element {
     if (analyzing) return
     const openCount = issues.filter((i) => i.status === 'open').length
     if (openCount > 0) {
-      const ok = window.confirm(
-        `将先清空本群 ${openCount} 条待处理/跟进中记录(含证据),再按近 ${days} 天重新提取。\n已解决、已搁置与已归档的历史记录会保留。继续?`
-      )
-      if (!ok) return
-      void analyzeNow({ reset: true })
+      void confirmAsk({
+        title: '重新分析本群',
+        message: `将先清空本群 ${openCount} 条待处理/跟进中记录(含证据),再按近 ${days} 天重新提取。已解决、已搁置与已归档的历史记录会保留。`,
+        confirmText: '清空并重析',
+        danger: true
+      }).then((ok) => {
+        if (ok) void analyzeNow({ reset: true })
+      })
     } else {
       void analyzeNow()
     }
@@ -242,10 +246,14 @@ function GroupIssuesPanel(): React.JSX.Element {
   /** 「清空本群」:删除该群全部记录并自动重新提取(含历史,不可恢复) */
   const onClearAll = (): void => {
     if (analyzing) return
-    const ok = window.confirm(
-      `将删除本群全部问题记录(共 ${issues.length} 条,含已解决/已归档与证据消息),此操作不可恢复。\n确认后将立即按近 ${days} 天从零重新分析提取。确认?`
-    )
-    if (ok) void clearGroupAll()
+    void confirmAsk({
+      title: '清空本群记录',
+      message: `将删除本群全部问题记录(共 ${issues.length} 条,含已解决/已归档与证据消息),此操作不可恢复。确认后将立即按近 ${days} 天从零重新分析提取。`,
+      confirmText: '清空并重析',
+      danger: true
+    }).then((ok) => {
+      if (ok) void clearGroupAll()
+    })
   }
 
   const locate = (ts: number): void => {

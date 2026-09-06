@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from '../../stores/toast'
+import { confirmAsk } from '../../stores/confirmDialog'
 
 /**
  * 工作台侧栏「收到的渠道文件」:飞书等外部渠道接收并落盘的图片/文件,
@@ -103,7 +104,13 @@ export function ChannelFileTray(): React.JSX.Element {
   }
 
   const removeOne = async (f: FileItem): Promise<void> => {
-    if (!window.confirm(`删除「${f.fileName}」?文件将从磁盘移除,不可恢复。`)) return
+    const ok = await confirmAsk({
+      title: '删除文件',
+      message: `删除「${f.fileName}」?文件将从磁盘移除,不可恢复。`,
+      confirmText: '删除',
+      danger: true
+    })
+    if (!ok) return
     const r = await filesApi?.remove([f.id]).catch(() => null)
     if (r?.ok) {
       toast.success('已删除')
@@ -118,7 +125,13 @@ export function ChannelFileTray(): React.JSX.Element {
     if (list.length === 0) return toast.error('当前筛选下没有文件')
     const label =
       accountId !== null ? `该账号的 ${list.length} 个文件` : `全部 ${list.length} 个文件`
-    if (!window.confirm(`删除${label}?文件将从磁盘移除,不可恢复。`)) return
+    const ok = await confirmAsk({
+      title: '批量删除文件',
+      message: `删除${label}?文件将从磁盘移除,不可恢复。`,
+      confirmText: '删除',
+      danger: true
+    })
+    if (!ok) return
     const r = await filesApi?.remove(list.map((f) => f.id)).catch(() => null)
     if (r?.ok) toast.success(`已删除 ${r.removed ?? list.length} 个文件`)
     else toast.error((r as { error?: string } | null)?.error || '删除失败')

@@ -1897,3 +1897,32 @@
   border-radius: 999px;
   background: var(--bg);
 }
+
+/* ══════════ 可达性:触屏/键盘下操作可见 + 命中区加大 ══════════ */
+.wb-side-item:focus-within .wb-side-ops,
+.wb-side-item:hover .wb-side-ops {
+  display: flex;
+}
+
+.wb-side-ops button {
+  min-width: 22px;
+  min-height: 22px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.wb-side-ops button:focus-visible {
+  outline: 2px solid var(--brand-line);
+  color: var(--brand);
+}
+
+@media (pointer: coarse) {
+  .wb-side-ops {
+    display: flex;
+  }
+  .wb-bubble-copy,
+  .wb-msg-edit {
+    opacity: 0.85;
+  }
+}

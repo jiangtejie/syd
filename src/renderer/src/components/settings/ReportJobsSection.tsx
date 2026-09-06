@@ -12,6 +12,7 @@ import {
 } from '../../../../shared/types'
 import { SettingsCard, SwitchRow, FieldRow } from './ui'
 import { toast } from '../../stores/toast'
+import { confirmAsk } from '../../stores/confirmDialog'
 
 /**
  * 设置 → 定时任务:数据上报任务管理(chat_sync:本地微信聊天记录 → PostgreSQL)。
@@ -191,7 +192,13 @@ export default function ReportJobsSection(): React.JSX.Element {
   }
 
   const remove = async (j: ReportJobInfo): Promise<void> => {
-    if (!window.confirm(`删除定时任务「${j.name}」?将同时删除其增量游标与运行历史。`)) return
+    const ok = await confirmAsk({
+      title: '删除定时任务',
+      message: `删除定时任务「${j.name}」?将同时删除其增量游标与运行历史。`,
+      confirmText: '删除',
+      danger: true
+    })
+    if (!ok) return
     const res = await reportApi?.remove(j.id).catch(() => null)
     if (res?.ok) {
       toast.success('已删除')

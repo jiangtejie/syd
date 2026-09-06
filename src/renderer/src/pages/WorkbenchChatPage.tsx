@@ -10,6 +10,7 @@ import {
 } from '../stores/workbenchChat'
 import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
+import { confirmAsk } from '../stores/confirmDialog'
 import { ChannelFileTray } from '../components/workbench/ChannelFileTray'
 import { MD_REMARK_PLUGINS } from '../components/workbench/mdPlugins'
 import './workbench-chat.css'
@@ -811,7 +812,12 @@ export default function WorkbenchChatPage(): React.JSX.Element {
 
   const unbindWorkspace = async (): Promise<void> => {
     if (activeId === null) return
-    if (!window.confirm('解除本会话的工作区绑定?文件工具将不可用(文件本身不会被删除)。')) return
+    const ok = await confirmAsk({
+      title: '解除工作区绑定',
+      message: '解除后文件工具不可用;绑定的文件夹及其中文件不会被删除。',
+      confirmText: '解除绑定'
+    })
+    if (!ok) return
     const s = await window.api?.cs?.wb?.setWorkspace(activeId, null).catch(() => null)
     if (s?.ok) {
       setWsDir(null)
@@ -1006,9 +1012,12 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const clearAllChats = async (): Promise<void> => {
     const total = chats?.length ?? 0
     if (total === 0) return
-    const ok = window.confirm(
-      `将删除当前账号下全部 ${total} 个工作台会话及其消息(含进行中生成,不可恢复)。确认继续?`
-    )
+    const ok = await confirmAsk({
+      title: '清空全部工作台会话',
+      message: `将删除当前账号下全部 ${total} 个工作台会话及其消息(含进行中生成,不可恢复)。`,
+      confirmText: '清空全部',
+      danger: true
+    })
     if (!ok) return
     const api = window.api?.cs?.wb
     const res = await api?.removeAll(accountKey).catch(() => null)
@@ -1597,11 +1606,14 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                 onClick={() => {
                   const c = opsChat
                   setOpsChat(null)
-                  if (
-                    window.confirm(`清空会话「${c.title}」的全部消息记录?会话保留,可继续提问。`)
-                  ) {
-                    void store.clear(c.id)
-                  }
+                  void confirmAsk({
+                    title: '清空会话内容',
+                    message: `清空「${c.title}」的全部消息记录?会话保留,可继续提问。`,
+                    confirmText: '清空',
+                    danger: true
+                  }).then((ok) => {
+                    if (ok) void store.clear(c.id)
+                  })
                 }}
               >
                 <b>清空内容</b>
@@ -1613,9 +1625,14 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                 onClick={() => {
                   const c = opsChat
                   setOpsChat(null)
-                  if (window.confirm(`删除会话「${c.title}」?该操作不可恢复。`)) {
-                    void store.remove(c.id)
-                  }
+                  void confirmAsk({
+                    title: '删除会话',
+                    message: `删除会话「${c.title}」?连同历史一起删除,不可恢复。`,
+                    confirmText: '删除',
+                    danger: true
+                  }).then((ok) => {
+                    if (ok) void store.remove(c.id)
+                  })
                 }}
               >
                 <b>删除会话</b>

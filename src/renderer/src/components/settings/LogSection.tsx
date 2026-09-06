@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from '../../stores/toast'
+import { confirmAsk } from '../../stores/confirmDialog'
 
 /**
  * 设置 → 日志:近实时查看主进程统一日志(内存尾部),支持级别/作用域/关键字过滤,
@@ -139,7 +140,13 @@ export function LogSection(): React.JSX.Element {
   }
 
   const clearLogs = async (): Promise<void> => {
-    if (!window.confirm('清空全部日志文件与内存记录(含今日)?一般仅在排查后确认无用才清理。')) return
+    const ok = await confirmAsk({
+      title: '清空日志',
+      message: '清空全部日志文件与内存记录(含今日)?一般仅在排查后确认无用才清理。',
+      confirmText: '清空日志',
+      danger: true
+    })
+    if (!ok) return
     const res = await logApi?.clear().catch(() => null)
     if (res?.ok) {
       toast.success('日志已清空')

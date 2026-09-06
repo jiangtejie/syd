@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
+import { confirmAsk } from '../stores/confirmDialog'
 import EChart from '../components/EChart'
 import type { EChartsOption } from 'echarts'
 import { computeMonitorData, fmtTimeShort, ageText } from '../lib/monitorMetrics'
@@ -450,9 +451,13 @@ function MonitorPage(): React.JSX.Element {
   /** 清空账号全部问题记录(含证据与历史,不可恢复) */
   const runClearAll = async (): Promise<void> => {
     if (!connected || !issueApi) return
-    const ok = window.confirm(
-      '将删除该账号的全部问题记录(含证据与历史,不可恢复)。确认清空?\n清空后可点「全量重析」从近 7 天群消息重新提取。'
-    )
+    const ok = await confirmAsk({
+      title: '清空全部问题记录',
+      message:
+        '将删除该账号的全部问题记录(含证据与历史,不可恢复)。清空后可点「全量重析」从近 7 天群消息重新提取。',
+      confirmText: '清空全部',
+      danger: true
+    })
     if (!ok) return
     const res = await issueApi.clear(wxid!).catch(() => null)
     if (!res?.ok) {
