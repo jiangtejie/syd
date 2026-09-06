@@ -1134,6 +1134,12 @@ select.st-input {
   accent-color: var(--brand);
 }
 
+.lg-auto-hint {
+  font-size: 11px;
+  color: var(--text-4);
+  white-space: nowrap;
+}
+
 .lg-meta {
   font-size: 11px;
   color: var(--text-4);

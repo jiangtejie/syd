@@ -33,22 +33,29 @@ export function LogSection(): React.JSX.Element {
   const [scope, setScope] = useState<string>(SCOPE_ALL)
   const [scopes, setScopes] = useState<string[]>([])
   const [query, setQuery] = useState('')
-  const [auto, setAuto] = useState(true)
+  const [auto, setAuto] = useState(false)
   const [hourOnly, setHourOnly] = useState(false)
   const [keepDays, setKeepDays] = useState(7)
   const [ringMax, setRingMax] = useState(1500)
   const [loading, setLoading] = useState(false)
   const qRef = useRef('')
+  const lastTsRef = useRef<number | undefined>(undefined)
 
-  // 初始回显日志策略(app_config;无配置用默认)
+  // 初始回显日志策略与自动刷新偏好(app_config;自动刷新默认关闭,避免常驻定时刷新占性能)
   useEffect(() => {
     void configApi?.getAll().then((cfg) => {
       const d = Number(cfg['logs.keepDays'])
       const m = Number(cfg['logs.ringMax'])
       if (Number.isFinite(d) && d >= 1 && d <= 30) setKeepDays(Math.floor(d))
       if (Number.isFinite(m) && m >= 100 && m <= 5000) setRingMax(Math.floor(m))
+      setAuto(cfg['logs.autoRefresh'] === '1')
     })
   }, [])
+
+  // 偏好持久化(切页/重启后保持手动关闭状态)
+  useEffect(() => {
+    void configApi?.set('logs.autoRefresh', auto ? '1' : '0')
+  }, [auto])
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -65,6 +72,7 @@ export function LogSection(): React.JSX.Element {
       if (res?.ok && res.entries) {
         const list = res.entries as LogRow[]
         setRows(list)
+        lastTsRef.current = list.length > 0 ? list[0].ts : undefined
         setScopes((prev) => {
           const set = new Set(prev)
           for (const r of list) if (r.scope) set.add(r.scope)
@@ -78,16 +86,45 @@ export function LogSection(): React.JSX.Element {
     }
   }, [hourOnly, level, scope])
 
-  // 自动刷新(3s);仅在 tab 挂载期间运行
+  /** 自动刷新采用增量:只取上次之后的新行并合并,避免每 3s 全量拉取重渲染 */
+  const tickAuto = useCallback(async (): Promise<void> => {
+    const last = lastTsRef.current
+    if (last === undefined) {
+      await load()
+      return
+    }
+    const res = await logApi
+      ?.recent({
+        minLevel: level === '全部' ? 'debug' : (level as 'error' | 'warn' | 'info'),
+        scope: scope === SCOPE_ALL ? undefined : scope,
+        query: qRef.current.trim() || undefined,
+        sinceMs: last,
+        max: 400
+      })
+      .catch(() => null)
+    if (res?.ok && res.entries) {
+      const list = res.entries as LogRow[]
+      if (list.length === 0) return
+      setRows((prev) => {
+        const merged = [...list, ...(prev ?? []).filter((r) => r.ts <= last)]
+          .sort((a, b) => b.ts - a.ts)
+          .slice(0, 800)
+        return merged
+      })
+      lastTsRef.current = list[0].ts
+    }
+  }, [level, scope, load])
+
+  // 自动刷新(3s,增量);默认关闭;仅在 tab 挂载期间运行
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载即拉取首批日志(全仓同款模式)
     void load()
     if (!auto) return
     const timer = window.setInterval(() => {
-      void load()
+      void tickAuto()
     }, 3000)
     return () => window.clearInterval(timer)
-  }, [auto, load])
+  }, [auto, load, tickAuto])
 
   // 关键字防抖
   useEffect(() => {
@@ -220,9 +257,15 @@ export function LogSection(): React.JSX.Element {
           仅最近 1 小时
         </label>
         <label className="lg-auto">
-          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={auto}
+            onChange={(e) => setAuto(e.target.checked)}
+            title="开启后每 3 秒增量拉取新日志(仅合并新增行,不整表重载)"
+          />
           自动刷新(3s)
         </label>
+        {!auto && <span className="lg-auto-hint">已暂停 · 无定时刷新,查看请点「刷新」</span>}
         <button type="button" className="st-btn ghost" onClick={() => void copyAll()}>
           复制结果
         </button>
