@@ -21,17 +21,17 @@ chat.messages)完全兼容,外部 agent 原有 SQL 可原样继续使用。
 调度内核 15s 心跳;单任务不重叠;interval/daily/manual;退出中止在跑轮次
 ```
 
-| chat-sync 规则 | 本模块对应 |
-|---|---|
-| 游标+1s 防同秒漏拉 | 微信库 sortSeq keyset 严格大于游标(天然无同秒问题) |
-| lastTimestamp 预筛跳过 | lastTimestamp(ms)≤游标且 5 分钟内实拉过 → 跳过 |
-| 5 分钟兜底重拉 | `last_fetch_at` 超 5 分钟强制重拉 |
-| 无消息表 30 分钟短期记忆 | 拉取 0 行且无游标 → `no_msg_at` 记忆 30 分钟 |
-| 未来时间戳不推进游标 | 推进量取单调 sortSeq;时间戳仅参与预筛 |
-| 单会话 90s 超时:入库不推游标 | 原样(超时会话下轮续传) |
-| 批量幂等 upsert | 500/批 + ON CONFLICT(media_path 只补空不覆盖) |
-| 失败重试/退避、降噪 | 失败会话游标不动,下轮自动补;明细在运行历史 |
-| 单实例锁 | 调度层 running 单任务不重叠 |
+| chat-sync 规则               | 本模块对应                                         |
+| ---------------------------- | -------------------------------------------------- |
+| 游标+1s 防同秒漏拉           | 微信库 sortSeq keyset 严格大于游标(天然无同秒问题) |
+| lastTimestamp 预筛跳过       | lastTimestamp(ms)≤游标且 5 分钟内实拉过 → 跳过     |
+| 5 分钟兜底重拉               | `last_fetch_at` 超 5 分钟强制重拉                  |
+| 无消息表 30 分钟短期记忆     | 拉取 0 行且无游标 → `no_msg_at` 记忆 30 分钟       |
+| 未来时间戳不推进游标         | 推进量取单调 sortSeq;时间戳仅参与预筛              |
+| 单会话 90s 超时:入库不推游标 | 原样(超时会话下轮续传)                             |
+| 批量幂等 upsert              | 500/批 + ON CONFLICT(media_path 只补空不覆盖)      |
+| 失败重试/退避、降噪          | 失败会话游标不动,下轮自动补;明细在运行历史         |
+| 单实例锁                     | 调度层 running 单任务不重叠                        |
 
 目标表创建是幂等的:`CREATE ... IF NOT EXISTS` + 缺约束补约束 + 缺列 `ADD COLUMN IF NOT EXISTS`,
 对旧库只增不改。upsert 键:`sessions(wxid)`、`messages(session_wxid, local_id)`。
@@ -42,7 +42,7 @@ chat.messages)完全兼容,外部 agent 原有 SQL 可原样继续使用。
   `media_path/media_md5` 双方均"先写保留、后写只补空",chat-sync 已归档的
   `file:///D:/software/a_data/chat-sync/media/...` 路径不会被覆盖。
 - 2026-09-06 已禁用 Windows 任务计划 `CipherTalkChatSync`(可 `schtasks /Change /TN
-  CipherTalkChatSync /ENABLE` 恢复),避免两套游标重复拉取。chat-sync 目录文件原样保留。
+CipherTalkChatSync /ENABLE` 恢复),避免两套游标重复拉取。chat-sync 目录文件原样保留。
 - 可选干净基线(仅当想彻底以新解析重灌):先确认旧脚本停用,再
   `TRUNCATE chat.sessions, chat.messages;`(注意外键顺序),随后在应用里「立即执行」一轮
   全量(游标在本地,与 PG 内容无关,清表不影响增量正确性)。
@@ -52,11 +52,14 @@ chat.messages)完全兼容,外部 agent 原有 SQL 可原样继续使用。
 - 口令经 safeStorage(enc1)密文存本地 `report_job.params.target.pw`,渲染层只见 hasPassword;
 - 上报会把客户聊天内容发往外部数据库——新建卡片含隐私警示;
 - **媒体归档**(chat-sync 同款语义):图片/视频/文件消息按会话归档到「媒体归档目录」
-  (任务参数;留空 = `userData/report-media/<账号>`,可指向 chat-sync 旧 media 根目录合并归档),
-  归档文件为 `<会话>/<md5>_orig.<ext>`(图)、`<md5>.mp4`(视频)、原始文件名(文件);
-  PG `media_path` 存归档文件绝对路径(正斜杠),仅目标为空时写入,不覆盖 chat-sync 遗留路径;
-  语音/表情不上报路径(仅 md5);单轮归档/历史补全各限量 200,失败或缺源(微信延迟下载)
-  留空下轮自动续传;
+  (任务参数;留空 = `%APPDATA%/wechat-cs-desktop/report-media/<账号>`,可指向 chat-sync 旧
+  media 根目录合并归档),归档文件为 `<会话>/<md5>_orig.<ext>`(图)、`<md5>.mp4`(视频)、
+  原始文件名(文件);**PG `media_path` 一律存相对地址** `<会话>/<文件>`(正斜杠,相对该媒体根),
+  仅目标为空时写入,不覆盖旧值;语音/表情不上报路径(仅 md5);单轮归档/历史补全各限量 200,
+  失败或缺源(微信延迟下载)留空下轮自动续传;
+- **历史媒体迁移**:任务列表「迁旧媒体」按钮(或独立脚本)把 chat-sync 旧归档
+  (`media/<会话>/<文件>`)搬入当前媒体根并统一改写为相对地址;先拷贝+落库成功才删旧源,
+  只删旧归档目录内文件,可重复执行(幂等)。
 - 运行历史保留:每任务最近 200 条且 ≤30 天,自动清理;
 - 同来源账号同类型任务唯一(创建/启用时校验),避免重复上报。
 

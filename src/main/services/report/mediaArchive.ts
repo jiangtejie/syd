@@ -1,6 +1,5 @@
-import { app } from 'electron'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
-import { join, basename } from 'node:path'
+import { join, basename, relative as pathRelative } from 'node:path'
 import type { Client } from 'pg'
 import { decryptImage, decryptVideo } from '../media/mediaService'
 import { getMediaCacheDir } from '../paths'
@@ -56,15 +55,21 @@ export function mediaJobOf(sessionWxid: string, m: ChatMessage): MediaJob | null
   return null
 }
 
-function sanitizeName(s: string): string {
+export function sanitizeName(s: string): string {
   return s.replace(/[\\/:*?"<>|\r\n\t]/g, '_').slice(0, 180) || 'file'
 }
 
-/** 归档根:显式配置优先;缺省 userData/report-media/<账号> */
-function archiveRoot(mediaDir: string | undefined, accountWxid: string): string {
-  return (mediaDir ?? '').trim()
-    ? (mediaDir as string).trim()
-    : join(app.getPath('userData'), 'report-media', sanitizeName(accountWxid))
+/** 归档根:显式配置优先;缺省 %APPDATA%/wechat-cs-desktop/report-media/<账号>(与应用 userData 一致) */
+export function archiveRoot(mediaDir: string | undefined, accountWxid: string): string {
+  const explicit = (mediaDir ?? '').trim()
+  if (explicit) return explicit
+  const base = process.env.APPDATA ?? ''
+  return join(base, 'wechat-cs-desktop', 'report-media', sanitizeName(accountWxid))
+}
+
+/** 相对根目录的地址(正斜杠):PG media_path 的存储形态 */
+export function mediaRelative(root: string, abs: string): string {
+  return pathRelative(root, abs).replace(/\\/g, '/')
 }
 
 /** 附件根候选:<base>/<wxid>/msg/attach|file|video 或 <base>/msg/… */
@@ -236,7 +241,14 @@ export async function archiveMediaJobs(
         sum.failed++
         continue
       }
-      await writePathIfEmpty(client, opts.schema, j.sessionWxid, j.localId, stored)
+      // media_path 一律存相对根目录的正斜杠地址(迁移/消费方用根目录拼接)
+      await writePathIfEmpty(
+        client,
+        opts.schema,
+        j.sessionWxid,
+        j.localId,
+        mediaRelative(root, stored)
+      )
       sum.done++
     } catch {
       sum.failed++
@@ -356,7 +368,13 @@ export async function backfillMissingMedia(
         sum.failed++
         continue
       }
-      await writePathIfEmpty(client, opts.schema, r.session_wxid, r.local_id, stored)
+      await writePathIfEmpty(
+        client,
+        opts.schema,
+        r.session_wxid,
+        r.local_id,
+        mediaRelative(root, stored)
+      )
       sum.done++
     } catch {
       sum.failed++

@@ -527,7 +527,19 @@ const api = {
       testConn: (opts: unknown): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:report:testConn', opts),
       history: (id: number): Promise<{ ok: boolean; runs?: unknown[]; error?: string }> =>
-        ipcRenderer.invoke('cs:report:history', id)
+        ipcRenderer.invoke('cs:report:history', id),
+      migrateMedia: (
+        id: number
+      ): Promise<{
+        ok: boolean
+        scanned?: number
+        migrated?: number
+        converted?: number
+        missingSource?: number
+        skippedOutside?: number
+        errors?: string[]
+        error?: string
+      }> => ipcRenderer.invoke('cs:report:migrateMedia', id)
     }
   }
 }
