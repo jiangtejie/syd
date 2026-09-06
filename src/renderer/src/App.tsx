@@ -10,6 +10,7 @@ import SettingsPage from './pages/SettingsPage'
 import TitleBar from './components/TitleBar'
 import ToastHost from './components/ToastHost'
 import ErrorBoundary from './components/ErrorBoundary'
+import { installIssueAlertSound } from './lib/issueAlert'
 import './pages/shell.css'
 
 /**
@@ -201,6 +202,9 @@ function App(): React.JSX.Element {
     })
     return unsubscribe
   }, [setPage])
+
+  // 新问题提示音(全局监听 issue:changed,added>0 即响;开关在 设置→偏好与数据→通用)
+  useEffect(() => installIssueAlertSound(), [])
 
   return (
     <ErrorBoundary>

@@ -11,6 +11,7 @@ import { LogSection } from '../components/settings/LogSection'
 import { SettingsCard, SwitchRow, FieldRow } from '../components/settings/ui'
 import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
+import { setIssueAlertPref } from '../lib/issueAlert'
 import './settings.css'
 
 /**
@@ -109,6 +110,37 @@ function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+/** 新问题提示音开关(设置 → 偏好与数据 → 通用;配置 monitor.alertSound,默认开) */
+function IssueSoundRow(): React.JSX.Element {
+  const [on, setOn] = useState(true)
+  useEffect(() => {
+    let alive = true
+    window.api?.cs?.config
+      ?.getAll()
+      .then((all) => {
+        if (alive) setOn((all['monitor.alertSound'] ?? '1') !== '0')
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+  const change = (v: boolean): void => {
+    setOn(v)
+    setIssueAlertPref(v)
+    void window.api?.cs?.config?.set('monitor.alertSound', v ? '1' : '0')
+    toast.success(v ? '已开启新问题提示音' : '已关闭新问题提示音')
+  }
+  return (
+    <SwitchRow
+      label="新问题提示音"
+      desc="后台巡检/分析发现新问题(新增条数>0)时播放提示音;在任意页面、窗口聚焦与否均生效。"
+      checked={on}
+      onChange={change}
+    />
+  )
 }
 
 /** 设置页 Tab 板块 */
@@ -804,6 +836,7 @@ function SettingsPage(): React.JSX.Element {
                 checked={autoLaunch}
                 onChange={(v) => void toggleAutoLaunch(v)}
               />
+              <IssueSoundRow />
             </SettingsCard>
 
             {/* 问题监控口径 */}
