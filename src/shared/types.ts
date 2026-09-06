@@ -552,6 +552,8 @@ export interface ReportChatScope {
   daysBack: number
   /** 单轮消息上限(0=不限,防失控) */
   maxPerRun: number
+  /** 每轮处理会话数上限(0=不限;首轮全量可切小,未处理会话下轮续) */
+  sessionsPerRun?: number
 }
 
 export type ReportScheduleKind = 'interval' | 'daily' | 'manual'

@@ -54,6 +54,7 @@ interface StoredParams {
   sessionList?: string
   daysBack?: number
   maxPerRun?: number
+  sessionsPerRun?: number
   target?: {
     host: string
     port: number
@@ -91,7 +92,8 @@ export function openJobRunConfig(jobId: number): {
       sessionMode: p.sessionMode ?? 'all',
       sessionList: p.sessionList,
       daysBack: typeof p.daysBack === 'number' ? p.daysBack : 0,
-      maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0
+      maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0,
+      sessionsPerRun: typeof p.sessionsPerRun === 'number' ? p.sessionsPerRun : 0
     },
     target: {
       host: t.host,
@@ -111,7 +113,8 @@ function toInfo(r: JobRow): ReportJobInfo {
     sessionMode: p.sessionMode ?? 'all',
     sessionList: p.sessionList,
     daysBack: typeof p.daysBack === 'number' ? p.daysBack : 0,
-    maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0
+    maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0,
+    sessionsPerRun: typeof p.sessionsPerRun === 'number' ? p.sessionsPerRun : 0
   }
   return {
     id: r.id,
@@ -202,6 +205,7 @@ export function saveReportJob(input: ReportJobInput): { ok: boolean; error?: str
     sessionList: input.scope.sessionList?.trim() || undefined,
     daysBack: Math.max(0, Math.floor(Number(input.scope.daysBack) || 0)),
     maxPerRun: Math.max(0, Math.floor(Number(input.scope.maxPerRun) || 0)),
+    sessionsPerRun: Math.max(0, Math.floor(Number(input.scope.sessionsPerRun) || 0)),
     target: tgt
   }
   const prevParams =

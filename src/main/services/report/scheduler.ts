@@ -1,3 +1,4 @@
+import { BrowserWindow } from 'electron'
 import { createLogger } from '../logging'
 import {
   cleanOldReportRuns,
@@ -67,6 +68,13 @@ export function isReportJobRunning(jobId: number): boolean {
   return running.has(jobId)
 }
 
+/** 运行进度广播到所有窗口(调用方节流) */
+function broadcastProgress(payload: Record<string, unknown>): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send('cs:report:progress', payload)
+  }
+}
+
 async function executeJob(jobId: number, trigger: string): Promise<JobRunOutcome> {
   if (running.has(jobId)) {
     return {
@@ -83,6 +91,7 @@ async function executeJob(jobId: number, trigger: string): Promise<JobRunOutcome
   const controller = new AbortController()
   running.set(jobId, controller)
   const started = Date.now()
+  let lastEmit = 0
   const runId = insertReportRun({
     jobId,
     trigger,
@@ -95,6 +104,7 @@ async function executeJob(jobId: number, trigger: string): Promise<JobRunOutcome
       const err = '任务配置缺失或已损坏,请编辑后重试'
       finishReportRun(runId, RUN_STATUS.FAIL, 0, 0, 0, err, Date.now())
       markReportJobRun(jobId, 'fail', err, Date.now())
+      broadcastProgress({ jobId, running: false, phase: 'done', status: 'fail', summary: err })
       return {
         ok: false,
         error: err,
@@ -106,7 +116,20 @@ async function executeJob(jobId: number, trigger: string): Promise<JobRunOutcome
         summary: err
       }
     }
-    const res = await runChatSyncJob(jobId, cfg, controller.signal)
+    const res = await runChatSyncJob(jobId, cfg, controller.signal, (p) => {
+      const now = Date.now()
+      if (now - lastEmit < 250) return
+      lastEmit = now
+      broadcastProgress({
+        jobId,
+        running: true,
+        phase: p.phase,
+        total: p.total,
+        done: p.done,
+        added: p.added,
+        elapsedMs: p.elapsedMs
+      })
+    })
     const status = res.interrupted
       ? RUN_STATUS.INTERRUPTED
       : res.ok
@@ -122,11 +145,21 @@ async function executeJob(jobId: number, trigger: string): Promise<JobRunOutcome
       Date.now()
     )
     markReportJobRun(jobId, status, res.summary, Date.now())
+    broadcastProgress({
+      jobId,
+      running: false,
+      phase: 'done',
+      status,
+      summary: res.summary,
+      added: res.added,
+      elapsedMs: Date.now() - started
+    })
     return res
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e)
     finishReportRun(runId, RUN_STATUS.FAIL, 0, 0, 0, err, Date.now())
     markReportJobRun(jobId, 'fail', err, Date.now())
+    broadcastProgress({ jobId, running: false, phase: 'done', status: 'fail', summary: err })
     return {
       ok: false,
       error: err,

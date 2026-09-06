@@ -73,6 +73,13 @@ export function registerReportHandlers(): void {
     }
   })
 
+  /** 取消正在执行的一轮(在跑任务停止,已入库数据保留,游标不推进) */
+  ipcMain.handle('cs:report:cancel', (_e, id: number) => {
+    if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
+    abortRunningJob(id)
+    return { ok: true as const }
+  })
+
   /** 测试连接:优先用表单新填口令;未填且给了 jobId 时沿用任务内已存密文 */
   ipcMain.handle(
     'cs:report:testConn',

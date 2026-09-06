@@ -495,6 +495,20 @@ declare global {
           remove: (id: number) => Promise<{ ok: boolean; error?: string }>
           setEnabled: (id: number, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
           runNow: (id: number) => Promise<{ ok: boolean; summary?: string; error?: string }>
+          cancel: (id: number) => Promise<{ ok: boolean; error?: string }>
+          onProgress: (
+            callback: (payload: {
+              jobId: number
+              running: boolean
+              phase?: 'sessions' | 'media' | 'done'
+              status?: string
+              summary?: string
+              total?: number
+              done?: number
+              added?: number
+              elapsedMs?: number
+            }) => void
+          ) => () => void
           testConn: (opts: {
             target?: ReportPgTarget
             jobId?: number

@@ -43,13 +43,24 @@ const MEDIA_BUDGET = 200
 
 const clawLog = createLogger('report')
 const PAGE = 500
-const BATCH = 500
+const BATCH = 1000
 const SESSION_TIMEOUT_MS = 90_000
 const NO_MSG_MEMORY_MS = 30 * 60_000
 const RECHECK_INTERVAL_MS = 5 * 60_000
 
 /** 让出事件循环(同步读库/解密之间存在大量同步热点,保证主进程 UI 不被饿死) */
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
+
+/** 运行进度(节流由调用方做) */
+export interface ChatSyncProgress {
+  phase: 'sessions' | 'media' | 'done'
+  /** 本轮计划处理会话数 */
+  total: number
+  /** 已处理会话数(含跳过/失败) */
+  done: number
+  added: number
+  elapsedMs: number
+}
 
 export interface ChatSyncRunResult {
   ok: boolean
@@ -145,6 +156,7 @@ export async function runChatSyncJob(
       sessionList?: string
       daysBack: number
       maxPerRun: number
+      sessionsPerRun?: number
       mediaDir?: string
     }
     target: {
@@ -156,22 +168,32 @@ export async function runChatSyncJob(
       password?: string
     }
   },
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (p: ChatSyncProgress) => void
 ): Promise<ChatSyncRunResult> {
   const t0 = Date.now()
   const errors: string[] = []
+  const report = (
+    phase: ChatSyncProgress['phase'],
+    total: number,
+    done: number,
+    cur: number
+  ): void => {
+    onProgress?.({ phase, total, done, added: cur, elapsedMs: Date.now() - t0 })
+  }
   const base = buildWxSession(cfg.accountWxid)
   if (!base)
-    return {
-      ok: false,
-      error: '账号未导入密钥,请先在 微信数据 页导入',
-      added: 0,
-      sessionsOk: 0,
-      sessionsSkip: 0,
-      errors: [],
-      interrupted: false,
-      summary: '来源账号不可用'
-    }
+    if (!base)
+      return {
+        ok: false,
+        error: '账号未导入密钥,请先在 微信数据 页导入',
+        added: 0,
+        sessionsOk: 0,
+        sessionsSkip: 0,
+        errors: [],
+        interrupted: false,
+        summary: '来源账号不可用'
+      }
   if (!base.dbPath)
     return {
       ok: false,
@@ -288,12 +310,12 @@ export async function runChatSyncJob(
     }
     await upsertPgSessions(client, cfg.target.schema || 'chat', sessionRows)
 
-    clawLog.info(
-      `job=${jobId} 需拉取会话 ${toFetch.length}/${sessions.length}(预筛跳过 ${noChange})`
-    )
-
     // 3. 逐会话增量拉取(倒序 keyset 分页 → 只取游标之后;单会话超时保护)
+    //    会话预算:首轮全量可分多轮切(未处理会话游标不动,下轮自动续)
     const earliestMs = scope.daysBack > 0 ? now - scope.daysBack * 24 * 3600 * 1000 : 0
+    const spr = Math.max(0, Math.floor(scope.sessionsPerRun ?? 0))
+    const sessionBudget = spr > 0 ? Math.min(toFetch.length, spr) : toFetch.length
+    const work = toFetch.slice(0, sessionBudget)
     let sessionOk = 0
     let sessionSkip = 0
     let added = 0
@@ -302,8 +324,17 @@ export async function runChatSyncJob(
     const mediaJobs: MediaJob[] = []
     const maxPerRun = scope.maxPerRun || 0
 
-    for (const s of toFetch) {
+    clawLog.info(
+      `job=${jobId} 需拉取会话 ${work.length}/${toFetch.length}(预筛跳过 ${noChange}${
+        sessionBudget < toFetch.length ? `,会话预算 ${sessionBudget},剩余下轮续` : ''
+      })`
+    )
+
+    let doneCount = 0
+    for (const s of work) {
       if (signal?.aborted) break
+      report('sessions', work.length, doneCount, added)
+      doneCount++
       const prevC = cursors.get(s.username)
       const cursorSeq = prevC?.cursor_seq ?? 0
       const sessionStart = Date.now()
@@ -430,6 +461,7 @@ export async function runChatSyncJob(
     await refreshPgSessionStats(client, cfg.target.schema || 'chat', touched)
     let mediaNote = ''
     if (!signal?.aborted) {
+      report('media', work.length, doneCount, added)
       const archOpts = {
         schema: cfg.target.schema || 'chat',
         accountWxid: cfg.accountWxid,
@@ -448,7 +480,10 @@ export async function runChatSyncJob(
       }
     }
     const interrupted = signal?.aborted === true
-    const summary = `会话 ${sessionOk}/${toFetch.length} 成功${sessionSkip ? `,跳过 ${sessionSkip}` : ''} · 上报 ${added} 条${mediaNote} · 耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`
+    const remaining =
+      sessionBudget < toFetch.length ? `,剩 ${toFetch.length - sessionBudget} 会话下轮续` : ''
+    const summary = `会话 ${sessionOk}/${work.length} 成功${sessionSkip ? `,跳过 ${sessionSkip}` : ''}${remaining} · 上报 ${added} 条${mediaNote} · 耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`
+    report('done', work.length, doneCount, added)
     if (sessionSkip > 0 || errors.length > 0) clawLog.warn(`job=${jobId} ${summary}`)
     else clawLog.info(`job=${jobId} ${summary}`)
     return {

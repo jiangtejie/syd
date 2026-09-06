@@ -1309,6 +1309,14 @@ select.st-input {
   gap: 4px;
 }
 
+.rp-job-run {
+  font-size: 11.5px;
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .rp-st-ok {
   color: var(--success-strong);
 }

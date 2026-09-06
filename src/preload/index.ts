@@ -524,6 +524,14 @@ const api = {
         ipcRenderer.invoke('cs:report:setEnabled', id, enabled),
       runNow: (id: number): Promise<{ ok: boolean; summary?: string; error?: string }> =>
         ipcRenderer.invoke('cs:report:runNow', id),
+      cancel: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:report:cancel', id),
+      onProgress: (callback: (payload: unknown) => void): (() => void) => {
+        const listener = (_e: Electron.IpcRendererEvent, payload: unknown): void =>
+          callback(payload)
+        ipcRenderer.on('cs:report:progress', listener)
+        return () => ipcRenderer.removeListener('cs:report:progress', listener)
+      },
       testConn: (opts: unknown): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:report:testConn', opts),
       history: (id: number): Promise<{ ok: boolean; runs?: unknown[]; error?: string }> =>

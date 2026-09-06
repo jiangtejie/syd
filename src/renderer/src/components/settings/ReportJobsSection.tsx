@@ -58,6 +58,21 @@ export default function ReportJobsSection(): React.JSX.Element {
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [testing, setTesting] = useState(false)
+  const [prog, setProg] = useState<
+    Record<
+      number,
+      {
+        running: boolean
+        phase?: string
+        status?: string
+        summary?: string
+        total?: number
+        done?: number
+        added?: number
+        elapsedMs?: number
+      }
+    >
+  >({})
   const [history, setHistory] = useState<{
     job: ReportJobInfo
     runs: ReportRunInfo[] | null
@@ -80,6 +95,38 @@ export default function ReportJobsSection(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取任务与账号(全仓同款模式)
     void load()
     void loadAccounts()
+  }, [])
+
+  // 运行进度订阅:任务行实时显示同步进度;结束后刷新列表并复位按钮态
+  useEffect(() => {
+    const off = reportApi?.onProgress?.((p) => {
+      const ev = p as {
+        jobId: number
+        running: boolean
+        phase?: string
+        status?: string
+        summary?: string
+        total?: number
+        done?: number
+        added?: number
+        elapsedMs?: number
+      }
+      if (!ev || typeof ev.jobId !== 'number') return
+      setProg((prev) => ({ ...prev, [ev.jobId]: ev }))
+      if (!ev.running) {
+        setBusyId((b) => (b === ev.jobId ? null : b))
+        void load()
+        window.setTimeout(() => {
+          setProg((prev) => {
+            if (!prev[ev.jobId]) return prev
+            const next = { ...prev }
+            delete next[ev.jobId]
+            return next
+          })
+        }, 5000)
+      }
+    })
+    return off
   }, [])
 
   const patchForm = (p: Partial<ReportJobInput>): void => setForm((f) => ({ ...f, ...p }))
@@ -172,6 +219,11 @@ export default function ReportJobsSection(): React.JSX.Element {
     } finally {
       setBusyId(null)
     }
+  }
+  const cancelRun = async (j: ReportJobInfo): Promise<void> => {
+    const res = await reportApi?.cancel(j.id).catch(() => null)
+    if (res?.ok) toast.success('已请求停止,当前轮将尽快结束(已入库数据保留)')
+    else toast.error((res as { error?: string } | null)?.error || '取消失败')
   }
   const openHistory = async (j: ReportJobInfo): Promise<void> => {
     setHistory({ job: j, runs: null })
@@ -279,16 +331,37 @@ export default function ReportJobsSection(): React.JSX.Element {
                     </>
                   ) : null}
                 </div>
+                {prog[j.id]?.running === true && (
+                  <div className="rp-job-run">
+                    {(prog[j.id]?.phase ?? 'sessions') === 'media'
+                      ? '媒体归档中…'
+                      : `同步中:会话 ${prog[j.id]?.done ?? 0}/${prog[j.id]?.total ?? 0}`}
+                    {' · '}新增 {prog[j.id]?.added ?? 0} 条
+                    {prog[j.id]?.elapsedMs !== undefined
+                      ? ` · ${Math.round((prog[j.id]?.elapsedMs ?? 0) / 1000)}s`
+                      : ''}
+                  </div>
+                )}
               </div>
               <div className="mcp-item-ops">
-                <button
-                  type="button"
-                  className="st-btn ghost sm"
-                  disabled={busyId === j.id}
-                  onClick={() => void runNow(j)}
-                >
-                  {busyId === j.id ? '执行中…' : '立即执行'}
-                </button>
+                {busyId === j.id ? (
+                  <button
+                    type="button"
+                    className="st-btn ghost danger sm"
+                    onClick={() => void cancelRun(j)}
+                  >
+                    停止
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="st-btn ghost sm"
+                    disabled={busyId !== null}
+                    onClick={() => void runNow(j)}
+                  >
+                    立即执行
+                  </button>
+                )}
                 <button
                   type="button"
                   className="st-btn ghost sm"
@@ -386,6 +459,15 @@ export default function ReportJobsSection(): React.JSX.Element {
                 className="st-input st-th-input"
                 value={form.scope.maxPerRun}
                 onChange={(e) => patchScope({ maxPerRun: Number(e.target.value) || 0 })}
+              />
+            </FieldRow>
+            <FieldRow label="每轮会话数" hint="0=不限;首轮全量可切小,未处理会话下轮自动续">
+              <input
+                type="number"
+                min={0}
+                className="st-input st-th-input"
+                value={form.scope.sessionsPerRun ?? 0}
+                onChange={(e) => patchScope({ sessionsPerRun: Number(e.target.value) || 0 })}
               />
             </FieldRow>
           </div>
