@@ -500,16 +500,6 @@ declare global {
             jobId?: number
           }) => Promise<{ ok: boolean; error?: string }>
           history: (id: number) => Promise<Result<{ runs?: ReportRunInfo[] }>>
-          migrateMedia: (id: number) => Promise<
-            Result<{
-              scanned?: number
-              migrated?: number
-              converted?: number
-              missingSource?: number
-              skippedOutside?: number
-              errors?: string[]
-            }>
-          >
         }
       }
     }

@@ -397,8 +397,7 @@ export async function runChatSyncJob(
       const archOpts = {
         schema: cfg.target.schema || 'chat',
         accountWxid: cfg.accountWxid,
-        dbPath: base.dbPath,
-        mediaDir: scope.mediaDir
+        dbPath: base.dbPath
       }
       const mediaArch = await archiveMediaJobs(client, archOpts, mediaJobs, MEDIA_BUDGET, signal)
       const backfill = await backfillMissingMedia(

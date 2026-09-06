@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
-import { join, basename, relative as pathRelative } from 'node:path'
+import { join, basename, extname } from 'node:path'
 import type { Client } from 'pg'
 import { decryptImage, decryptVideo } from '../media/mediaService'
 import { getMediaCacheDir } from '../paths'
@@ -7,12 +7,12 @@ import { createLogger } from '../logging'
 import type { ChatMessage } from '../../../shared/types'
 
 /**
- * 上报媒体归档(chat-sync 语义本地化)。
- * - 会话内新增的 图片/视频/文件 消息 → 归档到 <mediaDir>/<会话>/<文件>,PG media_path 指向本地绝对路径;
- * - media_path 仅当目标为空时写入(不覆盖 chat-sync 遗留或人工写入的路径);
- * - 语音/表情不上报路径(与 chat-sync 归档范围一致,仅补 md5);
- * - 每次运行限量(防首轮海量解密卡住同步),失败的留 NULL 下轮自动续传
- *   (微信原图延迟下载完成的场景天然被覆盖)。
+ * 上报媒体归档(与聊天渲染共用缓存目录,数据对齐到 <cache>/media/<账号>/):
+ * - 图片/视频/文件消息归档到缓存目录(<cacheRoot>/media/<账号>/),PG media_path 存
+ *   相对缓存根的地址 media/<账号>/<文件>(正斜杠);读取方用缓存目录拼接即得真实文件;
+ * - 命名:图片沿用解密缓存名 <md5>_orig|thumb|hd.<ext>;视频 <md5>_video.<ext>;
+ *   文件 <md5>_file.<ext>(无 md5 时用安全化的原始文件名);
+ * - media_path 仅当目标为空时写入;语音/表情仅补 md5;单轮限量,失败/缺源留空下轮续。
  */
 
 const mediaLog = createLogger('report')
@@ -59,17 +59,14 @@ export function sanitizeName(s: string): string {
   return s.replace(/[\\/:*?"<>|\r\n\t]/g, '_').slice(0, 180) || 'file'
 }
 
-/** 归档根:显式配置优先;缺省 %APPDATA%/wechat-cs-desktop/report-media/<账号>(与应用 userData 一致) */
-export function archiveRoot(mediaDir: string | undefined, accountWxid: string): string {
-  const explicit = (mediaDir ?? '').trim()
-  if (explicit) return explicit
-  const base = process.env.APPDATA ?? ''
-  return join(base, 'wechat-cs-desktop', 'report-media', sanitizeName(accountWxid))
+/** media_path 值:相对缓存根的地址 media/<账号>/<文件>(文件在 <cache>/media/<账号>/ 下同名) */
+export function mediaValue(accountWxid: string, fileAbs: string): string {
+  return `media/${accountWxid}/${basename(fileAbs)}`
 }
 
-/** 相对根目录的地址(正斜杠):PG media_path 的存储形态 */
-export function mediaRelative(root: string, abs: string): string {
-  return pathRelative(root, abs).replace(/\\/g, '/')
+/** 归档根:<cacheRoot>/media/<账号>(与聊天媒体缓存同目录,数据对齐) */
+function archiveRoot(accountWxid: string): string {
+  return getMediaCacheDir(accountWxid)
 }
 
 /** 附件根候选:<base>/<wxid>/msg/attach|file|video 或 <base>/msg/… */
@@ -123,18 +120,12 @@ function findRawFile(root: string, targetName?: string, md5?: string): string | 
   return null
 }
 
-/** 把一份 src 复制进归档目录(幂等:已存在即跳过),返回归档文件绝对路径(正斜杠形式) */
-function archiveInto(
-  root: string,
-  sessionWxid: string,
-  fileName: string,
-  src: string
-): string | null {
+/** 把 src 复制进归档根(缓存 media/<账号>,扁平;幂等已存在即跳过),返回文件绝对路径 */
+function archiveInto(root: string, fileName: string, src: string): string | null {
   try {
     if (!existsSync(src)) return null
-    const dir = join(root, sanitizeName(sessionWxid))
-    mkdirSync(dir, { recursive: true })
-    const dest = join(dir, sanitizeName(fileName))
+    mkdirSync(root, { recursive: true })
+    const dest = join(root, sanitizeName(fileName))
     if (!existsSync(dest)) {
       try {
         copyFileSync(src, dest)
@@ -146,6 +137,13 @@ function archiveInto(
   } catch {
     return null
   }
+}
+
+/** 文件类归档命名:<md5>_file<ext>(无 md5 回退安全化原始名,保证扁平目录不冲突) */
+function fileDestName(md5: string | undefined, src: string, original?: string): string {
+  const ext = extname(src) || (original ? extname(original) : '')
+  if (md5 && /^[0-9a-f]{32}$/i.test(md5)) return `${md5.toLowerCase()}_file${ext}`
+  return sanitizeName(original || basename(src))
 }
 
 /** 写 PG(仅空时补,不覆盖已有路径);返回是否写入 */
@@ -182,7 +180,6 @@ export async function archiveMediaJobs(
     schema: string
     accountWxid: string
     dbPath: string
-    mediaDir?: string
   },
   jobs: MediaJob[],
   budget: number,
@@ -190,7 +187,7 @@ export async function archiveMediaJobs(
 ): Promise<ArchiveSummary> {
   const sum: ArchiveSummary = { done: 0, failed: 0, skippedNoSource: 0 }
   if (jobs.length === 0) return sum
-  const root = archiveRoot(opts.mediaDir, opts.accountWxid)
+  const root = archiveRoot(opts.accountWxid)
   const effective = jobs.slice(0, budget)
   for (const j of effective) {
     if (signal?.aborted) break
@@ -222,13 +219,12 @@ export async function archiveMediaJobs(
         }
       } else {
         // 文件:微信附件目录原始文件(明文),按原始名或 md5 定位
-        const base = opts.dbPath
-        const rootDir = findDir(attachRootCandidates(base, opts.accountWxid, 'file'))
+        const rootDir = findDir(attachRootCandidates(opts.dbPath, opts.accountWxid, 'file'))
         if (rootDir) {
           const hit = findRawFile(rootDir, j.fileName, j.md5)
           if (hit) {
             src = hit
-            destName = j.fileName?.trim() || basename(hit)
+            destName = fileDestName(j.md5, hit, j.fileName)
           }
         }
       }
@@ -236,18 +232,18 @@ export async function archiveMediaJobs(
         sum.skippedNoSource++
         continue
       }
-      const stored = archiveInto(root, j.sessionWxid, destName, src)
+      const stored = archiveInto(root, destName, src)
       if (!stored) {
         sum.failed++
         continue
       }
-      // media_path 一律存相对根目录的正斜杠地址(迁移/消费方用根目录拼接)
+      // media_path = 相对缓存根:media/<账号>/<文件>
       await writePathIfEmpty(
         client,
         opts.schema,
         j.sessionWxid,
         j.localId,
-        mediaRelative(root, stored)
+        mediaValue(opts.accountWxid, stored)
       )
       sum.done++
     } catch {
@@ -274,7 +270,6 @@ export async function backfillMissingMedia(
     schema: string
     accountWxid: string
     dbPath: string
-    mediaDir?: string
   },
   budget: number,
   listSessionMessages: (
@@ -301,7 +296,7 @@ export async function backfillMissingMedia(
     )
   ).rows as MissingMediaRow[]
   if (rows.length === 0) return sum
-  const root = archiveRoot(opts.mediaDir, opts.accountWxid)
+  const root = archiveRoot(opts.accountWxid)
   for (const r of rows) {
     let destName = ''
     let src: string | null = null
@@ -348,13 +343,12 @@ export async function backfillMissingMedia(
           before = page.nextCursor
         }
         if (found) {
-          const base = opts.dbPath
-          const fileRoot = findDir(attachRootCandidates(base, opts.accountWxid, 'file'))
+          const fileRoot = findDir(attachRootCandidates(opts.dbPath, opts.accountWxid, 'file'))
           if (fileRoot) {
             const hit = findRawFile(fileRoot, found.fileName, found.fileMd5)
             if (hit) {
               src = hit
-              destName = found.fileName?.trim() || basename(hit)
+              destName = fileDestName(found.fileMd5, hit, found.fileName)
             }
           }
         }
@@ -363,7 +357,7 @@ export async function backfillMissingMedia(
         sum.skippedNoSource++
         continue
       }
-      const stored = archiveInto(root, r.session_wxid, destName, src)
+      const stored = archiveInto(root, destName, src)
       if (!stored) {
         sum.failed++
         continue
@@ -373,7 +367,7 @@ export async function backfillMissingMedia(
         opts.schema,
         r.session_wxid,
         r.local_id,
-        mediaRelative(root, stored)
+        mediaValue(opts.accountWxid, stored)
       )
       sum.done++
     } catch {

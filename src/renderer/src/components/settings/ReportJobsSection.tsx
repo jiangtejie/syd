@@ -179,39 +179,6 @@ export default function ReportJobsSection(): React.JSX.Element {
     if (res?.ok && res.runs) setHistory({ job: j, runs: res.runs as ReportRunInfo[] })
     else setHistory({ job: j, runs: [] })
   }
-  const migrateMedia = async (j: ReportJobInfo): Promise<void> => {
-    if (
-      !window.confirm(
-        `迁移该任务的媒体文件到当前归档目录并把 media_path 改为相对地址?将扫描 ${targetText(j)} 里全部 media_path 行(旧 chat-sync 归档会被搬入并删除旧文件;可重复执行)。`
-      )
-    ) {
-      return
-    }
-    setBusyId(j.id)
-    try {
-      const res = await reportApi?.migrateMedia(j.id).catch(() => null)
-      if (res?.ok) {
-        const r = res as {
-          scanned?: number
-          migrated?: number
-          converted?: number
-          missingSource?: number
-          skippedOutside?: number
-          errors?: string[]
-        }
-        toast.success(
-          `迁移完成:搬入 ${r.migrated ?? 0} · 原地转相对 ${r.converted ?? 0} · 缺源 ${r.missingSource ?? 0} · 越界保留 ${r.skippedOutside ?? 0}`
-        )
-        if ((r.errors ?? []).length > 0) {
-          toast.error(`有 ${r.errors!.length} 行失败(详见日志 report 通道)`)
-        }
-      } else {
-        toast.error((res as { error?: string } | null)?.error || '迁移失败')
-      }
-    } finally {
-      setBusyId(null)
-    }
-  }
   const testConn = async (): Promise<void> => {
     setTesting(true)
     try {
@@ -329,15 +296,6 @@ export default function ReportJobsSection(): React.JSX.Element {
                 >
                   历史
                 </button>
-                <button
-                  type="button"
-                  className="st-btn ghost sm"
-                  title="迁移旧 chat-sync 归档到当前目录并把 media_path 改为相对地址(可重复执行)"
-                  disabled={busyId === j.id}
-                  onClick={() => void migrateMedia(j)}
-                >
-                  {busyId === j.id ? '处理中…' : '迁旧媒体'}
-                </button>
                 <button type="button" className="st-btn ghost sm" onClick={() => editJob(j)}>
                   编辑
                 </button>
@@ -431,17 +389,6 @@ export default function ReportJobsSection(): React.JSX.Element {
               />
             </FieldRow>
           </div>
-          <FieldRow
-            label="媒体归档目录"
-            hint="留空 = 用户数据目录 report-media/<账号>;图片/视频/文件消息会归档到该目录并按会话分文件夹,PG media_path 指向归档文件"
-          >
-            <input
-              className="st-input"
-              value={form.scope.mediaDir ?? ''}
-              onChange={(e) => patchScope({ mediaDir: e.target.value })}
-              placeholder="留空使用默认目录;可指向 chat-sync 旧 media 根目录以合并归档"
-            />
-          </FieldRow>
           <div className="st-subtitle">目标库(PostgreSQL · chat_sync 兼容 schema)</div>
           <div className="st-grid rp-form-grid">
             <FieldRow label="主机">
