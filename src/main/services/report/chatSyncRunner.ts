@@ -312,16 +312,18 @@ export async function runChatSyncJob(
           const msgs = page.messages ?? []
           if (msgs.length === 0) break
           let stopReason: 'old' | 'cut' | 'limit' | null = null
-          for (const m of msgs) {
+          // listMessages 每页升序(旧→新):从页尾(最新)倒序扫描,
+          // 遇到 ≤ 游标的行即说明其后(更旧)全为旧消息 → 停止
+          for (let k = msgs.length - 1; k >= 0; k--) {
+            const m = msgs[k]
             anySeen = true
             const seq = Number(m.sortSeq)
-            // keyset 严格递减:一旦遇到 ≤ 游标的行,其后必全是旧消息 → 停止
             if (!(Number.isInteger(seq) && seq > cursorSeq)) {
               stopReason = 'old'
               break
             }
             const createMs = toMs(m.createTime)
-            // 首轮时间窗之外的更早消息:不取也不推进(其 seq 必小于已处理的新行)
+            // 首轮时间窗之外的更早消息:不取(其 seq 必小于已处理的新行,停在此处不推进)
             if (earliestMs > 0 && createMs < earliestMs) {
               stopReason = 'cut'
               break
