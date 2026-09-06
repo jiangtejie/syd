@@ -13,6 +13,10 @@ import {
   type PgMessageRow,
   type PgSessionRow
 } from './pgWriter'
+import { archiveMediaJobs, backfillMissingMedia, mediaJobOf, type MediaJob } from './mediaArchive'
+
+/** 媒体归档/补全单轮预算(防首轮海量解密拖长单轮) */
+const MEDIA_BUDGET = 200
 
 /**
  * chat_sync 任务:把本地微信账号的聊天记录增量上报到 PostgreSQL
@@ -125,7 +129,13 @@ export async function runChatSyncJob(
   jobId: number,
   cfg: {
     accountWxid: string
-    scope: { sessionMode: string; sessionList?: string; daysBack: number; maxPerRun: number }
+    scope: {
+      sessionMode: string
+      sessionList?: string
+      daysBack: number
+      maxPerRun: number
+      mediaDir?: string
+    }
     target: {
       host: string
       port: number
@@ -278,6 +288,7 @@ export async function runChatSyncJob(
     let added = 0
     const newCursors = new Map<string, { seq: number; ms: number; lastFetch: number }>()
     const touched: string[] = []
+    const mediaJobs: MediaJob[] = []
     const maxPerRun = scope.maxPerRun || 0
 
     for (const s of toFetch) {
@@ -331,6 +342,8 @@ export async function runChatSyncJob(
             const row = toPgRow(s.username, m)
             if (!row) continue
             buffer.push(row)
+            const mj = mediaJobOf(s.username, m)
+            if (mj) mediaJobs.push(mj)
             newCount++
             if (seq > maxSeq) maxSeq = seq
             if (createMs > maxMs) maxMs = createMs
@@ -376,11 +389,31 @@ export async function runChatSyncJob(
       if (maxPerRun > 0 && added >= maxPerRun) break
     }
 
-    // 4. 游标落库(仅成功的会话)+ 聚合回填 + 汇总
+    // 4. 游标落库(仅成功的会话)+ 聚合回填 + 媒体归档(chat-sync 语义) + 汇总
     saveJobCursors(jobId, newCursors, noMsg)
     await refreshPgSessionStats(client, cfg.target.schema || 'chat', touched)
+    let mediaNote = ''
+    if (!signal?.aborted) {
+      const archOpts = {
+        schema: cfg.target.schema || 'chat',
+        accountWxid: cfg.accountWxid,
+        dbPath: base.dbPath,
+        mediaDir: scope.mediaDir
+      }
+      const mediaArch = await archiveMediaJobs(client, archOpts, mediaJobs, MEDIA_BUDGET, signal)
+      const backfill = await backfillMissingMedia(
+        client,
+        archOpts,
+        MEDIA_BUDGET,
+        (sessionId, limit, before) => listMessages(base, sessionId, limit, before)
+      )
+      const sum = mediaArch.done + mediaArch.failed + mediaArch.skippedNoSource + backfill.done
+      if (sum > 0) {
+        mediaNote = ` · 媒体归档 ${mediaArch.done + backfill.done} 份(缺源 ${mediaArch.skippedNoSource + backfill.skippedNoSource}、失败 ${mediaArch.failed + backfill.failed})`
+      }
+    }
     const interrupted = signal?.aborted === true
-    const summary = `会话 ${sessionOk}/${toFetch.length} 成功${sessionSkip ? `,跳过 ${sessionSkip}` : ''} · 上报 ${added} 条 · 耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`
+    const summary = `会话 ${sessionOk}/${toFetch.length} 成功${sessionSkip ? `,跳过 ${sessionSkip}` : ''} · 上报 ${added} 条${mediaNote} · 耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`
     if (sessionSkip > 0 || errors.length > 0) clawLog.warn(`job=${jobId} ${summary}`)
     else clawLog.info(`job=${jobId} ${summary}`)
     return {

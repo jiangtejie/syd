@@ -54,6 +54,8 @@ interface StoredParams {
   sessionList?: string
   daysBack?: number
   maxPerRun?: number
+  /** 媒体归档根目录(可选;留空 = userData/report-media/<账号>) */
+  mediaDir?: string
   target?: {
     host: string
     port: number
@@ -91,7 +93,8 @@ export function openJobRunConfig(jobId: number): {
       sessionMode: p.sessionMode ?? 'all',
       sessionList: p.sessionList,
       daysBack: typeof p.daysBack === 'number' ? p.daysBack : 0,
-      maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0
+      maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0,
+      mediaDir: p.mediaDir
     },
     target: {
       host: t.host,
@@ -111,7 +114,8 @@ function toInfo(r: JobRow): ReportJobInfo {
     sessionMode: p.sessionMode ?? 'all',
     sessionList: p.sessionList,
     daysBack: typeof p.daysBack === 'number' ? p.daysBack : 0,
-    maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0
+    maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0,
+    mediaDir: p.mediaDir
   }
   return {
     id: r.id,
@@ -202,6 +206,7 @@ export function saveReportJob(input: ReportJobInput): { ok: boolean; error?: str
     sessionList: input.scope.sessionList?.trim() || undefined,
     daysBack: Math.max(0, Math.floor(Number(input.scope.daysBack) || 0)),
     maxPerRun: Math.max(0, Math.floor(Number(input.scope.maxPerRun) || 0)),
+    mediaDir: input.scope.mediaDir?.trim() || undefined,
     target: tgt
   }
   const prevParams =

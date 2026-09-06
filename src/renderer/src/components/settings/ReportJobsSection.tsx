@@ -389,6 +389,17 @@ export default function ReportJobsSection(): React.JSX.Element {
               />
             </FieldRow>
           </div>
+          <FieldRow
+            label="媒体归档目录"
+            hint="留空 = 用户数据目录 report-media/<账号>;图片/视频/文件消息会归档到该目录并按会话分文件夹,PG media_path 指向归档文件"
+          >
+            <input
+              className="st-input"
+              value={form.scope.mediaDir ?? ''}
+              onChange={(e) => patchScope({ mediaDir: e.target.value })}
+              placeholder="留空使用默认目录;可指向 chat-sync 旧 media 根目录以合并归档"
+            />
+          </FieldRow>
           <div className="st-subtitle">目标库(PostgreSQL · chat_sync 兼容 schema)</div>
           <div className="st-grid rp-form-grid">
             <FieldRow label="主机">

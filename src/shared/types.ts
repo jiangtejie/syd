@@ -552,6 +552,8 @@ export interface ReportChatScope {
   daysBack: number
   /** 单轮消息上限(0=不限,防失控) */
   maxPerRun: number
+  /** 媒体归档根目录(留空 = userData/report-media/<账号>;可指向 chat-sync 老媒体目录) */
+  mediaDir?: string
 }
 
 export type ReportScheduleKind = 'interval' | 'daily' | 'manual'
