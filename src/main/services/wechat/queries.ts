@@ -725,12 +725,15 @@ interface MsgWithCursor {
 /**
  * 读取某会话消息（跨多个消息库合并，keyset 分页）。
  * before 为空取最新一页；否则按游标取"更早的一页"。返回 nextCursor 供继续向前翻页。
+ * skipEnrich=true 供批量同步场景使用:跳过每页发送人/群昵称 enrich(需逐页打开联系人库的
+ * 同步热点),由调用方收集完整页后按会话一次性 enrich,降低主进程阻塞时长。
  */
 export function listMessages(
   ctx: WxReaderContext,
   sessionId: string,
   limit = 50,
-  before?: MessageCursor
+  before?: MessageCursor,
+  skipEnrich = false
 ): {
   ok: boolean
   messages?: ChatMessage[]
@@ -754,6 +757,7 @@ export function listMessages(
       if (!opened.db) continue
       const db = opened.db
       try {
+        // 名称表(含 myRowId)为 is_send 判定必需,同步模式同样加载
         const nameId = loadNameIdMap(db, ctx.wxid)
         const tables = db
           .prepare("SELECT name FROM sqlite_master WHERE type='table' AND lower(name) LIKE 'msg_%'")
@@ -820,8 +824,9 @@ export function listMessages(
     const nextCursor =
       hasMore && pageItems.length > 0 ? pageItems[pageItems.length - 1].cursor : undefined
     const page = pageItems.map((it) => it.msg).reverse()
-    // enrich 发送人昵称/头像/群昵称/企微名/转账双方名（群消息关键）
-    enrichMessagesWithSenders(page, ctx, sessionId)
+    // enrich 发送人昵称/头像/群昵称/企微名/转账双方名（群消息关键）;
+    // skipEnrich 时留给调用方按会话批量 enrich 一次
+    if (!skipEnrich) enrichMessagesWithSenders(page, ctx, sessionId)
     return { ok: true, messages: page, hasMore, nextCursor }
   } catch (e: any) {
     return { ok: false, error: `读取消息失败: ${e?.message || String(e)}` }

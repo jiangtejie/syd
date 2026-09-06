@@ -18,6 +18,8 @@ import type { ChatMessage } from '../../../shared/types'
 const mediaLog = createLogger('report')
 /** 单文件目录遍历上限 */
 const GUARD = 4000
+/** 让出事件循环(解密/目录遍历为同步热点) */
+const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
 
 export interface MediaJob {
   sessionWxid: string
@@ -191,6 +193,7 @@ export async function archiveMediaJobs(
   const effective = jobs.slice(0, budget)
   for (const j of effective) {
     if (signal?.aborted) break
+    await tick() // 每项前让出主进程(同步解密/目录遍历较多)
     let src: string | null = null
     let destName = ''
     try {
@@ -298,6 +301,7 @@ export async function backfillMissingMedia(
   if (rows.length === 0) return sum
   const root = archiveRoot(opts.accountWxid)
   for (const r of rows) {
+    await tick() // 每行前让出主进程
     let destName = ''
     let src: string | null = null
     try {

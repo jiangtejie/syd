@@ -1,5 +1,11 @@
 import { buildWxSession } from '../wechat/wxService'
-import { listMessages, listSessions, enrichSessionsWithContacts, toMs } from '../wechat/queries'
+import {
+  listMessages,
+  listSessions,
+  enrichSessionsWithContacts,
+  enrichMessagesWithSenders,
+  toMs
+} from '../wechat/queries'
 import type { ChatMessage, SessionSummary } from '../../../shared/types'
 import { createLogger } from '../logging'
 import { Client } from 'pg'
@@ -30,7 +36,9 @@ const MEDIA_BUDGET = 200
  * - 游标推进防污染:以 sortSeq 为准(库内单调),时间戳仅记录;超时/失败不写游标;
  * - 幂等 upsert + 批量 500/批 + 每轮独立 PG 连接,结束必释放;
  * - 失败降噪:明细只在第 1/10/20… 轮输出,恢复时提示一次(由 scheduler 维护);
- * - media_md5 照常上报;media_path v1 不上报字节与路径(留 NULL,供后续媒体任务扩展)。
+ * - 性能:页扫阶段 skipEnrich(免每库名称表/每页联系人 enrich),收齐后按会话一次性
+ *   enrich + 批量写;页/会话/批间隙 setImmediate 让出主进程事件循环,UI 不卡死;
+ * - 媒体归档到缓存目录 <cache>/media/<账号>(media_path 相对缓存根),单轮限量。
  */
 
 const clawLog = createLogger('report')
@@ -39,6 +47,9 @@ const BATCH = 500
 const SESSION_TIMEOUT_MS = 90_000
 const NO_MSG_MEMORY_MS = 30 * 60_000
 const RECHECK_INTERVAL_MS = 5 * 60_000
+
+/** 让出事件循环(同步读库/解密之间存在大量同步热点,保证主进程 UI 不被饿死) */
+const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
 
 export interface ChatSyncRunResult {
   ok: boolean
@@ -296,26 +307,24 @@ export async function runChatSyncJob(
       const prevC = cursors.get(s.username)
       const cursorSeq = prevC?.cursor_seq ?? 0
       const sessionStart = Date.now()
-      let buffer: PgMessageRow[] = []
+      // 会话内收集原始消息:页扫阶段跳过每库名称表/每页 enrich(同步热点),
+      // 收齐后一次性 enrich + 批量 upsert,主进程事件循环只在页/会话间隙被让出
+      const raw: ChatMessage[] = []
       let newCount = 0
       let maxSeq = cursorSeq
       let maxMs = prevC?.cursor_ms ?? 0
       let anySeen = false
       let timedOut = false
       let fatal: string | null = null
+      let persistErr: string | null = null
       let before: { sortSeq: number; createTime: number; localId: number } | undefined
-      const flush = async (): Promise<void> => {
-        if (buffer.length === 0) return
-        await upsertPgMessages(client, cfg.target.schema || 'chat', buffer)
-        buffer = []
-      }
       try {
         for (;;) {
           if (Date.now() - sessionStart > SESSION_TIMEOUT_MS) {
             timedOut = true
             break
           }
-          const page = listMessages(base, s.username, PAGE, before)
+          const page = listMessages(base, s.username, PAGE, before, true /* skipEnrich */)
           if (!page.ok) {
             fatal = page.error ?? '读取消息失败'
             break
@@ -339,28 +348,49 @@ export async function runChatSyncJob(
               stopReason = 'cut'
               break
             }
-            const row = toPgRow(s.username, m)
-            if (!row) continue
-            buffer.push(row)
-            const mj = mediaJobOf(s.username, m)
-            if (mj) mediaJobs.push(mj)
+            raw.push(m)
             newCount++
             if (seq > maxSeq) maxSeq = seq
             if (createMs > maxMs) maxMs = createMs
-            if (buffer.length >= BATCH) await flush()
             if (maxPerRun > 0 && added + newCount >= maxPerRun) {
               stopReason = 'limit'
               break
             }
           }
-          await flush()
           if (fatal || stopReason !== null) break
           if (!page.hasMore || !page.nextCursor) break
           before = page.nextCursor
+          await tick() // 页间隙让出事件循环(同步读库后 UI 呼吸)
+        }
+        // 会话收尾:一次性 enrich + 批量写(超时/失败也把已取部分入库,游标不动)
+        if (raw.length > 0) {
+          // enrich 仅用于展示名:失败降级不影响上报
+          try {
+            enrichMessagesWithSenders(raw, base, s.username)
+          } catch {
+            /* 联系人/群昵称库不可读:展示名留空 */
+          }
+          try {
+            const rows: PgMessageRow[] = []
+            for (const m of raw) {
+              const r = toPgRow(s.username, m)
+              if (r) rows.push(r)
+              const mj = mediaJobOf(s.username, m)
+              if (mj) mediaJobs.push(mj)
+            }
+            for (let i = 0; i < rows.length; i += BATCH) {
+              await upsertPgMessages(client, cfg.target.schema || 'chat', rows.slice(i, i + BATCH))
+              await tick()
+            }
+          } catch (e) {
+            persistErr = e instanceof Error ? e.message : String(e)
+          }
         }
         if (signal?.aborted) break // 外层会话循环一并退出
-        // 时间窗截断场景:游标推进到"已处理的新行",避免每轮重扫全量历史
-        if (anySeen) {
+        if (persistErr !== null) {
+          errors.push(`${s.username}: 入库失败:${persistErr}`)
+          sessionSkip++
+        } else if (anySeen) {
           if (timedOut) {
             // 超时:不推进游标(下轮续传);已入库数据幂等无副作用
             errors.push(`${s.username}: 会话同步超时,已跳过(已拉取部分已入库,下次续传)`)
@@ -371,22 +401,28 @@ export async function runChatSyncJob(
             if (maxSeq > cursorSeq) touched.push(s.username)
           }
         }
-        if (timedOut || fatal) sessionSkip++
-        else sessionOk++
+        if (persistErr === null && !timedOut && !fatal) sessionOk++
+        else if (persistErr === null) sessionSkip++
         added += newCount
         if (newCount > 0) {
           clawLog.info(`job=${jobId} ${s.username} ${s.displayName || ''} +${newCount} 条`)
         }
-        if (fatal === null && !timedOut && newCount === 0 && !cursors.has(s.username)) {
+        if (
+          fatal === null &&
+          !timedOut &&
+          persistErr === null &&
+          newCount === 0 &&
+          !cursors.has(s.username)
+        ) {
           // 该会话确实还没有消息表/消息:进 30 分钟短期记忆(防每轮重复空扫)
           noMsg.set(s.username, Date.now())
         }
       } catch (e) {
-        await flush().catch(() => undefined)
         errors.push(`${s.username}: ${e instanceof Error ? e.message : String(e)}`)
         sessionSkip++
       }
       if (maxPerRun > 0 && added >= maxPerRun) break
+      await tick()
     }
 
     // 4. 游标落库(仅成功的会话)+ 聚合回填 + 媒体归档(chat-sync 语义) + 汇总
