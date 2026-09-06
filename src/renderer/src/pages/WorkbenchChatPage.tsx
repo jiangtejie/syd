@@ -700,6 +700,8 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     try {
       await promptState.submit(v)
       setPromptState(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '操作失败,请重试')
     } finally {
       setPromptBusy(false)
     }

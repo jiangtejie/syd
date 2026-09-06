@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ChatMsgItem, ChatSessionItem } from '../../../shared/types'
 import { useWorkbenchStore } from './workbench'
+import { toast } from './toast'
 
 /**
  * AI 工作台前端 store(事件通道 ai:wb;会话复用 chat 体系,busy 按会话维度)。
@@ -359,9 +360,19 @@ export const useWorkbenchChatStore = create<WbState>((set, get) => ({
   },
 
   rename: async (id, title) => {
-    const res = await wbApi?.rename(id, title).catch(() => null)
-    if (!res?.ok) return
-    set({ chats: (get().chats ?? []).map((c) => (c.id === id ? { ...c, title } : c)) })
+    const name = (title ?? '').trim()
+    if (!name) {
+      toast.error('会话名不能为空')
+      return
+    }
+    const res = await wbApi?.rename(id, name).catch(() => null)
+    if (!res?.ok) {
+      toast.error((res as { error?: string } | null)?.error || '重命名失败,请稍后重试')
+      return
+    }
+    // 以服务端返回的列表为准刷新(标题与排序一并更新)
+    await get().init(get().wxid)
+    toast.success('已重命名')
   },
 
   clear: async (id) => {
