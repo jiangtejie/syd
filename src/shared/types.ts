@@ -528,3 +528,94 @@ export const TOOL_CN_NAMES: Record<string, string> = {
 export function toolCnName(name: string): string {
   return TOOL_CN_NAMES[name] ?? name
 }
+
+/* ══════════ 数据上报·定时任务(ReportJobs)══════════ */
+
+/** 目标库:PostgreSQL(chat-sync 兼容 schema) */
+export interface ReportPgTarget {
+  host: string
+  port: number
+  database: string
+  user: string
+  schema: string
+  /** 明文口令,仅保存/编辑时提交;列表与回显一律不返回(hasPassword 代替) */
+  password?: string
+}
+
+/** 上报数据范围 */
+export interface ReportChatScope {
+  /** 会话范围:all=全部 groups=仅群聊 single=仅单聊 list=白名单 */
+  sessionMode: 'all' | 'groups' | 'single' | 'list'
+  /** sessionMode=list 时的会话 username 白名单(每行一个/逗号分隔文本) */
+  sessionList?: string
+  /** 首轮全量回溯天数(0=全部历史) */
+  daysBack: number
+  /** 单轮消息上限(0=不限,防失控) */
+  maxPerRun: number
+}
+
+export type ReportScheduleKind = 'interval' | 'daily' | 'manual'
+
+/** 任务配置(存储/列表往返;password 永不出主进程) */
+export interface ReportJobInput {
+  id?: number
+  name: string
+  type: 'chat_sync'
+  enabled: boolean
+  scheduleKind: ReportScheduleKind
+  /** scheduleKind=interval:秒 */
+  intervalSec?: number
+  /** scheduleKind=daily:HH:mm */
+  dailyTime?: string
+  /** 数据源账号(wxid) */
+  accountWxid: string
+  scope: ReportChatScope
+  target: ReportPgTarget
+}
+
+/** 任务列表行(含最近一次运行摘要与口令占位标记) */
+export interface ReportJobInfo {
+  id: number
+  name: string
+  type: string
+  enabled: boolean
+  scheduleKind: ReportScheduleKind
+  intervalSec: number
+  dailyTime: string
+  accountWxid: string
+  scope: ReportChatScope
+  target: Omit<ReportPgTarget, 'password'> & { hasPassword: boolean }
+  lastStatus?: string
+  lastSummary?: string
+  lastAt?: number
+  createdAt: number
+  updatedAt: number
+}
+
+/** 运行历史行 */
+export interface ReportRunInfo {
+  id: number
+  jobId: number
+  trigger: string
+  status: string
+  added: number
+  sessionsOk: number
+  sessionsSkip: number
+  errors?: string
+  startedAt: number
+  endedAt?: number
+  durationMs?: number
+}
+
+export const REPORT_TYPE_LABEL: Record<string, string> = { chat_sync: '聊天记录上报(PG)' }
+export const REPORT_SCHEDULE_LABEL: Record<string, string> = {
+  interval: '按间隔',
+  daily: '每日定点',
+  manual: '仅手动'
+}
+export const REPORT_SESSION_MODE_LABEL: Record<string, string> = {
+  all: '全部会话',
+  groups: '仅群聊',
+  single: '仅单聊',
+  list: '白名单会话'
+}

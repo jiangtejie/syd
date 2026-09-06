@@ -512,6 +512,22 @@ const api = {
       }> => ipcRenderer.invoke('cs:app:dataStats'),
       clearCache: (): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:app:clearCache')
+    },
+    report: {
+      list: (): Promise<{ ok: boolean; jobs?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:report:list'),
+      save: (input: unknown): Promise<{ ok: boolean; id?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:report:save', input),
+      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:report:remove', id),
+      setEnabled: (id: number, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:report:setEnabled', id, enabled),
+      runNow: (id: number): Promise<{ ok: boolean; summary?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:report:runNow', id),
+      testConn: (opts: unknown): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:report:testConn', opts),
+      history: (id: number): Promise<{ ok: boolean; runs?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:report:history', id)
     }
   }
 }

@@ -223,6 +223,47 @@ export function migrate(db: Database.Database): void {
   db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_im_file_record_msg ON im_file_record (channel, message_id)'
   )
+  // ── 数据上报·定时任务：任务配置 / 增量游标 / 运行历史 ──
+  db.exec(`CREATE TABLE IF NOT EXISTS report_job (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'chat_sync',
+    enabled INTEGER NOT NULL DEFAULT 0,
+    schedule_kind TEXT NOT NULL DEFAULT 'manual',
+    interval_sec INTEGER NOT NULL DEFAULT 0,
+    daily_time TEXT DEFAULT '',
+    params TEXT NOT NULL DEFAULT '{}',
+    last_status TEXT,
+    last_summary TEXT,
+    last_at INTEGER,
+    next_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`)
+  db.exec(`CREATE TABLE IF NOT EXISTS report_cursor (
+    job_id INTEGER NOT NULL,
+    session_wxid TEXT NOT NULL,
+    cursor_seq INTEGER NOT NULL DEFAULT 0,
+    cursor_ms INTEGER NOT NULL DEFAULT 0,
+    last_fetch_at INTEGER,
+    no_msg_at INTEGER,
+    PRIMARY KEY (job_id, session_wxid)
+  )`)
+  db.exec(`CREATE TABLE IF NOT EXISTS report_run (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL,
+    trigger TEXT NOT NULL DEFAULT 'auto',
+    status TEXT NOT NULL,
+    added INTEGER NOT NULL DEFAULT 0,
+    sessions_ok INTEGER NOT NULL DEFAULT 0,
+    sessions_skip INTEGER NOT NULL DEFAULT 0,
+    errors TEXT,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    duration_ms INTEGER
+  )`)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_report_run_job ON report_run (job_id, id DESC)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_report_job_next ON report_job (enabled, next_at)')
   // 历史版本曾临时内置话术库(phrase_book),功能已下线:清理旧库残留表
   db.exec('DROP TABLE IF EXISTS phrase_book')
   // 增量列迁移：issue_feedback.auto_done（自动闭环标记：unreplied 问题检测到回复后自动关闭）

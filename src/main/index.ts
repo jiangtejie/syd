@@ -37,6 +37,8 @@ import { registerExportHandlers } from './ipc/exportHandlers'
 import { registerWorkbenchHandlers } from './ipc/workbenchHandlers'
 import { registerLogHandlers } from './ipc/logsHandlers'
 import { registerChannelFileHandlers } from './ipc/channelFileHandlers'
+import { registerReportHandlers } from './ipc/reportHandlers'
+import { startReportScheduler, stopReportScheduler } from './services/report/scheduler'
 import { createLogger } from './services/logging'
 import { startFileHousekeeping } from './services/im/channelFiles'
 
@@ -318,6 +320,7 @@ if (!app.requestSingleInstanceLock()) {
     registerWorkbenchHandlers()
     registerLogHandlers()
     registerChannelFileHandlers()
+    registerReportHandlers()
     registerMediaProtocol()
 
     // IM 渠道(飞书等):恢复上次启用状态的账号连接
@@ -325,6 +328,9 @@ if (!app.requestSingleInstanceLock()) {
 
     // 渠道接收文件:启动即清一轮 + 每 6h 定时清理(防数据膨胀)
     startFileHousekeeping()
+
+    // 数据上报·定时任务:恢复启用的任务调度
+    startReportScheduler()
 
     // 微信库变更 → 新消息提醒（节流 + 聚焦抑制）
     setOnDbChangedNotify(notifyNewMessage)
@@ -355,6 +361,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  stopReportScheduler()
   closeDb()
   stopAllWatches()
   stopIssueScheduler()

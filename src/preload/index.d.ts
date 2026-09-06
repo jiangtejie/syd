@@ -23,7 +23,11 @@ import type {
   ChatMsgItem,
   AiChatEvent,
   ImChannelAccount,
-  ImChannelAccountInput
+  ImChannelAccountInput,
+  ReportJobInfo,
+  ReportJobInput,
+  ReportPgTarget,
+  ReportRunInfo
 } from '../shared/types'
 
 interface KeyActionResult {
@@ -484,6 +488,18 @@ declare global {
           onEvent: (
             callback: (evt: AiChatEvent & { sessionId?: number; runId?: string }) => void
           ) => () => void
+        }
+        report: {
+          list: () => Promise<Result<{ jobs?: ReportJobInfo[] }>>
+          save: (input: ReportJobInput) => Promise<{ ok: boolean; id?: number; error?: string }>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+          setEnabled: (id: number, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+          runNow: (id: number) => Promise<{ ok: boolean; summary?: string; error?: string }>
+          testConn: (opts: {
+            target?: ReportPgTarget
+            jobId?: number
+          }) => Promise<{ ok: boolean; error?: string }>
+          history: (id: number) => Promise<Result<{ runs?: ReportRunInfo[] }>>
         }
       }
     }

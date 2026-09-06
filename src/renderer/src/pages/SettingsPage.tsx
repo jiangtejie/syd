@@ -7,6 +7,7 @@ import WorkbenchApprovalSection from '../components/settings/WorkbenchApprovalSe
 import WorkbenchMemoSection from '../components/settings/WorkbenchMemoSection'
 import WorkbenchReliabilitySection from '../components/settings/WorkbenchReliabilitySection'
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
+import ReportJobsSection from '../components/settings/ReportJobsSection'
 import { LogSection } from '../components/settings/LogSection'
 import { SettingsCard, SwitchRow, FieldRow } from '../components/settings/ui'
 import { ImSection } from './ImPage'
@@ -144,7 +145,7 @@ function IssueSoundRow(): React.JSX.Element {
 }
 
 /** 设置页 Tab 板块 */
-type SettingsTab = 'wechat' | 'ai' | 'send' | 'other' | 'im' | 'workbench' | 'logs'
+type SettingsTab = 'wechat' | 'ai' | 'send' | 'other' | 'im' | 'workbench' | 'report' | 'logs'
 
 const SETTINGS_TAB_KEYS: readonly SettingsTab[] = [
   'wechat',
@@ -153,6 +154,7 @@ const SETTINGS_TAB_KEYS: readonly SettingsTab[] = [
   'other',
   'im',
   'workbench',
+  'report',
   'logs'
 ]
 /** 记住上次所选 Tab（localStorage，首次进入默认「微信数据」） */
@@ -448,6 +450,7 @@ function SettingsPage(): React.JSX.Element {
             ['other', '偏好与数据'],
             ['im', 'IM 渠道'],
             ['workbench', '工作台'],
+            ['report', '定时任务'],
             ['logs', '日志']
           ] as Array<[SettingsTab, string]>
         ).map(([key, label]) => (
@@ -473,6 +476,12 @@ function SettingsPage(): React.JSX.Element {
       {tab === 'workbench' && (
         <div className="st-tab-panel">
           <WorkbenchSkillsSection />
+        </div>
+      )}
+
+      {tab === 'report' && (
+        <div className="st-tab-panel">
+          <ReportJobsSection />
         </div>
       )}
 
