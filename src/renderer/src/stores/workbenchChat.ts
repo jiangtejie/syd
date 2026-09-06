@@ -184,14 +184,6 @@ function queueDelta(sid: number, kind: 'text' | 'reason', token: string): void {
       if (it.sid !== st.activeId) continue // 非活动会话的增量丢弃,done 后整轮刷新兜底
       if (!st.busyIds[it.sid]) continue // 已收尾:迟到帧丢弃(最终内容由 load 全量兜底)
       if ((turnSeq.get(it.sid) ?? 0) !== it.seq) continue // 跨轮次旧帧:丢弃
-      if (it.kind === 'text') {
-        const latest = useWorkbenchChatStore.getState()
-        if (latest.pendingTexts[it.sid] !== undefined) {
-          useWorkbenchChatStore.setState({
-            pendingTexts: withoutKeyStr(latest.pendingTexts, it.sid)
-          })
-        }
-      }
       appendTurnToken(it.kind, it.token)
     }
   }
