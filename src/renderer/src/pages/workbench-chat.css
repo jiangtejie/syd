@@ -363,6 +363,22 @@
   min-height: 0;
   overflow-y: auto;
   padding: 14px 16px 8px;
+  /* 关闭浏览器滚动锚定:输出中工具卡开合/段落增删会钉住视口造成跳动 */
+  overflow-anchor: none;
+}
+
+/* 助手侧文本气泡统一「版心宽度」:
+ * 流式输出按 token 变化时,内容只影响高度、不影响宽度;
+ * 否则表格/列表/段落结构翻转(max-content 忽大忽小)会让气泡忽窄忽宽、
+ * 整列左右漂移。宽度上限仍受下方 max-width 约束。 */
+.wb-row:not(.is-user) .wb-bubble {
+  width: 92%;
+}
+
+/* 特殊窄胶囊(思考中/实时推理收起态)与用户气泡不套版心宽度 */
+.wb-row:not(.is-user) .wb-bubble.wb-thinking,
+.wb-row:not(.is-user) .wb-bubble.wb-reason-live {
+  width: auto;
 }
 
 .wb-welcome {

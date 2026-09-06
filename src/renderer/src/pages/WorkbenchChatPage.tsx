@@ -1410,11 +1410,13 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               )
             }
             const isTail = activeBusy && i === turnBlocks.length - 1
+            const text = (b.text ?? '').trim()
+            if (!text) return null // 空文本块(首 token 未到)不渲染,避免幽灵气泡闪跳
             return (
               <div key={b.id} className="wb-row">
                 <div className="wb-bubble">
                   <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
-                    {b.text ?? ''}
+                    {text}
                   </ReactMarkdown>
                   {isTail && <span className="wb-caret" />}
                 </div>
