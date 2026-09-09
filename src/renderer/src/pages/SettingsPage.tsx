@@ -32,6 +32,15 @@ interface FormState {
   'send.humanizeDelay': string
   'inject.enabled': string
   'notify.enabled': string
+  'growth.image.enabled': string
+  'growth.image.baseUrl': string
+  'growth.image.apiKey': string
+  'growth.image.model': string
+  'growth.image.size': string
+  'growth.image.count': string
+  'growth.search.enabled': string
+  'growth.search.provider': string
+  'growth.search.apiKey': string
 }
 
 /** AI 通道预设（OpenAI 兼容 chat/completions）：仅预置官方接口地址；模型名不预置，通过「获取模型」拉取或手动填写 */
@@ -99,7 +108,16 @@ const DEFAULTS: FormState = {
   'send.dailyLimit': '200',
   'send.humanizeDelay': '1',
   'inject.enabled': '1',
-  'notify.enabled': '1'
+  'notify.enabled': '1',
+  'growth.image.enabled': '0',
+  'growth.image.baseUrl': '',
+  'growth.image.apiKey': '',
+  'growth.image.model': 'gptimage2',
+  'growth.image.size': '1024x1024',
+  'growth.image.count': '2',
+  'growth.search.enabled': '0',
+  'growth.search.provider': 'bocha',
+  'growth.search.apiKey': ''
 }
 
 const configApi = window.api?.cs?.config
@@ -173,6 +191,7 @@ function SettingsPage(): React.JSX.Element {
   const [savedTip, setSavedTip] = useState('')
   const [sendStatus, setSendStatus] = useState<SendStatusInfo | null>(null)
   const [aiTesting, setAiTesting] = useState(false)
+  const [imgTesting, setImgTesting] = useState(false)
   const [aiTestRes, setAiTestRes] = useState<{
     ok: boolean
     latencyMs?: number
@@ -321,6 +340,18 @@ function SettingsPage(): React.JSX.Element {
     }
   }
 
+  const testImage = async (): Promise<void> => {
+    const api = window.api?.cs?.growthai
+    if (!api?.testImage) return
+    setImgTesting(true)
+    try {
+      const res = await api.testImage()
+      if (res.ok) toast.success('生图通道连通, 测试图已生成')
+      else toast.error(res.error || '生图测试失败')
+    } finally {
+      setImgTesting(false)
+    }
+  }
   const patch = (key: keyof FormState, value: string): void => {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
@@ -456,7 +487,7 @@ function SettingsPage(): React.JSX.Element {
             ['send', '发送与频控'],
             ['other', '偏好与数据'],
             ['im', 'IM 渠道'],
-            ['workbench', '工作台'],
+            ['workbench', 'AI'],
             ['report', '定时任务'],
             ['logs', '日志']
           ] as Array<[SettingsTab, string]>
@@ -684,6 +715,102 @@ function SettingsPage(): React.JSX.Element {
             desc="本次运行内工作台生成请求的成功率与最近失败原因。"
           >
             <WorkbenchReliabilitySection />
+          </SettingsCard>
+        </div>
+      )}
+
+      {tab === 'ai' && (
+        <div className="st-tab-panel">
+          <SettingsCard
+            title="生图模型(营销 AI 工作台)"
+            desc="用于营销工作台里 AI 生图(封面/氛围图/菜品示意图)。支持 OpenAI 兼容的 /images/generations;中转站请填其 Base URL 与模型名(如 gptimage2)。生成图会强制标注「AI 生成示意图」。"
+          >
+            <SwitchRow
+              label="启用 AI 生图"
+              desc="关闭后营销工作台里的生图工具会提示去设置开启。"
+              checked={boolVal(form['growth.image.enabled'])}
+              onChange={(v) => patch('growth.image.enabled', boolStr(v))}
+            />
+            <FieldRow label="接口地址(Base URL)">
+              <input
+                className="st-input"
+                value={form['growth.image.baseUrl'] ?? ''}
+                onChange={(e) => patch('growth.image.baseUrl', e.target.value)}
+                placeholder="https://中转站域名/v1"
+              />
+            </FieldRow>
+            <FieldRow label="API Key">
+              <input
+                className="st-input"
+                type="password"
+                value={form['growth.image.apiKey'] ?? ''}
+                onChange={(e) => patch('growth.image.apiKey', e.target.value)}
+                placeholder="中转站密钥(本地加密存储)"
+              />
+            </FieldRow>
+            <FieldRow label="模型名">
+              <input
+                className="st-input"
+                value={form['growth.image.model'] ?? ''}
+                onChange={(e) => patch('growth.image.model', e.target.value)}
+                placeholder="gptimage2"
+              />
+            </FieldRow>
+            <FieldRow label="尺寸">
+              <input
+                className="st-input"
+                value={form['growth.image.size'] ?? ''}
+                onChange={(e) => patch('growth.image.size', e.target.value)}
+                placeholder="1024x1024"
+              />
+            </FieldRow>
+            <FieldRow label="每次张数">
+              <input
+                className="st-input"
+                type="number"
+                min={1}
+                max={4}
+                value={form['growth.image.count'] ?? '2'}
+                onChange={(e) => patch('growth.image.count', e.target.value)}
+              />
+            </FieldRow>
+            <FieldRow label="连通性测试">
+              <button type="button" className="st-btn" onClick={() => void testImage()}>
+                {imgTesting ? '测试中…' : '测试生图(会生成 1 张测试图)'}
+              </button>
+            </FieldRow>
+          </SettingsCard>
+
+          <SettingsCard
+            title="联网搜索(营销 AI 工作台)"
+            desc="营销工作台里 AI 查地址/电话/口碑/菜品参考时使用。结果仅供参考, 地址电话需人工确认后才写入档案。"
+          >
+            <SwitchRow
+              label="启用联网搜索"
+              desc="关闭后搜索工具会提示去设置开启。"
+              checked={boolVal(form['growth.search.enabled'])}
+              onChange={(v) => patch('growth.search.enabled', boolStr(v))}
+            />
+            <FieldRow label="供应商">
+              <select
+                className="st-input"
+                value={form['growth.search.provider'] ?? 'bocha'}
+                onChange={(e) => patch('growth.search.provider', e.target.value)}
+              >
+                <option value="bocha">博查(国内直连)</option>
+                <option value="tavily">Tavily</option>
+                <option value="serper">Serper</option>
+              </select>
+            </FieldRow>
+            <FieldRow label="API Key">
+              <input
+                className="st-input"
+                type="password"
+                value={form['growth.search.apiKey'] ?? ''}
+                onChange={(e) => patch('growth.search.apiKey', e.target.value)}
+                placeholder="搜索服务密钥(本地加密存储)"
+              />
+            </FieldRow>
           </SettingsCard>
         </div>
       )}

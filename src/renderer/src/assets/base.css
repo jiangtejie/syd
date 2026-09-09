@@ -40,9 +40,8 @@
   --bg-hover: #f7f9fb;
   --bg-mask: rgba(0, 0, 0, 0.32);
 
-  /* 兼容旧命名（历史 CSS 用 var(--muted/--panel/--line/--st-muted) 作降级取色） */
+  /* 兼容旧命名（历史 CSS 用 var(--muted/--panel/--line) 取色） */
   --muted: #777;
-  --st-muted: #888;
   --panel: #fff;
   --line: rgba(128, 128, 128, 0.25);
 
@@ -56,6 +55,11 @@
   --shadow-card: 0 1px 2px rgba(31, 35, 41, 0.04);
   --shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.14);
   --shadow-toast: 0 4px 16px rgba(0, 0, 0, 0.16);
+
+  /* ── 滚动条（业务样式只覆盖宽度/内缩，实现见文件末尾） ── */
+  --sb-w: 8px;
+  --sb-inset: 2px;
+  --sb-thumb: #c9cdd4;
 }
 
 /* 键盘可达性：仅键盘触发时显示焦点环，避免鼠标点击后残留 */
@@ -68,24 +72,24 @@
 /* ── 全局细滚动条（Firefox 走 scrollbar-width/color 双写） ── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #c9cdd4 transparent;
+  scrollbar-color: var(--sb-thumb) transparent;
 }
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: var(--sb-w);
+  height: var(--sb-w);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c9cdd4;
-  border-radius: 4px;
-  border: 2px solid transparent;
+  background: var(--sb-thumb);
+  border-radius: calc(var(--sb-w) / 2);
+  border: var(--sb-inset) solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #aab0ba;
-  border: 2px solid transparent;
+  border: var(--sb-inset) solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-corner {

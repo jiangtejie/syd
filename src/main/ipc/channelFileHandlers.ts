@@ -3,6 +3,7 @@ import { listImAccounts } from '../db/repos/imRepo'
 import * as repo from '../db/repos/imFileRepo'
 import * as files from '../services/im/channelFiles'
 import { createLogger } from '../services/logging'
+import { fail } from './_util'
 
 /** 渠道接收文件管理 IPC(工作台侧栏「收到的文件」) */
 
@@ -23,7 +24,7 @@ export function registerChannelFileHandlers(): void {
         const accounts = listImAccounts().map((a) => ({ id: a.id, name: a.name }))
         return { ok: true as const, files: rows, totals, accounts }
       } catch (err) {
-        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+        return fail(err)
       }
     }
   )
@@ -35,7 +36,7 @@ export function registerChannelFileHandlers(): void {
       const { removed } = files.removeFiles(list)
       return { ok: true as const, removed }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -43,7 +44,7 @@ export function registerChannelFileHandlers(): void {
     try {
       return { ok: Number.isInteger(id) && files.revealFile(id) }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -56,7 +57,7 @@ export function registerChannelFileHandlers(): void {
       fileLog.info(`手动清理:过期 ${r1.removed} 个,孤儿 ${r2.removed} 个`)
       return { ok: true as const, removed: r1.removed + r2.removed, totals }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -65,7 +66,7 @@ export function registerChannelFileHandlers(): void {
       const p = files.filePolicy()
       return { ok: true as const, ...p }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 }

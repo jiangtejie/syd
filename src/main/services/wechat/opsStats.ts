@@ -119,7 +119,14 @@ function buildWindow(range: number, now: number): { startMs: number; days: AggRe
   return { startMs, days }
 }
 
-export function computeOpsStats(ctx: WxReaderContext, range = 7): OpsStats {
+/** 每处理 N 行让出一次事件循环：同步大循环会把主进程 UI 一起冻住 */
+const YIELD_EVERY_ROWS = 4000
+
+function yieldToLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
+export async function computeOpsStats(ctx: WxReaderContext, range = 7): Promise<OpsStats> {
   const now = Date.now()
   const cacheKey = `${ctx.wxid}:${range}`
   const hit = cache.get(cacheKey)
@@ -190,7 +197,10 @@ export function computeOpsStats(ctx: WxReaderContext, range = 7): OpsStats {
             )
             .all(startRaw) as Record<string, unknown>[]
 
-          for (const row of rows) {
+          for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+            const row = rows[rowIdx]
+            // 大账号 7 天窗口可达 10^5~10^6 行:分块让出事件循环,避免主进程长时间无响应
+            if (rowIdx > 0 && rowIdx % YIELD_EVERY_ROWS === 0) await yieldToLoop()
             const timeMs = toMs(toNumber(getRowField(row, [createCol])))
             if (timeMs < startMs) continue
 

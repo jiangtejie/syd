@@ -1,6 +1,29 @@
 import { useEffect, useRef } from 'react'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { BarChart, LineChart, PieChart } from 'echarts/charts'
+import {
+  GraphicComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent
+} from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsOption } from 'echarts'
+
+/**
+ * 按需注册(而非 import * from 'echarts' 全量桶):
+ * 全量包 1.1MB,本项目只用 柱/折线/饼 + 网格/图例/提示/图形 四类组件。
+ */
+echarts.use([
+  BarChart,
+  LineChart,
+  PieChart,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  GraphicComponent,
+  CanvasRenderer
+])
 
 interface EChartProps {
   /** ECharts 配置（组件收到变化会整体重绘） */

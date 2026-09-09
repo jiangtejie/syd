@@ -288,8 +288,16 @@ export function getSendStatus(): SendStatusInfo {
   }
 }
 
-/** 关停（退出时清理） */
+/** 关停（退出/用户手动停止）：清空队列，并让每个排队任务都 settle（否则渲染端 invoke 永久挂起） */
 export function stopSending(): void {
   halted = true
-  queue.splice(0)
+  for (const job of queue.splice(0)) {
+    job.resolve({
+      ok: false,
+      status: 'halted',
+      error: '已停止发送队列',
+      verified: false,
+      at: Date.now()
+    })
+  }
 }

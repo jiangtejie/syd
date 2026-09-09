@@ -5,7 +5,6 @@ import {
   clearIssues,
   listIssues,
   setIssueStatus,
-  typeCounts,
   upsertIssue,
   listOpenUnrepliedByGroup,
   findIssueByKey,
@@ -17,6 +16,7 @@ import {
   type NewIssue
 } from '../../db/repos/issueRepo'
 import { getConfig, setConfig } from '../../db/repos/config'
+import { getDb } from '../../db/database'
 import type {
   ChatMessage,
   FeedbackAnalysisState,
@@ -940,34 +940,39 @@ export async function analyzeGroupIssues(
         ).slice(0, 4)
         return names.length > 0 ? names : undefined
       }
+      // 整批包一个事务:每个 issue 内部是「1 条 update + 1 条 delete + k 条 insert」,
+      // 逐条自动提交在 WAL 下慢一个数量级,中途异常还会留下删了一半的中间态
       const applyExtracted = (list: NewIssue[]): void => {
-        for (const issue of list) {
-          if (issue.resolved) {
-            const existing = findIssueByKey(issue.key)
-            if (existing && existing.status === 'open') {
-              setIssueStatus(existing.id, 'done', true)
+        const tx = getDb().transaction(() => {
+          for (const issue of list) {
+            if (issue.resolved) {
+              const existing = findIssueByKey(issue.key)
+              if (existing && existing.status === 'open') {
+                setIssueStatus(existing.id, 'done', true)
+              }
+              continue
             }
-            continue
-          }
-          const customers = deriveCustomers(issue)
-          issue.customers = customers
-          // 复发识别：仅对全新行判定（同 key 已存在 = 同一轮/历史行，不重复计数）
-          if (!findIssueByKey(issue.key)) {
-            const cand = findReopenCandidate(
-              wxid,
-              groupUsername,
-              issue.type,
-              customers,
-              issue.occurAt
-            )
-            if (cand) {
-              issue.reopenCount = cand.reopenCount + 1
-              issue.reopenedFrom = cand.id
+            const customers = deriveCustomers(issue)
+            issue.customers = customers
+            // 复发识别：仅对全新行判定（同 key 已存在 = 同一轮/历史行，不重复计数）
+            if (!findIssueByKey(issue.key)) {
+              const cand = findReopenCandidate(
+                wxid,
+                groupUsername,
+                issue.type,
+                customers,
+                issue.occurAt
+              )
+              if (cand) {
+                issue.reopenCount = cand.reopenCount + 1
+                issue.reopenedFrom = cand.id
+              }
             }
+            upsertIssue(issue)
+            n++
           }
-          upsertIssue(issue)
-          n++
-        }
+        })
+        tx()
       }
       const llmBadExamples = (): string[] => recentRejectedSamples(wxid, groupUsername, 3)
       if (provider && mainRows.length > 0) {
@@ -1157,8 +1162,4 @@ export function clearFeedbackIssues(wxid: string): void {
   setConfig(stateConfigKey(wxid), '')
   setConfig(failConfigKey(wxid), '')
   for (const g of groups) clearGroupRunState(wxid, g)
-}
-
-export function issueTypeCounts(wxid: string) {
-  return typeCounts(wxid)
 }

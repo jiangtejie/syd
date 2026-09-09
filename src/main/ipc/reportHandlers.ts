@@ -14,6 +14,7 @@ import {
 } from '../services/report/scheduler'
 import { testPgConnection } from '../services/report/pgWriter'
 import type { ReportJobInput, ReportPgTarget } from '../../shared/types'
+import { fail } from './_util'
 
 /** 数据上报·定时任务 IPC(cs:report.*)。口令只进不出,列表以 hasPassword 标记。 */
 
@@ -24,7 +25,7 @@ export function registerReportHandlers(): void {
     try {
       return { ok: true as const, jobs: listReportJobs() }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -35,7 +36,7 @@ export function registerReportHandlers(): void {
       rescheduleReportJobs()
       return { ok: true as const, id: r.id }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -47,7 +48,7 @@ export function registerReportHandlers(): void {
       rescheduleReportJobs()
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -60,7 +61,7 @@ export function registerReportHandlers(): void {
       rescheduleReportJobs()
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -69,7 +70,7 @@ export function registerReportHandlers(): void {
     try {
       return await runReportJobNow(id)
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -102,7 +103,7 @@ export function registerReportHandlers(): void {
         if (!target) return { ok: false as const, error: '缺少连接参数' }
         return await testPgConnection(target)
       } catch (err) {
-        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+        return fail(err)
       }
     }
   )
@@ -112,7 +113,7 @@ export function registerReportHandlers(): void {
     try {
       return { ok: true as const, runs: listReportRuns(id, 20) }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 }

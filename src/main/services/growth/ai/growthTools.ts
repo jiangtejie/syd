@@ -1,0 +1,454 @@
+/**
+ * 营销 AI 工作台工具组: 只读(素材/门店/搜索) + 写入(改写/生图/产出/导出/回填, 需审批)。
+ * 工具是模型与产品能力的唯一接口; 写操作一律经 requestToolApproval。
+ */
+
+import { tool, zodSchema, type ToolSet } from 'ai'
+import { z } from 'zod'
+import { createAiProvider } from '../../ai/provider'
+import { describeModelError } from '../../ai/modelErrors'
+import { requestToolApproval } from '../../ai/workbench/approval'
+import { getContentDetail, insertAsset } from '../../../db/repos/growthRepo'
+import {
+  addOutputAsset,
+  createOutput,
+  listStores,
+  saveStore,
+  setOutputStatus,
+  updateOutputFields
+} from '../../../db/repos/growthAiRepo'
+import { downloadMediaAssets } from '../collector/media/assetStore'
+import { searchImages, searchWeb } from './searchProvider'
+import { generateImages, ImageSetupError } from './imageProvider'
+import { exportPublishPackage } from '../publisher/exporter'
+import { recordPublish } from '../remix/service'
+import { checkComplianceBatch } from '../remix/compliance'
+
+export interface GrowthToolCtx {
+  sessionId: number
+  taskId: number
+  contentId: number
+  storeId: number | null
+}
+
+const STYLE_HINT: Record<string, string> = {
+  tanDian: '探店种草风(体验感/画面感)',
+  shangXin: '上新官宣(干脆有力)',
+  cuXiao: '优惠促单(突出划算)',
+  renShe: '老板人设(真实松弛)',
+  auto: '沿用素材原有风格'
+}
+
+function clip(v: unknown, n = 400): string {
+  const s = typeof v === 'string' ? v : JSON.stringify(v ?? '')
+  return s.length > n ? s.slice(0, n) + '…' : s
+}
+
+export function itemBrief(contentId: number): string {
+  const d = getContentDetail(contentId)
+  if (!d) return '素材不存在'
+  const lines: string[] = []
+  lines.push('标题: ' + (d.title || '(无)'))
+  if (d.text) lines.push('正文: ' + d.text.slice(0, 600))
+  lines.push('平台: ' + d.origin + ' · 类型: ' + (d.kind === 'video' ? '视频' : '图文'))
+  lines.push(
+    '互动: 赞' + String(d.interactions.likes) + ' 藏' + String(d.interactions.collects) + ' 评' + String(d.interactions.comments)
+  )
+  lines.push('本地图片: ' + String(d.assets.filter((a) => a.kind === 'cover' || a.kind === 'image').length) + ' 张')
+  if (d.decomp?.structure) lines.push('拆解卡: ' + clip(d.decomp.structure, 700))
+  else lines.push('拆解卡: 尚未生成')
+  return lines.join('\n')
+}
+
+export function storeBrief(storeId: number | null): string {
+  const stores = listStores()
+  const s = storeId ? stores.find((x) => x.id === storeId) : stores.find((x) => x.enabled)
+  if (!s) return '尚未配置门店档案: 请在 营销 → 数据服务 → 门店与品牌 中填写'
+  const lines: string[] = []
+  lines.push('品牌: ' + (s.brandName || s.name))
+  lines.push('门店: ' + s.name + (s.city ? ' · ' + s.city : '') + (s.bizType ? ' · ' + s.bizType : ''))
+  if (s.address) lines.push('地址: ' + s.address)
+  try {
+    const p = JSON.parse(s.profile || '{}') as Record<string, unknown>
+    for (const k of ['phone', 'hours', 'avgPrice', 'signatureDishes', 'packages', 'parking', 'privateRoom', 'tone', 'bannedWords', 'sellingPoints', 'note']) {
+      const v = p[k]
+      if (v === undefined || v === null || v === '') continue
+      lines.push(k + ': ' + clip(v, 300))
+    }
+  } catch {
+    /* ignore */
+  }
+  if (s.poi && s.poi !== '[]') lines.push('POI: ' + clip(s.poi, 200))
+  return lines.join('\n')
+}
+
+async function approve(ctx: GrowthToolCtx, name: string, args: unknown): Promise<string | null> {
+  const ok = await requestToolApproval(ctx.sessionId, name, clip(args, 500), 120_000)
+  return ok ? null : '用户拒绝了本次操作, 请说明原因或换一种方式。'
+}
+
+function modelText(system: string, user: string): Promise<string> {
+  const provider = createAiProvider()
+  if (!provider) throw new Error('AI 通道未配置: 请到 设置 → AI 助手 配置模型')
+  return provider.complete(system, user, { maxTokens: 1600 })
+}
+
+function parseJson(raw: string): Record<string, unknown> | null {
+  const i = raw.indexOf('{')
+  if (i < 0) return null
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let k = i; k < raw.length; k += 1) {
+    const ch = raw[k]
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') inStr = true
+    else if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) {
+        try {
+          return JSON.parse(raw.slice(i, k + 1)) as Record<string, unknown>
+        } catch {
+          return null
+        }
+      }
+    }
+  }
+  return null
+}
+
+export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
+  return {
+    growth_read_material: tool({
+      description: '读取当前任务素材的标题/正文/互动/本地图片数量与 AI 拆解卡。爆改前先读它。',
+      inputSchema: zodSchema(z.object({})),
+      execute: async () => itemBrief(ctx.contentId)
+    }),
+
+    growth_get_store: tool({
+      description: '读取当前门店/品牌档案(城市/地址/电话/营业时间/招牌菜/套餐/语气等事实)。缺失字段必须追问用户, 严禁编造。',
+      inputSchema: zodSchema(z.object({ storeId: z.number().optional().describe('门店 id, 不传用当前任务门店') })),
+      execute: async (args) => storeBrief(args.storeId ?? ctx.storeId)
+    }),
+
+    growth_search_web: tool({
+      description: '联网搜索公开信息(门店地址/电话/营业时间/菜品做法/口碑等)。结果仅供参考, 地址电话价格必须让用户确认后才能写入档案。',
+      inputSchema: zodSchema(z.object({ query: z.string(), count: z.number().optional() })),
+      execute: async (args) => {
+        try {
+          const rows = await searchWeb(args.query, { count: args.count ?? 6 })
+          if (rows.length === 0) return '没有找到相关结果, 换个说法再试。'
+          return rows
+            .map((r, i) => String(i + 1) + '. ' + r.title + ' | ' + r.site + '\n   ' + r.snippet + '\n   ' + r.url)
+            .join('\n')
+        } catch (e) {
+          return '搜索失败: ' + (e instanceof Error ? e.message : String(e))
+        }
+      }
+    }),
+
+    growth_search_images: tool({
+      description: '联网检索图片(菜品/环境参考图)。结果只作参考, 不得直接用于对外发布(版权)。',
+      inputSchema: zodSchema(z.object({ query: z.string(), count: z.number().optional() })),
+      execute: async (args) => {
+        try {
+          const rows = await searchImages(args.query, { count: args.count ?? 8 })
+          if (rows.length === 0) return '没有找到相关图片。'
+          return rows.map((r, i) => String(i + 1) + '. ' + r.source + ' | ' + r.url).join('\n')
+        } catch (e) {
+          return '图片检索失败: ' + (e instanceof Error ? e.message : String(e))
+        }
+      }
+    }),
+
+    growth_gen_image: tool({
+      description: 'AI 生成图片(封面/氛围图/菜品示意图), 结果作为候选图待用户点选, 必须标注「AI 生成示意图」。',
+      inputSchema: zodSchema(
+        z.object({
+          prompt: z.string().describe('画面描述, 含风格/光线/场景/主体'),
+          count: z.number().optional(),
+          role: z.enum(['cover', 'image']).optional()
+        })
+      ),
+      execute: async (args) => {
+        const denied = await approve(ctx, 'growth_gen_image', args)
+        if (denied) return denied
+        try {
+          const imgs = await generateImages({ contentId: ctx.contentId, prompt: args.prompt, count: args.count })
+          const outputId = createOutput({
+            taskId: ctx.taskId,
+            contentId: ctx.contentId,
+            variant: 'chat:image',
+            title: '',
+            copy: '',
+            complianceHints: [],
+            meta: { prompt: args.prompt, source: 'gen' },
+            status: 'candidate'
+          })
+          for (const g of imgs) {
+            addOutputAsset({
+              outputId,
+              assetId: g.assetId,
+              role: args.role ?? 'image',
+              source: 'gen',
+              prompt: args.prompt,
+              note: g.note
+            })
+          }
+          return '已生成 ' + String(imgs.length) + ' 张候选图(outputId=' + String(outputId) + ', 已标注示意图)。请在右侧图片卡点选。'
+        } catch (e) {
+          if (e instanceof ImageSetupError) return e.message
+          return '生图失败: ' + (e instanceof Error ? e.message : String(e))
+        }
+      }
+    }),
+
+    growth_rewrite_title: tool({
+      description: '生成标题候选(3-5 条)。只生成候选, 用户点选后才写入产出。',
+      inputSchema: zodSchema(
+        z.object({
+          strategy: z.string().optional().describe('策略/要求, 如「突出人均80」「雨天场景」'),
+          style: z.enum(['tanDian', 'shangXin', 'cuXiao', 'renShe', 'auto']).optional()
+        })
+      ),
+      execute: async (args) => {
+        const denied = await approve(ctx, 'growth_rewrite_title', args)
+        if (denied) return denied
+        const system = [
+          '你是餐饮门店内容运营。基于素材与门店事实, 生成 5 条全新原创标题。',
+          '规则: 不得复述素材原句; 不虚构门店事实(缺失用占位符【菜品】【地址】等); 不用绝对化用语与功效宣称;',
+          '只输出 JSON: { "titles": ["...", "..."] }',
+          '风格: ' + STYLE_HINT[args.style ?? 'auto']
+        ].join('\n')
+        const user = '素材:\n' + itemBrief(ctx.contentId) + '\n\n门店事实:\n' + storeBrief(ctx.storeId) + (args.strategy ? '\n\n要求: ' + args.strategy : '')
+        try {
+          const parsed = parseJson(await modelText(system, user))
+          const titles = Array.isArray(parsed?.['titles'])
+            ? (parsed?.['titles'] as unknown[]).filter((x): x is string => typeof x === 'string' && x.trim() !== '').slice(0, 6)
+            : []
+          if (titles.length === 0) return '模型未返回可用标题, 请重试或换个说法。'
+          const outputId = createOutput({
+            taskId: ctx.taskId,
+            contentId: ctx.contentId,
+            variant: 'chat:title',
+            title: titles.join('\n'),
+            copy: '',
+            complianceHints: checkComplianceBatch(titles),
+            meta: { strategy: args.strategy ?? '', style: args.style ?? 'auto' },
+            status: 'candidate'
+          })
+          return (
+            '已生成 ' + String(titles.length) + ' 条候选标题(outputId=' + String(outputId) + '):\n' +
+            titles.map((t, i) => String(i + 1) + '. ' + t).join('\n')
+          )
+        } catch (e) {
+          return '生成失败: ' + (describeModelError(e) || (e instanceof Error ? e.message : String(e)))
+        }
+      }
+    }),
+
+    growth_rewrite_copy: tool({
+      description: '生成/改写正文候选(1-3 篇)。只生成候选, 用户点选后才写入产出。',
+      inputSchema: zodSchema(
+        z.object({
+          instruction: z.string().optional().describe('改写要求, 如「精简第二段」「控制在100字内」'),
+          style: z.enum(['tanDian', 'shangXin', 'cuXiao', 'renShe', 'auto']).optional(),
+          copies: z.number().optional()
+        })
+      ),
+      execute: async (args) => {
+        const denied = await approve(ctx, 'growth_rewrite_copy', args)
+        if (denied) return denied
+        const n = Math.min(Math.max(args.copies ?? 2, 1), 3)
+        const system = [
+          '你是餐饮门店内容运营。基于素材与门店事实, 写 ' + String(n) + ' 篇全新原创正文(每篇 80-180 字)。',
+          '规则: 只借鉴结构与情绪, 不复述原句; 不虚构门店事实(缺失用占位符); 不用绝对化用语与食品功效宣称;',
+          '只输出 JSON: { "copies": ["正文1", "正文2"] }',
+          '风格: ' + STYLE_HINT[args.style ?? 'auto']
+        ].join('\n')
+        const user = '素材:\n' + itemBrief(ctx.contentId) + '\n\n门店事实:\n' + storeBrief(ctx.storeId) + (args.instruction ? '\n\n改写要求: ' + args.instruction : '')
+        try {
+          const parsed = parseJson(await modelText(system, user))
+          const copies = Array.isArray(parsed?.['copies'])
+            ? (parsed?.['copies'] as unknown[]).filter((x): x is string => typeof x === 'string' && x.trim() !== '').slice(0, 3)
+            : []
+          if (copies.length === 0) return '模型未返回可用正文, 请重试。'
+          const ids: number[] = []
+          copies.forEach((c, i) => {
+            ids.push(
+              createOutput({
+                taskId: ctx.taskId,
+                contentId: ctx.contentId,
+                variant: 'chat:copy' + String(i + 1),
+                title: '',
+                copy: c,
+                complianceHints: checkComplianceBatch([c]),
+                meta: { instruction: args.instruction ?? '', style: args.style ?? 'auto' },
+                status: 'candidate'
+              })
+            )
+          })
+          return '已生成 ' + String(copies.length) + ' 篇候选正文(outputId=' + ids.join(',') + ')。请在右侧产出面板点选。'
+        } catch (e) {
+          return '生成失败: ' + (describeModelError(e) || (e instanceof Error ? e.message : String(e)))
+        }
+      }
+    }),
+
+    growth_update_output: tool({
+      description: '把用户选定的候选写入产出, 或直接修改产出文本。',
+      inputSchema: zodSchema(
+        z.object({
+          outputId: z.number(),
+          title: z.string().optional(),
+          copy: z.string().optional(),
+          status: z.enum(['selected', 'archived']).optional()
+        })
+      ),
+      execute: async (args) => {
+        const denied = await approve(ctx, 'growth_update_output', args)
+        if (denied) return denied
+        updateOutputFields(args.outputId, { title: args.title, copy: args.copy })
+        if (args.status) setOutputStatus(args.outputId, args.status)
+        return '已更新产出 #' + String(args.outputId) + '。'
+      }
+    }),
+
+    growth_replace_image: tool({
+      description: '替换产出图集: 用门店素材(assetId)、候选生成图(assetId)或联网图片(remoteUrl, 需确认版权)。',
+      inputSchema: zodSchema(
+        z.object({
+          outputId: z.number(),
+          assetId: z.number().optional(),
+          remoteUrl: z.string().optional(),
+          role: z.enum(['cover', 'image']).optional()
+        })
+      ),
+      execute: async (args) => {
+        const denied = await approve(ctx, 'growth_replace_image', args)
+        if (denied) return denied
+        if (args.assetId) {
+          addOutputAsset({
+            outputId: args.outputId,
+            assetId: args.assetId,
+            role: args.role ?? 'image',
+            source: 'store',
+            prompt: '',
+            note: ''
+          })
+          return '已替换为本地素材(assetId=' + String(args.assetId) + ')。'
+        }
+        if (args.remoteUrl) {
+          const dl = await downloadMediaAssets([args.remoteUrl], 'web', 1)
+          if (dl.ok.length === 0) return '图片下载失败(可能防盗链), 建议改用门店实拍或 AI 生图。'
+          const assetId = insertAsset({
+            contentId: ctx.contentId,
+            kind: args.role === 'cover' ? 'cover' : 'image',
+            mime: dl.ok[0].mime,
+            size: dl.ok[0].size,
+            relPath: dl.ok[0].relPath,
+            sourceMark: 'search:web'
+          })
+          addOutputAsset({
+            outputId: args.outputId,
+            assetId,
+            role: args.role ?? 'image',
+            source: 'search',
+            prompt: '',
+            note: '来源: 联网检索(请确认版权后再发布)'
+          })
+          return '已下载并替换为联网图片(assetId=' + String(assetId) + '), 已标注来源, 发布前请确认版权。'
+        }
+        return '请提供 assetId 或 remoteUrl。'
+      }
+    }),
+
+    growth_save_store_fact: tool({
+      description: '把已确认的门店事实写入门店档案(联网查到的事实必须先经用户确认)。',
+      inputSchema: zodSchema(
+        z.object({
+          storeId: z.number().optional(),
+          key: z.enum(['city', 'address', 'phone', 'hours', 'avgPrice', 'signatureDishes', 'packages', 'parking', 'privateRoom', 'note']),
+          value: z.string()
+        })
+      ),
+      execute: async (args) => {
+        const denied = await approve(ctx, 'growth_save_store_fact', args)
+        if (denied) return denied
+        const id = args.storeId ?? ctx.storeId
+        const s = id ? listStores().find((x) => x.id === id) : listStores().find((x) => x.enabled)
+        if (!s) return '没有可更新的门店档案, 请先在 营销 → 数据服务 → 门店与品牌 中创建。'
+        let profile: Record<string, unknown> = {}
+        try {
+          profile = JSON.parse(s.profile || '{}') as Record<string, unknown>
+        } catch {
+          profile = {}
+        }
+        profile[args.key] = args.value
+        saveStore({
+          id: s.id,
+          brandName: s.brandName,
+          name: s.name,
+          city: args.key === 'city' ? args.value : s.city,
+          address: args.key === 'address' ? args.value : s.address,
+          bizType: s.bizType,
+          poi: s.poi,
+          profile: JSON.stringify(profile),
+          enabled: s.enabled
+        })
+        return '已写入门店档案: ' + args.key + ' = ' + args.value
+      }
+    }),
+
+    growth_export_package: tool({
+      description: '导出当前任务的发布包(文案 + 图集 + 视频链接)到用户选择的目录。',
+      inputSchema: zodSchema(z.object({ outputIds: z.array(z.number()).optional() })),
+      execute: async (args) => {
+        const denied = await approve(ctx, 'growth_export_package', args)
+        if (denied) return denied
+        const res = await exportPublishPackage(ctx.contentId, args.outputIds ?? [])
+        return res.ok ? '已导出到: ' + String(res.dir) + ' (' + String(res.files) + ' 个文件)' : '导出失败: ' + String(res.error)
+      }
+    }),
+
+    growth_record_publish: tool({
+      description: '登记发布与效果回填(渠道/点赞/新增关注/线索/金额), 用于素材分与 ROI 统计。',
+      inputSchema: zodSchema(
+        z.object({
+          channel: z.string().describe('wxMoments | wxGroup | wxChat | douyin | xhs | other'),
+          outputId: z.number().optional(),
+          likes: z.number().optional(),
+          follows: z.number().optional(),
+          leads: z.number().optional(),
+          amount: z.number().optional()
+        })
+      ),
+      execute: async (args) => {
+        const denied = await approve(ctx, 'growth_record_publish', args)
+        if (denied) return denied
+        try {
+          const r = recordPublish(ctx.contentId, {
+            channel: args.channel,
+            likes: args.likes ?? 0,
+            collects: 0,
+            comments: 0,
+            shares: 0,
+            follows: args.follows ?? 0,
+            leads: args.leads ?? 0,
+            amount: args.amount ?? 0,
+            outputId: args.outputId ?? null
+          })
+          return '已登记发布, 素材分更新为 ' + String(r.score) + '。'
+        } catch (e) {
+          return '登记失败: ' + (e instanceof Error ? e.message : String(e))
+        }
+      }
+    })
+  }
+}

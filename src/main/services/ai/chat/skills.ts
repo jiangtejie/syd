@@ -62,12 +62,6 @@ export function schemaFromParams(
   return schema
 }
 
-const MAX_TEXT = 4000
-
-function clip(text: string): string {
-  return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}\n…(已截断)` : text
-}
-
 function fmtTime(ts: number): string {
   const d = new Date(ts)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
@@ -407,32 +401,4 @@ export const ALL_TOOLS: ToolDef[] = BUILTIN_TOOLS
 
 export function findTool(name: string): ToolDef | undefined {
   return ALL_TOOLS.find((t) => t.name === name)
-}
-
-/** 工具说明文本(注入系统提示;ReAct 式:先思考→再行动或直接回答) */
-export function toolInstructionsText(): string {
-  return (
-    '工作方式(ReAct 思考循环):\n' +
-    '1. 判断:先想清楚“是否需要业务数据/能否直接回答”。需要调用工具时,输出必须以一行「思考:」开头(≤80字,说明为什么需要该工具与怎么用),随后单独输出 JSON:{"tool":"工具名","args":{...}};\n' +
-    '2. 观察:工具结果会以 [工具结果] 回填,先判断结果是否足够,再决定继续调用/换工具/修正参数/直接输出最终回答;\n' +
-    '3. 无需工具时直接输出最终回答(不要输出思考行,也不要输出 JSON)。\n' +
-    ALL_TOOLS.map((t) => `- ${t.name}:${t.description}`).join('\n')
-  )
-}
-
-/** 执行工具并裁剪输出;未知工具返回错误说明供模型修正 */
-export async function runTool(
-  ctx: ToolCtx,
-  name: string,
-  args: Record<string, unknown>
-): Promise<string> {
-  const tool = findTool(name)
-  if (!tool) {
-    return `未知工具:${name}。可用工具:${ALL_TOOLS.map((t) => t.name).join('、')}`
-  }
-  try {
-    return clip(await tool.run(ctx, args ?? {}))
-  } catch (e) {
-    return `工具执行失败:${e instanceof Error ? e.message : String(e)}`
-  }
 }

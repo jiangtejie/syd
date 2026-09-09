@@ -1,6 +1,11 @@
 import { ipcMain } from 'electron'
 import { getAllConfig, setConfig } from '../db/repos/config'
-import { getCachePath, getDefaultCachePath, isDefaultCachePath } from '../services/paths'
+import {
+  getCachePath,
+  getDefaultCachePath,
+  invalidateCachePathCache,
+  isDefaultCachePath
+} from '../services/paths'
 import { openSecret, sealSecret } from '../services/secrets'
 
 /**
@@ -10,9 +15,14 @@ import { openSecret, sealSecret } from '../services/secrets'
  * ai.apiKey 为敏感值：落库前 safeStorage 加封（enc1:），回读时开封为明文供表单回显。
  */
 export function registerConfigHandlers(): void {
+  /** 敏感配置键(落库前 safeStorage 加封, 回读时开封) */
+  const SECRET_KEYS = ['ai.apiKey', 'growth.image.apiKey', 'growth.search.apiKey']
+
   ipcMain.handle('cs:config:getAll', () => {
     const all = getAllConfig()
-    if (all['ai.apiKey']) all['ai.apiKey'] = openSecret(all['ai.apiKey'])
+    for (const key of SECRET_KEYS) {
+      if (all[key]) all[key] = openSecret(all[key])
+    }
     return all
   })
 
@@ -20,7 +30,12 @@ export function registerConfigHandlers(): void {
     if (typeof key !== 'string' || key.length === 0 || key.length > 64) {
       return { ok: false, error: '非法配置键' }
     }
-    setConfig(key, key === 'ai.apiKey' ? sealSecret(String(value ?? '')) : String(value ?? ''))
+    setConfig(
+      key,
+      SECRET_KEYS.includes(key) ? sealSecret(String(value ?? '')) : String(value ?? '')
+    )
+    // 缓存目录/能力开关等被缓存过的派生值需要失效
+    if (key === 'cache.path') invalidateCachePathCache()
     return { ok: true }
   })
 

@@ -24,6 +24,7 @@ import {
 } from '../services/im/wechatClawService'
 import { sealSecret } from '../services/secrets'
 import type { ImChannelAccountInput, ImChannelKind } from '../../shared/types'
+import { fail } from './_util'
 
 /** IM 渠道账号 IPC(飞书机器人 / 微信 ClawBot)。凭证以 safeStorage enc1 密文落库。 */
 
@@ -68,7 +69,7 @@ export function registerImHandlers(): void {
       })
       return { ok: true as const, accounts: out }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -99,7 +100,7 @@ export function registerImHandlers(): void {
       if (!started.ok) return { ok: true as const, id: saved.id, error: started.error }
       return { ok: true as const, id: saved.id }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -114,7 +115,7 @@ export function registerImHandlers(): void {
       if (!removeImAccount(id)) return { ok: false as const, error: '账号不存在' }
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -128,7 +129,7 @@ export function registerImHandlers(): void {
       if (!started.ok) return { ok: false as const, error: started.error }
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 

@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node
 import { join, basename, extname } from 'node:path'
 import type { Client } from 'pg'
 import { decryptImage, decryptVideo } from '../media/mediaService'
+import { safeFileName } from '../_filename'
 import { getMediaCacheDir } from '../paths'
 import { createLogger } from '../logging'
 import type { ChatMessage } from '../../../shared/types'
@@ -55,10 +56,6 @@ export function mediaJobOf(sessionWxid: string, m: ChatMessage): MediaJob | null
     }
   }
   return null
-}
-
-export function sanitizeName(s: string): string {
-  return s.replace(/[\\/:*?"<>|\r\n\t]/g, '_').slice(0, 180) || 'file'
 }
 
 /** media_path 值:相对缓存根的地址 media/<账号>/<文件>(文件在 <cache>/media/<账号>/ 下同名) */
@@ -127,7 +124,10 @@ function archiveInto(root: string, fileName: string, src: string): string | null
   try {
     if (!existsSync(src)) return null
     mkdirSync(root, { recursive: true })
-    const dest = join(root, sanitizeName(fileName))
+    const dest = join(
+      root,
+      safeFileName(fileName, { maxLength: 180, fallback: 'file', trim: false, collapse: false })
+    )
     if (!existsSync(dest)) {
       try {
         copyFileSync(src, dest)
@@ -145,7 +145,12 @@ function archiveInto(root: string, fileName: string, src: string): string | null
 function fileDestName(md5: string | undefined, src: string, original?: string): string {
   const ext = extname(src) || (original ? extname(original) : '')
   if (md5 && /^[0-9a-f]{32}$/i.test(md5)) return `${md5.toLowerCase()}_file${ext}`
-  return sanitizeName(original || basename(src))
+  return safeFileName(original || basename(src), {
+    maxLength: 180,
+    fallback: 'file',
+    trim: false,
+    collapse: false
+  })
 }
 
 /** 写 PG(仅空时补,不覆盖已有路径);返回是否写入 */

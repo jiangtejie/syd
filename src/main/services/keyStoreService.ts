@@ -119,10 +119,4 @@ export function markKeyInvalid(wxid: string, reason?: string): void {
   if (reason) configRepo.setConfig(`key:${wxid}:error`, reason)
 }
 
-/**
- * 触发重新获取。注册表直读依赖微信具体版本（待 M3 实现探测），
- * 当前版本返回 wxid 现有状态，提示走手动导入。
- */
-export function refreshKey(wxid: string): KeyStatusInfo {
-  return getKeyStatus(wxid)
-}
+

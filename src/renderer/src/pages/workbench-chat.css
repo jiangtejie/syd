@@ -365,6 +365,8 @@
   padding: 14px 16px 8px;
   /* 关闭浏览器滚动锚定:输出中工具卡开合/段落增删会钉住视口造成跳动 */
   overflow-anchor: none;
+  /* 滚动容器隔离布局/绘制 */
+  contain: layout paint;
 }
 
 /* 助手侧文本气泡统一「版心宽度」:
@@ -408,6 +410,9 @@
 .wb-row {
   display: flex;
   margin: 4px 0 10px;
+  /* 长列表渲染优化：视口外行跳过布局/绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
 }
 
 .wb-row.is-user {
@@ -816,12 +821,6 @@
   }
 }
 
-.wb-approvals-tip {
-  font-size: 11.5px;
-  color: var(--text-3);
-  line-height: 1.5;
-}
-
 /* ── 思考等待动画（收到首字前） ── */
 .wb-thinking {
   display: inline-flex;
@@ -913,17 +912,6 @@
 
 .wb-msg-anchor {
   display: block;
-}
-
-/* ── 推理过程(思考内容) ── */
-.wb-reason-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--info);
-  margin-bottom: 6px;
 }
 
 /* 思考内容统一为「提示性浅灰卡」:不受 .wb-bubble pre(代码块深底)影响 */
@@ -1636,7 +1624,7 @@
 
 .wb-error-retry {
   flex: none;
-  border: 1px solid var(--danger-line, rgba(220, 60, 60, 0.35));
+  border: 1px solid var(--danger-line);
   background: transparent;
   color: var(--danger);
   border-radius: 999px;

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type Database from 'better-sqlite3-multiple-ciphers'
 import { createLogger } from '../logging'
 import { openWxDbFile } from './wxDb'
-import { locateWeChatDbs } from './dbLocator'
+import { findFileCached, locateWeChatDbs } from './dbLocator'
 import {
   getMessageTableColumns,
   resolveSessionTableName,
@@ -50,8 +50,14 @@ const wxLog = createLogger('wx')
 const CONTACT_TABLE_CANDIDATES = ['contact', 'Contact', 'Friend', 'FriendTable']
 const CONTACT_DB_CANDIDATES = ['contact.db', 'contact_new.db', 'friend.db']
 
-/** 递归查找 contact 库（新版微信位于 db_storage/contact/contact.db） */
-function findContactDb(dbStoragePath: string): string | null {
+/**
+ * 递归查找库文件：match(小写文件名) 命中即返回。
+ * message/session 目录不再深挖（避免在消息分片目录里空扫）。
+ */
+function walkFindDbFile(
+  dbStoragePath: string,
+  match: (entryLower: string) => boolean
+): string | null {
   const stack = [dbStoragePath]
   const seen = new Set<string>()
   while (stack.length > 0 && seen.size < 200) {
@@ -72,14 +78,9 @@ function findContactDb(dbStoragePath: string): string | null {
       } catch {
         continue
       }
-      if (st.isFile() && CONTACT_DB_CANDIDATES.includes(entry.toLowerCase())) {
-        return full
-      }
-      if (
-        st.isDirectory() &&
-        entry.toLowerCase() !== 'message' &&
-        entry.toLowerCase() !== 'session'
-      ) {
+      const lower = entry.toLowerCase()
+      if (st.isFile() && match(lower)) return full
+      if (st.isDirectory() && lower !== 'message' && lower !== 'session') {
         stack.push(full)
       }
     }
@@ -87,40 +88,19 @@ function findContactDb(dbStoragePath: string): string | null {
   return null
 }
 
-/** 递归查找指定名库文件（如 head_image.db） */
+/** 递归查找 contact 库（新版微信位于 db_storage/contact/contact.db），结果进程内缓存 60s */
+function findContactDb(dbStoragePath: string): string | null {
+  return findFileCached(dbStoragePath, 'contact', () =>
+    walkFindDbFile(dbStoragePath, (n) => CONTACT_DB_CANDIDATES.includes(n))
+  )
+}
+
+/** 递归查找指定名库文件（如 head_image.db），结果进程内缓存 60s */
 function findDbFileByName(dbStoragePath: string, fileName: string): string | null {
-  const stack = [dbStoragePath]
-  const seen = new Set<string>()
   const target = fileName.toLowerCase()
-  while (stack.length > 0 && seen.size < 200) {
-    const dir = stack.pop()!
-    if (seen.has(dir)) continue
-    seen.add(dir)
-    let entries: string[]
-    try {
-      entries = readdirSync(dir)
-    } catch {
-      continue
-    }
-    for (const entry of entries) {
-      const full = join(dir, entry)
-      let st: ReturnType<typeof statSync>
-      try {
-        st = statSync(full)
-      } catch {
-        continue
-      }
-      if (st.isFile() && entry.toLowerCase() === target) return full
-      if (
-        st.isDirectory() &&
-        entry.toLowerCase() !== 'message' &&
-        entry.toLowerCase() !== 'session'
-      ) {
-        stack.push(full)
-      }
-    }
-  }
-  return null
+  return findFileCached(dbStoragePath, `file:${target}`, () =>
+    walkFindDbFile(dbStoragePath, (n) => n === target)
+  )
 }
 
 export interface WxReaderContext {
@@ -630,12 +610,15 @@ function rowToMessage(
 
   const parsed = parseMessageContent(content, localType)
   // 图片文件名 md5 优先取 packed_info_data（本地 .dat 命名），XML 的 md5 是 CDN md5 对不上本地文件
+  // 按 localType 门控解析:非图片/语音/文件消息不再白跑一轮 XML 扫描
   const imageMd5 =
-    parsePackedInfoMd5(getRowField(row, ['packed_info_data', 'packedInfoData'])) ||
-    parseImageMd5(content)
+    localType === 3
+      ? parsePackedInfoMd5(getRowField(row, ['packed_info_data', 'packedInfoData'])) ||
+        parseImageMd5(content)
+      : undefined
   const imageInfo = localType === 3 ? parseImageInfo(content) : {}
   const isLivePhoto = imageInfo.isLivePhoto
-  const voiceDuration = parseVoiceDuration(content)
+  const voiceDuration = localType === 34 ? parseVoiceDuration(content) : undefined
   // 视频文件名 md5 同图片：真实文件名存 packed_info_data，XML 里只有 CDN 信息
   const videoMd5 =
     localType === 43
@@ -644,7 +627,7 @@ function rowToMessage(
       : undefined
   const videoDuration = localType === 43 ? parseVideoDuration(content) : undefined
   const emojiInfo = localType === 47 ? parseEmojiInfo(content) : {}
-  const fileInfo = parseFileInfo(content)
+  const fileInfo = localType === 49 ? parseFileInfo(content) : {}
   const chatRecordList = localType === 49 ? parseChatHistory(content) : undefined
   // 红包 sendId（type 49/2001），供渲染端匹配本地领取状态；非红包消息返回 undefined
   const redEnvelopeSendId = localType === 49 ? parseRedEnvelopeSendId(content) : undefined
@@ -733,7 +716,8 @@ export function listMessages(
   sessionId: string,
   limit = 50,
   before?: MessageCursor,
-  skipEnrich = false
+  skipEnrich = false,
+  sinceSeq?: number
 ): {
   ok: boolean
   messages?: ChatMessage[]
@@ -769,25 +753,31 @@ export function listMessages(
           if (!cols.contentColumn && !cols.hasIsSend) continue
 
           const rows = (
-            before
+            sinceSeq !== undefined
               ? db
                   .prepare(
-                    `SELECT * FROM "${t.name}" WHERE (sort_seq < ?) OR (sort_seq = ? AND create_time < ?) OR (sort_seq = ? AND create_time = ? AND local_id < ?) ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT ?`
+                    `SELECT * FROM "${t.name}" WHERE sort_seq > ? ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT ?`
                   )
-                  .all(
-                    before.sortSeq,
-                    before.sortSeq,
-                    before.createTime,
-                    before.sortSeq,
-                    before.createTime,
-                    before.localId,
-                    fetchCount
-                  )
-              : db
-                  .prepare(
-                    `SELECT * FROM "${t.name}" ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT ?`
-                  )
-                  .all(fetchCount)
+                  .all(sinceSeq, fetchCount)
+              : before
+                ? db
+                    .prepare(
+                      `SELECT * FROM "${t.name}" WHERE (sort_seq < ?) OR (sort_seq = ? AND create_time < ?) OR (sort_seq = ? AND create_time = ? AND local_id < ?) ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT ?`
+                    )
+                    .all(
+                      before.sortSeq,
+                      before.sortSeq,
+                      before.createTime,
+                      before.sortSeq,
+                      before.createTime,
+                      before.localId,
+                      fetchCount
+                    )
+                : db
+                    .prepare(
+                      `SELECT * FROM "${t.name}" ORDER BY sort_seq DESC, create_time DESC, local_id DESC LIMIT ?`
+                    )
+                    .all(fetchCount)
           ) as Record<string, any>[]
           if (rows.length >= fetchCount) anyDbHasMore = true
           for (const r of rows) {
@@ -833,17 +823,16 @@ export function listMessages(
   }
 }
 
-/** 增量读取：读取某 sortSeq 之后的全部消息（供 T5 轮询） */
+/** 增量读取：只查 sort_seq 之后的新消息（SQL 侧过滤，不再读整页再丢弃） */
 export function listMessagesSince(
   ctx: WxReaderContext,
   sessionId: string,
   sinceSortSeq: number,
   limit = 200
 ): { ok: boolean; messages?: ChatMessage[]; error?: string } {
-  const result = listMessages(ctx, sessionId, limit)
+  const result = listMessages(ctx, sessionId, limit, undefined, false, sinceSortSeq)
   if (!result.ok || !result.messages) return { ok: false, error: result.error }
-  const filtered = result.messages.filter((m) => m.sortSeq > sinceSortSeq)
-  return { ok: true, messages: filtered }
+  return { ok: true, messages: result.messages }
 }
 
 /**

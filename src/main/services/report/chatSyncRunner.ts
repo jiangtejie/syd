@@ -183,17 +183,16 @@ export async function runChatSyncJob(
   }
   const base = buildWxSession(cfg.accountWxid)
   if (!base)
-    if (!base)
-      return {
-        ok: false,
-        error: '账号未导入密钥,请先在 微信数据 页导入',
-        added: 0,
-        sessionsOk: 0,
-        sessionsSkip: 0,
-        errors: [],
-        interrupted: false,
-        summary: '来源账号不可用'
-      }
+    return {
+      ok: false,
+      error: '账号未导入密钥,请先在 微信数据 页导入',
+      added: 0,
+      sessionsOk: 0,
+      sessionsSkip: 0,
+      errors: [],
+      interrupted: false,
+      summary: '来源账号不可用'
+    }
   if (!base.dbPath)
     return {
       ok: false,

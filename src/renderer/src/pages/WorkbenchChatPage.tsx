@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { ChatMsgItem } from '../../../shared/types'
 import { toolCnName } from '../../../shared/types'
@@ -406,7 +406,13 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
 const WbMessage = memo(WbMessageInner, (prev, next) => {
   const a = prev.msg
   const b = next.msg
-  return a.id === b.id && a.role === b.role && a.kind === b.kind && a.content === b.content
+  return (
+    a.id === b.id &&
+    a.role === b.role &&
+    a.kind === b.kind &&
+    a.content === b.content &&
+    a.meta === b.meta // reasoning/tokens/evidence 也在 meta 里
+  )
 })
 
 /** 实时推理块:默认收起,生成中只显示「思考中…」,点击展开流式思考内容 */
@@ -553,8 +559,27 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const taRef = useRef<HTMLTextAreaElement | null>(null)
-  const store = useWorkbenchChatStore()
-  const { chats, activeId, messages, loading, busyIds, error, pendingTexts } = store
+  // 细粒度订阅:整个 store 订阅会让流式每帧重渲染整页(侧栏/头部/输入区都在本组件内)
+  const chats = useWorkbenchChatStore((s) => s.chats)
+  const activeId = useWorkbenchChatStore((s) => s.activeId)
+  const messages = useWorkbenchChatStore((s) => s.messages)
+  const loading = useWorkbenchChatStore((s) => s.loading)
+  const busyIds = useWorkbenchChatStore((s) => s.busyIds)
+  const error = useWorkbenchChatStore((s) => s.error)
+  const pendingTexts = useWorkbenchChatStore((s) => s.pendingTexts)
+  // 动作引用在 store 创建时固定,单独订阅不会引起额外重渲染
+  const initStore = useWorkbenchChatStore((s) => s.init)
+  const createChatStore = useWorkbenchChatStore((s) => s.create)
+  const sendStore = useWorkbenchChatStore((s) => s.send)
+  const sendEditedStore = useWorkbenchChatStore((s) => s.sendEdited)
+  const beginEditStore = useWorkbenchChatStore((s) => s.beginEdit)
+  const cancelEditStore = useWorkbenchChatStore((s) => s.cancelEdit)
+  const selectStore = useWorkbenchChatStore((s) => s.select)
+  const renameStore = useWorkbenchChatStore((s) => s.rename)
+  const retryStore = useWorkbenchChatStore((s) => s.retry)
+  const stopStore = useWorkbenchChatStore((s) => s.stop)
+  const clearStore = useWorkbenchChatStore((s) => s.clear)
+  const removeStore = useWorkbenchChatStore((s) => s.remove)
   const pendingText = activeId !== null ? (pendingTexts[activeId] ?? undefined) : undefined
   const compactBySid = useWorkbenchChatStore((s) => s.compactBySid)
   const contextBySid = useWorkbenchChatStore((s) => s.contextBySid)
@@ -685,10 +710,10 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   const [promptVal, setPromptVal] = useState('')
   const [promptBusy, setPromptBusy] = useState(false)
 
-  const openPrompt = (cfg: PromptState): void => {
+  const openPrompt = useCallback((cfg: PromptState): void => {
     setPromptVal(cfg.initial)
     setPromptState(cfg)
-  }
+  }, [])
   const closePrompt = (): void => {
     if (promptBusy) return
     setPromptState(null)
@@ -710,7 +735,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
 
   const accountKey = connected ? wxid : ''
   useEffect(() => {
-    void store.init(accountKey)
+    void initStore(accountKey)
     ensureWorkbenchEvents()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 账号切换时重建工作台会话(全仓同款模式)
   }, [accountKey])
@@ -763,20 +788,20 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     [chats, activeId]
   )
 
-  const createChat = (): void => {
+  const createChat = useCallback((): void => {
     openPrompt({
       title: '新建工作台会话',
       placeholder: '输入会话名称',
       okLabel: '创建',
       initial: `会话 ${(chats?.length ?? 0) + 1}`,
       submit: async (value) => {
-        const id = await store.create(value.trim())
+        const id = await createChatStore(value.trim())
         if (id === null) {
           toast.error('新建会话失败,请重启应用后重试')
         }
       }
     })
-  }
+  }, [openPrompt, chats, createChatStore])
 
   const canSend = !!activeId && !activeBusy
   /* ── 工作区(会话绑定的真实目录,WorkBuddy 式文件工具) ── */
@@ -925,15 +950,15 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     // 若用户正在翻更早历史,发送后回到贴底窗口
     setStartIdx(Math.max(0, messages.length - WB_WINDOW))
     // 编辑态发送 = 改写最近一轮提问(resend),否则普通提问(可附图)
-    if (activeId !== null && editingSid === activeId) void store.sendEdited(t)
-    else void store.send(t, imgs)
+    if (activeId !== null && editingSid === activeId) void sendEditedStore(t)
+    else void sendStore(t, imgs)
     // 按钮点击路径恢复输入焦点(回车路径焦点本就在输入框)
     requestAnimationFrame(() => taRef.current?.focus())
   }
 
   /** 改写最近一条自己的提问:裁掉该轮后填入输入框 */
   const handleEditLastUser = (): void => {
-    const text = store.beginEdit()
+    const text = beginEditStore()
     if (text === null) return
     setDraft(text)
     requestAnimationFrame(() => {
@@ -996,7 +1021,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   }
 
   /** 导出当前会话(Markdown) */
-  const exportCurrent = async (): Promise<void> => {
+  const exportCurrent = useCallback(async (): Promise<void> => {
     if (activeId === null) return
     const api = window.api?.cs?.wb
     const res = await api?.exportSession(activeId).catch(() => null)
@@ -1006,7 +1031,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
       const msg = res && !res.ok ? res.error : '导出失败或已取消'
       if (msg && msg !== '已取消') toast.error(msg)
     }
-  }
+  }, [activeId])
 
   /** 清空全部工作台会话(二次确认) */
   const clearAllChats = async (): Promise<void> => {
@@ -1023,7 +1048,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     const res = await api?.removeAll(accountKey).catch(() => null)
     if (res?.ok) {
       toast.success(`已清空 ${res.removed ?? total} 个会话`)
-      await store.init(accountKey)
+      await initStore(accountKey)
     } else {
       toast.error(res?.error ?? '清空失败,请重试')
     }
@@ -1044,7 +1069,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
       exportCur: exportCurrent,
       focusInput: () => taRef.current?.focus()
     }
-  })
+  }, [promptState, createChat, exportCurrent])
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!(e.ctrlKey || e.metaKey)) return
@@ -1104,7 +1129,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
 
   /** 命中定位:切会话并滚动到该消息行(窗口截断时调整起点),并高亮闪烁 */
   const openHit = async (hit: SearchHit): Promise<void> => {
-    await store.select(hit.sessionId)
+    await selectStore(hit.sessionId)
     const msgs = useWorkbenchChatStore.getState().messages
     let idx = -1
     for (let i = 0; i < msgs.length; i++) {
@@ -1209,7 +1234,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                 <div
                   key={c.id}
                   className={`wb-side-item${activeId === c.id ? ' is-active' : ''}`}
-                  onClick={() => void store.select(c.id)}
+                  onClick={() => void selectStore(c.id)}
                 >
                   <div className="wb-side-main">
                     <div className="wb-side-title">{c.title}</div>
@@ -1239,7 +1264,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                           placeholder: '输入新名称',
                           okLabel: '保存',
                           initial: c.title,
-                          submit: (t) => store.rename(c.id, t.trim())
+                          submit: (t) => renameStore(c.id, t.trim())
                         })
                       }}
                     >
@@ -1421,13 +1446,21 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             const isTail = activeBusy && i === turnBlocks.length - 1
             const text = (b.text ?? '').trim()
             if (!text) return null // 空文本块(首 token 未到)不渲染,避免幽灵气泡闪跳
+            // 流式尾块:每帧都在变长,Markdown 全量重解析是 O(n²)(rAF ~60fps)。
+            // 生成中先用纯文本上屏,块结束后再交给 Markdown 渲染。
             return (
               <div key={b.id} className="wb-row">
                 <div className="wb-bubble">
-                  <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
-                    {text}
-                  </ReactMarkdown>
-                  {isTail && <span className="wb-caret" />}
+                  {isTail ? (
+                    <div className="wb-plain">
+                      {text}
+                      <span className="wb-caret" />
+                    </div>
+                  ) : (
+                    <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
+                      {text}
+                    </ReactMarkdown>
+                  )}
                 </div>
               </div>
             )
@@ -1447,7 +1480,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           <div className="wb-error">
             <span>✗ {error}</span>
             {!activeBusy && (
-              <button type="button" className="wb-error-retry" onClick={() => void store.retry()}>
+              <button type="button" className="wb-error-retry" onClick={() => void retryStore()}>
                 重试
               </button>
             )}
@@ -1522,7 +1555,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             onChange={(e) => {
               const v = e.target.value
               // 编辑态清空输入 = 放弃改写,恢复会话原始记录
-              if (!v && activeId !== null && editingSid === activeId) store.cancelEdit()
+              if (!v && activeId !== null && editingSid === activeId) cancelEditStore()
               setDraft(v)
               requestAnimationFrame(growTextarea)
             }}
@@ -1538,7 +1571,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               Enter 发送 · Shift+Enter 换行 · Ctrl+N 新建 · Ctrl+Shift+E 导出 · Ctrl+L 聚焦输入
             </span>
             {activeBusy ? (
-              <button type="button" className="st-btn" onClick={() => void store.stop()}>
+              <button type="button" className="st-btn" onClick={() => void stopStore()}>
                 停止生成
               </button>
             ) : (
@@ -1612,7 +1645,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                     confirmText: '清空',
                     danger: true
                   }).then((ok) => {
-                    if (ok) void store.clear(c.id)
+                    if (ok) void clearStore(c.id)
                   })
                 }}
               >
@@ -1631,7 +1664,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                     confirmText: '删除',
                     danger: true
                   }).then((ok) => {
-                    if (ok) void store.remove(c.id)
+                    if (ok) void removeStore(c.id)
                   })
                 }}
               >

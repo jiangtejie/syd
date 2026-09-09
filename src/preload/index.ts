@@ -14,6 +14,24 @@ import type {
   OpsStats,
   MessageCursor
 } from '../shared/types'
+import type {
+  GrowthBuzzAddResult,
+  GrowthBuzzCommentsResult,
+  GrowthBuzzDetailView,
+  GrowthBuzzDiagnosisView,
+  GrowthBuzzFilter,
+  GrowthBuzzMentionView,
+  GrowthBuzzOverview,
+  GrowthContentDetailView,
+  GrowthContentFilter,
+  GrowthContentItem,
+  GrowthCrawlTaskView,
+  GrowthOverview,
+  GrowthProgressPayload,
+  GrowthStats,
+  GrowthSubscription,
+  GrowthSubscriptionInput
+} from '../shared/growth'
 
 // Custom APIs for renderer
 const api = {
@@ -23,8 +41,7 @@ const api = {
       list: () => ipcRenderer.invoke('cs:key:list'),
       importKey: (wxid: string, keyHex: string, source: KeySource, dbPath?: string) =>
         ipcRenderer.invoke('cs:key:import', wxid, keyHex, source, dbPath),
-      test: (wxid: string) => ipcRenderer.invoke('cs:key:test', wxid),
-      refresh: (wxid: string) => ipcRenderer.invoke('cs:key:refresh', wxid)
+      test: (wxid: string) => ipcRenderer.invoke('cs:key:test', wxid)
     },
     wx: {
       connect: (wxid: string) => ipcRenderer.invoke('cs:wx:connect', wxid),
@@ -47,7 +64,6 @@ const api = {
       ): Promise<{ ok: boolean; names?: Record<string, string>; error?: string }> =>
         ipcRenderer.invoke('cs:wx:contactNames', wxid, usernames),
       startWatch: (wxid: string) => ipcRenderer.invoke('cs:wx:startWatch', wxid),
-      stopWatch: (wxid: string) => ipcRenderer.invoke('cs:wx:stopWatch', wxid),
       opsStats: (
         wxid: string,
         rangeDays?: number
@@ -257,8 +273,6 @@ const api = {
         ipcRenderer.invoke('cs:issue:confirmDoubt', id),
       detail: (id: number): Promise<{ ok: boolean; issue?: unknown; error?: string }> =>
         ipcRenderer.invoke('cs:issue:detail', id),
-      typeCounts: (wxid: string): Promise<{ ok: boolean; counts?: unknown[]; error?: string }> =>
-        ipcRenderer.invoke('cs:issue:typeCounts', wxid),
       groupBadges: (
         wxid: string
       ): Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }> =>
@@ -512,6 +526,253 @@ const api = {
       }> => ipcRenderer.invoke('cs:app:dataStats'),
       clearCache: (): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:app:clearCache')
+    },
+    growth: {
+      stats: (): Promise<{ ok: boolean; stats?: GrowthStats; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:stats'),
+      listContent: (
+        filter?: GrowthContentFilter
+      ): Promise<{
+        ok: boolean
+        items?: GrowthContentItem[]
+        total?: number
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:listContent', filter),
+      getContent: (
+        id: number
+      ): Promise<{
+        ok: boolean
+        item?: GrowthContentDetailView
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:getContent', id),
+      ingestLink: (
+        text: string
+      ): Promise<{
+        ok: boolean
+        item?: GrowthContentItem
+        existed?: boolean
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:ingestLink', text),
+      patchContent: (
+        id: number,
+        patch: { usage?: string; status?: string; note?: string }
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:patchContent', id, patch),
+      removeContent: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:removeContent', id),
+      listSubscriptions: (): Promise<{
+        ok: boolean
+        subscriptions?: GrowthSubscription[]
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:listSubscriptions'),
+      saveSubscription: (
+        input: GrowthSubscriptionInput & { id?: number }
+      ): Promise<{
+        ok: boolean
+        id?: number
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:saveSubscription', input),
+      setSubscriptionEnabled: (
+        id: number,
+        enabled: boolean
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:setSubscriptionEnabled', id, enabled),
+      deleteSubscription: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:deleteSubscription', id),
+      runCrawl: (
+        id: number
+      ): Promise<{
+        ok: boolean
+        fetched?: number
+        inserted?: number
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:runCrawl', id),
+      recentTasks: (
+        limit?: number
+      ): Promise<{
+        ok: boolean
+        tasks?: GrowthCrawlTaskView[]
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:recentTasks', limit),
+      copyClipboard: (payload: {
+        text?: string
+        relPath?: string
+      }): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:copyClipboard', payload),
+      batchPatch: (
+        ids: number[],
+        patch: { usage?: string; status?: string }
+      ): Promise<{ ok: boolean; updated?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:batchPatch', ids, patch),
+      batchRemove: (ids: number[]): Promise<{ ok: boolean; removed?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:batchRemove', ids),
+      uploadLocal: (): Promise<{
+        ok: boolean
+        added?: number
+        contentId?: number
+        skipped?: string[]
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:uploadLocal'),
+      exportPackage: (
+        id: number,
+        outputIds?: number[]
+      ): Promise<{ ok: boolean; dir?: string; files?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:exportPackage', id, outputIds),
+      redownloadMedia: (
+        id: number
+      ): Promise<{ ok: boolean; added?: number; failed?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:redownloadMedia', id),
+      overview: (): Promise<{ ok: boolean; overview?: GrowthOverview; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:overview'),
+      configGet: (): Promise<{
+        ok: boolean
+        autoEnabled?: boolean
+        provider?: string
+        providerApiKey?: string
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:configGet'),
+      configSet: (
+        field: 'autoEnabled' | 'provider' | 'providerApiKey',
+        value: string
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:configSet', field, value),
+      onProgress: (callback: (payload: GrowthProgressPayload) => void): (() => void) => {
+        const listener = (_e: Electron.IpcRendererEvent, payload: GrowthProgressPayload): void =>
+          callback(payload)
+        ipcRenderer.on('cs:growth:progress', listener)
+        return () => ipcRenderer.removeListener('cs:growth:progress', listener)
+      }
+    },
+
+    growthai: {
+      listTasks: (): Promise<{ ok: boolean; tasks?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:listTasks'),
+      getTask: (
+        id: number
+      ): Promise<{
+        ok: boolean
+        task?: unknown
+        outputs?: unknown[]
+        candidates?: unknown[]
+        error?: string
+      }> => ipcRenderer.invoke('cs:growthai:getTask', id),
+      createTask: (input: {
+        contentId: number
+        storeId?: number | null
+        goal?: string
+      }): Promise<{
+        ok: boolean
+        taskId?: number
+        sessionId?: number
+        error?: string
+      }> => ipcRenderer.invoke('cs:growthai:createTask', input),
+      updateTask: (
+        id: number,
+        patch: Record<string, unknown>
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:updateTask', id, patch),
+      deleteTask: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:deleteTask', id),
+      messages: (id: number): Promise<{ ok: boolean; messages?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:messages', id),
+      sendMessage: (
+        id: number,
+        text: string,
+        images?: string[]
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:sendMessage', id, text, images),
+      stop: (id: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('cs:growthai:stop', id),
+      running: (id: number): Promise<{ ok: boolean; running?: boolean }> =>
+        ipcRenderer.invoke('cs:growthai:running', id),
+      resolveCandidate: (
+        taskId: number,
+        outputId: number,
+        action: 'select' | 'archive' | 'delete'
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:resolveCandidate', taskId, outputId, action),
+      revertOutput: (outputId: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:revertOutput', outputId),
+      listStores: (): Promise<{ ok: boolean; stores?: unknown[]; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:listStores'),
+      saveStore: (
+        input: Record<string, unknown>
+      ): Promise<{ ok: boolean; id?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:saveStore', input),
+      removeStore: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:removeStore', id),
+      getBrand: (): Promise<{ ok: boolean; brand?: unknown; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:getBrand'),
+      saveBrand: (
+        name: string,
+        profile: string
+      ): Promise<{ ok: boolean; id?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:saveBrand', name, profile),
+      configGet: (): Promise<{ ok: boolean; image?: unknown; search?: unknown; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:configGet'),
+      configSet: (field: string, value: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:configSet', field, value),
+      testImage: (): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:testImage')
+    },
+    growthbuzz: {
+      overview: (
+        storeId?: number | null
+      ): Promise<{ ok: boolean; overview?: GrowthBuzzOverview; error?: string }> =>
+        ipcRenderer.invoke('cs:growthbuzz:overview', storeId ?? 0),
+      list: (
+        filter: GrowthBuzzFilter
+      ): Promise<{
+        ok: boolean
+        items?: GrowthBuzzMentionView[]
+        total?: number
+        error?: string
+      }> => ipcRenderer.invoke('cs:growthbuzz:list', filter),
+      detail: (
+        id: number
+      ): Promise<({ ok: true } & GrowthBuzzDetailView) | { ok: false; error?: string }> =>
+        ipcRenderer.invoke('cs:growthbuzz:detail', id),
+      addLink: (input: { storeId?: number | null; text: string }): Promise<GrowthBuzzAddResult> =>
+        ipcRenderer.invoke('cs:growthbuzz:addLink', input),
+      addComments: (input: {
+        mentionId: number
+        raw: string
+        source?: string
+      }): Promise<GrowthBuzzCommentsResult> =>
+        ipcRenderer.invoke('cs:growthbuzz:addComments', input),
+      diagnose: (
+        id: number,
+        useModel?: boolean
+      ): Promise<{
+        ok: boolean
+        diagnosis?: GrowthBuzzDiagnosisView
+        mention?: GrowthBuzzMentionView
+        error?: string
+      }> => ipcRenderer.invoke('cs:growthbuzz:diagnose', id, useModel !== false),
+      diagnoseBatch: (
+        ids: number[],
+        useModel?: boolean
+      ): Promise<{ ok: boolean; succeeded?: number; failed?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:growthbuzz:diagnoseBatch', ids, useModel !== false),
+      update: (
+        id: number,
+        patch: Record<string, unknown>
+      ): Promise<{ ok: boolean; mention?: GrowthBuzzMentionView; error?: string }> =>
+        ipcRenderer.invoke('cs:growthbuzz:update', id, patch),
+      remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthbuzz:remove', id),
+      removeComment: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthbuzz:removeComment', id),
+      openUrl: (url: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growthbuzz:openUrl', url),
+      toWorkbench: (
+        id: number
+      ): Promise<{
+        ok: boolean
+        taskId?: number
+        contentId?: number
+        existed?: boolean
+        error?: string
+      }> => ipcRenderer.invoke('cs:growthbuzz:toWorkbench', id)
     },
     report: {
       list: (): Promise<{ ok: boolean; jobs?: unknown[]; error?: string }> =>

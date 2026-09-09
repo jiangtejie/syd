@@ -155,17 +155,22 @@ function bumpTurn(sid: number): number {
   return next
 }
 
-/** 把 token 追加进当前轮时间线:kind 相同且是末尾块则续写,否则另起一块 */
+/**
+ * 把 token 追加进当前轮时间线:kind 相同且是末尾块则续写,否则另起一块。
+ * 必须返回新数组:zustand 选择器用 Object.is 比较,就地改数组会让
+ * `s => s.turnBlocks` 的订阅永不触发(流式正文不刷新)。
+ */
 function appendTurnToken(kind: 'text' | 'reason', token: string): void {
-  const st = useWorkbenchChatStore.getState()
-  const blocks = st.turnBlocks
-  const last = blocks.length > 0 ? blocks[blocks.length - 1] : undefined
-  if (last && last.kind === kind) {
-    blocks[blocks.length - 1] = { ...last, text: (last.text ?? '') + token }
-  } else {
-    blocks.push({ id: ++blockSeq, kind, text: token })
-  }
-  useWorkbenchChatStore.setState({ turnBlocks: blocks })
+  useWorkbenchChatStore.setState((st) => {
+    const blocks = st.turnBlocks
+    const last = blocks.length > 0 ? blocks[blocks.length - 1] : undefined
+    if (last && last.kind === kind) {
+      const next = blocks.slice()
+      next[next.length - 1] = { ...last, text: (last.text ?? '') + token }
+      return { turnBlocks: next }
+    }
+    return { turnBlocks: [...blocks, { id: ++blockSeq, kind, text: token }] }
+  })
 }
 
 /** delta 按帧批量(单路活动会话展示;text=正文,reason=推理过程) */

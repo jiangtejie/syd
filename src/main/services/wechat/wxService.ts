@@ -123,14 +123,14 @@ export function getContactNames(
 }
 
 /** 运营统计（L2/L3）：窗口内活跃会话聚合，内部 60s 缓存 + dbChanged 失效 */
-export function getOpsStats(
+export async function getOpsStats(
   wxid: string,
   rangeDays = 7
-): { ok: boolean; stats?: OpsStats; error?: string } {
+): Promise<{ ok: boolean; stats?: OpsStats; error?: string }> {
   const session = buildWxSession(wxid)
   if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
   try {
-    const stats = computeOpsStats(session, rangeDays)
+    const stats = await computeOpsStats(session, rangeDays)
     return { ok: true as const, stats }
   } catch (err) {
     return { ok: false as const, error: `统计异常: ${(err as Error)?.message ?? err}` }

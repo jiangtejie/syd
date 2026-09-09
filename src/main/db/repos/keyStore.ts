@@ -47,10 +47,6 @@ export function getKeys(): KeyProfile[] {
   return rows.map(rowToProfile)
 }
 
-export function deleteKey(wxid: string): void {
-  getDb().prepare(`DELETE FROM key_store WHERE wxid = ?`).run(wxid)
-}
-
 export function updateKeyStatus(wxid: string, status: KeyStatus): void {
   getDb()
     .prepare(`UPDATE key_store SET status = ?, updated_at = ? WHERE wxid = ?`)

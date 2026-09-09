@@ -28,7 +28,7 @@ const APP_DIR_NAME = 'wechat-cs-desktop'
 const LEGACY_PLAIN_DIR = 'wx-plain'
 
 /** 缓存目录顶层分区（新增用途前先在此登记，保证结构统一） */
-export const CACHE_SUB_DIRS = ['db', 'media', 'files', 'tmp', 'export'] as const
+export const CACHE_SUB_DIRS = ['db', 'media', 'files', 'tmp', 'export', 'growth'] as const
 export type CacheSubDir = (typeof CACHE_SUB_DIRS)[number]
 
 /** 探测第一个可用的非系统盘根目录（如 D:\），不可用返回 null */
@@ -71,11 +71,24 @@ export function getDefaultCachePath(): string {
   return cachedDefaultPath
 }
 
-/** 生效的缓存目录：读配置（空则默认），并确保目录存在 */
+/**
+ * 生效的缓存目录：读配置（空则默认），并确保目录存在。
+ * 结果缓存：媒体协议、文件接收、日志路径等高频调用链都会走到这里，
+ * 每次一条 SQL + existsSync 是纯开销；配置变更时由 invalidateCachePathCache 失效。
+ */
+let cachedEffectivePath: string | null = null
+
+/** 配置变更（cs:config:set cache.path）后调用 */
+export function invalidateCachePathCache(): void {
+  cachedEffectivePath = null
+}
+
 export function getCachePath(): string {
+  if (cachedEffectivePath) return cachedEffectivePath
   const configured = getConfig(CONFIG_KEY)?.trim()
   const dir = configured || getDefaultCachePath()
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  cachedEffectivePath = dir
   return dir
 }
 
@@ -125,6 +138,16 @@ export function getExportDir(): string {
  * 明文副本由「源库路径 + key」即时再生，可直接并入；
  * 目标已存在时旧目录整体删除避免残留双份敏感明文。失败静默，下次启动重试。
  */
+/** 营销增长(growth)素材根目录:<cache>/growth */
+export function getGrowthRootDir(): string {
+  return getCacheSubPath('growth')
+}
+
+/** 营销增长(growth)已下载媒体(封面/图集)目录:<cache>/growth/media */
+export function getGrowthMediaDir(): string {
+  return join(getCacheSubPath('growth'), 'media')
+}
+
 export function migrateLegacyCacheLayout(): void {
   const root = getCachePath()
   const legacy = join(root, LEGACY_PLAIN_DIR)

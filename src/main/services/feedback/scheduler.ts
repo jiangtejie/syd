@@ -40,7 +40,8 @@ const cache = new Map<
   string,
   { at: number; list: Array<{ username: string; displayName: string }> }
 >()
-let hookInstalled = false
+/** 事件钩子取消函数:注册后必须能注销,否则 stopAll 后再 ensure 会累积永不清理的回调 */
+let uninstallHook: (() => void) | null = null
 
 const enabled = (): boolean => getConfig(AUTO_SCAN_KEY) !== '0'
 const escalateEnabled = (): boolean => getConfig(ESCALATE_KEY) !== '0'
@@ -130,9 +131,8 @@ function onDbChanged(payload: DbChangedPayload): void {
 /** 账号接入后启动：注册事件钩子（全局一次）+ 每 60s 巡检 + 立即一轮 */
 export function ensure(wxid: string): void {
   if (!wxid || timers.has(wxid)) return
-  if (!hookInstalled) {
-    addDbChangeHook(onDbChanged)
-    hookInstalled = true
+  if (!uninstallHook) {
+    uninstallHook = addDbChangeHook(onDbChanged)
   }
   const tick = (): void => {
     void runPass(wxid)
@@ -186,19 +186,6 @@ async function runEscalate(wxid: string): Promise<void> {
   }
 }
 
-/** 账号断开 / 停止监控时停止调度 */
-export function remove(wxid: string): void {
-  const t = timers.get(wxid)
-  if (t) {
-    clearInterval(t)
-    timers.delete(wxid)
-  }
-  runningPass.delete(wxid)
-  runningEscalate.delete(wxid)
-  cache.delete(wxid)
-  lastPassAt.delete(wxid)
-}
-
 /** 应用退出时全部停止 */
 export function stopAll(): void {
   for (const t of timers.values()) clearInterval(t)
@@ -209,5 +196,6 @@ export function stopAll(): void {
   lastPassAt.clear()
   groupNotifiedAt.clear()
   escalateNotifiedAt.clear()
-  hookInstalled = false
+  uninstallHook?.()
+  uninstallHook = null
 }

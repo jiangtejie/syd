@@ -105,6 +105,30 @@ export function listChatMessages(sessionId: number): ChatMsgItem[] {
   return rows.map(rowToMsg)
 }
 
+/**
+ * 只取最近 limit 条（按 id 倒序取再翻回升序）。
+ * 引擎/每轮对话的上下文预算本来只有 40 条左右，却调用全量版本把整个会话读进内存。
+ */
+export function listChatMessagesTail(sessionId: number, limit: number): ChatMsgItem[] {
+  const rows = getDb()
+    .prepare(`SELECT * FROM chat_message WHERE session_id = ? ORDER BY id DESC LIMIT ?`)
+    .all(sessionId, Math.max(1, limit)) as ChatMsgRow[]
+  return rows.reverse().map(rowToMsg)
+}
+
+/** 最后一条助手文本(IM 回复通道用):一条 SQL 取代「读全量再 reverse 查找」 */
+export function lastAssistantText(sessionId: number): string | null {
+  const row = getDb()
+    .prepare(
+      `SELECT content FROM chat_message
+       WHERE session_id = ? AND role = 'assistant' AND kind = 'text'
+       ORDER BY id DESC LIMIT 1`
+    )
+    .get(sessionId) as { content: string } | undefined
+  const text = row?.content?.trim()
+  return text ? text : null
+}
+
 /** 消息内容检索(某命名空间全部会话;子串匹配避开 LIKE 通配符,含上下文片段) */
 export function searchChatMessages(
   wxid: string,

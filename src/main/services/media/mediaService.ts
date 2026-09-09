@@ -53,20 +53,73 @@ export function toMediaUrl(wxid: string, fileName: string): string {
   return `${MEDIA_URL_BASE}/${encodeURIComponent(wxid)}/${encodeURIComponent(fileName)}`
 }
 
+/** 目录列表短缓存：一张图要查 orig/thumb/hd 三次，逐次 readdir 是纯浪费 */
+const dirListCache = new Map<string, { at: number; names: string[] }>()
+const DIR_LIST_TTL_MS = 5000
+
+function listDirNames(dir: string): string[] {
+  const hit = dirListCache.get(dir)
+  if (hit && Date.now() - hit.at < DIR_LIST_TTL_MS) return hit.names
+  let names: string[] = []
+  try {
+    names = readdirSync(dir)
+  } catch {
+    names = []
+  }
+  if (dirListCache.size >= 16) dirListCache.clear()
+  dirListCache.set(dir, { at: Date.now(), names })
+  return names
+}
+
 /** 缓存目录快照：查找已解出的 <md5>_<kind>.* 文件（命中即跳过重新扫描/解密，返回文件名） */
 function findCachedMedia(wxid: string, md5: string, kind: 'orig' | 'thumb' | 'hd'): string | null {
   const cacheDir = getMediaCacheDir(wxid)
-  let entries: string[]
-  try {
-    entries = readdirSync(cacheDir)
-  } catch {
-    return null
-  }
   const prefix = `${md5}_${kind}.`
-  for (const name of entries) {
+  for (const name of listDirNames(cacheDir)) {
     if (name.toLowerCase().startsWith(prefix)) return name
   }
   return null
+}
+
+/**
+ * 附件目录的文件名索引（小写文件名 -> 绝对路径）。
+ * 解密一张图此前要遍历整棵 attach 树（最多 5000 个目录），逐张调用即 O(请求数 × 文件数)；
+ * 建索引后命中是 O(1)，未命中时刷新一次索引再试（新落地的文件也能找到）。
+ */
+const mediaIndexCache = new Map<string, Map<string, string>>()
+
+function walkFiles(root: string, visit: (full: string, name: string) => boolean): string | null {
+  const stack: string[] = [root]
+  let guard = 0
+  while (stack.length > 0 && guard < 5000) {
+    guard++
+    const dir = stack.pop()!
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name)
+      if (e.isDirectory()) stack.push(full)
+      else if (visit(full, e.name)) return full
+    }
+  }
+  return null
+}
+
+function mediaIndex(root: string, refresh = false): Map<string, string> {
+  const hit = mediaIndexCache.get(root)
+  if (hit && !refresh) return hit
+  const idx = new Map<string, string>()
+  walkFiles(root, (full, name) => {
+    idx.set(name.toLowerCase(), full)
+    return false
+  })
+  if (mediaIndexCache.size >= 8) mediaIndexCache.clear()
+  mediaIndexCache.set(root, idx)
+  return idx
 }
 
 /**
@@ -103,29 +156,15 @@ function findDatByMd5(root: string, md5: string, suffix: string): string | null 
       : suffix === '_h'
         ? [`${base}_h`, `${base}.h`, `${base}_hd`]
         : [base]
-  const stack: string[] = [root]
-  let guard = 0
-  while (stack.length > 0 && guard < 5000) {
-    guard++
-    const dir = stack.pop()!
-    let entries
-    try {
-      entries = readdirSync(dir, { withFileTypes: true })
-    } catch {
-      continue
+  const probe = (idx: Map<string, string>): string | null => {
+    for (const stem of accept) {
+      const hit = idx.get(`${stem}.dat`)
+      if (hit) return hit
     }
-    for (const e of entries) {
-      const full = join(dir, e.name)
-      if (e.isDirectory()) {
-        // 附件目录结构为 <会话hash>/<年月>/Img|Video|File|<md5>.dat，需深入所有子目录
-        stack.push(full)
-      } else if (/\.dat$/i.test(e.name)) {
-        const stem = e.name.replace(/\.dat$/i, '').toLowerCase()
-        if (accept.includes(stem)) return full
-      }
-    }
+    return null
   }
-  return null
+  // 命中索引直接返回；未命中刷新一次（文件可能刚落地）
+  return probe(mediaIndex(root)) ?? probe(mediaIndex(root, true))
 }
 
 /**
@@ -170,7 +209,11 @@ export async function decryptImage(opts: DecryptImageOptions): Promise<DecryptIm
   const suffixFor = (k: 'orig' | 'thumb' | 'hd'): string =>
     k === 'thumb' ? '_t' : k === 'hd' ? '_h' : ''
   const order: Array<'orig' | 'thumb' | 'hd'> =
-    kind === 'thumb' ? ['thumb', 'orig', 'hd'] : kind === 'hd' ? ['hd', 'orig', 'thumb'] : ['orig', 'thumb', 'hd']
+    kind === 'thumb'
+      ? ['thumb', 'orig', 'hd']
+      : kind === 'hd'
+        ? ['hd', 'orig', 'thumb']
+        : ['orig', 'thumb', 'hd']
 
   let lastMiss = ''
   let lastFail = ''
@@ -346,27 +389,14 @@ const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.m4v']
 /** 深度遍历 msg/video，返回首个文件名 md5 匹配的视频文件 */
 function findVideoByMd5(root: string, md5: string): string | null {
   const base = md5.toLowerCase()
-  const stack: string[] = [root]
-  let guard = 0
-  while (stack.length > 0 && guard < 5000) {
-    guard++
-    const dir = stack.pop()!
-    let entries
-    try {
-      entries = readdirSync(dir, { withFileTypes: true })
-    } catch {
-      continue
+  const probe = (idx: Map<string, string>): string | null => {
+    for (const ext of VIDEO_EXTS) {
+      const hit = idx.get(`${base}${ext}`)
+      if (hit) return hit
     }
-    for (const e of entries) {
-      const full = join(dir, e.name)
-      if (e.isDirectory()) {
-        stack.push(full)
-      } else if (e.name.replace(/\.\w+$/, '').toLowerCase() === base && VIDEO_EXTS.includes(extname(e.name).toLowerCase())) {
-        return full
-      }
-    }
+    return null
   }
-  return null
+  return probe(mediaIndex(root)) ?? probe(mediaIndex(root, true))
 }
 
 /**
@@ -408,6 +438,9 @@ export async function decryptVideo(opts: DecryptVideoOptions): Promise<DecryptVi
     }
     return { ok: true, url: toMediaUrl(wxid, cacheName) }
   } catch (e) {
-    return { ok: false, error: `${md5} 视频读取失败: ${e instanceof Error ? e.message : String(e)}` }
+    return {
+      ok: false,
+      error: `${md5} 视频读取失败: ${e instanceof Error ? e.message : String(e)}`
+    }
   }
 }

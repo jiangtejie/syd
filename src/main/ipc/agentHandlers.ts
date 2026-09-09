@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import type { AiAgentInput } from '../../shared/types'
 import { getDefaultAgent, listAgents, saveAgent } from '../db/repos/agentRepo'
+import { fail } from './_util'
 
 /**
  * 智能体（统一人设）IPC。
@@ -15,7 +16,7 @@ export function registerAgentHandlers(): void {
       const def = getDefaultAgent()
       return { ok: true as const, agents, defaultId: def?.id ?? null }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -25,7 +26,7 @@ export function registerAgentHandlers(): void {
       const agent = saveAgent(input)
       return { ok: true as const, agent }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 }

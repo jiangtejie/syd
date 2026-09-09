@@ -125,21 +125,59 @@ function rowToIssue(r: IssueRow): FeedbackIssue {
   }
 }
 
-/** 跟进超时阈值:app_config monitor.followUpHours 可配(默认 12h),见 decorateFollowUpOverdue */
+/** 跟进超时阈值:app_config monitor.followUpHours 可配(默认 12h) */
+const FOLLOW_UP_DEFAULT_HOURS = 12
+/** IN (...) 分片大小(SQLite 变量上限) */
+const DECORATE_CHUNK = 400
 
-/** open 且 followUp 的行：按最后一条证据是否为客服消息及时间计算 overdue(阈值 app_config monitor.followUpHours,默认 12) */
-function decorateFollowUpOverdue(issue: FeedbackIssue): void {
-  if (!issue.followUp || issue.status !== 'open') return
-  const hours = getConfigNumber('monitor.followUpHours', 12)
-  const limit = Math.max(1, hours) * 3600_000
-  const last = getDb()
-    .prepare(
-      `SELECT msg_time, is_send FROM issue_feedback_msg
-       WHERE issue_id = ? ORDER BY seq DESC LIMIT 1`
-    )
-    .get(issue.id) as { msg_time: number; is_send: number } | undefined
-  if (last && last.is_send === 1 && Date.now() - last.msg_time > limit) {
-    issue.followUpOverdue = true
+/**
+ * 批量装饰问题列表：一次查证据计数 + 一次查每问题最新证据 + 只读一次配置。
+ * 旧实现每行 1 次 COUNT(*) + 1~2 次 SQL(证据表当时无索引 → 每行全表扫)，问题越多越慢。
+ */
+function decorateIssues(issues: FeedbackIssue[]): void {
+  if (issues.length === 0) return
+  const db = getDb()
+  const ids = issues.map((i) => i.id)
+  const countMap = new Map<number, number>()
+  const lastMap = new Map<number, { msg_time: number; is_send: number }>()
+  const followIds = issues.filter((i) => i.followUp && i.status === 'open').map((i) => i.id)
+
+  for (let i = 0; i < ids.length; i += DECORATE_CHUNK) {
+    const batch = ids.slice(i, i + DECORATE_CHUNK)
+    const ph = batch.map(() => '?').join(',')
+    const rows = db
+      .prepare(
+        `SELECT issue_id, COUNT(*) AS n FROM issue_feedback_msg
+         WHERE issue_id IN (${ph}) GROUP BY issue_id`
+      )
+      .all(...batch) as Array<{ issue_id: number; n: number }>
+    for (const r of rows) countMap.set(r.issue_id, r.n)
+  }
+
+  for (let i = 0; i < followIds.length; i += DECORATE_CHUNK) {
+    const batch = followIds.slice(i, i + DECORATE_CHUNK)
+    const ph = batch.map(() => '?').join(',')
+    const rows = db
+      .prepare(
+        `SELECT m.issue_id, m.msg_time, m.is_send FROM issue_feedback_msg m
+         JOIN (SELECT issue_id, MAX(seq) AS mx FROM issue_feedback_msg
+               WHERE issue_id IN (${ph}) GROUP BY issue_id) t
+           ON t.issue_id = m.issue_id AND t.mx = m.seq`
+      )
+      .all(...batch) as Array<{ issue_id: number; msg_time: number; is_send: number }>
+    for (const r of rows) lastMap.set(r.issue_id, r)
+  }
+
+  const hours = getConfigNumber('monitor.followUpHours', FOLLOW_UP_DEFAULT_HOURS)
+  const limitMs = Math.max(1, hours) * 3600_000
+  const now = Date.now()
+  for (const issue of issues) {
+    issue.msgCount = countMap.get(issue.id) ?? 0
+    if (!issue.followUp || issue.status !== 'open') continue
+    const last = lastMap.get(issue.id)
+    if (last && last.is_send === 1 && now - last.msg_time > limitMs) {
+      issue.followUpOverdue = true
+    }
   }
 }
 
@@ -215,23 +253,27 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
   )
 
   // 重建关联消息（外键未强制启用，先删后插）
-  db.prepare(`DELETE FROM issue_feedback_msg WHERE issue_id = ?`).run(row.id)
+  // 包在事务里:逐条自动提交在 WAL 下是数量级差距,且中途失败会留下"删了一半"的中间态
   const insMsg = db.prepare(
     `INSERT INTO issue_feedback_msg (issue_id, seq, msg_time, sender_name, is_send, text, image_md5, local_type)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   )
-  issue.msgs.forEach((m, i) => {
-    insMsg.run(
-      row.id,
-      i,
-      m.time,
-      m.senderName,
-      m.isSend ? 1 : 0,
-      m.text,
-      m.imageMd5 ?? null,
-      m.localType ?? null
-    )
+  const rebuildMsgs = db.transaction((rows: NewIssue['msgs']) => {
+    db.prepare(`DELETE FROM issue_feedback_msg WHERE issue_id = ?`).run(row.id)
+    rows.forEach((m, i) => {
+      insMsg.run(
+        row.id,
+        i,
+        m.time,
+        m.senderName,
+        m.isSend ? 1 : 0,
+        m.text,
+        m.imageMd5 ?? null,
+        m.localType ?? null
+      )
+    })
   })
+  rebuildMsgs(issue.msgs)
   return { id: row.id, created }
 }
 
@@ -350,14 +392,9 @@ export function openIssuesForGroup(
        ORDER BY occur_at ASC LIMIT ?`
     )
     .all(wxid, groupUsername, limit) as IssueRow[]
-  const msgCountStmt = getDb().prepare(
-    `SELECT COUNT(*) AS n FROM issue_feedback_msg WHERE issue_id = ?`
-  )
-  return rows.map((r) => {
-    const issue = rowToIssue(r)
-    issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
-    return issue
-  })
+  const issues = rows.map((r) => rowToIssue(r))
+  decorateIssues(issues)
+  return issues
 }
 
 /** open 议题证据消息时间集合（LLM 输入截断时的保底行） */
@@ -390,15 +427,9 @@ export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }
           )
           .all(wxid)
   ) as IssueRow[]
-  const msgCountStmt = getDb().prepare(
-    `SELECT COUNT(*) AS n FROM issue_feedback_msg WHERE issue_id = ?`
-  )
-  return rows.map((r) => {
-    const issue = rowToIssue(r)
-    issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
-    decorateFollowUpOverdue(issue)
-    return issue
-  })
+  const issues = rows.map((r) => rowToIssue(r))
+  decorateIssues(issues)
+  return issues
 }
 
 /** 按群列出问题（工作台「群问题」视图；open 优先，其次发生时间倒序） */
@@ -410,15 +441,9 @@ export function listIssuesByGroup(wxid: string, groupUsername: string): Feedback
                 occur_at DESC`
     )
     .all(wxid, groupUsername) as IssueRow[]
-  const msgCountStmt = getDb().prepare(
-    `SELECT COUNT(*) AS n FROM issue_feedback_msg WHERE issue_id = ?`
-  )
-  return rows.map((r) => {
-    const issue = rowToIssue(r)
-    issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
-    decorateFollowUpOverdue(issue)
-    return issue
-  })
+  const issues = rows.map((r) => rowToIssue(r))
+  decorateIssues(issues)
+  return issues
 }
 
 export function getIssueDetail(id: number): FeedbackIssueDetail | null {
@@ -439,7 +464,14 @@ export function getIssueDetail(id: number): FeedbackIssueDetail | null {
     localType: m.local_type ?? undefined
   }))
   issue.msgCount = msgs.length
-  decorateFollowUpOverdue(issue)
+  // 详情页证据已全部读入:直接用最后一条判定跟进超时(无需再查一次库)
+  if (issue.followUp && issue.status === 'open') {
+    const last = msgs.length > 0 ? msgs[msgs.length - 1] : undefined
+    const hours = getConfigNumber('monitor.followUpHours', FOLLOW_UP_DEFAULT_HOURS)
+    if (last && last.is_send === 1 && Date.now() - last.msg_time > Math.max(1, hours) * 3600_000) {
+      issue.followUpOverdue = true
+    }
+  }
   return issue
 }
 
@@ -477,15 +509,9 @@ export function searchIssues(wxid: string, q: string, limit = 5): FeedbackIssue[
        LIMIT ?`
     )
     .all(wxid, `%${q}%`, `%${q}%`, limit) as IssueRow[]
-  const msgCountStmt = getDb().prepare(
-    `SELECT COUNT(*) AS n FROM issue_feedback_msg WHERE issue_id = ?`
-  )
-  return rows.map((r) => {
-    const issue = rowToIssue(r)
-    issue.msgCount = (msgCountStmt.get(r.id) as { n: number }).n
-    decorateFollowUpOverdue(issue)
-    return issue
-  })
+  const issues = rows.map((r) => rowToIssue(r))
+  decorateIssues(issues)
+  return issues
 }
 
 /** 疑似确认：人工确认为真问题 → 清除疑似标记（重析对已确认行不再重标） */

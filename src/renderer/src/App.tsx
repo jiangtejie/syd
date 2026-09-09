@@ -1,12 +1,23 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useWorkbenchStore, type WorkbenchPage } from './stores/workbench'
 import Workbench from './pages/Workbench'
 import WorkbenchChatPage from './pages/WorkbenchChatPage'
-import MonitorPage from './pages/MonitorPage'
-import CustomersPage from './pages/CustomersPage'
-import DashboardPage from './pages/DashboardPage'
-import ExportPage from './pages/ExportPage'
-import SettingsPage from './pages/SettingsPage'
+
+/**
+ * 非首屏页面懒加载:此前 9 个页面 + echarts(1.1MB) 全部打进唯一 chunk,
+ * 冷启动要解析 4.26MB。默认页(对话/AI 工作台)保持同步加载,其余按需拉取。
+ */
+const MonitorPage = lazy(() => import('./pages/MonitorPage'))
+const CustomersPage = lazy(() => import('./pages/CustomersPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const ExportPage = lazy(() => import('./pages/ExportPage'))
+const GrowthPage = lazy(() => import('./pages/GrowthPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+
+/** 懒加载页面的占位(与页面区同底色,避免闪白) */
+function PageLoading(): React.JSX.Element {
+  return <div style={{ padding: 24, color: '#999', fontSize: 13 }}>加载中…</div>
+}
 import TitleBar from './components/TitleBar'
 import ToastHost from './components/ToastHost'
 import ConfirmHost from './components/ConfirmHost'
@@ -20,7 +31,7 @@ import './pages/shell.css'
  */
 
 type NavIconName =
-  'workbench' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'settings'
+  'workbench' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'growth' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -72,6 +83,13 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
           <rect x="3" y="14" width="7" height="7" rx="1.2" />
         </svg>
       )
+    case 'growth':
+      return (
+        <svg {...attrs}>
+          <polyline points="3 17 8.5 11.5 12.5 15.5 21 7" />
+          <polyline points="15 7 21 7 21 13" />
+        </svg>
+      )
     case 'settings':
       return (
         <svg {...attrs}>
@@ -91,11 +109,12 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
 }
 
 const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }> = [
-  { key: 'workbench', icon: 'workbench', label: '工作台' },
+  { key: 'workbench', icon: 'workbench', label: 'AI' },
   { key: 'monitor', icon: 'monitor', label: '监控' },
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
   { key: 'customers', icon: 'customers', label: '客户' },
+  { key: 'growth', icon: 'growth', label: '营销' },
   { key: 'export', icon: 'export', label: '数据' }
 ]
 
@@ -249,12 +268,16 @@ function App(): React.JSX.Element {
             </div>
             {page === 'customers' && (
               <div className="app-page">
-                <CustomersPage />
+                <Suspense fallback={<PageLoading />}>
+                  <CustomersPage />
+                </Suspense>
               </div>
             )}
             {page === 'export' && (
               <div className="app-page">
-                <ExportPage />
+                <Suspense fallback={<PageLoading />}>
+                  <ExportPage />
+                </Suspense>
               </div>
             )}
             {page === 'workbench' && (
@@ -264,17 +287,30 @@ function App(): React.JSX.Element {
             )}
             {page === 'monitor' && (
               <div className="app-page">
-                <MonitorPage />
+                <Suspense fallback={<PageLoading />}>
+                  <MonitorPage />
+                </Suspense>
               </div>
             )}
             {page === 'dashboard' && (
               <div className="app-page">
-                <DashboardPage />
+                <Suspense fallback={<PageLoading />}>
+                  <DashboardPage />
+                </Suspense>
+              </div>
+            )}
+            {page === 'growth' && (
+              <div className="app-page">
+                <Suspense fallback={<PageLoading />}>
+                  <GrowthPage />
+                </Suspense>
               </div>
             )}
             {page === 'settings' && (
               <div className="app-page">
-                <SettingsPage />
+                <Suspense fallback={<PageLoading />}>
+                  <SettingsPage />
+                </Suspense>
               </div>
             )}
           </div>

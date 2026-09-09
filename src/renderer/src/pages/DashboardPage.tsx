@@ -12,6 +12,7 @@ import type {
   OpsHourPoint,
   OpsTypeCount
 } from '../../../shared/types'
+import type { GrowthOverview } from '../../../shared/growth'
 import './dashboard.css'
 
 /**
@@ -337,6 +338,20 @@ function DashboardPage(): React.JSX.Element {
   const [range, setRange] = useState<7 | 30>(7)
   /** 当前时间（mount 时异步测量，避免渲染期调用 Date.now） */
   const [nowMs, setNowMs] = useState<number>(0)
+  /** 营销板块概览(素材/拆解/爆改/发布回填) */
+  const [growthOv, setGrowthOv] = useState<GrowthOverview | null>(null)
+
+  useEffect(() => {
+    const api = window.api?.cs?.growth
+    if (!api?.overview) return
+    let alive = true
+    void api.overview().then((res) => {
+      if (alive && res.ok && res.overview) setGrowthOv(res.overview)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   useEffect(() => {
     const reply = window.api?.cs?.reply
@@ -435,13 +450,19 @@ function DashboardPage(): React.JSX.Element {
     return c
   }, [sessions])
 
-  const compSegs: CompSegment[] = [
-    { key: 'person', label: '个人', color: CHART_GREEN, n: comp.person },
-    { key: 'group', label: '群聊', color: CHART_BLUE, n: comp.group },
-    { key: 'official', label: '公众号', color: CHART_AMBER, n: comp.official },
-    { key: 'fold', label: '折叠聊天', color: '#e4e6eb', n: comp.fold }
-  ].filter((s) => s.n > 0)
-  const compTotal = compSegs.reduce((sum, s) => sum + s.n, 0)
+  // useMemo:否则每次渲染都是新数组引用,下面 compDonut 的 memo 永不命中 →
+  // EChart 每次 setOption(notMerge) 整图重建并重播动画
+  const compSegs = useMemo<CompSegment[]>(
+    () =>
+      [
+        { key: 'person', label: '个人', color: CHART_GREEN, n: comp.person },
+        { key: 'group', label: '群聊', color: CHART_BLUE, n: comp.group },
+        { key: 'official', label: '公众号', color: CHART_AMBER, n: comp.official },
+        { key: 'fold', label: '折叠聊天', color: '#e4e6eb', n: comp.fold }
+      ].filter((s) => s.n > 0),
+    [comp]
+  )
+  const compTotal = useMemo(() => compSegs.reduce((sum, s) => sum + s.n, 0), [compSegs])
   const compDonut = useMemo<EChartsOption | null>(
     () =>
       compTotal > 0
@@ -478,13 +499,17 @@ function DashboardPage(): React.JSX.Element {
           return d.getTime()
         })()
       : 0
-  const todayActive = sessions.filter(
-    (s) =>
-      !s.isOfficialAccount &&
-      !s.isFoldGroup &&
-      s.lastTimestamp >= todayStart &&
-      s.lastTimestamp <= nowMs
-  ).length
+  const todayActive = useMemo(
+    () =>
+      sessions.filter(
+        (s) =>
+          !s.isOfficialAccount &&
+          !s.isFoldGroup &&
+          s.lastTimestamp >= todayStart &&
+          s.lastTimestamp <= nowMs
+      ).length,
+    [sessions, todayStart, nowMs]
+  )
 
   // ── 发送监控（真实 send_log）──
   const totals = overview?.totals ?? {}
@@ -533,6 +558,53 @@ function DashboardPage(): React.JSX.Element {
           <div className="db-card-label">今日已发送</div>
         </div>
       </div>
+
+      {growthOv ? (
+        <div className="page-card db-panel">
+          <div className="db-panel-title">
+            营销内容效果
+            <span className="db-panel-hint">营销板块</span>
+          </div>
+          <div className="db-panel-sub">
+            素材 {growthOv.contentCount} · 已拆解 {growthOv.decompCount} · 爆改产出{' '}
+            {growthOv.remixOutputCount} · 已发布素材 {growthOv.publishedContentCount} · 新客线索{' '}
+            {growthOv.totalLeads} · 回填金额 ¥{growthOv.totalAmount}
+          </div>
+          {growthOv.recentMetrics.length > 0 ? (
+            <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text-2)' }}>
+              {growthOv.recentMetrics.slice(0, 5).map((m) => (
+                <div
+                  key={m.id}
+                  style={{ display: 'flex', gap: 12, padding: '4px 0', alignItems: 'baseline' }}
+                >
+                  <span style={{ color: 'var(--text-3)', fontSize: 12, flex: 'none' }}>
+                    {fmtAge(nowMs, m.capturedAt)}
+                  </span>
+                  <span style={{ flex: 'none' }}>{m.channel}</span>
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {m.contentTitle || '(素材已删除)'}
+                  </span>
+                  <span style={{ flex: 'none' }}>
+                    线索 {m.leads} · ¥{m.amount}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="db-panel-sub">
+              还没有发布登记; 在营销板块的素材详情里「登记发布」后会出现在这里
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <div className="page-card db-panel">
         <div className="db-panel-title">

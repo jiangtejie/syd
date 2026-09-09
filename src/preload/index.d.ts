@@ -17,7 +17,6 @@ import type {
   OpsStats,
   MessageCursor,
   RedEnvelopeStatus,
-  FeedbackTypeCount,
   TeamMemberInfo,
   ChatSessionItem,
   ChatMsgItem,
@@ -29,6 +28,24 @@ import type {
   ReportPgTarget,
   ReportRunInfo
 } from '../shared/types'
+import type {
+  GrowthBuzzAddResult,
+  GrowthBuzzCommentsResult,
+  GrowthBuzzDetailView,
+  GrowthBuzzDiagnosisView,
+  GrowthBuzzFilter,
+  GrowthBuzzMentionView,
+  GrowthBuzzOverview,
+  GrowthContentDetailView,
+  GrowthContentFilter,
+  GrowthContentItem,
+  GrowthCrawlTaskView,
+  GrowthOverview,
+  GrowthProgressPayload,
+  GrowthStats,
+  GrowthSubscription,
+  GrowthSubscriptionInput
+} from '../shared/growth'
 
 interface KeyActionResult {
   success: boolean
@@ -60,7 +77,6 @@ declare global {
             dbPath?: string
           ) => Promise<KeyActionResult>
           test: (wxid: string) => Promise<KeyActionResult>
-          refresh: (wxid: string) => Promise<KeyStatusInfo>
         }
         wx: {
           connect: (wxid: string) => Promise<Result<{ info?: WxConnectInfo }>>
@@ -92,7 +108,6 @@ declare global {
             usernames: string[]
           ) => Promise<{ ok: boolean; names?: Record<string, string>; error?: string }>
           startWatch: (wxid: string) => Promise<{ ok: boolean; error?: string }>
-          stopWatch: (wxid: string) => Promise<{ ok: boolean; error?: string }>
           opsStats: (
             wxid: string,
             rangeDays?: number
@@ -266,7 +281,6 @@ declare global {
           assign: (id: number, username: string | null) => Promise<{ ok: boolean; error?: string }>
           confirmDoubt: (id: number) => Promise<{ ok: boolean; error?: string }>
           detail: (id: number) => Promise<Result<{ issue?: FeedbackIssueDetail }>>
-          typeCounts: (wxid: string) => Promise<Result<{ counts?: FeedbackTypeCount[] }>>
           groupBadges: (
             wxid: string
           ) => Promise<{ ok: boolean; badges?: Record<string, number>; error?: string }>
@@ -488,6 +502,143 @@ declare global {
           onEvent: (
             callback: (evt: AiChatEvent & { sessionId?: number; runId?: string }) => void
           ) => () => void
+        }
+        growth: {
+          stats: () => Promise<Result<{ stats?: GrowthStats }>>
+          listContent: (
+            filter?: GrowthContentFilter
+          ) => Promise<Result<{ items?: GrowthContentItem[]; total?: number }>>
+          getContent: (id: number) => Promise<Result<{ item?: GrowthContentDetailView }>>
+          ingestLink: (
+            text: string
+          ) => Promise<Result<{ item?: GrowthContentItem; existed?: boolean }>>
+          patchContent: (
+            id: number,
+            patch: { usage?: string; status?: string; note?: string }
+          ) => Promise<{ ok: boolean; error?: string }>
+          removeContent: (id: number) => Promise<{ ok: boolean; error?: string }>
+          listSubscriptions: () => Promise<Result<{ subscriptions?: GrowthSubscription[] }>>
+          saveSubscription: (
+            input: GrowthSubscriptionInput & { id?: number }
+          ) => Promise<{ ok: boolean; id?: number; error?: string }>
+          setSubscriptionEnabled: (
+            id: number,
+            enabled: boolean
+          ) => Promise<{ ok: boolean; error?: string }>
+          deleteSubscription: (id: number) => Promise<{ ok: boolean; error?: string }>
+          runCrawl: (id: number) => Promise<Result<{ fetched?: number; inserted?: number }>>
+          recentTasks: (limit?: number) => Promise<Result<{ tasks?: GrowthCrawlTaskView[] }>>
+          copyClipboard: (payload: {
+            text?: string
+            relPath?: string
+          }) => Promise<{ ok: boolean; error?: string }>
+          batchPatch: (
+            ids: number[],
+            patch: { usage?: string; status?: string }
+          ) => Promise<Result<{ updated?: number }>>
+          batchRemove: (ids: number[]) => Promise<Result<{ removed?: number }>>
+          uploadLocal: () => Promise<
+            Result<{ added?: number; contentId?: number; skipped?: string[] }>
+          >
+          exportPackage: (
+            id: number,
+            outputIds?: number[]
+          ) => Promise<Result<{ dir?: string; files?: number }>>
+          redownloadMedia: (id: number) => Promise<Result<{ added?: number; failed?: number }>>
+          overview: () => Promise<Result<{ overview?: GrowthOverview }>>
+          configGet: () => Promise<
+            Result<{ autoEnabled?: boolean; provider?: string; providerApiKey?: string }>
+          >
+          configSet: (
+            field: 'autoEnabled' | 'provider' | 'providerApiKey',
+            value: string
+          ) => Promise<{ ok: boolean; error?: string }>
+          onProgress: (callback: (payload: GrowthProgressPayload) => void) => () => void
+        }
+
+        growthai: {
+          listTasks: () => Promise<Result<{ tasks?: unknown[] }>>
+          getTask: (
+            id: number
+          ) => Promise<Result<{ task?: unknown; outputs?: unknown[]; candidates?: unknown[] }>>
+          createTask: (input: {
+            contentId: number
+            storeId?: number | null
+            goal?: string
+          }) => Promise<{
+            ok: boolean
+            taskId?: number
+            sessionId?: number
+            error?: string
+          }>
+          updateTask: (
+            id: number,
+            patch: Record<string, unknown>
+          ) => Promise<{ ok: boolean; error?: string }>
+          deleteTask: (id: number) => Promise<{ ok: boolean; error?: string }>
+          messages: (id: number) => Promise<Result<{ messages?: unknown[] }>>
+          sendMessage: (
+            id: number,
+            text: string,
+            images?: string[]
+          ) => Promise<{ ok: boolean; error?: string }>
+          stop: (id: number) => Promise<{ ok: boolean }>
+          running: (id: number) => Promise<{ ok: boolean; running?: boolean }>
+          resolveCandidate: (
+            taskId: number,
+            outputId: number,
+            action: 'select' | 'archive' | 'delete'
+          ) => Promise<{ ok: boolean; error?: string }>
+          revertOutput: (outputId: number) => Promise<{ ok: boolean; error?: string }>
+          listStores: () => Promise<Result<{ stores?: unknown[] }>>
+          saveStore: (
+            input: Record<string, unknown>
+          ) => Promise<{ ok: boolean; id?: number; error?: string }>
+          removeStore: (id: number) => Promise<{ ok: boolean; error?: string }>
+          getBrand: () => Promise<Result<{ brand?: unknown }>>
+          saveBrand: (
+            name: string,
+            profile: string
+          ) => Promise<{ ok: boolean; id?: number; error?: string }>
+          configGet: () => Promise<Result<{ image?: unknown; search?: unknown }>>
+          configSet: (field: string, value: string) => Promise<{ ok: boolean; error?: string }>
+          testImage: () => Promise<{ ok: boolean; error?: string }>
+        }
+        growthbuzz: {
+          overview: (storeId?: number | null) => Promise<Result<{ overview?: GrowthBuzzOverview }>>
+          list: (
+            filter: GrowthBuzzFilter
+          ) => Promise<Result<{ items?: GrowthBuzzMentionView[]; total?: number }>>
+          detail: (id: number) => Promise<Result<GrowthBuzzDetailView>>
+          addLink: (input: {
+            storeId?: number | null
+            text: string
+          }) => Promise<GrowthBuzzAddResult>
+          addComments: (input: {
+            mentionId: number
+            raw: string
+            source?: string
+          }) => Promise<GrowthBuzzCommentsResult>
+          diagnose: (
+            id: number,
+            useModel?: boolean
+          ) => Promise<
+            Result<{ diagnosis?: GrowthBuzzDiagnosisView; mention?: GrowthBuzzMentionView }>
+          >
+          diagnoseBatch: (
+            ids: number[],
+            useModel?: boolean
+          ) => Promise<Result<{ succeeded?: number; failed?: number }>>
+          update: (
+            id: number,
+            patch: Record<string, unknown>
+          ) => Promise<Result<{ mention?: GrowthBuzzMentionView }>>
+          remove: (id: number) => Promise<{ ok: boolean; error?: string }>
+          removeComment: (id: number) => Promise<{ ok: boolean; error?: string }>
+          openUrl: (url: string) => Promise<{ ok: boolean; error?: string }>
+          toWorkbench: (
+            id: number
+          ) => Promise<Result<{ taskId?: number; contentId?: number; existed?: boolean }>>
         }
         report: {
           list: () => Promise<Result<{ jobs?: ReportJobInfo[] }>>

@@ -12,6 +12,19 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss()],
+    build: {
+      rollupOptions: {
+        output: {
+          // echarts(含 zrender) 单独成 chunk:只有看板/监控会加载,不拖累首屏
+          manualChunks(id: string) {
+            if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) {
+              return 'vendor-echarts'
+            }
+            return undefined
+          }
+        }
+      }
+    }
   }
 })

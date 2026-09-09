@@ -6,8 +6,7 @@ import {
   clearGroupRunState,
   listFeedbackIssues,
   readState,
-  updateIssueStatus,
-  issueTypeCounts
+  updateIssueStatus
 } from '../services/feedback/analyzer'
 import {
   getIssueDetail,
@@ -18,6 +17,7 @@ import {
   confirmIssueDoubt
 } from '../db/repos/issueRepo'
 import type { FeedbackIssueStatus } from '../../shared/types'
+import { fail } from './_util'
 
 /**
  * 群问题反馈 IPC（看板 + 工作台）。
@@ -129,7 +129,7 @@ export function registerIssueHandlers(): void {
       notifyChanged()
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -149,7 +149,7 @@ export function registerIssueHandlers(): void {
       notifyChanged()
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -161,13 +161,8 @@ export function registerIssueHandlers(): void {
       notifyChanged()
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
-  })
-
-  ipcMain.handle('cs:issue:typeCounts', (_e, wxid: string) => {
-    if (!wxid) return { ok: false as const, error: '缺少账号' }
-    return { ok: true as const, counts: issueTypeCounts(wxid) }
   })
 
   // 按群聚合 open 计数（工作台会话列表「待处理」徽标）

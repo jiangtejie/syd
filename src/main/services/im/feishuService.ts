@@ -3,7 +3,7 @@ import { join, relative } from 'node:path'
 import { BrowserWindow } from 'electron'
 import * as lark from '@larksuiteoapi/node-sdk'
 import { getImAccountConfig, listMappedSessionIds } from '../../db/repos/imRepo'
-import { appendChatMessage, listChatMessages } from '../../db/repos/chatRepo'
+import { appendChatMessage, lastAssistantText } from '../../db/repos/chatRepo'
 import { insertFileRecord } from '../../db/repos/imFileRepo'
 import { createLogger } from '../logging'
 import { getFilesRootDir } from '../paths'
@@ -719,13 +719,15 @@ async function handleInboundMedia(
       messageId,
       `已收到${kind === 'image' ? '图片' : '文件'} ${label}(${fmtBytes(buf.length)}),已保存 ✓`
     )
-    void removeThinkingReaction(rt, messageId)
   } catch (e) {
     imLog(
       accountId,
       `媒体接收异常(${messageId}):${e instanceof Error ? (e.stack ?? e.message) : String(e)}`
     )
     await safeReply(rt, messageId, '⚠️ 文件接收失败,请稍后重试或重新发送一次。')
+  } finally {
+    // 必须无条件清理:此前两条提前 return(缺 key / 超限)漏了这一步,
+    // thinkingReactions Map 条目永久残留,且用户消息上的「思考中」表情不会撤
     void removeThinkingReaction(rt, messageId)
   }
 }
@@ -812,9 +814,8 @@ async function runAiTurn(
         return
       }
       if (evt.type === 'done') {
-        const rows = listChatMessages(sessionId)
-        const last = [...rows].reverse().find((m) => m.role === 'assistant' && m.kind === 'text')
-        const body = last?.content?.trim() || '(已生成,无文本内容)'
+        // 只取最后一条助手文本:此前读全量历史再 reverse 查找,长会话白读几千行
+        const body = lastAssistantText(sessionId) ?? '(已生成,无文本内容)'
         // 过程简报:列出本回答依赖的工具查询(中文短名,重复计次)
         if (tools.size > 0) {
           const brief = [...tools.entries()]

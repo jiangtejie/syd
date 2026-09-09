@@ -34,6 +34,9 @@ let dir = ''
 let dayKey = ''
 let fileSeq = 0
 const ring: LogEntry[] = []
+/** 当前日志文件与已写入字节数：避免每条日志都 existsSync+statSync */
+let cachedPath = ''
+let cachedBytes = 0
 
 /** 读取 app_config(logs.keepDays/logs.ringMax)刷新模块参数;每次写入或设置变更时调用 */
 export function reconfigureLogs(): void {
@@ -80,6 +83,8 @@ function ensureCurrentFile(): void {
   dir = join(app.getPath('userData'), 'logs')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   fileSeq = 0
+  cachedPath = ''
+  cachedBytes = 0
   cleanupOld()
 }
 
@@ -103,13 +108,28 @@ function cleanupOld(): void {
   }
 }
 
-/** 当前文件名(app-YYYYMMDD.log;超限滚动为 .1/.2…) */
+/**
+ * 当前文件名(app-YYYYMMDD.log;超限滚动为 .1/.2…)。
+ * 用内存计数判断是否超限：只有在「首次写入/滚动后」才做一次 existsSync+statSync，
+ * 否则每条日志都要 3 次同步系统调用。
+ */
 function currentFile(): string {
   ensureCurrentFile()
+  if (cachedPath && cachedBytes < MAX_DAY_BYTES) return cachedPath
   let name = `app-${dayKey}.log`
   for (;;) {
     const p = join(dir, name)
-    if (!existsSync(p) || statSync(p).size < MAX_DAY_BYTES) return p
+    if (!existsSync(p)) {
+      cachedPath = p
+      cachedBytes = 0
+      return p
+    }
+    const size = statSync(p).size
+    if (size < MAX_DAY_BYTES) {
+      cachedPath = p
+      cachedBytes = size
+      return p
+    }
     fileSeq += 1
     name = `app-${dayKey}.${fileSeq}.log`
   }
@@ -123,6 +143,7 @@ function writeLine(entry: LogEntry): void {
     )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`
     const line = `[${time}][${entry.level.toUpperCase()}][${entry.scope}] ${entry.msg}\n`
     appendFileSync(currentFile(), line, 'utf8')
+    cachedBytes += Buffer.byteLength(line, 'utf8')
   } catch {
     /* 日志失败绝不抛出影响业务 */
   }

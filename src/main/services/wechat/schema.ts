@@ -18,9 +18,29 @@ export interface MessageTableColumns {
   hasType: boolean
 }
 
-const CONTENT_CANDIDATES = ['message_content', 'display_content', 'content', 'msg_content', 'str_content', 'strContent']
-const COMPRESS_CANDIDATES = ['compress_content', 'compressContent', 'compressedContent', 'CompressContent']
-const SENDER_CANDIDATES = ['real_sender', 'wxid_sender', 'sender', 'sender_username', 'talker', 'talker_id', 'src']
+const CONTENT_CANDIDATES = [
+  'message_content',
+  'display_content',
+  'content',
+  'msg_content',
+  'str_content',
+  'strContent'
+]
+const COMPRESS_CANDIDATES = [
+  'compress_content',
+  'compressContent',
+  'compressedContent',
+  'CompressContent'
+]
+const SENDER_CANDIDATES = [
+  'real_sender',
+  'wxid_sender',
+  'sender',
+  'sender_username',
+  'talker',
+  'talker_id',
+  'src'
+]
 
 function findColumn(lower: Map<string, string>, candidates: string[]): string | null {
   for (const candidate of candidates) {
@@ -31,7 +51,10 @@ function findColumn(lower: Map<string, string>, candidates: string[]): string | 
 }
 
 /** 解析消息表列信息（PRAGMA table_info） */
-export function getMessageTableColumns(db: Database.Database, tableName: string): MessageTableColumns {
+export function getMessageTableColumns(
+  db: Database.Database,
+  tableName: string
+): MessageTableColumns {
   const rows = db.prepare(`PRAGMA table_info("${tableName}")`).all() as { name: string }[]
   const names = new Set(rows.map((r) => r.name))
   const lower = new Map<string, string>()
@@ -53,7 +76,9 @@ export function getMessageTableColumns(db: Database.Database, tableName: string)
 
 /** 会话表名兼容：SessionTable / Session / session */
 export function resolveSessionTableName(db: Database.Database): string | null {
-  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+    name: string
+  }[]
   const names = new Set(rows.map((r) => r.name))
   for (const name of ['SessionTable', 'Session', 'session']) {
     if (names.has(name)) return name
@@ -61,13 +86,24 @@ export function resolveSessionTableName(db: Database.Database): string | null {
   return null
 }
 
+/**
+ * 行的小写键映射缓存（WeakMap：行对象被回收即自动释放）。
+ * 慢路径原本每次调用都重建整行的 Map，而 rowToMessage 对同一行要调 ~13 次，
+ * 且可空列（packed_info_data/server_id 对文本消息为 NULL）必然走慢路径。
+ */
+const rowLowerKeys = new WeakMap<object, Map<string, string>>()
+
 /** 从行中按候选名取值（兼容大小写） */
 export function getRowField(row: Record<string, any>, candidates: string[]): any {
   for (const name of candidates) {
     if (row[name] !== undefined && row[name] !== null) return row[name]
   }
-  const lowerMap = new Map<string, string>()
-  for (const key of Object.keys(row)) lowerMap.set(key.toLowerCase(), key)
+  let lowerMap = rowLowerKeys.get(row)
+  if (!lowerMap) {
+    lowerMap = new Map<string, string>()
+    for (const key of Object.keys(row)) lowerMap.set(key.toLowerCase(), key)
+    rowLowerKeys.set(row, lowerMap)
+  }
   for (const name of candidates) {
     const actual = lowerMap.get(name.toLowerCase())
     if (actual && row[actual] !== undefined && row[actual] !== null) return row[actual]

@@ -14,6 +14,4 @@ export function registerKeyStoreHandlers(): void {
   )
 
   ipcMain.handle('cs:key:test', (_e, wxid: string) => keyStore.testKey(wxid))
-
-  ipcMain.handle('cs:key:refresh', (_e, wxid: string) => keyStore.refreshKey(wxid))
 }

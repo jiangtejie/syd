@@ -40,24 +40,6 @@ async function runPs(args: string[]): Promise<Record<string, unknown>> {
   return JSON.parse(last.slice(start, end + 1)) as Record<string, unknown>
 }
 
-/** 查找并抢前台（诊断用） */
-export async function focusWeChatWindow(): Promise<{
-  ok: boolean
-  title?: string
-  error?: string
-}> {
-  try {
-    const r = await runPs(['-Action', 'focus'])
-    return {
-      ok: !!r.ok,
-      title: r.title as string | undefined,
-      error: r.error as string | undefined
-    }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
-  }
-}
-
 /** 注入错误 → 可行动中文提示(脚本/异常信息对普通用户不友好) */
 export function humanizeInjectError(raw: string | undefined): string | undefined {
   if (!raw) return undefined

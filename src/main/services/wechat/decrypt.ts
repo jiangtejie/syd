@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3-multiple-ciphers'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
 import { createHash, createDecipheriv, pbkdf2Sync } from 'node:crypto'
 import { getPlainDbDir } from '../paths'
@@ -36,6 +36,22 @@ export interface DecryptResult {
   error?: string
 }
 
+/**
+ * PBKDF2 结果缓存：AES key 只依赖 (encKey, salt)，salt 是文件前 16 字节。
+ * 同一个库在同一进程内只需要派生一次（实测 256000 轮 ≈ 72ms，是全链路最贵的单项）。
+ */
+const aesKeyCache = new Map<string, Buffer>()
+const AES_KEY_CACHE_MAX = 16
+
+function deriveAesKey(encKey: Buffer, salt: Buffer, cacheKey: string): Buffer {
+  const hit = aesKeyCache.get(cacheKey)
+  if (hit) return hit
+  const key = pbkdf2Sync(encKey, salt, 256000, 32, 'sha512')
+  if (aesKeyCache.size >= AES_KEY_CACHE_MAX) aesKeyCache.clear()
+  aesKeyCache.set(cacheKey, key)
+  return key
+}
+
 /** 逐页 AES-256-CBC 解密主库，返回明文 Buffer（含派生好的 aesKey，供 WAL 合并复用） */
 function decryptMainDbToBuffer(
   filePath: string,
@@ -45,7 +61,10 @@ function decryptMainDbToBuffer(
   try {
     raw = readFileSync(filePath)
   } catch (e: any) {
-    return { ok: false, error: `读取数据库失败（微信可能在占用该文件，请退出微信后重试）: ${e?.message || String(e)}` }
+    return {
+      ok: false,
+      error: `读取数据库失败（微信可能在占用该文件，请退出微信后重试）: ${e?.message || String(e)}`
+    }
   }
   if (raw.length < PAGE || raw.length % PAGE !== 0) {
     return { ok: false, error: `文件大小 ${raw.length} 非 4096 页对齐，可能不是微信 4.x 加密库` }
@@ -53,7 +72,7 @@ function decryptMainDbToBuffer(
 
   const encKey = Buffer.from(hexKey, 'hex')
   const salt = raw.subarray(0, 16)
-  const aesKey = pbkdf2Sync(encKey, salt, 256000, 32, 'sha512')
+  const aesKey = deriveAesKey(encKey, salt, `${hexKey}|${salt.toString('hex')}`)
   const out = Buffer.alloc(raw.length)
   const pageCount = raw.length / PAGE
 
@@ -64,7 +83,10 @@ function decryptMainDbToBuffer(
     const ivStart = base + ENC_LEN
     const decipher = createDecipheriv('aes-256-cbc', aesKey, raw.subarray(ivStart, ivStart + 16))
     decipher.setAutoPadding(false)
-    const plain = Buffer.concat([decipher.update(raw.subarray(encStart, ivStart)), decipher.final()])
+    const plain = Buffer.concat([
+      decipher.update(raw.subarray(encStart, ivStart)),
+      decipher.final()
+    ])
     if (isPage1) {
       SQLITE_HEADER.copy(out, base)
       plain.copy(out, base + 16)
@@ -97,7 +119,11 @@ function mergeWalFrames(mainBuffer: Buffer, dbFilePath: string, aesKey: Buffer):
       const off = WAL_HEADER + i * frameSize
       const s1 = wal.subarray(off + 8, off + 16).toString('hex')
       if (s1 !== headKey) break
-      headFrames.push({ pgno: wal.readUInt32BE(off), commit: wal.readUInt32BE(off + 4), offset: off })
+      headFrames.push({
+        pgno: wal.readUInt32BE(off),
+        commit: wal.readUInt32BE(off + 4),
+        offset: off
+      })
     }
     if (headFrames.length === 0) return mainBuffer
 
@@ -107,9 +133,16 @@ function mergeWalFrames(mainBuffer: Buffer, dbFilePath: string, aesKey: Buffer):
       // 页1 保留主库解密结果（含 db header）；pgno 无效帧跳过
       if (f.pgno === 0 || f.pgno > 0x40000000 || f.pgno === 1) continue
       const pageData = wal.subarray(f.offset + FRAME_HEADER, f.offset + FRAME_HEADER + PAGE)
-      const decipher = createDecipheriv('aes-256-cbc', aesKey, pageData.subarray(ENC_LEN, ENC_LEN + 16))
+      const decipher = createDecipheriv(
+        'aes-256-cbc',
+        aesKey,
+        pageData.subarray(ENC_LEN, ENC_LEN + 16)
+      )
       decipher.setAutoPadding(false)
-      const plain = Buffer.concat([decipher.update(pageData.subarray(0, ENC_LEN)), decipher.final()])
+      const plain = Buffer.concat([
+        decipher.update(pageData.subarray(0, ENC_LEN)),
+        decipher.final()
+      ])
       const abs = (f.pgno - 1) * PAGE
       if (abs + PAGE > out.length) {
         // WAL 使库增大（主库尚未 checkpoint 到的新页）：扩展后用 commit 帧修正 db size
@@ -144,7 +177,32 @@ export function decryptWxDbFile(filePath: string, hexKey: string, outPath: strin
   return { ok: true }
 }
 
-/** 打开微信加密库：解密（含 WAL 合并）到缓存明文库后用 better-sqlite3 打开 */
+/** 取文件 mtime/size；不存在或不可读返回 null */
+function stampOf(filePath: string): { mtimeMs: number; size: number } | null {
+  try {
+    const st = statSync(filePath)
+    return { mtimeMs: st.mtimeMs, size: st.size }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 明文副本是否仍然新鲜（源库 + WAL 都没有比它更新的改动）。
+ * 命中即可跳过「读全库 + PBKDF2 + 逐页 AES + 写全库」，单次开库 82ms → 约 2ms。
+ */
+function isPlainCacheFresh(filePath: string, plainPath: string): boolean {
+  const plain = stampOf(plainPath)
+  if (!plain || plain.size === 0) return false
+  const main = stampOf(filePath)
+  if (!main) return false
+  const wal = stampOf(`${filePath}-wal`)
+  const srcMtime = Math.max(main.mtimeMs, wal?.mtimeMs ?? 0)
+  // 副本不早于源库，且不小于源库主文件（WAL 合并可能让副本更大）
+  return plain.mtimeMs >= srcMtime && plain.size >= main.size
+}
+
+/** 打开微信加密库：明文副本新鲜则直接打开，否则解密（含 WAL 合并）后打开 */
 export function openWxDbFile(
   filePath: string,
   hexKey: string
@@ -154,8 +212,10 @@ export function openWxDbFile(
   if (!HEX_KEY_RE.test(hexKey)) return { error: '密钥格式无效（应为 64 位十六进制）' }
 
   const tmpPath = getPlainDbPath(filePath, hexKey)
-  const decrypted = decryptWxDbFile(filePath, hexKey, tmpPath)
-  if (!decrypted.ok) return { error: decrypted.error }
+  if (!isPlainCacheFresh(filePath, tmpPath)) {
+    const decrypted = decryptWxDbFile(filePath, hexKey, tmpPath)
+    if (!decrypted.ok) return { error: decrypted.error }
+  }
 
   try {
     const db = new Database(tmpPath, { readonly: true })

@@ -651,9 +651,6 @@ const WRITE_NAMES = new Set([
   'xlsx_write',
   'site_scaffold'
 ])
-export const WS_READONLY_NAMES = WS_TOOLS.map((t) => t.name).filter((n) => !WRITE_NAMES.has(n))
-export const WS_WRITE_NAMES = [...WRITE_NAMES]
-
 export function isWsWriteTool(name: string): boolean {
   return WRITE_NAMES.has(name)
 }

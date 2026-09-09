@@ -175,11 +175,6 @@ export function listReportJobs(): ReportJobInfo[] {
   return rows.map(toInfo)
 }
 
-export function getReportJob(id: number): ReportJobInfo | null {
-  const r = getDb().prepare(`SELECT * FROM report_job WHERE id = ?`).get(id) as JobRow | undefined
-  return r ? toInfo(r) : null
-}
-
 /** 保存/新建;返回任务 id。新填口令才覆盖;编辑留空沿用密文。 */
 export function saveReportJob(input: ReportJobInput): { ok: boolean; error?: string; id?: number } {
   const v = validateJob(input)

@@ -127,9 +127,16 @@ export function pruneExpired(force = false): { removed: number } {
   if (!force && !autoCleanEnabled()) return { removed: 0 }
   const rows = repo.allFileRecords()
   const due: repo.FileRecordRow[] = []
+  // 账号数很少:保留天数按账号缓存一次,避免每条文件记录都读一次 app_config
+  const daysByAccount = new Map<number, number>()
+  const now = Date.now()
   for (const r of rows) {
-    const days = keepDaysOfAccount(r.accountId)
-    if (Date.now() - r.createdAt >= days * 24 * 3600_000) due.push(r)
+    let days = daysByAccount.get(r.accountId)
+    if (days === undefined) {
+      days = keepDaysOfAccount(r.accountId)
+      daysByAccount.set(r.accountId, days)
+    }
+    if (now - r.createdAt >= days * 24 * 3600_000) due.push(r)
   }
   if (due.length === 0) return { removed: 0 }
   removeFiles(due.map((r) => r.id))

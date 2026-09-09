@@ -64,10 +64,6 @@ export function nextRunAt(
   return null
 }
 
-export function isReportJobRunning(jobId: number): boolean {
-  return running.has(jobId)
-}
-
 /** 运行进度广播到所有窗口(调用方节流) */
 function broadcastProgress(payload: Record<string, unknown>): void {
   for (const w of BrowserWindow.getAllWindows()) {

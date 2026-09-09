@@ -4,7 +4,7 @@ import type Database from 'better-sqlite3-multiple-ciphers'
  * 本地库 schema（对应方案文档 §5 数据模型）
  * 消息本体存微信 DB，本地只存密钥、决策与审计数据。
  */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const TABLES: string[] = [
   // 客户档案
@@ -172,6 +172,11 @@ const TABLES: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_chat_session_t ON chat_session(updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_chat_msg_s ON chat_message(session_id, id)`,
+  // 问题监控:列表按 (wxid,status,occur_at) 过滤排序;证据消息按 issue_id 计数/取最新
+  // 之前两张表零索引 → 每行 COUNT(*) 与 ORDER BY seq DESC LIMIT 1 都是全表扫(N×M)
+  `CREATE INDEX IF NOT EXISTS idx_issue_fb_scope ON issue_feedback(wxid, status, occur_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_issue_fb_group ON issue_feedback(wxid, group_username, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_issue_fb_msg_issue ON issue_feedback_msg(issue_id, seq DESC)`,
   // IM 渠道账号(飞书机器人等;config 含 appId/secret,secret 以 safeStorage enc1 密文落库)
   `CREATE TABLE IF NOT EXISTS im_channel_account (
     id INTEGER PRIMARY KEY,
@@ -285,6 +290,108 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'chat_session', 'caps', 'TEXT')
   // 增量列迁移:chat_session.workspace(工作区任务绑定的真实目录;NULL=未绑定,仅查询模式)
   ensureColumn(db, 'chat_session', 'workspace', 'TEXT')
+
+  // ── 营销增长(growth)域: Phase 0 建表(全部追加;后续阶段列迁移走 ensureColumn) ──
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_store (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  brand_name TEXT NOT NULL DEFAULT '',\n  name TEXT NOT NULL,\n  city TEXT NOT NULL DEFAULT '',\n  address TEXT NOT NULL DEFAULT '',\n  biz_type TEXT NOT NULL DEFAULT '',\n  poi_json TEXT NOT NULL DEFAULT '[]',\n  profile_json TEXT NOT NULL DEFAULT '{}',\n  enabled INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n)"
+  )
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_brand_profile (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  name TEXT NOT NULL DEFAULT '',\n  profile_json TEXT NOT NULL DEFAULT '{}',\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n)"
+  )
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_content (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  kind TEXT NOT NULL DEFAULT 'unknown',\n  origin TEXT NOT NULL DEFAULT '',\n  platform_item_id TEXT NOT NULL DEFAULT '',\n  store_id INTEGER,\n  title TEXT NOT NULL DEFAULT '',\n  content_text TEXT NOT NULL DEFAULT '',\n  author_name TEXT NOT NULL DEFAULT '',\n  author_id TEXT NOT NULL DEFAULT '',\n  link TEXT NOT NULL DEFAULT '',\n  published_at INTEGER,\n  tags_json TEXT NOT NULL DEFAULT '[]',\n  usage TEXT NOT NULL DEFAULT 'ref',\n  interactions_json TEXT NOT NULL DEFAULT '{}',\n  extra_json TEXT NOT NULL DEFAULT '{}',\n  score REAL NOT NULL DEFAULT 0,\n  status TEXT NOT NULL DEFAULT 'new',\n  note TEXT NOT NULL DEFAULT '',\n  dedupe_key TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n)"
+  )
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_growth_content_dedupe\n  ON growth_content (dedupe_key) WHERE dedupe_key IS NOT NULL'
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_growth_content_created\n  ON growth_content (created_at DESC)'
+  )
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_asset (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  content_id INTEGER NOT NULL,\n  kind TEXT NOT NULL DEFAULT 'image',\n  sha256 TEXT NOT NULL DEFAULT '',\n  mime TEXT NOT NULL DEFAULT '',\n  size INTEGER NOT NULL DEFAULT 0,\n  width INTEGER NOT NULL DEFAULT 0,\n  height INTEGER NOT NULL DEFAULT 0,\n  duration_ms INTEGER NOT NULL DEFAULT 0,\n  rel_path TEXT NOT NULL DEFAULT '',\n  thumb_rel_path TEXT NOT NULL DEFAULT '',\n  source_mark TEXT NOT NULL DEFAULT '',\n  created_at INTEGER NOT NULL\n)"
+  )
+  db.exec('CREATE INDEX IF NOT EXISTS idx_growth_asset_content ON growth_asset (content_id)')
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_decomp (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  content_id INTEGER NOT NULL,\n  model_ver TEXT NOT NULL DEFAULT '',\n  structure_json TEXT NOT NULL DEFAULT '{}',\n  visual_json TEXT NOT NULL DEFAULT '{}',\n  comment_topics_json TEXT NOT NULL DEFAULT '[]',\n  created_at INTEGER NOT NULL\n)"
+  )
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_growth_decomp_content ON growth_decomp (content_id)'
+  )
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_subscription (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  name TEXT NOT NULL,\n  source_type TEXT NOT NULL DEFAULT 'thirdparty',\n  vendor TEXT NOT NULL DEFAULT '',\n  city TEXT NOT NULL DEFAULT '',\n  biz_type TEXT NOT NULL DEFAULT '',\n  target_kind TEXT NOT NULL DEFAULT 'keyword',\n  target TEXT NOT NULL DEFAULT '',\n  store_id INTEGER,\n  enabled INTEGER NOT NULL DEFAULT 0,\n  interval_hours INTEGER NOT NULL DEFAULT 24,\n  next_at INTEGER,\n  last_status TEXT NOT NULL DEFAULT '',\n  last_at INTEGER,\n  last_error TEXT NOT NULL DEFAULT '',\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n)"
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_growth_sub_next ON growth_subscription (enabled, next_at)'
+  )
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_crawl_task (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  subscription_id INTEGER NOT NULL,\n  trigger TEXT NOT NULL DEFAULT 'auto',\n  status TEXT NOT NULL DEFAULT 'running',\n  fetched INTEGER NOT NULL DEFAULT 0,\n  inserted INTEGER NOT NULL DEFAULT 0,\n  error TEXT NOT NULL DEFAULT '',\n  started_at INTEGER NOT NULL,\n  ended_at INTEGER\n)"
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_growth_crawl_sub ON growth_crawl_task (subscription_id, id DESC)'
+  )
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_remix_job (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  source_content_id INTEGER NOT NULL,\n  store_id INTEGER,\n  mode TEXT NOT NULL DEFAULT 'mid',\n  snapshot_json TEXT NOT NULL DEFAULT '{}',\n  status TEXT NOT NULL DEFAULT 'queued',\n  stage TEXT NOT NULL DEFAULT '',\n  progress REAL NOT NULL DEFAULT 0,\n  error TEXT NOT NULL DEFAULT '',\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n)"
+  )
+  db.exec('CREATE INDEX IF NOT EXISTS idx_growth_remix_src ON growth_remix_job (source_content_id)')
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_remix_output (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  job_id INTEGER NOT NULL,\n  variant TEXT NOT NULL DEFAULT 'A',\n  title TEXT NOT NULL DEFAULT '',\n  copy_text TEXT NOT NULL DEFAULT '',\n  content_id INTEGER,\n  compliance_json TEXT NOT NULL DEFAULT '{}',\n  score REAL NOT NULL DEFAULT 0,\n  status TEXT NOT NULL DEFAULT 'draft',\n  created_at INTEGER NOT NULL\n)"
+  )
+  db.exec('CREATE INDEX IF NOT EXISTS idx_growth_remix_out_job ON growth_remix_output (job_id)')
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_publish_task (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  output_id INTEGER,\n  store_id INTEGER,\n  channel TEXT NOT NULL DEFAULT '',\n  scheduled_at INTEGER,\n  status TEXT NOT NULL DEFAULT 'pending',\n  lead_json TEXT NOT NULL DEFAULT '{}',\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n)"
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_growth_publish_due ON growth_publish_task (status, scheduled_at)'
+  )
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_publish_result (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  task_id INTEGER NOT NULL,\n  remote_id TEXT NOT NULL DEFAULT '',\n  url TEXT NOT NULL DEFAULT '',\n  published_at INTEGER,\n  error TEXT NOT NULL DEFAULT '',\n  raw_json TEXT NOT NULL DEFAULT '{}',\n  created_at INTEGER NOT NULL\n)"
+  )
+  db.exec('CREATE INDEX IF NOT EXISTS idx_growth_pub_res_task ON growth_publish_result (task_id)')
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_metric_snapshot (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  target_type TEXT NOT NULL DEFAULT 'content',\n  target_id INTEGER NOT NULL,\n  channel TEXT NOT NULL DEFAULT '',\n  likes INTEGER NOT NULL DEFAULT 0,\n  collects INTEGER NOT NULL DEFAULT 0,\n  comments INTEGER NOT NULL DEFAULT 0,\n  shares INTEGER NOT NULL DEFAULT 0,\n  follows INTEGER NOT NULL DEFAULT 0,\n  leads INTEGER NOT NULL DEFAULT 0,\n  amount REAL NOT NULL DEFAULT 0,\n  output_id INTEGER,\n  captured_at INTEGER NOT NULL\n)"
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_growth_metric_target\n  ON growth_metric_snapshot (target_type, target_id, captured_at)'
+  )
+
+  // 增量列迁移：growth_content.extra_json（解析媒体源信息，如 remoteMedia）
+  ensureColumn(db, 'growth_content', 'extra_json', "TEXT NOT NULL DEFAULT '{}'")
+  // 增量列迁移：growth_metric_snapshot.output_id（发布归因：采用的爆改产出）
+  ensureColumn(db, 'growth_metric_snapshot', 'output_id', 'INTEGER')
+
+  // ── 营销 AI 工作台: 任务 / 任务产出资产 / 会话域隔离 ──
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_ai_task (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  content_id INTEGER NOT NULL,\n  store_id INTEGER,\n  title TEXT NOT NULL DEFAULT '',\n  goal TEXT NOT NULL DEFAULT 'image_text',\n  status TEXT NOT NULL DEFAULT 'drafting',\n  session_id INTEGER,\n  stage TEXT NOT NULL DEFAULT 'analyze',\n  summary TEXT NOT NULL DEFAULT '',\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  last_message_at INTEGER\n)"
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_growth_task_status ON growth_ai_task (status, updated_at DESC)'
+  )
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_output_asset (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  output_id INTEGER NOT NULL,\n  asset_id INTEGER,\n  role TEXT NOT NULL DEFAULT 'image',\n  source TEXT NOT NULL DEFAULT '',\n  prompt TEXT NOT NULL DEFAULT '',\n  note TEXT NOT NULL DEFAULT '',\n  created_at INTEGER NOT NULL\n)"
+  )
+  db.exec('CREATE INDEX IF NOT EXISTS idx_growth_out_asset ON growth_output_asset (output_id)')
+  // 增量列迁移：chat_session.scope（会话域: 空=客服工作台, growth=营销 AI 工作台）
+  ensureColumn(db, 'chat_session', 'scope', "TEXT NOT NULL DEFAULT ''")
+  // 增量列迁移：growth_remix_output.task_id（候选/产出归属营销任务）
+  ensureColumn(db, 'growth_remix_output', 'task_id', 'INTEGER')
+  ensureColumn(db, 'growth_remix_output', 'meta_json', "TEXT NOT NULL DEFAULT '{}'")
+
+  // ── 舆情监控: 提及 / 评论 ──
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_buzz_mention (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  store_id INTEGER,\n  platform TEXT NOT NULL DEFAULT '',\n  kind TEXT NOT NULL DEFAULT '',\n  url TEXT NOT NULL DEFAULT '',\n  platform_item_id TEXT NOT NULL DEFAULT '',\n  title TEXT NOT NULL DEFAULT '',\n  content_text TEXT NOT NULL DEFAULT '',\n  author_name TEXT NOT NULL DEFAULT '',\n  author_id TEXT NOT NULL DEFAULT '',\n  published_at INTEGER,\n  interactions_json TEXT NOT NULL DEFAULT '{}',\n  assets_json TEXT NOT NULL DEFAULT '[]',\n  source TEXT NOT NULL DEFAULT 'manual',\n  status TEXT NOT NULL DEFAULT 'new',\n  sentiment TEXT NOT NULL DEFAULT '',\n  score INTEGER NOT NULL DEFAULT 0,\n  risk_level TEXT NOT NULL DEFAULT '',\n  reasons_json TEXT NOT NULL DEFAULT '[]',\n  diagnosis_json TEXT NOT NULL DEFAULT '{}',\n  diagnosed_at INTEGER,\n  note TEXT NOT NULL DEFAULT '',\n  dedupe_key TEXT,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n)"
+  )
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_growth_buzz_dedupe ON growth_buzz_mention (dedupe_key) WHERE dedupe_key IS NOT NULL'
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_growth_buzz_status ON growth_buzz_mention (status, created_at DESC)'
+  )
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS growth_buzz_comment (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  mention_id INTEGER NOT NULL,\n  author_name TEXT NOT NULL DEFAULT '',\n  content TEXT NOT NULL DEFAULT '',\n  likes INTEGER NOT NULL DEFAULT 0,\n  is_high INTEGER NOT NULL DEFAULT 0,\n  source TEXT NOT NULL DEFAULT 'manual',\n  published_at INTEGER,\n  created_at INTEGER NOT NULL\n)"
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_growth_buzz_cmt ON growth_buzz_comment (mention_id, likes DESC)'
+  )
   db.pragma(`user_version = ${SCHEMA_VERSION}`)
 }
 

@@ -1,0 +1,661 @@
+/* ══════════ 营销 AI 工作台(任务工作区) ══════════ */
+
+.gai-page {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  gap: 12px;
+  height: calc(100vh - 210px);
+  min-height: 460px;
+  /* 动效 token（与 growth.css 的 .gth-page 同源；本页不在 .gth-page 内，
+     原先引用 var(--m-*) 的动效声明因变量未定义而整体失效） */
+  --m-1: 140ms;
+  --m-2: 240ms;
+  --m-3: 420ms;
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --lift-1: 0 1px 2px rgba(31, 35, 41, 0.04), 0 8px 24px -18px rgba(31, 35, 41, 0.3);
+  --lift-2: 0 2px 6px rgba(31, 35, 41, 0.06), 0 18px 40px -22px rgba(31, 35, 41, 0.45);
+  --glow: 0 0 0 3px rgba(7, 193, 96, 0.16);
+  --r-card: 14px;
+}
+
+/* ── 左: 任务列表 ── */
+.gai-tasks {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 8px;
+  overflow-y: auto;
+  min-width: 0;
+}
+.gai-tasks-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  padding: 2px 4px 8px;
+}
+.gai-tasks-head > span:first-child {
+  margin-right: auto;
+}
+.gai-tasks-hint {
+  font-size: 11px;
+  color: var(--text-4);
+  padding: 0 4px 8px;
+  line-height: 1.6;
+}
+.gai-group {
+  font-size: 11px;
+  color: var(--text-3);
+  padding: 8px 4px 4px;
+}
+.gai-task {
+  display: flex;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  padding: 8px;
+  cursor: pointer;
+  align-items: flex-start;
+}
+.gai-task-cover {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gai-task-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.gai-task-cover-empty {
+  font-size: 20px;
+  color: var(--text-4);
+  font-weight: 600;
+}
+.gai-task-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.gai-task-meta {
+  font-size: 11px;
+  color: var(--text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-task-thumbs {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+.gai-task-thumbs img {
+  width: 30px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-hover);
+}
+.gai-task:hover {
+  background: var(--bg-hover);
+}
+.gai-task.is-active {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+  border-left-color: var(--brand);
+}
+.gai-task-title {
+  font-size: 13px;
+  color: var(--text-1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex: none;
+}
+.gai-task-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-empty {
+  font-size: 12px;
+  color: var(--text-4);
+  padding: 10px 6px;
+}
+.gai-empty-main {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+/* ── 中: 对话 ── */
+.gai-main {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+.gai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  flex-wrap: wrap;
+}
+.gai-head-cover {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  border: 1px solid var(--border-light);
+  flex: none;
+}
+.gai-head-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  flex: 1;
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+}
+.gai-msg {
+  max-width: 86%;
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.gai-msg.is-user {
+  align-self: flex-end;
+  background: var(--brand);
+  color: var(--on-brand);
+}
+.gai-msg.is-ai {
+  align-self: flex-start;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  color: var(--text-1);
+}
+.gai-msg.is-error {
+  align-self: stretch;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  color: #c92a2a;
+}
+.gai-thinking {
+  color: var(--text-3);
+}
+.gai-tool {
+  align-self: flex-start;
+  max-width: 92%;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--bg-panel);
+}
+.gai-tool.is-fail {
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+.gai-tool-name {
+  font-weight: 600;
+  margin-right: 8px;
+}
+.gai-tool-status {
+  color: var(--text-4);
+}
+.gai-tool-out {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow-y: auto;
+  font-family: inherit;
+}
+.gai-approval {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--warn-text);
+}
+.gai-approval-text {
+  flex: 1;
+  min-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-composer {
+  border-top: 1px solid var(--border-light);
+  padding: 8px 10px 10px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.gai-input {
+  flex: 1;
+  resize: none;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  color: var(--text-1);
+  outline: none;
+}
+.gai-input:focus {
+  border-color: var(--brand-line);
+  box-shadow: 0 0 0 2px var(--brand-soft);
+}
+.gai-composer-btns {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── 右: 产出面板 ── */
+.gai-output {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 8px;
+  overflow-y: auto;
+  min-width: 0;
+}
+.gai-out-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  padding: 6px 4px;
+}
+.gai-out-card {
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  padding: 8px;
+  margin-bottom: 8px;
+  background: var(--bg-panel);
+}
+.gai-out-card.is-candidate {
+  border-style: dashed;
+  background: var(--bg-hover);
+}
+.gai-out-variant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.gai-out-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.gai-out-img {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-hover);
+}
+.gai-img-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+.gai-cand-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-1);
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--border-light);
+}
+.gai-cand-line span {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+.gai-cand-btns {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.gai-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+@media (max-width: 1280px) {
+  .gai-page {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+  .gai-output {
+    grid-column: 1 / -1;
+    max-height: 300px;
+  }
+}
+
+.gai-task-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+.gai-task-del {
+  font-size: 11px;
+  color: var(--text-4);
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: var(--r-sm);
+}
+.gai-task-del:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* ── 新建任务: 素材选择 ── */
+.gai-pick-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gai-pick {
+  width: min(720px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+.gai-pick-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+.gai-pick-head .t {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  flex: none;
+}
+.gai-pick-head .s {
+  font-size: 12px;
+  color: var(--text-3);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-pick-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-hover);
+}
+.gai-pick-filters .gth-input {
+  flex: 1;
+  min-width: 120px;
+}
+.gai-pick-filters .gth-select {
+  width: 132px;
+  flex: none;
+}
+.gai-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 16px;
+  overflow-y: auto;
+}
+.gai-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.gai-pick-row:hover:not(:disabled) {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+}
+.gai-pick-row:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.gai-pick-cover {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+}
+.gai-pick-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.gai-pick-title {
+  font-size: 13px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-pick-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-pick-go {
+  flex: none;
+  font-size: 12px;
+  color: var(--brand);
+  font-weight: 500;
+}
+
+/* ══════════ 营销模块视觉与动效层（原 growth-polish.css 合并至此）══════════
+ * 追加在文件末尾以保证级联顺序仍然压过上方基础规则；仅动效/层次，不改布局语义。
+ */
+.gai-pick-mask {
+  animation: gth-fade-in var(--m-2) var(--ease-out) both;
+  background: rgba(0, 0, 0, 0.42);
+}
+.gai-pick { animation: gth-pop var(--m-2) var(--ease-spring) both; }
+.gai-tasks-head { position: relative; }
+.gai-task {
+  border-radius: var(--r-md);
+  transition:
+    background var(--m-1) var(--ease-out),
+    border-color var(--m-1) var(--ease-out),
+    transform var(--m-2) var(--ease-out),
+    box-shadow var(--m-2) var(--ease-out);
+  animation: gth-fade-up var(--m-2) var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0) * 18ms, 240ms));
+}
+.gai-task:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-light);
+  transform: translateX(2px);
+}
+.gai-task.is-active {
+  background: linear-gradient(90deg, var(--brand-soft), transparent 70%);
+  border-left-color: var(--brand);
+  box-shadow: var(--lift-1);
+}
+.gai-task-cover { transition: transform var(--m-2) var(--ease-out); }
+.gai-task:hover .gai-task-cover { transform: scale(1.04); }
+.gai-msg { animation: gth-fade-up var(--m-2) var(--ease-out) both; }
+.gai-out-card {
+  transition:
+    transform var(--m-2) var(--ease-out),
+    box-shadow var(--m-2) var(--ease-out),
+    border-color var(--m-2) var(--ease-out);
+  animation: gth-pop var(--m-2) var(--ease-out) both;
+}
+.gai-out-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--lift-2);
+  border-color: var(--brand-line);
+}
+.gai-out-img { transition: transform var(--m-2) var(--ease-out); }
+.gai-out-img:hover { transform: scale(1.03); }
+.gai-thinking { display: inline-flex; align-items: center; gap: 5px; }
+.gai-thinking i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: gth-dot 1.05s ease-in-out infinite;
+}
+.gai-thinking i:nth-child(2) { animation-delay: 0.14s; }
+.gai-thinking i:nth-child(3) { animation-delay: 0.28s; }
+.gai-pick-row { transition: background var(--m-1) var(--ease-out), border-color var(--m-1) var(--ease-out); }
+.gai-pick-row:hover:not(:disabled) { transform: translateX(2px); }
+.gai-tasks-skel .gth-list {
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+.gai-tasks-skel .gth-skel-row {
+  padding: 10px 6px;
+  border-bottom: none;
+}
+.gai-page { gap: 14px; }
+.gai-tasks,
+.gai-main,
+.gai-output {
+  border-color: var(--border-light);
+  border-radius: var(--r-card);
+  box-shadow: var(--lift-1);
+  animation: gth-fade-up var(--m-3) var(--ease-out) both;
+}
+.gai-main { animation-delay: 60ms; }
+.gai-output { animation-delay: 120ms; }
+.gai-head {
+  background: linear-gradient(180deg, rgba(7, 193, 96, 0.06), transparent);
+  padding: 10px 14px;
+}
+.gai-chat {
+  background:
+    radial-gradient(70% 180px at 50% 0%, rgba(7, 193, 96, 0.05), transparent 72%),
+    var(--bg);
+}
+.gai-msg {
+  border-radius: var(--r-lg);
+  box-shadow: 0 1px 2px rgba(31, 35, 41, 0.05);
+}
+.gai-msg.is-user {
+  background: linear-gradient(135deg, #10d473, #07a84f);
+  border: none;
+}
+.gai-msg.is-ai {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+}
+.gai-composer { background: var(--bg-panel); }
+.gai-input { border-radius: var(--r-lg); transition: border-color var(--m-1) var(--ease-out), box-shadow var(--m-2) var(--ease-out); }
+.gai-input:focus {
+  border-color: var(--brand-line);
+  box-shadow: var(--glow);
+}
+.gai-out-head { color: var(--text-1); }
+.gai-out-card { border-radius: var(--r-md); }
+.gai-approval {
+  border-radius: var(--r-md);
+  animation: gth-pop var(--m-2) var(--ease-spring) both;
+}

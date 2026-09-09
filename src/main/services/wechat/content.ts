@@ -74,18 +74,45 @@ export function decodeHtmlEntities(content: string): string {
     .replace(/&#(\d+);/g, (entity, dec) => decodeCodePoint(dec, 10, entity))
 }
 
+/**
+ * 正则编译缓存：这两个提取器有 59 个调用点，每条消息要跑十几次到几十次
+ * (聊天记录消息每个 recorditem 18 次)，每次 new RegExp 是纯浪费。
+ */
+const xmlValueReCache = new Map<string, RegExp>()
+const xmlAttrReCache = new Map<string, RegExp>()
+
+function xmlValueRegex(tagName: string): RegExp {
+  let re = xmlValueReCache.get(tagName)
+  if (!re) {
+    re = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'i')
+    xmlValueReCache.set(tagName, re)
+  }
+  return re
+}
+
+function xmlAttrRegex(tagName: string, attrName: string): RegExp {
+  const key = `${tagName}|${attrName}`
+  let re = xmlAttrReCache.get(key)
+  if (!re) {
+    re = new RegExp(`<${tagName}[^>]*\\s${attrName}\\s*=\\s*['"]([^'"]*)['"]`, 'i')
+    xmlAttrReCache.set(key, re)
+  }
+  return re
+}
+
 function extractXmlValue(xml: string, tagName: string): string {
-  const regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'i')
-  const match = regex.exec(xml)
+  const match = xmlValueRegex(tagName).exec(xml)
   if (match) {
-    return match[1].replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '').trim()
+    return match[1]
+      .replace(/<!\[CDATA\[/g, '')
+      .replace(/\]\]>/g, '')
+      .trim()
   }
   return ''
 }
 
 function extractXmlAttribute(xml: string, tagName: string, attrName: string): string {
-  const regex = new RegExp(`<${tagName}[^>]*\\s${attrName}\\s*=\\s*['"]([^'"]*)['"]`, 'i')
-  const match = regex.exec(xml)
+  const match = xmlAttrRegex(tagName, attrName).exec(xml)
   return match ? match[1] : ''
 }
 
@@ -130,14 +157,17 @@ function parseType49(content: string, rawContent: string): string {
   }
   // 红包（type 2001）
   if (type === '2001') {
-    const greeting = extractXmlValue(content, 'receivertitle') || extractXmlValue(content, 'sendertitle')
+    const greeting =
+      extractXmlValue(content, 'receivertitle') || extractXmlValue(content, 'sendertitle')
     return greeting ? `[红包] ${greeting}` : '[红包]'
   }
   // 微信礼物（type 115）
   if (type === '115') {
     const wish = extractXmlValue(content, 'wishmessage')
     const skutitle = extractXmlValue(content, 'skutitle')
-    return skutitle ? `[微信礼物] ${wish || '送你一份心意'} - ${skutitle}` : `[微信礼物] ${wish || '送你一份心意'}`
+    return skutitle
+      ? `[微信礼物] ${wish || '送你一份心意'} - ${skutitle}`
+      : `[微信礼物] ${wish || '送你一份心意'}`
   }
   // 音乐分享（type 3）
   if (type === '3') {
@@ -208,9 +238,18 @@ export function parseMessageContent(content: string, localType: number): string 
       // 未知 localType 时按 XML type 兜底识别 appmsg 子类型（红包/转账/群公告等）
       const xmlType = extractXmlValue(rawContent, 'type')
       if (
-        xmlType === '87' || xmlType === '2000' || xmlType === '2001' || xmlType === '115' ||
-        xmlType === '3' || xmlType === '5' || xmlType === '6' || xmlType === '19' ||
-        xmlType === '33' || xmlType === '36' || xmlType === '49' || xmlType === '57'
+        xmlType === '87' ||
+        xmlType === '2000' ||
+        xmlType === '2001' ||
+        xmlType === '115' ||
+        xmlType === '3' ||
+        xmlType === '5' ||
+        xmlType === '6' ||
+        xmlType === '19' ||
+        xmlType === '33' ||
+        xmlType === '36' ||
+        xmlType === '49' ||
+        xmlType === '57'
       ) {
         return parseType49(content, rawContent)
       }
@@ -297,7 +336,12 @@ export function parseVoiceDuration(content: string): number | undefined {
 }
 
 /** 从 49 型提取文件名与大小 */
-export function parseFileInfo(content: string): { fileName?: string; fileSize?: number; fileExt?: string; fileMd5?: string } {
+export function parseFileInfo(content: string): {
+  fileName?: string
+  fileSize?: number
+  fileExt?: string
+  fileMd5?: string
+} {
   if (extractXmlValue(content, 'type') !== '6') return {}
   const fileName = extractXmlValue(content, 'title')
   const totallen = extractXmlValue(content, 'totallen')
@@ -313,11 +357,16 @@ export function parseFileInfo(content: string): { fileName?: string; fileSize?: 
 }
 
 /** 从 47 型表情 XML 提取 cdn 地址 / md5 / productId */
-export function parseEmojiInfo(content: string): { cdnUrl?: string; md5?: string; productId?: string } {
+export function parseEmojiInfo(content: string): {
+  cdnUrl?: string
+  md5?: string
+  productId?: string
+} {
   try {
     let cdnUrl: string | undefined
     const cdnUrlMatch =
-      /cdnurl\s*=\s*['"]([^'"]+)['"]/i.exec(content) || /cdnurl\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
+      /cdnurl\s*=\s*['"]([^'"]+)['"]/i.exec(content) ||
+      /cdnurl\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
     if (cdnUrlMatch) {
       cdnUrl = cdnUrlMatch[1].replace(/&amp;/g, '&')
       if (cdnUrl.includes('%')) {
@@ -330,7 +379,8 @@ export function parseEmojiInfo(content: string): { cdnUrl?: string; md5?: string
     }
     if (!cdnUrl) {
       const thumbMatch =
-        /thumburl\s*=\s*['"]([^'"]+)['"]/i.exec(content) || /thumburl\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
+        /thumburl\s*=\s*['"]([^'"]+)['"]/i.exec(content) ||
+        /thumburl\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
       if (thumbMatch) {
         cdnUrl = thumbMatch[1].replace(/&amp;/g, '&')
         if (cdnUrl.includes('%')) {
@@ -348,7 +398,8 @@ export function parseEmojiInfo(content: string): { cdnUrl?: string; md5?: string
       /<md5>([^<]+)<\/md5>/i.exec(content)
     const md5 = md5Match ? md5Match[1] : undefined
     const idMatch =
-      /productid\s*=\s*['"]([^'"]+)['"]/i.exec(content) || /productid\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
+      /productid\s*=\s*['"]([^'"]+)['"]/i.exec(content) ||
+      /productid\s*=\s*([^'"]+?)(?=\s|\/|>)/i.exec(content)
     return { cdnUrl, md5, productId: idMatch ? idMatch[1] : undefined }
   } catch {
     return {}
@@ -399,7 +450,9 @@ export function parseVideoMd5(content: string): string | undefined {
 export function parseChatHistory(content: string): ChatRecordItem[] | undefined {
   try {
     if (extractXmlValue(content, 'type') !== '19') return undefined
-    const match = /<recorditem>[\s\S]*?<!\[CDATA\[([\s\S]*?)\]\]>[\s\S]*?<\/recorditem>/.exec(content)
+    const match = /<recorditem>[\s\S]*?<!\[CDATA\[([\s\S]*?)\]\]>[\s\S]*?<\/recorditem>/.exec(
+      content
+    )
     if (!match) return undefined
     const innerXml = match[1]
 
@@ -421,8 +474,12 @@ export function parseChatHistory(content: string): ChatRecordItem[] | undefined 
         datasize: parseInt(extractXmlValue(body, 'datasize') || '0') || undefined,
         messageuuid: extractXmlValue(body, 'messageuuid'),
         dataurl: decodeHtmlEntities(extractXmlValue(body, 'dataurl')),
-        datathumburl: decodeHtmlEntities(extractXmlValue(body, 'datathumburl') || extractXmlValue(body, 'thumburl')),
-        datacdnurl: decodeHtmlEntities(extractXmlValue(body, 'datacdnurl') || extractXmlValue(body, 'cdnurl')),
+        datathumburl: decodeHtmlEntities(
+          extractXmlValue(body, 'datathumburl') || extractXmlValue(body, 'thumburl')
+        ),
+        datacdnurl: decodeHtmlEntities(
+          extractXmlValue(body, 'datacdnurl') || extractXmlValue(body, 'cdnurl')
+        ),
         md5: extractXmlValue(body, 'md5') || extractXmlValue(body, 'datamd5'),
         imgheight: parseInt(extractXmlValue(body, 'imgheight') || '0') || undefined,
         imgwidth: parseInt(extractXmlValue(body, 'imgwidth') || '0') || undefined,
@@ -480,7 +537,9 @@ export function parseQuoteMessage(content: string): QuoteInfo {
       case '3':
         displayContent = '[图片]'
         imageMd5 =
-          extractXmlValue(referContent, 'md5') || (referContent.match(/\bmd5="([a-f0-9]+)"/i)?.[1]) || undefined
+          extractXmlValue(referContent, 'md5') ||
+          referContent.match(/\bmd5="([a-f0-9]+)"/i)?.[1] ||
+          undefined
         break
       case '34':
         displayContent = '[语音]'
@@ -491,7 +550,12 @@ export function parseQuoteMessage(content: string): QuoteInfo {
       case '47': {
         displayContent = '[动画表情]'
         const emojiInfo = parseEmojiInfo(referContent)
-        return { content: displayContent, sender: displayName || undefined, emojiMd5: emojiInfo.md5, emojiCdnUrl: emojiInfo.cdnUrl }
+        return {
+          content: displayContent,
+          sender: displayName || undefined,
+          emojiMd5: emojiInfo.md5,
+          emojiCdnUrl: emojiInfo.cdnUrl
+        }
       }
       case '49': {
         const appTitle = extractXmlValue(referContent, 'title')

@@ -19,7 +19,10 @@
   background: transparent;
   color: var(--text-2);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .st-tab:hover {
@@ -229,138 +232,6 @@ select.st-input {
   word-break: break-all;
 }
 
-/* 鈹€鈹€ 鏅鸿兘浣擄紙瀹㈡湇浜鸿锛夌鐞?鈹€鈹€ */
-.ag-wrap {
-  display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
-  gap: 16px;
-  margin-top: 10px;
-  align-items: stretch;
-}
-
-/* 绐勫睆鎶樺彔涓轰笂涓嬪竷灞€锛堝垪琛ㄥ湪涓婏級 */
-@media (max-width: 860px) {
-  .ag-wrap {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.ag-list-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.ag-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1 1 auto;
-  min-height: 240px;
-  max-height: 440px;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.ag-empty {
-  color: var(--text-3);
-  font-size: 12px;
-  padding: 8px 2px;
-}
-
-.ag-item {
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 8px 10px;
-  cursor: pointer;
-  background: var(--bg-panel);
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
-}
-
-.ag-item:hover {
-  border-color: var(--brand-line);
-}
-
-.ag-item.is-active {
-  border-color: var(--brand);
-  background: var(--brand-soft);
-}
-
-.ag-item-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  min-width: 0;
-}
-
-.ag-item-title b {
-  min-width: 0;
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ag-tag {
-  flex: none;
-  font-size: 10px;
-  line-height: 1;
-  padding: 2px 5px;
-  border-radius: var(--r-md);
-  background: var(--brand);
-  color: var(--on-brand);
-}
-
-.ag-item-desc {
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ag-item-actions {
-  margin-top: 6px;
-  display: flex;
-  gap: 6px;
-}
-
-.ag-mini {
-  border: none;
-  background: transparent;
-  color: var(--brand);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 1px 2px;
-}
-
-.ag-mini.danger {
-  color: var(--danger-hover);
-}
-
-.ag-mini:hover {
-  text-decoration: underline;
-}
-
-.ag-add {
-  border: 1px dashed var(--brand-line);
-  background: transparent;
-  color: var(--brand);
-  border-radius: var(--r-md);
-  padding: 7px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.ag-add:hover {
-  background: var(--brand-soft);
-}
-
 .ag-edit {
   display: flex;
   flex-direction: column;
@@ -383,14 +254,6 @@ select.st-input {
 .ag-actions .st-bad {
   margin-left: 10px;
   font-size: 12px;
-}
-
-/* 鍒楄〃椤瑰ご閮?澶村儚 + 鍚嶇О + 椋庢牸寰芥爣 */
-.ag-item-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
 }
 
 .ag-avatar {
@@ -431,37 +294,6 @@ select.st-input {
 .ag-style-brief {
   background: var(--success-soft);
   color: var(--success-strong);
-}
-
-/* 缂栬緫鍖虹姸鎬佹潯 */
-.ag-edit-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 0 8px;
-  margin-bottom: 4px;
-  border-bottom: 1px dashed var(--border-light);
-}
-
-.ag-edit-subject {
-  font-size: 12.5px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ag-edit-subject.is-new {
-  color: var(--brand);
-}
-
-.ag-edit-default {
-  flex: none;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: var(--r-pill);
-  background: var(--bg-hover);
-  color: var(--text-3);
 }
 
 .ag-dirty {
@@ -576,12 +408,6 @@ select.st-input {
   text-decoration: underline;
 }
 
-.st-cache-hint {
-  display: block;
-  margin-top: 8px;
-  line-height: 1.6;
-}
-
 /* 鐗堟湰鍙疯 */
 .st-version {
   margin-top: 14px;
@@ -593,12 +419,6 @@ select.st-input {
 }
 
 /* 鈹€鈹€ MCP 鏈嶅姟鍣ㄧ鐞?鈹€鈹€ */
-.mcp-list {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
 .mcp-item {
   display: flex;
@@ -649,14 +469,6 @@ select.st-input {
   padding: 1px 6px;
 }
 
-.mcp-confirm-tag {
-  font-size: 10px;
-  color: var(--warn-text);
-  background: var(--warn-soft);
-  border-radius: var(--r-pill);
-  padding: 1px 6px;
-}
-
 .mcp-desc {
   width: 100%;
   font-size: 11.5px;
@@ -687,22 +499,10 @@ select.st-input {
   background: var(--danger-soft);
 }
 
-.mcp-add {
-  align-self: flex-start;
-}
-
 .mcp-edit {
   margin-top: 12px;
   border-top: 1px dashed var(--border-light);
   padding-top: 8px;
-}
-
-/* 鏅鸿兘浣撳寮鸿鍐呰鏄?*/
-.st-agent-row .st-hint-inline {
-  font-size: 11px;
-  color: var(--text-3);
-  line-height: 1.5;
-  margin-left: 6px;
 }
 
 /* 闃堝€煎皬鏃惰緭鍏?璁剧疆-鍋忓ソ涓庢暟鎹? */
@@ -869,7 +669,7 @@ select.st-input {
   height: 21px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: var(--bg-hover, rgba(0, 0, 0, 0.08));
+  background: var(--bg-hover);
   cursor: pointer;
   padding: 0;
   transition:
@@ -879,7 +679,7 @@ select.st-input {
 }
 
 .sf-switch:focus-visible {
-  outline: 2px solid var(--brand-line, rgba(7, 193, 96, 0.45));
+  outline: 2px solid var(--brand-line);
   outline-offset: 1px;
 }
 
@@ -1155,6 +955,8 @@ select.st-input {
   max-height: 62vh;
   overflow-y: auto;
   background: var(--bg);
+  /* 滚动容器隔离布局/绘制 */
+  contain: layout paint;
 }
 
 .lg-row {
@@ -1170,6 +972,9 @@ select.st-input {
   text-align: left;
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace;
   transition: background 0.12s;
+  /* 长列表渲染优化：视口外行跳过布局/绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
 }
 
 .lg-row:hover {
@@ -1192,22 +997,23 @@ select.st-input {
   border-radius: 4px;
 }
 
-.lg-lv.is-ERROR {
+/* 数据源 logging.ts 的 level 为小写，类选择器大小写敏感 */
+.lg-lv.is-error {
   color: var(--danger);
   background: var(--danger-soft);
 }
 
-.lg-lv.is-WARN {
-  color: #b26a00;
-  background: rgba(255, 152, 0, 0.14);
+.lg-lv.is-warn {
+  color: var(--warn-text);
+  background: var(--warn-soft);
 }
 
-.lg-lv.is-INFO {
+.lg-lv.is-info {
   color: var(--brand);
   background: var(--brand-soft);
 }
 
-.lg-lv.is-DEBUG {
+.lg-lv.is-debug {
   color: var(--text-4);
   background: var(--bg-hover);
 }
@@ -1246,7 +1052,7 @@ select.st-input {
 
 /* ══════════ 定时任务 · 数据上报 ══════════ */
 .rp-warn {
-  color: var(--warn-text, #8a6d1a);
+  color: var(--warn-text);
 }
 
 .rp-job-list {

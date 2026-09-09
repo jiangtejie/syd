@@ -13,16 +13,6 @@
   margin: 2px 0 8px;
 }
 
-.im-guide {
-  font-size: 12px;
-  color: var(--text-3);
-  background: var(--bg-hover);
-  border-radius: var(--r-md);
-  padding: 10px 12px;
-  line-height: 1.8;
-  margin-bottom: 14px;
-}
-
 .im-list {
   display: flex;
   flex-direction: column;
@@ -57,23 +47,26 @@ textarea.im-allow-area {
 .im-kind-btn {
   padding: 6px 14px;
   border: 1px solid var(--border);
-  border-radius: var(--r-pill, 999px);
+  border-radius: var(--r-pill);
   background: transparent;
   color: var(--text-2);
   font-size: 12.5px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .im-kind-btn:hover {
-  border-color: var(--brand-line, rgba(7, 193, 96, 0.5));
+  border-color: var(--brand-line);
   color: var(--brand);
 }
 
 .im-kind-btn.is-on {
   background: var(--brand);
   border-color: var(--brand);
-  color: var(--on-brand, #fff);
+  color: var(--on-brand);
   font-weight: 500;
 }
 
@@ -90,7 +83,7 @@ textarea.im-allow-area {
 }
 
 .im-scan-err {
-  color: var(--danger, #e5484d) !important;
+  color: var(--danger) !important;
 }
 
 /* ── 扫码绑定弹窗 ── */
@@ -124,7 +117,7 @@ textarea.im-allow-area {
 }
 
 .im-qr-msg.is-err {
-  color: var(--danger, #e5484d);
+  color: var(--danger);
 }
 
 .im-qr-stage {

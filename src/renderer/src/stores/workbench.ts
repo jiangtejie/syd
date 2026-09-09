@@ -22,7 +22,7 @@ export type DataSource = 'wx' | 'empty'
 
 /** 工作台页面（应用外壳导航） */
 export type WorkbenchPage =
-  'workbench' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'settings' | 'export'
+  'workbench' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'settings' | 'export' | 'growth'
 
 interface WorkbenchState {
   /** 当前页面 */
@@ -135,8 +135,42 @@ const issueApi = window.api?.cs?.issue
 /** 问题详情请求序号：防止慢响应覆盖用户后点击的展开行 */
 let detailReqSeq = 0
 
+/**
+ * 会话列表浅比较：内容一致时复用旧数组引用。
+ * sessions 被 App/TitleBar/SessionList/看板/客户页订阅，换引用会让它们全部重渲染。
+ */
+function sameSessions(a: SessionSummary[], b: SessionSummary[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]
+    const y = b[i]
+    if (
+      x.username !== y.username ||
+      x.displayName !== y.displayName ||
+      x.avatarUrl !== y.avatarUrl ||
+      x.remark !== y.remark ||
+      x.nickname !== y.nickname ||
+      x.unreadCount !== y.unreadCount ||
+      x.lastTimestamp !== y.lastTimestamp ||
+      x.sortTimestamp !== y.sortTimestamp ||
+      x.summary !== y.summary ||
+      x.isPinned !== y.isPinned ||
+      x.isCollapsed !== y.isCollapsed ||
+      x.lastMsgIsSend !== y.lastMsgIsSend
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+/** 会话列表在途请求：3 个页面各自订阅 dbChanged，合并成同一时刻只发一次 IPC */
+let sessionsInFlight: { wxid: string; promise: Promise<void> } | null = null
+
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
-  page: 'dashboard',
+  // 启动默认停在左侧导航第一个菜单(App.tsx NAV_ITEMS[0] = AI 工作台)
+  page: 'workbench',
   wxid: null,
   source: 'empty',
   sessions: [],
@@ -241,11 +275,20 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   refreshSessions: async () => {
     const { wxid, source } = get()
     if (source !== 'wx' || !wxid || !wxApi) return
-    const res = await wxApi.getSessions(wxid)
-    if (res.ok && res.sessions) {
-      set({ sessions: res.sessions })
-      void get().refreshGroupBadges()
-    }
+    // 同一账号的并发刷新合并为一次（SessionList/客户页/看板各自订阅 dbChanged）
+    if (sessionsInFlight && sessionsInFlight.wxid === wxid) return sessionsInFlight.promise
+    const promise = (async (): Promise<void> => {
+      try {
+        const res = await wxApi.getSessions(wxid)
+        if (!res.ok || !res.sessions) return
+        set((s) => (sameSessions(s.sessions, res.sessions!) ? s : { sessions: res.sessions! }))
+        void get().refreshGroupBadges()
+      } finally {
+        if (sessionsInFlight?.wxid === wxid) sessionsInFlight = null
+      }
+    })()
+    sessionsInFlight = { wxid, promise }
+    return promise
   },
 
   loadAgents: async () => {

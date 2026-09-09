@@ -157,12 +157,6 @@
   margin-bottom: 8px;
 }
 
-.mon-count {
-  font-size: 11.5px;
-  color: var(--text-3);
-  margin-left: auto;
-}
-
 .mon-row {
   display: grid;
   grid-template-columns: 74px 60px minmax(0, 1fr) 150px 96px;
@@ -172,6 +166,9 @@
   border-radius: var(--r-sm);
   border-bottom: 1px solid var(--border-light);
   cursor: pointer;
+  /* 长列表渲染优化：视口外行跳过布局/绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
 }
 
 .mon-row:hover {
@@ -277,23 +274,6 @@
 .mon-row-age.is-old {
   color: var(--danger);
   font-weight: 600;
-}
-
-.mon-more {
-  width: 100%;
-  margin-top: 8px;
-  padding: 7px;
-  font-size: 12.5px;
-  border: 1px dashed var(--border);
-  border-radius: var(--r-sm);
-  background: none;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.mon-more:hover {
-  border-color: var(--brand);
-  color: var(--brand);
 }
 
 /* ── 追踪抽屉(与左侧表格共享 --col-h 严格等高;头部/操作区固定,聊天证据区内部滚动) ── */
@@ -668,7 +648,7 @@
 .mon-reopen {
   background: var(--bg-hover);
   color: var(--danger);
-  border: 1px solid var(--danger-line, var(--border));
+  border: 1px solid var(--danger-line);
 }
 
 .mon-drawer-flags {

@@ -156,12 +156,6 @@ export interface WxConnectInfo {
   error?: string
 }
 
-/** 分页结果 */
-export interface PageResult<T> {
-  items: T[]
-  hasMore: boolean
-}
-
 /** 消息分页游标（keyset）：以库原始字段定位"更早的消息"。createTime 为库原始值（未转 ms） */
 export interface MessageCursor {
   sortSeq: number
@@ -222,13 +216,6 @@ export interface AiGenOptions {
   style?: AiStyle
   /** 使用的智能体 id；缺省/无效时回退到默认智能体 */
   agentId?: string
-}
-
-export interface AiSuggestResult {
-  candidates: ReplyCandidate[]
-  /** 是否走了 LLM 生成（false=仅模板/兜底） */
-  llm: boolean
-  error?: string
 }
 
 // ── 发送执行（T8，方案 §4.5）──

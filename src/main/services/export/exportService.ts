@@ -1,6 +1,7 @@
 import { createWriteStream, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import * as wxService from '../wechat/wxService'
+import { safeFileName } from '../_filename'
 import { getDb } from '../../db/database'
 import { listAgents } from '../../db/repos/agentRepo'
 import { listTeamMembers } from '../../db/repos/teamRepo'
@@ -40,12 +41,6 @@ type ProgressCb = (evt: ProgressEvent) => void
 
 const MAX_MSGS_PER_SESSION = 500_000
 const PAGE = 500
-
-/** 文件名安全化（群名可能含非法字符） */
-function safeName(name: string): string {
-  const s = name.replace(/[\\/:*?"<>|\r\n\t]+/g, '_').trim()
-  return s.slice(0, 80) || 'session'
-}
 
 function fmtLine(m: ChatMessage): string {
   const d = new Date(m.createTime)
@@ -132,7 +127,7 @@ export async function exportChat(
       const rows: string[] = []
       const jsonRows: string[] = []
       let count = 0
-      const base = safeName(t.displayName || t.username)
+      const base = safeFileName(t.displayName || t.username, { maxLength: 80, fallback: 'session' })
       const fileName = `${base}_${suffix}.${format}`
       const filePath = join(folder, fileName)
 

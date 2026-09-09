@@ -17,7 +17,7 @@ import { existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getDb, closeDb } from './db/database'
-import { getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
+import { getGrowthMediaDir, getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
 import { migrateStoredSecrets } from './services/secrets'
 import { listTables } from './db/schema'
 import { getConfigBoolean } from './db/repos/config'
@@ -38,9 +38,13 @@ import { registerWorkbenchHandlers } from './ipc/workbenchHandlers'
 import { registerLogHandlers } from './ipc/logsHandlers'
 import { registerChannelFileHandlers } from './ipc/channelFileHandlers'
 import { registerReportHandlers } from './ipc/reportHandlers'
+import { registerGrowthHandlers } from './ipc/growthHandlers'
+import { registerGrowthAiHandlers } from './ipc/growthAiHandlers'
+import { registerGrowthBuzzHandlers } from './ipc/growthBuzzHandlers'
 import { startReportScheduler, stopReportScheduler } from './services/report/scheduler'
+import { startGrowthScheduler, stopGrowthScheduler } from './services/growth/scheduler'
 import { createLogger } from './services/logging'
-import { startFileHousekeeping } from './services/im/channelFiles'
+import { startFileHousekeeping, stopFileHousekeeping } from './services/im/channelFiles'
 
 const appLog = createLogger('app')
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
@@ -110,6 +114,38 @@ function registerMediaProtocol(): void {
       }
       const base = getMediaRootDir() // 规范结构：<cache>/media（ct-media 协议映射根）
       const file = resolve(base, wxid, name)
+      if (!file.startsWith(base + sep) || !existsSync(file)) {
+        return new Response('Not found', { status: 404 })
+      }
+      return net.fetch(pathToFileURL(file).toString())
+    } catch {
+      return new Response('Bad request', { status: 400 })
+    }
+  })
+}
+
+const growthProtoLog = createLogger('growth-proto')
+
+/**
+ * 自定义 growth 媒体协议: 把 <cache>/growth/media 下已下载的素材图以
+ * ct-growth://<sub>/<file> 暴露给渲染层(校验与 ct-media 同规格: 路径强白名单)。
+ */
+function registerGrowthMediaProtocol(): void {
+  protocol.handle('ct-growth', (request) => {
+    const { pathname } = new URL(request.url)
+    // 每张素材图一次请求:降到 debug(打包环境不写),否则滚动列表会刷爆日志
+    growthProtoLog.debug('ct-growth 请求: ' + pathname)
+    try {
+      const seg = pathname.split('/').filter(Boolean)
+      if (seg.length !== 2) return new Response('Not found', { status: 404 })
+      const sub = decodeURIComponent(seg[0])
+      const name = decodeURIComponent(seg[1])
+      if (!/^[0-9a-f]{2}$/.test(sub)) return new Response('Forbidden', { status: 403 })
+      if (!/^[0-9a-f]{40}\.(jpe?g|png|webp|gif|mp4|mov|webm|m4v)$/i.test(name)) {
+        return new Response('Forbidden', { status: 403 })
+      }
+      const base = getGrowthMediaDir()
+      const file = resolve(base, sub, name)
       if (!file.startsWith(base + sep) || !existsSync(file)) {
         return new Response('Not found', { status: 404 })
       }
@@ -279,6 +315,10 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'ct-media',
     privileges: { secure: true, bypassCSP: true, stream: true }
+  },
+  {
+    scheme: 'ct-growth',
+    privileges: { secure: true, bypassCSP: true, stream: true }
   }
 ])
 
@@ -301,7 +341,12 @@ if (!app.requestSingleInstanceLock()) {
     migrateLegacyCacheLayout()
 
     // 敏感配置迁移：存量明文 ai.apiKey 加封为 safeStorage 密文（幂等）
-    migrateStoredSecrets(['ai.apiKey'])
+    migrateStoredSecrets([
+      'ai.apiKey',
+      'growth.providerApiKey',
+      'growth.image.apiKey',
+      'growth.search.apiKey'
+    ])
 
     // 注册 IPC handlers
     registerKeyStoreHandlers()
@@ -321,7 +366,11 @@ if (!app.requestSingleInstanceLock()) {
     registerLogHandlers()
     registerChannelFileHandlers()
     registerReportHandlers()
+    registerGrowthHandlers()
+    registerGrowthAiHandlers()
+    registerGrowthBuzzHandlers()
     registerMediaProtocol()
+    registerGrowthMediaProtocol()
 
     // IM 渠道(飞书等):恢复上次启用状态的账号连接
     void bootImAccounts()
@@ -331,6 +380,7 @@ if (!app.requestSingleInstanceLock()) {
 
     // 数据上报·定时任务:恢复启用的任务调度
     startReportScheduler()
+    startGrowthScheduler()
 
     // 微信库变更 → 新消息提醒（节流 + 聚焦抑制）
     setOnDbChangedNotify(notifyNewMessage)
@@ -362,9 +412,11 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true
   stopReportScheduler()
+  stopGrowthScheduler()
   closeDb()
   stopAllWatches()
   stopIssueScheduler()
   stopAllIm()
+  stopFileHousekeeping() // 此前漏调:6 小时定时清理器从不清理
   stopSending()
 })

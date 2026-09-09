@@ -37,16 +37,6 @@ export interface WbEvent {
   text?: string
 }
 
-/** 审批请求内容(引擎 → 渲染) */
-export interface WbApprovalRequest {
-  runId: string
-  tool: string
-  args: string
-  /** 人类可读的一行说明 */
-  summary: string
-  timeoutMs: number
-}
-
 /** SKILL.md 技能信息 */
 export interface WbSkillInfo {
   name: string

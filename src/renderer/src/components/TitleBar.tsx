@@ -7,7 +7,7 @@ import { useWorkbenchStore } from '../stores/workbench'
  */
 
 const PAGE_NAMES: Record<string, string> = {
-  workbench: '工作台',
+  workbench: 'AI',
   monitor: '监控',
   chat: '对话',
   customers: '客户',

@@ -136,8 +136,16 @@ export const SOFTWARE_CAPS: Array<{
   }
 ]
 
-/** 全部能力清单(实时聚合) */
+/**
+ * 能力清单缓存:每轮工具调用会多次走到这里(capNameOfDef/isCapDisabled/expandMounted…),
+ * 每次都重建 17 条 CapInfo + 读一次 app_config。以 cap.disable 配置值为键失效即可。
+ */
+let capsCache: { key: string; caps: CapInfo[] } | null = null
+
+/** 全部能力清单(按 cap.disable 配置缓存) */
 export function listCaps(): CapInfo[] {
+  const key = getConfig('cap.disable') ?? ''
+  if (capsCache && capsCache.key === key) return capsCache.caps
   const disabled = disabledNames()
   const out: CapInfo[] = []
 
@@ -216,12 +224,8 @@ export function listCaps(): CapInfo[] {
     push(c.name, 2, 'software', c.needsWx, c.oneLine, c.when)
   }
 
+  capsCache = { key, caps: out }
   return out
-}
-
-export function lookupCap(name: string): CapInfo | undefined {
-  const cap = listCaps().find((c) => c.name === name)
-  return cap && !cap.disabled ? cap : undefined
 }
 
 /** 能力名是否在用户停用列表 */
@@ -241,11 +245,6 @@ export function groupText(group: CapGroup): string {
 export function capNameOfDef(defName: string): string | undefined {
   const cap = listCaps().find((c) => c.name === defName)
   return cap ? (cap.tier === 0 ? undefined : cap.name) : undefined
-}
-
-/** 能力是否核心常驻(不可卸载/不占预算) */
-export function isCoreCapability(name: string): boolean {
-  return listCaps().some((c) => c.name === name && c.tier === 0)
 }
 
 /** 目录文本(给 list_capabilities;含挂载态与账号约束标注) */

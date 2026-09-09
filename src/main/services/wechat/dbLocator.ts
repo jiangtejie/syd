@@ -23,7 +23,8 @@ export interface WeChatDbPaths {
 export function resolveDbStoragePath(dbPath: string, wxid: string): string | null {
   if (!dbPath) return null
   const normalized = dbPath.replace(/[\\/]+$/, '')
-  if (basename(normalized).toLowerCase() === 'db_storage' && existsSync(normalized)) return normalized
+  if (basename(normalized).toLowerCase() === 'db_storage' && existsSync(normalized))
+    return normalized
 
   const direct = join(normalized, 'db_storage')
   if (existsSync(direct)) return direct
@@ -122,15 +123,56 @@ export function findSessionDbFile(dbStoragePath: string): string | null {
   return candidates.sort((a, b) => score(b) - score(a) || a.localeCompare(b))[0]
 }
 
-/** 汇总一次完整的库定位 */
+/**
+ * 路径定位缓存。
+ * 每次查询都递归 readdir+stat 整个微信数据目录代价很高（一次 getSessions 会走 4 遍），
+ * 而目录形态极少变化：加 30s TTL，并在 watchService 广播 dbChanged 时精确失效。
+ */
+const LOCATE_TTL_MS = 30_000
+const FILE_FIND_TTL_MS = 60_000
+const locateCache = new Map<string, { at: number; paths: WeChatDbPaths }>()
+const fileFindCache = new Map<string, { at: number; path: string | null }>()
+
+/** 使路径缓存失效（微信库变化 / 切换账号 / 清理缓存后调用） */
+export function invalidateWxPathCaches(): void {
+  locateCache.clear()
+  fileFindCache.clear()
+}
+
+/** 汇总一次完整的库定位（带 30s 缓存） */
 export function locateWeChatDbs(dbPath: string, wxid: string): WeChatDbPaths {
+  const cacheKey = `${dbPath}|${wxid}`
+  const hit = locateCache.get(cacheKey)
+  if (hit && Date.now() - hit.at < LOCATE_TTL_MS) return hit.paths
+
   const dbStoragePath = resolveDbStoragePath(dbPath, wxid)
-  if (!dbStoragePath) {
-    return { dbStoragePath: null, msgDbFiles: [], sessionDbFile: null }
-  }
-  return {
-    dbStoragePath,
-    msgDbFiles: findMsgDbFiles(dbStoragePath),
-    sessionDbFile: findSessionDbFile(dbStoragePath)
-  }
+  const paths: WeChatDbPaths = dbStoragePath
+    ? {
+        dbStoragePath,
+        msgDbFiles: findMsgDbFiles(dbStoragePath),
+        sessionDbFile: findSessionDbFile(dbStoragePath)
+      }
+    : { dbStoragePath: null, msgDbFiles: [], sessionDbFile: null }
+
+  if (locateCache.size >= 32) locateCache.clear()
+  locateCache.set(cacheKey, { at: Date.now(), paths })
+  return paths
+}
+
+/**
+ * 带缓存的「按名找库」：把递归遍历结果记在进程内（60s TTL）。
+ * find 返回 null 也会被缓存，避免每次都白扫一遍整棵树。
+ */
+export function findFileCached(
+  dbStoragePath: string,
+  key: string,
+  find: () => string | null
+): string | null {
+  const cacheKey = `${key}|${dbStoragePath}`
+  const hit = fileFindCache.get(cacheKey)
+  if (hit && Date.now() - hit.at < FILE_FIND_TTL_MS) return hit.path
+  const path = find()
+  if (fileFindCache.size >= 64) fileFindCache.clear()
+  fileFindCache.set(cacheKey, { at: Date.now(), path })
+  return path
 }

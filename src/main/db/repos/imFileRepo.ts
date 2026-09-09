@@ -143,15 +143,6 @@ export function allRegisteredRelPaths(): Set<string> {
   return new Set(rows.map((r) => r.rel_path))
 }
 
-/** 超过 keepDays 的记录(按 created_at),供过期清理 */
-export function expiredFileRecords(keepDays: number): FileRecordRow[] {
-  const cutoff = Date.now() - keepDays * 24 * 3600_000
-  const rows = getDb()
-    .prepare(`SELECT * FROM im_file_record WHERE created_at < ?`)
-    .all(cutoff) as FileRow[]
-  return rows.map(toRow)
-}
-
 /** 全量记录(升序;按账号差异化保留策略逐条判定用) */
 export function allFileRecords(): FileRecordRow[] {
   const rows = getDb()

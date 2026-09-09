@@ -38,19 +38,17 @@ import {
   skillsRoot
 } from '../services/ai/workbench/skills'
 import { readMemoNotes, writeMemoNotes } from '../services/ai/memo'
+import { dropSession } from '../services/ai/cap/mounts'
 import { toolCnName } from '../../shared/types'
 import { existsSync, statSync } from 'node:fs'
+import { safeFileName } from '../services/_filename'
+import { fail } from './_util'
 
 /** AI 工作台 IPC(会话复用 chat 体系,存储 wxid 带 wb: 前缀与 IM 会话隔离;事件通道 ai:wb)。 */
 
 /** 工作台会话存储命名空间:避免未绑定账号(wxid='')时与飞书 IM 映射会话混列 */
 function wbWxid(wxid: string): string {
   return `wb:${String(wxid || '')}`
-}
-
-/** 文件名安全化 */
-function safeName(s: string): string {
-  return s.replace(/[\\/:*?"<>|]/g, '-').slice(0, 60) || '工作台会话'
 }
 
 /** 会话 → Markdown(按时间线顺序:提问/文本段落/工具痕迹/压缩标记/错误) */
@@ -115,7 +113,7 @@ export function registerWorkbenchHandlers(): void {
     try {
       return { ok: true as const, chats: listChats(wbWxid(String(wxid || ''))) }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -127,7 +125,7 @@ export function registerWorkbenchHandlers(): void {
         hits: searchChatMessages(wbWxid(String(wxid || '')), String(query || ''))
       }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -136,7 +134,7 @@ export function registerWorkbenchHandlers(): void {
     try {
       return { ok: true as const, messages: listChatMessages(id) }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -146,7 +144,7 @@ export function registerWorkbenchHandlers(): void {
     try {
       return { ok: true as const, path: getChatWorkspace(id) }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -161,7 +159,7 @@ export function registerWorkbenchHandlers(): void {
       setChatWorkspace(id, d || null)
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -174,7 +172,7 @@ export function registerWorkbenchHandlers(): void {
       void shell.openPath(dir)
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -195,7 +193,7 @@ export function registerWorkbenchHandlers(): void {
         })
         return { ok: true as const }
       } catch (err) {
-        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+        return fail(err)
       }
     }
   )
@@ -209,7 +207,7 @@ export function registerWorkbenchHandlers(): void {
       )
       return { ok: true as const, id }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -222,7 +220,7 @@ export function registerWorkbenchHandlers(): void {
           images: Array.isArray(images) ? images : []
         })
       } catch (err) {
-        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+        return fail(err)
       }
     }
   )
@@ -232,7 +230,7 @@ export function registerWorkbenchHandlers(): void {
     try {
       return await retryWorkbenchMessage(id, String(wxid || ''))
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -241,7 +239,7 @@ export function registerWorkbenchHandlers(): void {
     try {
       return await resendWorkbenchMessage(id, String(wxid || ''), String(text ?? ''))
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -279,7 +277,7 @@ export function registerWorkbenchHandlers(): void {
     try {
       return { ok: true as const, prefs: getToolApprovalPrefs() }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -296,7 +294,7 @@ export function registerWorkbenchHandlers(): void {
         setToolApprovalPrefs(next)
         return { ok: true as const, prefs: getToolApprovalPrefs() }
       } catch (err) {
-        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+        return fail(err)
       }
     }
   )
@@ -312,6 +310,7 @@ export function registerWorkbenchHandlers(): void {
     if (!Number.isInteger(id)) return { ok: false as const, error: '参数错误' }
     stopWorkbenchChat(id)
     clearSessionToolAllowed(id)
+    dropSession(id) // 释放能力挂载的内存缓存(此前从不调用 → 缓存随会话数增长)
     return removeChat(id) ? { ok: true as const } : { ok: false as const, error: '会话不存在' }
   })
 
@@ -327,7 +326,7 @@ export function registerWorkbenchHandlers(): void {
     try {
       return { ok: true as const, notes: readMemoNotes() }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -336,7 +335,7 @@ export function registerWorkbenchHandlers(): void {
       writeMemoNotes(String(notes ?? ''))
       return { ok: true as const }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -345,7 +344,7 @@ export function registerWorkbenchHandlers(): void {
     try {
       return { ok: true as const, stats: getWorkbenchReliability() }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -358,7 +357,7 @@ export function registerWorkbenchHandlers(): void {
       const win = BrowserWindow.fromWebContents(e.sender)
       const saveOpts = {
         title: '导出工作台会话',
-        defaultPath: `${safeName(out.title)}.md`,
+        defaultPath: `${safeFileName(out.title, { replacement: '-', maxLength: 60, fallback: '工作台会话', trim: false, collapse: false })}.md`,
         filters: [{ name: 'Markdown', extensions: ['md'] }]
       }
       const pick = win
@@ -368,7 +367,7 @@ export function registerWorkbenchHandlers(): void {
       await writeFile(pick.filePath, out.md, 'utf8')
       return { ok: true as const, file: pick.filePath }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -379,11 +378,12 @@ export function registerWorkbenchHandlers(): void {
       for (const c of chats) {
         stopWorkbenchChat(c.id)
         clearSessionToolAllowed(c.id)
+        dropSession(c.id)
         removeChat(c.id)
       }
       return { ok: true as const, removed: chats.length }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 
@@ -391,7 +391,7 @@ export function registerWorkbenchHandlers(): void {
     try {
       return { ok: true as const, skills: listSkills(), maxOn: skillLimit() }
     } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      return fail(err)
     }
   })
 

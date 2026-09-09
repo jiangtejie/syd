@@ -1,10 +1,7 @@
 import { ipcMain } from 'electron'
 import * as wxService from '../services/wechat/wxService'
-import { startWatch, stopWatch, listWatchWxids } from '../services/wechat/watchService'
-import {
-  ensure as ensureIssueScheduler,
-  remove as removeIssueScheduler
-} from '../services/feedback/scheduler'
+import { startWatch } from '../services/wechat/watchService'
+import { ensure as ensureIssueScheduler } from '../services/feedback/scheduler'
 import type { MessageCursor } from '../../shared/types'
 
 export function registerWechatHandlers(): void {
@@ -46,12 +43,6 @@ export function registerWechatHandlers(): void {
     if (r.ok) ensureIssueScheduler(wxid)
     return r
   })
-  ipcMain.handle('cs:wx:stopWatch', (_e, wxid: string) => {
-    stopWatch(wxid)
-    removeIssueScheduler(wxid)
-    return { ok: true }
-  })
-  ipcMain.handle('cs:wx:listWatch', () => listWatchWxids())
 
   ipcMain.handle('cs:wx:opsStats', (_e, wxid: string, rangeDays?: number) =>
     wxService.getOpsStats(wxid, rangeDays ?? 7)

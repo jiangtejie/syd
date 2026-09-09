@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { WeChatDbMonitor, type DbChangeInfo } from './monitor'
-import { locateWeChatDbs } from './dbLocator'
+import { invalidateWxPathCaches, locateWeChatDbs } from './dbLocator'
 import { invalidateOpsCache } from './opsStats'
 import * as keyStore from '../keyStoreService'
 
@@ -39,6 +39,8 @@ export interface DbChangedPayload {
 function broadcast(payload: DbChangedPayload): void {
   // 消息库有变化时使运营统计缓存失效，下一次查询会重新聚合
   invalidateOpsCache(payload.wxid)
+  // 路径定位缓存同步失效：库文件可能被微信重建/新增分片
+  invalidateWxPathCaches()
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('cs:wx:dbChanged', payload)
   }
@@ -71,24 +73,10 @@ export function startWatch(wxid: string): { ok: boolean; error?: string } {
   return { ok: true }
 }
 
-/** 停止 wxid 的监控 */
-export function stopWatch(wxid: string): void {
-  const monitor = monitors.get(wxid)
-  if (monitor) {
-    monitor.stop()
-    monitors.delete(wxid)
-  }
-}
-
 /** 停止全部监控（应用退出时调用） */
 export function stopAllWatches(): void {
   for (const monitor of monitors.values()) {
     monitor.stop()
   }
   monitors.clear()
-}
-
-/** 当前监控的 wxid 列表（调试/状态展示用） */
-export function listWatchWxids(): string[] {
-  return [...monitors.keys()]
 }

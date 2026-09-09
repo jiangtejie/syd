@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { avatarColor, formatTimeDivider, needTimeDivider } from '../../lib/ui'
 import type { ChatMessage, ChatRecordItem, RedEnvelopeStatus } from '../../../../shared/types'
@@ -647,6 +647,33 @@ function MessagePanel(): React.JSX.Element {
     setSendLabel('')
   }
 
+  /**
+   * 消息行元素缓存:输入草稿/待发附件等 state 变化时元素引用不变,
+   * React 会直接跳过这棵子树的协调(数百条消息时,每次按键重建 750 个包裹元素是主要开销)。
+   */
+  const listItems = useMemo(() => {
+    const sess = activeSession
+    if (!sess) return null
+    return messages.map((m, i) => {
+      const prev = i > 0 ? messages[i - 1] : null
+      const showDivider = !prev || needTimeDivider(prev.createTime, m.createTime)
+      return (
+        <div key={m.localId || `${m.serverSeq}-${m.sortSeq}`}>
+          {showDivider && <div className="wb-time-divider">{formatTimeDivider(m.createTime)}</div>}
+          <MessageBubble
+            message={m}
+            isGroup={sess.isGroup}
+            sessionAvatarUrl={sess.avatarUrl}
+            sessionName={sess.displayName || sess.username}
+            sessionUsername={sess.username}
+            onOpenAttachment={setAttachment}
+            onContextMenu={handleContextMenu}
+          />
+        </div>
+      )
+    })
+  }, [messages, activeSession, handleContextMenu])
+
   if (!activeSession) {
     return (
       <div className="wb-chat-empty">
@@ -689,26 +716,7 @@ function MessagePanel(): React.JSX.Element {
             ) : (
               <div className="wb-history-end">已是最早消息</div>
             )}
-            {messages.map((m, i) => {
-              const prev = i > 0 ? messages[i - 1] : null
-              const showDivider = !prev || needTimeDivider(prev.createTime, m.createTime)
-              return (
-                <div key={m.localId || `${m.serverSeq}-${m.sortSeq}`}>
-                  {showDivider && (
-                    <div className="wb-time-divider">{formatTimeDivider(m.createTime)}</div>
-                  )}
-                  <MessageBubble
-                    message={m}
-                    isGroup={activeSession.isGroup}
-                    sessionAvatarUrl={activeSession.avatarUrl}
-                    sessionName={activeSession.displayName || activeSession.username}
-                    sessionUsername={activeSession.username}
-                    onOpenAttachment={setAttachment}
-                    onContextMenu={handleContextMenu}
-                  />
-                </div>
-              )
-            })}
+            {listItems}
           </>
         )}
       </div>
