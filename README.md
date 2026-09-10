@@ -1,34 +1,299 @@
-# wechat-cs-desktop
+# 微信私域智能客服工作台 · wechat-cs-desktop
 
-An Electron application with React and TypeScript
+本机运行的微信客服工作台：直接读取你本机的微信数据，把「客户消息 → 问题提取 → 跟进 → 收尾」做成可追踪的闭环，并把 AI 用在回复建议、群问题提炼、复盘与营销内容上。
 
-## Recommended IDE Setup
+- **本地优先**：没有自建后端、没有遥测；聊天内容只在本机处理。只有你主动开启的能力才会把内容送出去 —— AI 提交流向你配置的大模型通道，数据上报流向你自己配置的 PostgreSQL。
+- **对外发送有闸门**：默认需要人工确认（可配审批策略），并带日限额、熔断与发送审计；发送结果会回查微信库做「闭环校验」。
+- **AI 通道可换**：任意 OpenAI 兼容接口 —— OpenAI / DeepSeek / 阿里百炼 / 智谱 / Moonshot / 硅基流动 / 火山方舟 / Ollama / 自定义。
+- **Windows 桌面应用**（Electron），亦提供 macOS / Linux 构建脚本，但主力与验证平台是 Windows。
 
-- [VSCode](https://code.visualstudio.com/) + [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) + [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+> ⚠️ 请仅用于你自己拥有合法访问权限的微信账号与数据，并遵守微信服务条款与当地法律法规。本项目不提供任何绕过平台限制的能力。
 
-## Project Setup
+---
 
-### Install
+## 目录
 
-```bash
-$ npm install
+- [功能全景](#功能全景)
+- [群问题闭环（核心引擎）](#群问题闭环核心引擎)
+- [技术栈](#技术栈)
+- [架构与目录](#架构与目录)
+- [快速开始](#快速开始)
+- [首次配置](#首次配置)
+- [数据、密钥与隐私](#数据密钥与隐私)
+- [配置键速查](#配置键速查)
+- [排障 FAQ](#排障-faq)
+- [开发约定](#开发约定)
+- [设计文档](#设计文档)
+- [已知限制与路线图](#已知限制与路线图)
+
+---
+
+## 功能全景
+
+界面分七个页面（左导航）+ 设置：
+
+| 页面 | 能力 |
+| --- | --- |
+| **对话** | 会话列表（群/单聊/公众号，群徽标显示待处理问题数）、消息面板（文本/图片/视频/语音/表情/文件/引用/转账，图片视频本地解密缓存）、右侧「回复建议 / 本群问题」双视图、消息右键「标记为团队客服」、在聊天中定位问题、渠道接收文件托盘、工作区（会话绑定本地目录，AI 可读写） |
+| **监控** | 问题监控中心（管理者视角）：KPI 大卡、新增/解决趋势、类型分布、群 Top、积压年龄、钻取列表（状态处置/指派跟进人/严重度筛选/分页）、追踪抽屉（证据时间线 + 定位聊天 + 处置动作）、维护操作（全量重析/取消/合并重复/归档历史/清空）、快照导出 |
+| **看板** | 私域运营指标：消息量/收发比/群私聊分布/24h 分布、**跟进队列**（有未读且最后一条是客户的会话，越久越靠前）、沉睡召回、发送质量（闭环校验通过率、失败原因 Top） |
+| **AI** | AI 工作台（对话式）：绑定工作的智能体、技能包、工具调用卡片、工作区读写；内置快捷问题（今日待跟进清单、群复盘等） |
+| **客户** | 客户档案：按会话聚合标签（群/个人/公众号、活跃度、待办）、备注与历史问题 |
+| **营销** | 营销增长模块：内容采集（抖音/小红书）、素材仓库、爆款分析、舆情监控（门店相关评论/提及）、AI 二创与合规检查、发布导出 |
+| **数据** | 会话导出（TXT / HTML / JSON，含附件引用）、业务报表、媒体归档 |
+| **设置** | 微信数据与密钥、AI 通道与智能体、发送策略、飞书（通知/机器人/云文档）、定时任务与数据上报、问题监控口径、日志、缓存与数据管理 |
+
+后端（主进程）能力：
+
+- **微信数据接入**：定位并解密本机微信库（支持多分片消息库），会话与消息读取（keyset 分页 / 增量 sortSeq 读取）、联系人/群昵称 enrich、企微与会话类型识别、库变更监听（WAL 变化事件）。
+- **群问题闭环引擎**（见下节）。
+- **回复建议**：本地背景下拉（本群待办、历史问题、团队名单）+ 只读工具循环 + 多候选输出；支持智能体人设与话术库。
+- **发送执行**：审批闸门、排队、日限额、失败熔断、审计落库、发送后闭环校验。
+- **数据上报**：定时任务把会话/消息/媒体增量同步到你自己的 PostgreSQL（游标增量、媒体归档、进度与取消、运行历史）。
+- **飞书集成**：长连接机器人（收消息/图片/文件并任务化、按身份分级响应、指令闭环）、告警推送（新问题/盯办）、云文档能力（Docx / Wiki / Sheets / Base / 妙记 / 画板等，经 lark-cli 工具注册表暴露给 AI）。
+- **媒体解码**：微信图片（.dat）解密、视频/语音缓存、表情包解析、附件归档。
+- **统一日志**：分级分模块写 `userData/logs/app-YYYY-MM-DD.log`，设置页可近实时查看。
+
+---
+
+## 群问题闭环（核心引擎）
+
+目标：群里的客户诉求**一条都不丢、不重复、有归属、能收尾**。
+
+### 1. 提取
+
+- 窗口：增量按**水位**（时间 + sortSeq 双线，补录/回拨的旧时间消息也能读到）；首次/重算按自然日窗口（默认 2 天，面板可选 1/2/3/7 天），向前扩展以覆盖 open 议题的锚点（上限 14 天）。
+- 方式：OpenAI 兼容 LLM 按「会话段」分批提炼议题（每批 ≤200 行，超长群自动分批消费，避免截断丢段）；未配置或调用失败时**回退本地规则**（关键词聚类 + 末尾未回复兜底），面板会标注本次是「AI 提炼」还是「规则」。
+- 落库：稳定 key upsert（人工状态、指派、疑似确认不会被重析覆盖）；新增问题数按**真正新建行**计数。
+- 防漏：读取窗口按 800 条上限截断时，群问题面板会显示「覆盖 N 条 · 条数超限未覆盖全窗口」。
+
+### 2. 跟进判定 —— 规则管跟进、LLM 管闭环
+
+每轮分析（以及后台每 10 分钟的**收尾巡检**）对全部 open 问题做**确定性判定**，不再依赖「LLM 下次是否又提到它」：
+
+- 回合内出现我方/团队客服消息 → **跟进中**，并记录回复时刻与回复人；
+- 回合内无人回复 → **待处理**（客户在等回复）；
+- **静默收尾**：客服已回复、该客户此后静默超过 `monitor.autoCloseHours`（默认 72h，可配，0=关闭）→ 自动「已解决（自动）」，可重新打开复核；
+- **超期搁置**：锚点超出 14 天回溯范围仍无法判定 → 自动「已搁置」；
+- 跟进超时按「客服最后回复时间」动态计算（`monitor.followUpHours`，默认 12h）。
+
+### 3. 防重复
+
+同一议题只保留一条，三层保险：
+
+1. 提取时 LLM 可指认「与既有待办 #N 是同一条」，直接复用其 key；
+2. 附录行优先保住每个 open 议题的**锚点行**，让模型看得见原议题，从源头减少 key 漂移；
+3. 同一性判据兜底（`src/main/services/feedback/issueSimilarity.ts`，阈值用真实数据标定）：
+   - 标题相似度（真重复 ≥0.40，不同主题 ≤0.20）；
+   - 证据消息重叠率（引用同一批消息，不受时间跨度限制）；
+   - 同客户 + 同类型 + 时间邻近（仅作无证据交集时的弱兜底）。
+
+判据分**强/弱**两档：高置信（证据几乎完全重合 / 标题逐字一致 / 同客户同类型且证据被包含）由后台**自动合并**；弱信号（仅时间邻近）只在监控页「合并重复」里**预览确认**后才合并。合并保留最早一条（合并证据、取最高严重度、并集客户、沿用指派跟进人），其余归档为 `duplicate` —— 不计入闭环率与趋势、也不算「不是问题」的反例样本，需要时可重新打开。
+
+### 4. 归属与盯办
+
+- **跟进人**：团队成员（对话页右键「标记为团队客服」）可指派；未指派但有人回复过时，聊天右侧面板直接给「+ 指派给 XXX」一键指派。
+- **盯办升级**：未指派超时（紧急 >1h / 其余 >4h）、已指派但长期无人回复（默认 8h）、跟进超时 → 应用内提醒 + 飞书推送；同一问题的重复提醒间隔**递增**（45min → 90min → 3h → 6h），不再轰炸。
+- **复发识别**：同群同客户同类型、上次已闭环后再次出现 → 标「复发×N」并回溯上次处理。
+
+### 5. 口径与统计
+
+- 闭环率 = 已闭环（含已闭环后归档）÷（已闭环 + 待处理 + 已搁置 + 已闭环后归档）；
+- 「今日解决/趋势」用**闭环时间**（resolved_at），不会被重析刷新污染；
+- 监控总览由**主进程按全量数据**聚合（KPI/趋势/分布），明细限量回传（默认 1000 条，超限提示）；
+- 「归档历史」把 90 天前已闭环记录归档，活跃列表/盯办/徽标只留近期，闭环率与趋势照旧统计。
+
+---
+
+## 技术栈
+
+| 层 | 选型 |
+| --- | --- |
+| 桌面壳 | Electron 39 + electron-vite 5（主进程 / 预加载 / 渲染三端构建） |
+| 渲染端 | React 19 + TypeScript 5.9 + zustand 5 + ECharts 6 + Tailwind 4 |
+| 主进程 | TypeScript，better-sqlite3-multiple-ciphers 13（本地库，WAL）、AI SDK v7、pg 8、飞书 Node SDK |
+| 质量 | ESLint 9 + Prettier 3、`tsc --noEmit` 双端、判据回归自检脚本 |
+
+---
+
+## 架构与目录
+
+```
+src/
+├─ main/                        主进程（全部业务逻辑与本地数据）
+│  ├─ db/                       本地库（cs.db）：schema/迁移 + repos
+│  ├─ ipc/                      IPC handler（cs:key/wx/ai/send/issue/team/im/lark/report/growth/wb/…）
+│  └─ services/
+│     ├─ wechat/                微信库定位/解密/读取/监控/media
+│     ├─ feedback/              群问题闭环：analyzer(编排) · shared · ruleExtract · llmExtract · reconcile · duplicates · issueSimilarity
+│     ├─ ai/                    模型通道、建议 Agent、工具注册表、工作台引擎、能力分层/技能包
+│     ├─ send/                  发送执行与闸门
+│     ├─ report/                定时任务·数据上报（→ PostgreSQL）
+│     ├─ lark/                  飞书（长连接/消息/联系人与云文档工具）
+│     ├─ im/                    外部 IM 渠道（飞书/微信 ClawBot 等）
+│     ├─ growth/                营销增长（采集/仓库/舆情/二创/发布/导出）
+│     ├─ export/  media/        导出、媒体与文件
+│     └─ logging.ts  paths.ts  统一日志、路径与缓存分区
+├─ preload/                     contextBridge 桥（接口真源在 src/shared/api.ts，实现与声明双向校验）
+├─ renderer/                    React 界面（pages / components / stores / lib）
+└─ shared/                      两端共享：types、growth、monitorMetrics、api(桥接口)
 ```
 
-### Development
+**进程与数据流**：渲染端只通过 `window.api.cs.*` 调 IPC；主进程独占本地库与微信库访问；微信库变更由 WAL 监听触发事件广播（`cs:wx:dbChanged` / `cs:issue:changed` / `cs:issue:progress` 等），页面据此增量刷新。
+
+详见 [ARCHITECTURE.md](ARCHITECTURE.md)（微信接入 / 密钥 / 消息读取 / AI 建议 / 发送执行 / 本地数据模型 / 配置键）。
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- **Node.js** `^20.19.0 || >=22.12.0`（electron-vite 5 要求）
+- Windows 10/11（主力平台）、macOS、Linux 亦可构建
+- 本机安装并登录过微信（需要能读到微信数据目录）
+
+### 安装与开发
 
 ```bash
-$ npm run dev
+npm install          # 依赖（含 Electron 二进制）
+
+npm run dev          # 开发模式（主进程/预加载/渲染端热更新）
+npm start            # 预览构建产物
 ```
 
-### Build
+> 改到 **preload 或主进程**时，热更新只换界面、不换桥 —— 界面会出现「⚠ 维护功能未加载」或按钮点了没反应，**完全退出应用重启**即可。
+
+### 构建
 
 ```bash
-# For windows
-$ npm run build:win
-
-# For macOS
-$ npm run build:mac
-
-# For Linux
-$ npm run build:linux
+npm run build        # 类型检查 + 三端构建（产物在 out/）
+npm run build:win    # 打包 Windows 安装包
+npm run build:mac    # 打包 macOS
+npm run build:linux  # 打包 Linux
 ```
+
+### 质量门禁
+
+```bash
+npm run typecheck        # tsc --noEmit（主进程 + 渲染端）
+npm run lint             # ESLint
+npm run test:similarity  # 议题同一性判据回归自检（15 条断言，阈值由真实数据标定）
+```
+
+---
+
+## 首次配置
+
+1. **微信数据与密钥**（设置 → 微信数据与密钥）：填写微信数据根目录，导入 64 位十六进制密钥。密钥用 Electron `safeStorage`（操作系统级加密）保存，主进程持有明文，渲染端只看到状态。连接成功后即可在「对话」页看到会话。
+2. **AI 通道**（设置 → AI）：选预设或自定义 Base URL + API Key + 模型名，可建多个智能体（人设/风格/自定义提示词）。未配置也能用：群问题提取自动退化为规则模式，回复建议退化为话术库匹配。
+3. **发送策略**（设置 → 发送）：是否允许 AI 参与发送、是否需审批、日限额。
+4. **飞书**（可选，设置 → 飞书）：填应用凭证后开启长连接机器人（收消息/图片/文件）、问题告警推送、云文档读取。
+5. **数据上报**（可选，设置 → 定时任务）：填自己的 PostgreSQL 连接串，创建 `chat_sync` 任务增量同步会话/消息/媒体。
+
+---
+
+## 数据、密钥与隐私
+
+| 内容 | 位置 |
+| --- | --- |
+| 应用本地库（问题/会话索引/配置/审计） | `%APPDATA%\wechat-cs-desktop\cs.db`（SQLite，WAL） |
+| 日志 | `%APPDATA%\wechat-cs-desktop\logs\app-YYYY-MM-DD.log`（默认保留 7 天，可配） |
+| 缓存分区 | 非系统盘优先：`<盘>:\wechat-cs-desktop\cache\{db,media,files,tmp,export,growth}`，可在设置里改 |
+| 解密后的微信明文库副本 | `<cache>\db`（源库路径 + 密钥相同则复用同名文件；可随时清理） |
+| 微信密钥 | `cs.db` 中 `safeStorage` 密文；不落明文、不出本机 |
+
+对外数据流只有两条，且都由你显式配置：**AI 通道**（聊天片段用于提炼/建议）与**数据上报**（你自己的 PostgreSQL）。除此之外应用不发起任何外部请求，也没有账号体系与遥测。
+
+---
+
+## 配置键速查
+
+存在 `cs.db → app_config`（设置页可改的都在界面里，这里列出便于排障）：
+
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `issue.autoScan.enabled` | 1 | 后台自动增量提取（含新群冷启动补扫，每分钟 1 个群） |
+| `issue.escalate.enabled` | 1 | 盯办升级提醒（应用内 + 飞书） |
+| `issue.escalateUrgentHours` / `issue.escalateUnassignedHours` | 1 / 4 | 紧急/其余问题未指派超时 |
+| `issue.escalateAssignedHours` | 8 | 已指派但无人回复超时 |
+| `issue.autoMergeDuplicates` | 1 | 高置信重复议题后台自动合并 |
+| `monitor.followUpHours` | 12 | 跟进超时阈值 |
+| `monitor.backlogHours` | 48 | 积压超时阈值 |
+| `monitor.autoCloseHours` | 72 | 静默收尾阈值（0 = 关闭） |
+| `monitor.alertSound` | 1 | 新问题提示音 |
+| `send.agentEnabled` / `send.approve` | — | AI 参与发送 / 需人工审批 |
+| `cache.path` | 空=默认 | 缓存目录 |
+| `logs.keepDays` / `logs.ringMax` | 7 / 1500 | 日志保留天数 / 内存环形条数 |
+
+---
+
+## 排障 FAQ
+
+**「合并重复」等维护按钮点了没反应？**
+先看监控页工具栏是否出现「⚠ 维护功能未加载」：出现说明 preload 还是旧的（热更新不换桥），**完全退出应用重启**。仍无反应就看「设置 → 日志」（模块 `issue`）：有 `重复议题预览 …` 说明点击已到主进程；没有则是渲染端未加载到新桥。
+
+**群问题面板一直显示「规则」而不是「AI 提炼」？**
+AI 通道未配置或调用失败。到设置里检查 Base URL / Key / 模型名，然后点面板「重新分析」。
+
+**面板提示「条数超限未覆盖全窗口」？**
+该群消息量超过单次扫描上限（800 条），只分析了最新部分。缩小窗口天数重析，或分批处理。
+
+**监控页提示「明细已加载 N/M 条」？**
+KPI/趋势按全量统计，明细为控制传输量只回传最近 1000 条。用状态/类型筛选，或点「归档历史」把 90 天前的已闭环记录收起来。
+
+**为什么改了代码界面变了、功能没变？**
+同样是 preload/主进程未重启（见上）。
+
+---
+
+## 开发约定
+
+- **提交风格**：中文 `type: 摘要(要点)`，`type` 取 `feat/fix/perf/refactor/style/docs/chore/build`；正文写清「为什么」与关键口径。
+- **改动前**：跑一遍 `npm run typecheck`；改到判据/去重逻辑时先跑 `npm run test:similarity`（它是唯一有断言的回归网）。
+- **分层约束**：渲染端不得直连本地库；跨端接口一律登记到 `src/shared/api.ts`（`CsApi`），preload 实现对着它编译，漏改即编译失败。
+- **数值调参**：判据阈值、窗口、上限都写成模块级常量并注明标定依据，别散落在调用点。
+- **注释口径**：注释写「为什么这么定」，不写「这行在做什么」。
+
+---
+
+## 设计文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 微信接入/密钥/消息读取/AI 建议/发送执行/本地数据模型/IPC 一览 |
+| [docs/ai-workbench-design.md](docs/ai-workbench-design.md) | AI 工作台（标准 agent 循环 + 原生能力调用） |
+| [docs/ai-assistant-design.md](docs/ai-assistant-design.md) | AI 对话助手页与技能/工具面 |
+| [docs/report-tasks-design.md](docs/report-tasks-design.md) | 定时任务 · 数据上报（→ PostgreSQL） |
+| [docs/feishu-cloud-doc-design.md](docs/feishu-cloud-doc-design.md) | 飞书云文档读取能力 |
+| [docs/lark-cli-integration-assessment.md](docs/lark-cli-integration-assessment.md) | lark-cli 集成评估 |
+| [BUZZ_MONITORING_DESIGN.zh.md](BUZZ_MONITORING_DESIGN.zh.md) | 舆情监控机制 |
+| [MARKETING_AI_WORKBENCH_DESIGN.zh.md](MARKETING_AI_WORKBENCH_DESIGN.zh.md) · [PRIVATE_AI_WORKBENCH_PLAN.zh.md](PRIVATE_AI_WORKBENCH_PLAN.zh.md) | 营销 / 私域 AI 工作台方案 |
+| [docs/performance-audit.md](docs/performance-audit.md) | 性能与冗余代码审计（含已修项） |
+
+---
+
+## 已知限制与路线图
+
+**已知限制**
+
+- 语音消息不做本地转写（作为 `[语音]` 占位参与分析）；需要转写可走飞书妙记。
+- 无 AI 通道时退化为规则提取，召回率明显下降（面板会标注「规则」）。
+- 单群单次扫描 800 条、全量重析活跃群前 30，超出都有显式提示。
+- 边界议题仍需人工复核：疑似桶（规则弱命中）与去重预览是刻意保留的人工关口。
+- 没有单元测试框架；目前靠 `tsc` + ESLint + 构建 + 判据自检脚本兜底。
+
+**路线图（未做）**
+
+- `feedback/scheduler.ts` 三块职责（增量提取 / 收尾巡检 / 盯办）再拆一层。
+- 语言模型输出「闭环依据」并落库，让自动闭环可审计。
+- 问题明细服务端分页（当前为限量回传 + 归档收敛）。
+- 更细粒度的团队 SLA（按人/按类型设定跟进时限）。
+
+---
+
+## 许可与合规
+
+本仓库未附带开源许可证（默认保留所有权利）；如需对外分发请先补充 LICENSE。
+
+再次提醒：请仅在你拥有合法权限的账号与数据上使用，遵守微信服务条款与当地法律。
