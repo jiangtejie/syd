@@ -1608,6 +1608,10 @@ export interface DuplicateMergePlanItem {
   groupName: string
   /** 判定理由（人工复核用） */
   reasons: string[]
+  /** 高置信（强信号连通）：开启自动合并后由后台直接处理 */
+  strong: boolean
+  /** 本可自动合并、但组内存在多个不同跟进人 → 留给人工决定归属 */
+  skippedAuto?: boolean
 }
 
 export interface DuplicateMergeResult {
@@ -1627,7 +1631,11 @@ export interface DuplicateMergeResult {
  */
 export function mergeDuplicateIssues(
   wxid: string,
-  opts: { dryRun?: boolean } = {}
+  opts: {
+    dryRun?: boolean
+    /** 只处理高置信组（后台自动合并用：弱信号一律留给人工在监控页预览确认） */
+    strongOnly?: boolean
+  } = {}
 ): DuplicateMergeResult {
   const result: DuplicateMergeResult = { clusters: 0, merged: 0, plan: [] }
   if (!wxid) return result
@@ -1668,13 +1676,19 @@ export function mergeDuplicateIssues(
         y.occurAt < x.occurAt || (y.occurAt === x.occurAt && y.id < x.id) ? y : x
       )
       const drops = members.filter((m) => m.id !== keep.id)
+      // 自动合并的安全阀：组内若有多个不同跟进人，归属需要人来定，不自动并
+      const assignees = new Set(members.map((m) => m.ref.assignee).filter((x) => !!x))
+      const autoSafe = c.strong && assignees.size <= 1
+      if (opts.strongOnly && !autoSafe) continue
       result.plan.push({
         keepId: keep.id,
         keepTitle: keep.title,
         dropIds: drops.map((d) => d.id),
         dropTitles: drops.map((d) => d.title),
         groupName: keep.ref.groupName || group,
-        reasons: c.reasons
+        reasons: c.reasons,
+        strong: c.strong,
+        skippedAuto: c.strong && assignees.size > 1
       })
       result.merged += drops.length
       if (opts.dryRun) continue

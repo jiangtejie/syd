@@ -173,6 +173,8 @@ function MonitorPage(): React.JSX.Element {
       dropTitles: string[]
       groupName: string
       reasons: string[]
+      strong?: boolean
+      skippedAuto?: boolean
     }>
   } | null>(null)
   const [archiveAsk, setArchiveAsk] = useState(false)
@@ -891,6 +893,14 @@ function MonitorPage(): React.JSX.Element {
                           .join(' / ')}${it.dropTitles.length > 2 ? ' 等' : ''}`
                       : ''}
                   </span>
+                  {it.strong && (
+                    <span
+                      className="mon-plan-why"
+                      title="高置信：开启「自动合并重复议题」后由后台自动处理"
+                    >
+                      高置信
+                    </span>
+                  )}
                   {it.reasons.length > 0 && (
                     <span className="mon-plan-why" title={it.reasons.join('；')}>
                       {it.reasons[0]}
@@ -902,6 +912,9 @@ function MonitorPage(): React.JSX.Element {
             <div className="mon-plan-note">
               每组保留最早的一条：合并证据、取最高严重度、沿用指派跟进人；其余归档为「重复」——
               不计入闭环率与趋势、不作为「不是问题」的反例样本，需要时可重新打开。
+              {dupPlan.plan.some((x) => x.strong)
+                ? ` 其中 ${dupPlan.plan.filter((x) => x.strong).length} 组为高置信，开启「设置 → 自动合并重复议题」后这类会由后台直接处理。`
+                : ''}
             </div>
           </div>
         )}

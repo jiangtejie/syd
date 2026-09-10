@@ -3,6 +3,7 @@ import {
   analyzeGroupIssues,
   hasGroupWatermark,
   listFeedbackIssues,
+  mergeDuplicateIssues,
   reconcileGroupFollowups
 } from './analyzer'
 import { getSessions } from '../wechat/wxService'
@@ -23,6 +24,9 @@ const issueLog = createLogger('issue')
  * B. 收尾巡检（每 10 分钟，零 LLM）：对**有 open 问题的群**做规则跟进/收尾判定，
  *    跟进中/待处理/静默收尾/超期搁置都据此刷新——静默收尾的前提是「群里没有新消息」，
  *    搭不上 A 的水位跳过逻辑，所以单独一轮；只在真的发生状态写入时广播刷新。
+ *    同一轮顺带做**高置信重复议题自动合并**（issue.autoMergeDuplicates，默认开）：
+ *    只有证据几乎完全重合/标题逐字一致这类强信号才自动并，且组内多人跟进时不并；
+ *    弱信号一律留给监控页「合并重复」人工预览。
  * C. 盯办升级提醒（issue.escalate.enabled 默认开）：每轮检查正式 open 问题——
  *    未指派超时（紧急 >1h / 其余 >4h，可配）、跟进超时 → cs:issue:changed{escalate}
  *    广播，渲染端失焦时桌面提醒；同一条问题 45 分钟内不重复打扰。
@@ -42,6 +46,8 @@ const ESCALATE_BACKOFF_MS = [45 * 60_000, 90 * 60_000, 3 * 3600_000, 6 * 3600_00
 /** 提醒记录保留时长：超过即清理（问题闭环后其键不再增长） */
 const ESCALATE_KEEP_MS = 24 * 3600_000
 const AUTO_SCAN_KEY = 'issue.autoScan.enabled'
+/** 高置信重复自动合并开关（issue.autoMergeDuplicates，默认开） */
+const AUTO_MERGE_KEY = 'issue.autoMergeDuplicates'
 const ESCALATE_KEY = 'issue.escalate.enabled'
 const ESCALATE_UNASSIGNED_KEY = 'issue.escalateUnassignedHours'
 const ESCALATE_URGENT_KEY = 'issue.escalateUrgentHours'
@@ -65,6 +71,7 @@ const cache = new Map<
 let uninstallHook: (() => void) | null = null
 
 const enabled = (): boolean => getConfig(AUTO_SCAN_KEY) !== '0'
+const autoMergeEnabled = (): boolean => getConfig(AUTO_MERGE_KEY) !== '0'
 const escalateEnabled = (): boolean => getConfig(ESCALATE_KEY) !== '0'
 
 function cfgHours(key: string, fallback: number): number {
@@ -246,6 +253,21 @@ async function runSettle(wxid: string): Promise<void> {
         changed += reconcileGroupFollowups(wxid, g).changed
       } catch (e) {
         issueLog.warn(`收尾巡检失败 ${wxid} ${g}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    // 高置信重复议题自动合并（零 LLM，纯判据；弱信号不碰）
+    if (autoMergeEnabled()) {
+      try {
+        const m = mergeDuplicateIssues(wxid, { strongOnly: true })
+        if (m.merged > 0) {
+          changed += m.merged
+          issueLog.info(
+            `自动合并重复议题 ${wxid} 组=${m.clusters} 归档=${m.merged} ` +
+              `明细=${m.plan.map((x) => `${x.keepId}<-${x.dropIds.join('+')}`).join(',')}`
+          )
+        }
+      } catch (e) {
+        issueLog.warn(`自动合并重复议题失败 ${wxid}: ${e instanceof Error ? e.message : String(e)}`)
       }
     }
     if (changed > 0) {

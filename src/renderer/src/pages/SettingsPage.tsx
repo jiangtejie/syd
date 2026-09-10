@@ -255,6 +255,8 @@ function SettingsPage(): React.JSX.Element {
   const [autoCloseHours, setAutoCloseHours] = useState(72)
   // 已指派未闭环盯办阈值(小时)
   const [escalateAssignedHours, setEscalateAssignedHours] = useState(8)
+  // 高置信重复议题自动合并(默认开)
+  const [autoMergeIssue, setAutoMergeIssue] = useState(true)
   // 后台自动增量分析(全部活跃群,不限于当前打开的群;默认开)
   const [autoScanIssue, setAutoScanIssue] = useState(true)
   // 盯办提醒(未指派超时/跟进超时升级;默认开)
@@ -311,6 +313,7 @@ function SettingsPage(): React.JSX.Element {
       setEscalateAssignedHours(hours(cfg['issue.escalateAssignedHours'], 8))
       setAutoScanIssue(cfg['issue.autoScan.enabled'] !== '0')
       setEscalateIssue(cfg['issue.escalate.enabled'] !== '0')
+      setAutoMergeIssue(cfg['issue.autoMergeDuplicates'] !== '0')
       setAgentSendEnabled(cfg['send.agentEnabled'] !== '0')
       setAgentSendApprove(cfg['send.approve'] !== '0')
       setLoaded(true)
@@ -1158,6 +1161,16 @@ function SettingsPage(): React.JSX.Element {
                   toast.success(
                     v ? '已开启:新消息事件 + 60s 巡检自动提取' : '已关闭后台自动分析(仍可手动分析)'
                   )
+                }}
+              />
+              <SwitchRow
+                label="自动合并重复议题"
+                desc="后台每 10 分钟巡检:只有高置信重复(证据几乎完全重合 / 标题逐字一致)才自动合并为一条并归档其余;仅「同客户同类型+时间邻近」这类弱信号不自动处理,仍在监控页「合并重复」里预览确认。"
+                checked={autoMergeIssue}
+                onChange={(v) => {
+                  setAutoMergeIssue(v)
+                  void configApi?.set('issue.autoMergeDuplicates', v ? '1' : '0')
+                  toast.success(v ? '已开启自动合并重复议题' : '已关闭自动合并(仍可手动合并)')
                 }}
               />
               <SwitchRow

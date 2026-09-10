@@ -31,10 +31,17 @@ export interface TopicMatch {
   same: boolean
   /** 命中的判据（写明理由便于人工复核/预览） */
   reason: string
+  /**
+   * 是否**高置信**同一议题：证据几乎完全重合 / 标题高度一致 / 同客户同类型且证据被包含。
+   * 高置信才允许后台自动合并；仅靠「时间邻近」命中的一律留给人工预览确认。
+   */
+  strong: boolean
 }
 
 /** 标题相似度阈值（实测：真重复 ≥0.40，不同主题 ≤0.20） */
 const TITLE_SAME = 0.4
+/** 高置信标题阈值：措辞几乎逐字一致 */
+const TITLE_STRONG = 0.6
 /** 「身份+同类型+时间邻近」兜底窗口（未回复留言类由调用方放宽到 72h） */
 export const TOPIC_TIME_NEAR_MS = 6 * 3600_000
 const TIME_NEAR_MS = TOPIC_TIME_NEAR_MS
@@ -102,7 +109,7 @@ export function topicSame(
   b: TopicFacts,
   opts: { maxTimeGapMs?: number } = {}
 ): TopicMatch {
-  if (!a.title && !b.title) return { same: false, reason: '' }
+  if (!a.title && !b.title) return { same: false, reason: '', strong: false }
   const title = titleSimilarity(a.title, b.title)
   const { shared, cover } = evidenceOverlap(a.evidenceTimes, b.evidenceTimes)
   const identity = identityOverlap(a, b)
@@ -112,32 +119,47 @@ export function topicSame(
   if (title >= TITLE_SAME && (identity || shared >= 1)) {
     return {
       same: true,
+      strong: title >= TITLE_STRONG && (identity || shared >= 2),
       reason: `标题相似 ${title.toFixed(2)}${identity ? '+同客户' : ''}${shared ? `+共享证据${shared}条` : ''}`
     }
   }
   // ② 同一客户 + 同类型 + 证据大幅重叠（长议题：跨天漂移也认）
   if (identity && typeSame && shared >= 2 && cover >= 0.6) {
-    return { same: true, reason: `同客户同类型+证据覆盖 ${(cover * 100) | 0}%(${shared}条)` }
+    return {
+      same: true,
+      strong: shared >= 3 && cover >= 0.8,
+      reason: `同客户同类型+证据覆盖 ${(cover * 100) | 0}%(${shared}条)`
+    }
   }
   // ③ 同一客户 + 同类型 + 证据被完全包含（规则提取常只有 1~2 条证据）
   if (identity && typeSame && shared >= 1 && cover >= 0.9) {
-    return { same: true, reason: `同客户同类型+证据包含(${shared}条)` }
+    return {
+      same: true,
+      strong: shared >= 2 || cover >= 1,
+      reason: `同客户同类型+证据包含(${shared}条)`
+    }
   }
   // ④ 同类型 + 证据高度一致（身份缺失时兜底）
   if (typeSame && shared >= 3 && cover >= 0.8) {
-    return { same: true, reason: `同类型+证据高度重叠(${shared}条/${(cover * 100) | 0}%)` }
+    return {
+      same: true,
+      strong: shared >= 4 && cover >= 0.9,
+      reason: `同类型+证据高度重叠(${shared}条/${(cover * 100) | 0}%)`
+    }
   }
   // ⑤ 同一客户 + 同类型 + 时间邻近（无证据交集的短时重复：未回复留言跨天收拢）
   const gap = opts.maxTimeGapMs ?? TIME_NEAR_MS
   if (gap > 0 && identity && typeSame && a.occurAt !== undefined && b.occurAt !== undefined) {
     if (Math.abs(a.occurAt - b.occurAt) <= gap) {
+      // 只有时间邻近 = 弱信号（可能是同一客户的两件同类事）：绝不自动合并
       return {
         same: true,
+        strong: false,
         reason: `同客户同类型+时间邻近${Math.round(Math.abs(a.occurAt - b.occurAt) / 60000)}分`
       }
     }
   }
-  return { same: false, reason: '' }
+  return { same: false, reason: '', strong: false }
 }
 
 /**
@@ -151,7 +173,7 @@ export function clusterTopics<T extends TopicFacts>(
     maxTimeGapMs?: number
     timeGapFor?: (a: T, b: T) => number
   } = {}
-): Array<{ members: T[]; reasons: string[] }> {
+): Array<{ members: T[]; reasons: string[]; strong: boolean }> {
   const parent = new Map<number, number>()
   const find = (x: number): number => {
     let r = x
@@ -184,7 +206,30 @@ export function clusterTopics<T extends TopicFacts>(
     if (arr) arr.push(r)
     else groups.set(root, [r])
   })
+  const toFacts = (r: T): TopicFacts => r
   return Array.from(groups.values())
     .filter((g) => g.length > 1)
     .map((members) => ({ members, reasons: Array.from(new Set(reasons)) }))
+    .map((g) => {
+      // 强连通判定：只用强信号在簇内再走一遍连通性，全连通才允许后台自动合并
+      const seen = new Set<number>([0])
+      const stack = [0]
+      while (stack.length > 0) {
+        const i = stack.pop() as number
+        for (let j = 0; j < g.members.length; j++) {
+          if (seen.has(j)) continue
+          const gap = opts.timeGapFor
+            ? opts.timeGapFor(g.members[i], g.members[j])
+            : opts.maxTimeGapMs
+          if (
+            !topicSame(toFacts(g.members[i]), toFacts(g.members[j]), { maxTimeGapMs: gap }).strong
+          ) {
+            continue
+          }
+          seen.add(j)
+          stack.push(j)
+        }
+      }
+      return { members: g.members, reasons: g.reasons, strong: seen.size === g.members.length }
+    })
 }
