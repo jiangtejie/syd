@@ -1,7 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { PreloadApi, Result } from '../shared/api'
 import type {
+  ChatMsgItem,
+  ChatSessionItem,
+  FeedbackAnalysisState,
+  FeedbackIssue,
+  FeedbackIssueDetail,
   ImAuditEntry,
+  ImChannelAccount,
+  ReportJobInfo,
+  ReportRunInfo,
+  TeamMemberInfo,
   KeySource,
   DbChangedPayload,
   AiGenOptions,
@@ -35,7 +45,8 @@ import type {
 } from '../shared/growth'
 
 // Custom APIs for renderer
-const api = {
+// 对着共享接口编译：实现漏改/声明漏加都会直接编译失败（真源见 src/shared/api.ts）
+const api: PreloadApi = {
   cs: {
     keyStore: {
       getStatus: (wxid: string) => ipcRenderer.invoke('cs:key:getStatus', wxid),
@@ -238,9 +249,11 @@ const api = {
         ipcRenderer.invoke('cs:media:resolveEmoji', wxid, input)
     },
     issue: {
-      list: (wxid: string): Promise<{ ok: boolean; issues?: unknown[]; error?: string }> =>
+      list: (wxid: string): Promise<Result<{ issues?: FeedbackIssue[] }>> =>
         ipcRenderer.invoke('cs:issue:list', wxid),
-      analyze: (wxid: string): Promise<{ ok: boolean; error?: string; state?: unknown }> =>
+      analyze: (
+        wxid: string
+      ): Promise<{ ok: boolean; error?: string; state?: FeedbackAnalysisState }> =>
         ipcRenderer.invoke('cs:issue:analyze', wxid),
       cancel: (wxid: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:issue:cancel', wxid),
@@ -283,9 +296,9 @@ const api = {
       listGroup: (
         wxid: string,
         groupUsername: string
-      ): Promise<{ ok: boolean; issues?: unknown[]; error?: string }> =>
+      ): Promise<Result<{ issues?: FeedbackIssue[] }>> =>
         ipcRenderer.invoke('cs:issue:listGroup', wxid, groupUsername),
-      state: (wxid: string): Promise<{ ok: boolean; state?: unknown }> =>
+      state: (wxid: string): Promise<{ ok: boolean; state?: FeedbackAnalysisState }> =>
         ipcRenderer.invoke('cs:issue:state', wxid),
       clear: (wxid: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:issue:clear', wxid),
@@ -297,7 +310,7 @@ const api = {
         ipcRenderer.invoke('cs:issue:assign', id, username),
       confirmDoubt: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:issue:confirmDoubt', id),
-      detail: (id: number): Promise<{ ok: boolean; issue?: unknown; error?: string }> =>
+      detail: (id: number): Promise<Result<{ issue?: FeedbackIssueDetail }>> =>
         ipcRenderer.invoke('cs:issue:detail', id),
       groupBadges: (
         wxid: string
@@ -350,7 +363,7 @@ const api = {
       }
     },
     team: {
-      list: (accountWxid: string): Promise<{ ok: boolean; members?: unknown[]; error?: string }> =>
+      list: (accountWxid: string): Promise<Result<{ members?: TeamMemberInfo[] }>> =>
         ipcRenderer.invoke('cs:team:list', accountWxid),
       save: (
         accountWxid: string,
@@ -363,7 +376,7 @@ const api = {
     },
 
     im: {
-      list: (): Promise<{ ok: boolean; accounts?: unknown[]; error?: string }> =>
+      list: (): Promise<Result<{ accounts?: ImChannelAccount[] }>> =>
         ipcRenderer.invoke('cs:im:list'),
       save: (input: unknown): Promise<{ ok: boolean; id?: number; error?: string }> =>
         ipcRenderer.invoke('cs:im:save', input),
@@ -428,14 +441,15 @@ const api = {
         content: string
       ): Promise<{ ok: boolean; path?: string; error?: string }> =>
         ipcRenderer.invoke('cs:export:writeFile', folder, name, content),
-      onProgress: (callback: (evt: unknown) => void): (() => void) => {
-        const listener = (_e: Electron.IpcRendererEvent, evt: unknown): void => callback(evt)
+      onProgress: (callback) => {
+        const listener = (_e: Electron.IpcRendererEvent, evt: Parameters<typeof callback>[0]): void =>
+          callback(evt)
         ipcRenderer.on('cs:export:progress', listener)
         return () => ipcRenderer.removeListener('cs:export:progress', listener)
       }
     },
     wb: {
-      listChats: (wxid: string): Promise<{ ok: boolean; chats?: unknown[]; error?: string }> =>
+      listChats: (wxid: string): Promise<Result<{ chats?: ChatSessionItem[] }>> =>
         ipcRenderer.invoke('cs:wb:listChats', wxid),
       searchChats: (
         wxid: string,
@@ -453,7 +467,7 @@ const api = {
         }>
         error?: string
       }> => ipcRenderer.invoke('cs:wb:searchChats', wxid, query),
-      messages: (id: number): Promise<{ ok: boolean; messages?: unknown[]; error?: string }> =>
+      messages: (id: number): Promise<Result<{ messages?: ChatMsgItem[] }>> =>
         ipcRenderer.invoke('cs:wb:messages', id),
       getWorkspace: (id: number): Promise<{ ok: boolean; path?: string | null; error?: string }> =>
         ipcRenderer.invoke('cs:wb:getWorkspace', id),
@@ -492,20 +506,9 @@ const api = {
         scope: 'session' | 'global'
       ): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:wb:trustTool', sid, tool, scope),
-      getApprovalPrefs: (): Promise<{
-        ok: boolean
-        prefs?: { mode: string; allow: string[]; deny: string[] }
-        error?: string
-      }> => ipcRenderer.invoke('cs:wb:getApprovalPrefs'),
-      setApprovalPrefs: (input: {
-        mode?: string
-        allow?: string[]
-        deny?: string[]
-      }): Promise<{
-        ok: boolean
-        prefs?: { mode: string; allow: string[]; deny: string[] }
-        error?: string
-      }> => ipcRenderer.invoke('cs:wb:setApprovalPrefs', input),
+      // 出入参交给共享接口做上下文推断（mode 是字面量联合，别再手抄一份）
+      getApprovalPrefs: () => ipcRenderer.invoke('cs:wb:getApprovalPrefs'),
+      setApprovalPrefs: (input) => ipcRenderer.invoke('cs:wb:setApprovalPrefs', input),
       rename: (id: number, title: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:wb:rename', id, title),
       remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
@@ -531,7 +534,7 @@ const api = {
         ipcRenderer.invoke('cs:wb:exportSession', id),
       removeAll: (wxid: string): Promise<{ ok: boolean; removed?: number; error?: string }> =>
         ipcRenderer.invoke('cs:wb:removeAll', wxid),
-      skills: (): Promise<{ ok: boolean; skills?: unknown[]; maxOn?: number; error?: string }> =>
+      skills: (): Promise<Result<{ skills?: { name: string; description: string; enabled: boolean; sizeBytes: number; dirName: string }[]; maxOn?: number }>> =>
         ipcRenderer.invoke('cs:wb:skills'),
       setSkillLimit: (n: number): Promise<{ ok: boolean; maxOn?: number; error?: string }> =>
         ipcRenderer.invoke('cs:wb:setSkillLimit', n),
@@ -539,9 +542,11 @@ const api = {
         ipcRenderer.invoke('cs:wb:toggleSkill', name, enabled),
       openSkillsDir: (): Promise<{ ok: boolean; path?: string; error?: string }> =>
         ipcRenderer.invoke('cs:wb:openSkillsDir'),
-      onEvent: (callback: (evt: unknown) => void): (() => void) => {
-        const listener = (_e: Electron.IpcRendererEvent, payload: unknown): void =>
-          callback(payload)
+      onEvent: (callback) => {
+        const listener = (
+          _e: Electron.IpcRendererEvent,
+          payload: Parameters<typeof callback>[0]
+        ): void => callback(payload)
         ipcRenderer.on('ai:wb', listener)
         return () => ipcRenderer.removeListener('ai:wb', listener)
       }
@@ -928,9 +933,8 @@ const api = {
       }> => ipcRenderer.invoke('cs:growthbuzz:toWorkbench', id)
     },
     report: {
-      list: (): Promise<{ ok: boolean; jobs?: unknown[]; error?: string }> =>
-        ipcRenderer.invoke('cs:report:list'),
-      save: (input: unknown): Promise<{ ok: boolean; id?: number; error?: string }> =>
+      list: (): Promise<Result<{ jobs?: ReportJobInfo[] }>> => ipcRenderer.invoke('cs:report:list'),
+      save: (input): Promise<{ ok: boolean; id?: number; error?: string }> =>
         ipcRenderer.invoke('cs:report:save', input),
       remove: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:report:remove', id),
@@ -940,15 +944,16 @@ const api = {
         ipcRenderer.invoke('cs:report:runNow', id),
       cancel: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:report:cancel', id),
-      onProgress: (callback: (payload: unknown) => void): (() => void) => {
-        const listener = (_e: Electron.IpcRendererEvent, payload: unknown): void =>
-          callback(payload)
+      onProgress: (callback) => {
+        const listener = (
+          _e: Electron.IpcRendererEvent,
+          payload: Parameters<typeof callback>[0]
+        ): void => callback(payload)
         ipcRenderer.on('cs:report:progress', listener)
         return () => ipcRenderer.removeListener('cs:report:progress', listener)
       },
-      testConn: (opts: unknown): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:report:testConn', opts),
-      history: (id: number): Promise<{ ok: boolean; runs?: unknown[]; error?: string }> =>
+      testConn: (opts) => ipcRenderer.invoke('cs:report:testConn', opts),
+      history: (id: number): Promise<Result<{ runs?: ReportRunInfo[] }>> =>
         ipcRenderer.invoke('cs:report:history', id)
     }
   }

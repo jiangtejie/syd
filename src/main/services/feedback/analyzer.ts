@@ -3,887 +3,78 @@ import { createAiProvider } from '../ai/provider'
 import { getTeamUsernamesCached } from '../../db/repos/teamRepo'
 import {
   clearIssues,
-  listIssues,
-  setIssueStatus,
-  setIssueFollowUp,
-  upsertIssue,
-  listOpenIssuesByGroup,
-  findIssueByKey,
-  getIssueMsgs,
-  openTopicIndex,
-  archiveDuplicates,
-  applyIssueMerge,
-  type OpenTopicRow,
-  openIssueEvidenceTimes,
-  openIssueAnchorTimes,
-  openIssuesForGroup,
   clearOpenIssuesByGroup,
+  findIssueByKey,
   findReopenCandidate,
+  getIssueMsgs,
+  listIssues,
+  openIssueAnchorTimes,
+  openIssueEvidenceTimes,
+  openIssuesForGroup,
+  openTopicIndex,
   recentRejectedSamples,
-  snapshotOpenManualFields,
   restoreManualFields,
+  setIssueStatus,
+  snapshotOpenManualFields,
+  upsertIssue,
   type ManualFieldSnapshot,
-  type NewIssue
+  type NewIssue,
+  type OpenTopicRow
 } from '../../db/repos/issueRepo'
-import { getConfig, getConfigNumber, setConfig } from '../../db/repos/config'
-import { clusterTopics, topicSame, TOPIC_TIME_NEAR_MS, type TopicFacts } from './issueSimilarity'
+import { getConfig, setConfig } from '../../db/repos/config'
 import { getDb } from '../../db/database'
+import { topicSame, type TopicFacts } from './issueSimilarity'
+import { ruleExtract } from './ruleExtract'
+import { analyzeLlmIssues, APX_MAX, chunkMainRows, normalizeIssues } from './llmExtract'
+import { AUTO_CLOSE_MAX_AGE_MS, reconcileOpenIssues } from './reconcile'
+import {
+  fmtRow,
+  INCR_TAIL_MS,
+  isTextLike,
+  mergeEvidence,
+  msgIdentity,
+  readGroupMessages,
+  UNREPLIED_MERGE_MS,
+  type LlmRow
+} from './shared'
 import type {
   ChatMessage,
   FeedbackAnalysisState,
   FeedbackIssue,
-  FeedbackIssueMsg,
-  FeedbackIssueSeverity,
-  FeedbackIssueStatus,
-  FeedbackIssueType
+  FeedbackIssueStatus
 } from '../../../shared/types'
 
 /**
- * 群问题反馈分析器（看板 + 工作台）。
- * - 窗口：近 N 天（自然日）内活跃的群会话；
- * - 方式：OpenAI 兼容 LLM 分类提取；未配置/失败时按群回退本地规则（关键词 + 末尾未回复）；
- * - 「已跟进」判定为会话语义：客户消息之后、下一条客户消息之前出现我方/团队客服消息即视为已回复，
- *   不设固定时间窗（隔夜/超 30 分钟回复不再误报）；
+ * 群问题反馈分析器 —— **编排入口**（看板 + 工作台）。
+ *
+ * 模块分工（原单文件 1760 行按阶段拆开，便于单独演进/复用）：
+ * - shared.ts      消息/文本层公共基础（消息→文本、发送人标签、回合内回复判定、证据合并、跨库读取窗口）
+ * - ruleExtract.ts 规则提取（LLM 不可用/失败时的兜底：关键词聚类 + 末尾未回复）
+ * - llmExtract.ts  LLM 提取（分批消费主区、按段排版、行号回映射、议题级归一化）
+ * - reconcile.ts   规则型跟进/收尾判定（跟进中 / 待处理 / 静默收尾 / 超期搁置）
+ * - duplicates.ts  存量重复议题合并（人工预览 + 高置信自动）
+ * - 本文件         读取窗口与水位、单群/全量分析编排、进度与取消、对外状态与维护入口
+ *
+ * 关键口径：
+ * - 窗口：增量按水位（时间 + 序号双线）；首次/重算按自然日窗口；
+ * - 「已跟进」为会话语义：客户消息之后、下一条客户消息之前出现我方/团队消息即视为已回复，不设固定时间窗；
  * - 团队客服成员（手动全局标识）的消息视同我方；
- * - **分工：规则管跟进、LLM 管闭环**——每轮分析对全部 open 问题做确定性判定，
+ * - **规则管跟进、LLM 管闭环**：每轮分析对全部 open 问题做确定性判定，
  *   已回复 → 跟进中并记录回复时刻；未回复 → 待处理；客户静默超阈值 → 自动收尾(done/autoDone)；
- *   锚点超出回溯范围 → 超期自动搁置(stalled)。LLM 只负责语义闭环（客户确认/已解决）。
+ *   锚点超出回溯范围 → 超期自动搁置(stalled)。LLM 只负责语义闭环（客户确认/已解决）；
  * - 落库策略：稳定 key upsert（含 key 漂移兜底合并），重复分析不重置人工处理状态。
  */
 
 const WINDOW_DAYS = 7
-/** 单群扫描消息上限（窗口内消息超限时保留最新） */
-const MAX_GROUP_MSGS = 800
-/** 「客户留言未回复」议题的合并窗：同一客户跨天重复留言仍视为同一件事在等回复 */
-const UNREPLIED_MERGE_MS = 72 * 3600_000
-/** LLM 每群输入行数上限（超窗截断取最新，避免超长） */
-const LLM_LINES_CAP = 220
-/** 分批消费：主区超限时按段边界分批喂 LLM（每批≤该值），不再静默截断丢段 */
-const LLM_CHUNK_ROWS = 200
+
 /** 分析的群数上限（按活跃度取最新） */
 const MAX_GROUPS = 30
+
 /** 工作台单群分析节流：距上次尝试（成功或失败）短于该值时自动触发直接跳过（force 忽略） */
 const GROUP_AUTO_REANALYZE_MS = 2 * 60_000
+
 /** 单群分析尝试记录配置键（工作台「切群自动分析」防抖与失败信息透传） */
 const groupStampKey = (wxid: string, group: string): string => `issue.groupAt:${wxid}:${group}`
-
-export const ISSUE_TYPES: FeedbackIssueType[] = [
-  '客诉',
-  '售后',
-  '物流',
-  '价格',
-  '咨询',
-  '建议',
-  '其他'
-]
-
-/** 本地兜底规则：命中即归类，文本仅在客户消息上匹配 */
-const RULE_KEYWORDS: Array<{ type: FeedbackIssueType; keywords: string[] }> = [
-  {
-    type: '客诉',
-    keywords: ['投诉', '差评', '垃圾', '太差', '翻车', '气死', '失望', '再也不买', '质量问题']
-  },
-  {
-    type: '售后',
-    keywords: ['退货', '退款', '换货', '维修', '质保', '保修', '三包', '售后']
-  },
-  {
-    type: '物流',
-    keywords: ['快递', '物流', '发货', '配送', '签收', '没到', '包裹', '运单', '迟迟不发', '截单']
-  },
-  {
-    type: '价格',
-    keywords: ['太贵', '价格', '优惠', '折扣', '差价', '涨价', '优惠券', '划算吗', '便宜点']
-  },
-  {
-    type: '建议',
-    keywords: ['建议', '希望', '能不能加', '期待', '优化', '要是能']
-  },
-  {
-    type: '咨询',
-    keywords: [
-      '请问',
-      '怎么',
-      '如何',
-      '可以吗',
-      '什么时候',
-      '多少钱',
-      '在哪',
-      '能用吗',
-      '有没有',
-      '支持吗'
-    ]
-  }
-]
-
-/** 严重度归一（收敛 LLM/规则输出；脏值回落 一般） */
-function normalizeSeverity(s: string | null | undefined): FeedbackIssueSeverity {
-  return s === '紧急' || s === '高' ? s : '一般'
-}
-
-/** 规则严重度基线：客诉/售后/物流默认 高，其余 一般 */
-const RULE_SEV_BASE: Record<FeedbackIssueType, FeedbackIssueSeverity> = {
-  客诉: '高',
-  售后: '高',
-  物流: '高',
-  价格: '一般',
-  咨询: '一般',
-  建议: '一般',
-  其他: '一般'
-}
-
-/** 规则情绪升级词：客户文本命中的任一即升 紧急（客服优先介入） */
-const RULE_SEV_BOOST = [
-  '马上',
-  '立刻',
-  '气死',
-  '曝光',
-  '12315',
-  '投诉到',
-  '退钱',
-  '赔',
-  '急',
-  '现在就要',
-  '必须处理',
-  '再也不买'
-]
-
-/** 单条消息转人类可读文本（供 LLM 上下文与规则匹配） */
-function msgToText(m: ChatMessage): string {
-  switch (m.localType) {
-    case 1:
-      return m.parsedContent || '[文本]'
-    case 3:
-      return '[图片]'
-    case 34:
-      return '[语音]'
-    case 43:
-      return '[视频]'
-    case 47:
-      return '[表情]'
-    default:
-      return m.parsedContent || '[消息]'
-  }
-}
-
-/** 是否团队客服成员（我方同事）消息 */
-function isTeamMsg(m: ChatMessage, team: Set<string>): boolean {
-  return !m.isSend && !!m.senderUsername && team.has(m.senderUsername)
-}
-
-/**
- * 证据行摘要。senderUsername / senderIsTeam 一并落库：
- * 昵称会随群昵称与备注变化，username 才是稳定身份（复发识别、同议题合并、时间线我方标记都用它）。
- */
-function msgToSummaryMsg(
-  m: ChatMessage,
-  senderName: string,
-  senderIsTeam = false
-): FeedbackIssueMsg {
-  return {
-    time: m.createTime,
-    senderName,
-    senderUsername: m.senderUsername ?? undefined,
-    isSend: m.isSend,
-    senderIsTeam: senderIsTeam || undefined,
-    text: msgToText(m),
-    imageMd5: m.imageMd5,
-    localType: m.localType
-  }
-}
-
-/** 归一化发送者名：我方消息固定名；团队客服同事标注；客户取昵称 */
-function senderLabel(m: ChatMessage, team?: Set<string>): string {
-  if (m.isSend) return '我方客服'
-  const u = m.senderUsername
-  if (team && u && team.has(u)) {
-    const nick = m.senderNickname || u
-    return nick === u ? '我方同事' : `我方同事（${nick}）`
-  }
-  return m.senderNickname || u || '客户'
-}
-
-/** LLM 上下文行消息过滤（真文本 + 带摘要的 appmsg + 图片） */
-function isTextLike(m: ChatMessage): boolean {
-  return m.localType === 1 || m.localType === 49
-}
-
-/** 规则模式只吃真文本（type 1）；49 型摘要（[链接]/[文件]/[聊天记录]/[转账]）会引入假关键词，不参与匹配 */
-function isRuleText(m: ChatMessage): boolean {
-  return m.localType === 1
-}
-
-/**
- * 会话语义「已跟进」判定：消息 idx 之后、下一条客户（非我方/非团队）消息之前，
- * 是否存在我方或团队客服消息。不再使用固定 30 分钟窗（隔夜/迟回复不误报）。
- * 返回该回复的时间（跟进超时计时起点）与**回复人**（团队客服 username；我本人回复时为 undefined），
- * null = 本回合无我方回复。回复人可用于未指派时给出默认跟进人建议。
- */
-function staffReplyAt(
-  msgs: ChatMessage[],
-  idx: number,
-  team: Set<string>
-): { at: number; by?: string } | null {
-  for (let j = idx + 1; j < msgs.length; j++) {
-    const x = msgs[j]
-    if (x.isSend) return { at: x.createTime }
-    if (x.senderUsername && team.has(x.senderUsername)) {
-      return { at: x.createTime, by: x.senderUsername }
-    }
-    // 系统消息等非客户对象不影响回合判定；遇到下一条客户消息仍未回复 → 视为未跟进
-    if (!x.senderUsername) continue
-    return null
-  }
-  return null
-}
-
-/** 会话语义「已跟进」布尔版（规则聚类用） */
-function hasStaffReplyAfter(msgs: ChatMessage[], idx: number, team: Set<string>): boolean {
-  return staffReplyAt(msgs, idx, team) !== null
-}
-
-/**
- * 议题级「客户静默」判定：客服最后一条回复之后，**本议题的客户**再没说过话，且已静默超阈值。
- * 返回可收尾的时刻（客服最后一条相关消息时间），null = 不可收尾。
- * - 只认本议题客户的发言：群里其他人聊别的不会阻止收尾（否则活跃群永远收不了尾）；
- * - 客户最后发言在我方之后（客户追问没人应）→ 不可收尾，那是「待处理」不是「已闭环」；
- * - 锚点缺发送人身份时退化为保守口径（任何客户发言都算）。
- */
-function silentCloseAt(
-  msgs: ChatMessage[],
-  anchorIdx: number,
-  anchorSender: string | undefined,
-  team: Set<string>,
-  silentMs: number,
-  now: number
-): number | null {
-  if (silentMs <= 0) return null
-  let lastStaffIdx = -1
-  let lastStaffAt = -1
-  let lastCustIdx = -1
-  for (let j = anchorIdx + 1; j < msgs.length; j++) {
-    const m = msgs[j]
-    if (m.isSend || (!!m.senderUsername && team.has(m.senderUsername))) {
-      lastStaffIdx = j
-      lastStaffAt = m.createTime
-      continue
-    }
-    if (!m.senderUsername) continue
-    if (!anchorSender || m.senderUsername === anchorSender) lastCustIdx = j
-  }
-  if (lastStaffIdx < 0) return null
-  if (lastCustIdx > lastStaffIdx) return null
-  return now - lastStaffAt >= silentMs ? lastStaffAt : null
-}
-
-/** 消息身份（时间+本地序号）：同一毫秒的多条消息不会被时间戳去重误合并 */
-function msgIdentity(m: ChatMessage): string {
-  return `${m.createTime}:${m.localId}`
-}
-
-/** 收敛 LLM 输出类型到枚举 */
-function normalizeType(t: string | undefined | null): FeedbackIssueType {
-  const hit = ISSUE_TYPES.find((x) => x === t)
-  if (hit) return hit
-  const fuzzy = ISSUE_TYPES.find((x) => t?.includes(x))
-  return fuzzy ?? '其他'
-}
-
-interface LlmIssue {
-  type?: string
-  title?: string
-  summary?: string
-  /** 命中的现存待办议题编号（1 起，0/缺省 = 新议题）：用于复用既有 key，防重复建行 */
-  topic?: unknown
-  /** 严重度：紧急 | 高 | 一般 */
-  severity?: unknown
-  /** 议题涉及客户（昵称；持久化用于复发识别） */
-  customers?: unknown
-  /** 处理状态：未处理 | 跟进中 | 已解决 */
-  status?: string
-  /** 是否需要运营介入（false = 已闭环/无需处理，不落待办） */
-  need_action?: unknown
-  evidence?: number[]
-}
-
-function parseLlmJson(raw: string): LlmIssue[] {
-  let text = raw.trim()
-  const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(text)
-  if (fence) text = fence[1].trim()
-  const start = text.indexOf('[')
-  const end = text.lastIndexOf(']')
-  if (start < 0 || end <= start) return []
-  const data = JSON.parse(text.slice(start, end + 1)) as unknown
-  if (!Array.isArray(data)) return []
-  return data.filter((d): d is LlmIssue => !!d && typeof d === 'object')
-}
-
-/** 单页读取条数（增量下要按 sort_seq 兜住迟到写入，页大一些可少翻几次库） */
-const READ_PAGE = 200
-
-/**
- * 逐群读取消息（跨库自动分片分页）。
- * @param windowStartMs 时间窗口起点
- * @param stopSeq 水位序号：**只要还有 sort_seq > stopSeq 的行就继续向前翻**。
- *   补录/回拨的旧时间消息（时间没前进但序号前进）也能读进来，不会因「时间早于窗口」被丢。
- *   已读到的行不再按时间过滤：主区/附录由调用方按时间 + 序号共同判定。
- */
-interface ReadResult {
-  msgs: ChatMessage[]
-  /** 是否因单群条数上限截断（时间窗口比实际读取范围更宽）——面板据此提示「未覆盖全窗口」 */
-  truncated: boolean
-}
-
-function readGroupMessages(
-  wxid: string,
-  groupUsername: string,
-  windowStartMs: number,
-  stopSeq?: number
-): ReadResult {
-  const all: ChatMessage[] = []
-  let cursor: Parameters<typeof wxService.getMessages>[3] = undefined
-  for (;;) {
-    // skipEnrich：每页 enrich 都要开一次联系人库，多页就是多次开库；
-    // 读完整窗后在下面统一补一次发送人昵称即可（群昵称/头像与分页无关）
-    const res = wxService.getMessages(wxid, groupUsername, READ_PAGE, cursor, true)
-    if (!res.ok || !res.messages || res.messages.length === 0) break
-    all.unshift(...res.messages) // 返回按序号升序，向后翻更旧页，因此插到头部
-    const oldest = res.messages[0]
-    // 停止条件：越过时间窗口起点 **且** 已越过水位序号 / 无更旧页 / 已到限容
-    const timeDone = oldest.createTime < windowStartMs
-    const seqDone = stopSeq === undefined || oldest.sortSeq <= stopSeq
-    if (!res.hasMore || !res.nextCursor) break
-    if (timeDone && seqDone) break
-    if (all.length >= MAX_GROUP_MSGS) break
-    cursor = res.nextCursor
-  }
-  // 限容：超限时保留最新（序号升序 => 截尾部）
-  const truncated = all.length > MAX_GROUP_MSGS
-  const msgs = truncated ? all.slice(all.length - MAX_GROUP_MSGS) : all
-  // 统一补发送人昵称/团队标记：一次开联系人库，替代「每页 enrich 一次」
-  return { msgs: wxService.enrichMessages(wxid, groupUsername, msgs), truncated }
-}
-
-/** 规则议题聚类窗：同一客户同一类型诉求间隔 ≤ 该值视为同一议题的多句跟进 */
-const RULE_CLUSTER_MS = 60 * 60_000
-/** 规则单议题证据消息上限 */
-const RULE_EVIDENCE_CAP = 8
-
-/**
- * 本地规则提取（议题级）：
- * 1) 关键词命中按「同一客户 + 同一类型 + 60 分钟窗」聚成议题（一次抱怨的多句/追问只建一条问题）；
- * 2) followUp=客服/团队在议题期间介入过但未闭环（不再简单跳过）；无介入=未处理；
- * 3) 末尾「客户留言无回复」兜底（与关键词议题去重）。
- */
-function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] {
-  interface RuleHit {
-    i: number
-    m: ChatMessage
-    type: string
-  }
-  const hits: RuleHit[] = []
-  for (let i = 0; i < msgs.length; i++) {
-    const m = msgs[i]
-    const u = m.senderUsername
-    if (m.isSend || (u && team.has(u)) || !isRuleText(m)) continue
-    const text = msgToText(m)
-    const rule = RULE_KEYWORDS.find((r) => r.keywords.some((k) => text.includes(k)))
-    if (!rule) continue
-    hits.push({ i, m, type: rule.type })
-  }
-  // 聚类：同人同类型、与前一条命中间隔 ≤ 窗 → 同一议题
-  const clusters: RuleHit[][] = []
-  for (const h of hits) {
-    const cur = clusters[clusters.length - 1]
-    if (
-      cur &&
-      cur[0].m.senderUsername === h.m.senderUsername &&
-      cur[0].type === h.type &&
-      h.m.createTime - cur[cur.length - 1].m.createTime <= RULE_CLUSTER_MS
-    ) {
-      cur.push(h)
-      continue
-    }
-    clusters.push([h])
-  }
-
-  const issues: NewIssue[] = []
-  const clusterAnchorTimes = new Set<number>()
-  for (const c of clusters) {
-    const first = c[0].m
-    const label = senderLabel(first, team)
-    const text0 = msgToText(first)
-    // 议题内任一句后有客服/团队介入（至下一位客户开口前）→ 跟进中
-    const replied = c.some((h) => hasStaffReplyAfter(msgs, h.i, team))
-    const evidMsgs = c.map((h) => h.m).slice(-RULE_EVIDENCE_CAP)
-    const n = c.length
-    const title =
-      n > 1 ? `${label}：${text0.slice(0, 16)}…（共 ${n} 句）` : `${label}：${text0.slice(0, 24)}`
-    const summary =
-      n > 1
-        ? evidMsgs
-            .map((mm) => msgToText(mm))
-            .join(' ｜ ')
-            .slice(0, 90)
-        : text0.slice(0, 80)
-    for (const h of c) clusterAnchorTimes.add(h.m.createTime)
-    const sevText = c.map((h) => msgToText(h.m)).join(' ')
-    const severity: FeedbackIssueSeverity = RULE_SEV_BOOST.some((w) => sevText.includes(w))
-      ? '紧急'
-      : RULE_SEV_BASE[c[0].type as FeedbackIssueType]
-    // 弱命中疑似桶：单句 + 咨询类 + 短文本 + 客服未介入 → 疑似待人工确认（不进正式待办口径）
-    const weakConfirm = c.length === 1 && c[0].type === '咨询' && text0.length <= 14 && !replied
-    const customerNames = [label].filter((x) => !x.startsWith('我方'))
-    issues.push({
-      key: `${c[0].type}|${first.createTime}|${first.localId}`,
-      wxid: '',
-      groupUsername: '',
-      groupName: '',
-      type: c[0].type as FeedbackIssueType,
-      title,
-      summary,
-      occurAt: first.createTime,
-      method: 'rule',
-      severity,
-      needConfirm: weakConfirm,
-      customers: customerNames,
-      followUp: replied,
-      msgs: evidMsgs.map((mm) => msgToSummaryMsg(mm, senderLabel(mm, team), isTeamMsg(mm, team)))
-    })
-  }
-
-  // 末尾「客户留言无回复」：窗内最后一条客户真文本消息，不属于任何关键词议题，且仍无我方/团队回复
-  let tailIdx = -1
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const m = msgs[i]
-    const u = m.senderUsername
-    if (!m.isSend && !(u && team.has(u)) && isRuleText(m)) {
-      tailIdx = i
-      break
-    }
-  }
-  const tail = tailIdx >= 0 ? msgs[tailIdx] : undefined
-  if (
-    tail &&
-    !clusterAnchorTimes.has(tail.createTime) &&
-    !hasStaffReplyAfter(msgs, tailIdx, team)
-  ) {
-    issues.push({
-      key: `unreplied:${tail.createTime}`,
-      wxid: '',
-      groupUsername: '',
-      groupName: '',
-      type: '咨询',
-      title: `${senderLabel(tail, team)}：${msgToText(tail).slice(0, 24)}`,
-      summary: '客户留言后未见客服（或团队）回复',
-      occurAt: tail.createTime,
-      method: 'rule',
-      severity: '一般',
-      customers: [senderLabel(tail, team)].filter((x) => !x.startsWith('我方')),
-      msgs: [msgToSummaryMsg(tail, senderLabel(tail, team), isTeamMsg(tail, team))]
-    })
-  }
-  return issues
-}
-
-/**
- * 主区按「会话段」边界分批：一批 ≤ LLM_CHUNK_ROWS 行。
- * 单批不超 LLM_LINES_CAP → analyzeLlmIssues 内部不再截断；多批时后一批携带前批落库后的 openHints，
- * 跨批的「客户诉求 → 客服回复」仍能被下一批识别闭环，杜绝高活跃群“截断即丢段”。
- */
-function chunkMainRows(main: LlmRow[]): LlmRow[][] {
-  if (main.length <= LLM_CHUNK_ROWS) return [main]
-  const out: LlmRow[][] = []
-  const segs = segmentizeLines(main.map((r) => ({ msg: r.msg })))
-  let cur: LlmRow[] = []
-  const flush = (): void => {
-    if (cur.length > 0) out.push(cur)
-    cur = []
-  }
-  for (const seg of segs) {
-    for (let i = seg.start; i < seg.end; i++) {
-      cur.push(main[i])
-      if (cur.length >= LLM_CHUNK_ROWS) flush()
-    }
-  }
-  flush()
-  return out.length > 0 ? out : [main]
-}
-
-/** LLM 输入行解析器：主区行号 < 主区长度；附录行号 ≥ APX_BASE(1000) */
-export interface LlmLineRef {
-  msg: ChatMessage
-  senderName: string
-  /** 是否团队客服成员（我方同事） */
-  senderIsTeam?: boolean
-  /** 行文本（含时间前缀） */
-  text: string
-}
-export type LlmLineResolver = (idx: number) => LlmLineRef | undefined
-
-/** 归一化：规则结果补全账号/群；LLM 结果把行号（含附录偏移）映射回消息 */
-function normalizeIssues(
-  wxid: string,
-  groupUsername: string,
-  groupName: string,
-  resolver: LlmLineResolver | null,
-  extracted: unknown[],
-  method: 'llm' | 'rule',
-  topicKeys: string[] = []
-): NewIssue[] {
-  if (method === 'rule') {
-    // key 保留消息级锚点（type|时间|localId），避免窗口滑动造成序号漂移而重复建行
-    return (extracted as NewIssue[]).map((it) => ({
-      ...it,
-      key: `rule:${wxid}:${groupUsername}:${it.key}`,
-      wxid,
-      groupUsername,
-      groupName
-    }))
-  }
-  const issues: NewIssue[] = []
-  if (!resolver) return issues
-  const seenKeys = new Set<string>()
-  for (const raw of extracted as LlmIssue[]) {
-    // evidence 按行号升序归一：key 锚定最早一条证据，模型证据顺序变化也不会导致 key 漂移
-    const evidenceIdx = (raw.evidence ?? [])
-      .filter((i) => Number.isInteger(i) && i >= 0 && resolver)
-      .map((i) => ({ i, ref: resolver!(i) }))
-      .filter((x): x is { i: number; ref: LlmLineRef } => !!x.ref)
-      .map((x) => x.i)
-      .sort((a, b) => a - b)
-      .slice(0, 16)
-    if (evidenceIdx.length === 0) continue
-    const firstRef = resolver!(evidenceIdx[0])
-    if (!firstRef) continue
-    const first = firstRef.msg
-    // 模型指认「与某条现存待办是同一条」时复用其 key：key 锚定最早证据行，
-    // 一旦该行没进上下文，模型会另起一条 → 同一议题两行、旧的永不闭环
-    const topicIdx = Math.floor(Number(raw.topic))
-    const topicKey =
-      Number.isInteger(topicIdx) && topicIdx >= 1 && topicIdx <= topicKeys.length
-        ? topicKeys[topicIdx - 1]
-        : null
-    const key = topicKey ?? `llm:${wxid}:${groupUsername}:${first.createTime}:${first.localId}`
-    if (seenKeys.has(key)) continue // 同一问题被模型拆成多条时只保留首条
-    seenKeys.add(key)
-    // 议题级判定：状态/是否需运营介入（已解决或无需处理 → resolved，落库侧自动闭环/不新建）
-    const rawStatus = String(raw.status ?? '').trim()
-    const followUp = rawStatus === '跟进中' || rawStatus === '进行中'
-    const needAction =
-      raw.need_action !== false && String(raw.need_action ?? '').toLowerCase() !== 'false'
-    const resolved = !needAction || rawStatus === '已解决' || rawStatus === '解决'
-    const rawCust = Array.isArray(raw.customers)
-      ? raw.customers.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
-      : []
-    const customers = Array.from(new Set(rawCust.map((x) => x.trim()))).slice(0, 4)
-    issues.push({
-      key,
-      wxid,
-      groupUsername,
-      groupName,
-      type: normalizeType(raw.type),
-      title: (raw.title || '').slice(0, 30) || `群内反馈（${groupName}）`,
-      summary: (raw.summary || '').slice(0, 90) || undefined,
-      occurAt: first.createTime,
-      method: 'llm',
-      severity: normalizeSeverity(String(raw.severity ?? '')),
-      customers,
-      followUp,
-      resolved,
-      msgs: evidenceIdx.map((i) => {
-        const it = resolver(i)!
-        return msgToSummaryMsg(it.msg, it.senderName, it.senderIsTeam)
-      })
-    })
-  }
-  return issues
-}
-
-/** 会话段切分：消息间隔 ≥ 该值视为新一段（沉默分隔话题） */
-const SEGMENT_GAP_MS = 15 * 60_000
-
-/** 输入行（过滤后）按时间切段，供 LLM 以「段」为单位整体理解 */
-function segmentizeLines(
-  lines: Array<{ msg: ChatMessage }>
-): Array<{ start: number; end: number }> {
-  const segs: Array<{ start: number; end: number }> = []
-  let s = 0
-  for (let i = 1; i <= lines.length; i++) {
-    if (
-      i === lines.length ||
-      lines[i].msg.createTime - lines[i - 1].msg.createTime >= SEGMENT_GAP_MS
-    ) {
-      segs.push({ start: s, end: i })
-      s = i
-    }
-  }
-  return segs
-}
-
-/** 附录行号起点：主区行号 < LLM_LINES_CAP(220)，附录行号从该值起，evidence 可引用 */
-const APX_BASE = 1000
-const APX_MAX = 80
-/** 增量模式的尾巴保留行数（上次分析点前未成议题的对话，作为新进展的上下文） */
-const INCR_TAIL_ROWS = 40
-
-interface LlmRow {
-  msg: ChatMessage
-  senderName: string
-  /** 是否团队客服成员（我方同事） */
-  senderIsTeam?: boolean
-  text: string
-}
-
-function fmtRow(m: ChatMessage, team: Set<string>): LlmRow {
-  return {
-    msg: m,
-    senderName: senderLabel(m, team),
-    senderIsTeam: isTeamMsg(m, team) || undefined,
-    text: `${new Date(m.createTime).toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    })} ${senderLabel(m, team)}: ${msgToText(m)}`
-  }
-}
-
-/**
- * 议题级 LLM 分析（主区 = 本次新增/窗口内消息，按段排版；
- * 附录 = 历史/上下文行，行号 ≥ APX_BASE，供模型理解延续议题与闭环判断）。
- * openHints：本群现存待办议题标题（抑制重复建与标题漂移）。
- * badExamples：近期被人工判定「不是问题」的样本（抑制同类误报）。
- */
-async function analyzeLlmIssues(
-  wxid: string,
-  groupUsername: string,
-  groupName: string,
-  mainRows: LlmRow[],
-  apxRows: LlmRow[],
-  openHints: string[],
-  badExamples: string[] = [],
-  topicKeys: string[] = []
-): Promise<NewIssue[]> {
-  const main =
-    mainRows.length > LLM_LINES_CAP ? mainRows.slice(mainRows.length - LLM_LINES_CAP) : mainRows
-  const apx = apxRows.length > APX_MAX ? apxRows.slice(apxRows.length - APX_MAX) : apxRows
-  if (main.length === 0 && apx.length === 0) return []
-
-  const parts: string[] = []
-  const segs = segmentizeLines(main)
-  for (const seg of segs) {
-    const names = new Set<string>()
-    for (let i = seg.start; i < seg.end; i++) names.add(main[i].senderName)
-    const from = new Date(main[seg.start].msg.createTime)
-    parts.push(
-      `[段 ${parts.length + 1} | ${from.getMonth() + 1}月${from.getDate()}日 ${String(
-        from.getHours()
-      ).padStart(2, '0')}:${String(from.getMinutes()).padStart(2, '0')} | 参与：${Array.from(
-        names
-      ).join('、')}]`
-    )
-    for (let i = seg.start; i < seg.end; i++) parts.push(`[${i}] ${main[i].text}`)
-  }
-  if (apx.length > 0) {
-    parts.push('')
-    parts.push(
-      '[附录：历史/背景行（行号 ≥ 1000）。仅用于理解延续中的议题与判断是否已闭环；新进展都在主区。]'
-    )
-    apx.forEach((r, k) => parts.push(`[${APX_BASE + k}] ${r.text}`))
-  }
-  const body = parts.join('\n')
-
-  const system = [
-    '你是资深微信客服运营分析员。用户会给出一段客户服务群聊天记录，',
-    '主区记录按时间切成若干【会话段】（沉默分隔），每段开头有 [段 n | 时间 | 参与人] 标注，段内行形如 [i] HH:mm 发送者: 内容。',
-    '其中“我方客服”和“我方同事（xxx）”都是我们这边的人，其余是客户/群友。',
-    ...(openHints.length > 0
-      ? [
-          '',
-          '本群当前待办议题（防重复用）：若你识别的议题与下列某条是同一条，请沿用其主题、evidence 含其最早行，',
-          '并在 topic 字段填它的编号（#2 就填 2），不要另起一条:',
-          ...openHints.map((h, i) => `- 待办#${i + 1}: ${h}`)
-        ]
-      : []),
-    ...(badExamples.length > 0
-      ? [
-          '',
-          '以下为近期被人工判定「不是问题/无需处理」的同群样本（反例）：',
-          ...badExamples.map((s, i) => `- 反例${i + 1}: ${s}`),
-          '除非新消息是与上述明显不同的确凿真实反馈，否则不要输出同类内容。'
-        ]
-      : []),
-    '',
-    '工作方法（先整体理解，再逐议题提炼）：',
-    '1. 先整体阅读，识别“议题”（起因、多人附和、客服介入、追问与结果可跨行跨段合并为一条）；',
-    '   同一客户围绕同一件事的多条消息必须串成一条议题，禁止一条消息单独成问题；',
-    '2. 对每个议题判断：谁在抱怨/咨询（customers）、客服/团队是否已介入、客户是否已收尾、紧急程度；',
-    '3. 只需提取仍需要运营处理或值得记录的议题。已明确解答且客户致谢/确认满意的不要输出；纯闲聊、广告、表情、与运营无关的不输出。',
-    '',
-    '只输出严格 JSON 数组（不要 markdown、不要额外文字）：',
-    '[{"type":"客诉|售后|物流|价格|咨询|建议|其他","severity":"紧急|高|一般","title":"不超过24字的概括","summary":"不超过70字的现象与进展","customers":["客户昵称"],"status":"未处理|跟进中|已解决","need_action":true,"topic":0,"evidence":[行号1,行号2]}]',
-    '字段约束：',
-    '- evidence 给该议题全部关键行（可跨段、可含 ≥1000 的附录行，1~12 个），行号必须真实存在；',
-    '- topic：与上方「本群当前待办议题」中某条是同一件事时填该编号（1 起），否则填 0；',
-    '- severity：紧急=激烈投诉/资金与时效受损/扬言曝光维权等需立即介入；高=客诉/售后/物流等需主动处理；一般=普通咨询与其他；',
-    '- status=已解决 或 need_action=false：已闭环/无需运营，不会出现在待办里；',
-    '- status=跟进中：客服已回复但客户未确认闭环（如“查一下回复您”后无下文、客户仍不满）；',
-    '- status=未处理：无人回复或明显遗漏；',
-    '- 宁可少而准，不要虚构与拆分。'
-  ].join('\n')
-
-  const provider = createAiProvider()
-  if (!provider) return []
-  const raw = await provider.complete(system, body, { maxTokens: 1800 })
-  const parsed = parseLlmJson(raw)
-  const resolver = (idx: number): LlmLineRef | undefined => {
-    if (idx >= 0 && idx < main.length) {
-      const r = main[idx]
-      return { msg: r.msg, senderName: r.senderName, senderIsTeam: r.senderIsTeam, text: r.text }
-    }
-    if (idx >= APX_BASE && idx - APX_BASE < apx.length) {
-      const r = apx[idx - APX_BASE]
-      return { msg: r.msg, senderName: r.senderName, senderIsTeam: r.senderIsTeam, text: r.text }
-    }
-    return undefined
-  }
-  return normalizeIssues(wxid, groupUsername, groupName, resolver, parsed, 'llm', topicKeys)
-}
-
-/** 证据合并上限：超限时保留「最早的 6 条（锚点）+ 最新的 14 条（进展）」 */
-const EVIDENCE_CAP = 20
-
-/**
- * 证据合并（key 复用时调用）：按时间升序去重，保住最早锚点行。
- * LLM 的 key 依赖最早证据行，若每轮只写回本轮 evidence，锚点会被覆盖 → 下轮必然再漂移。
- */
-function mergeEvidence(
-  oldMsgs: FeedbackIssueMsg[],
-  newMsgs: FeedbackIssueMsg[]
-): FeedbackIssueMsg[] {
-  const seen = new Set<string>()
-  const all: FeedbackIssueMsg[] = []
-  for (const m of [...oldMsgs, ...newMsgs]) {
-    const k = `${m.time}|${m.isSend ? 1 : 0}|${m.senderName}|${m.text}`
-    if (seen.has(k)) continue
-    seen.add(k)
-    all.push(m)
-  }
-  all.sort((a, b) => a.time - b.time)
-  if (all.length <= EVIDENCE_CAP) return all
-  return [...all.slice(0, 6), ...all.slice(all.length - (EVIDENCE_CAP - 6))]
-}
-
-/** 自动闭环回溯上限：锚点早于该时限的问题不再回溯读取，直接视为超期 */
-const AUTO_CLOSE_MAX_AGE_MS = 14 * 24 * 3600_000
-/** 锚点匹配容差（库时间精度差异） */
-const ANCHOR_TOLERANCE_MS = 2000
-/** 静默收尾默认阈值（小时）：客服已回复、客户超过该时长再无消息 → 视为自然结束 */
-const AUTO_CLOSE_SILENT_HOURS = 72
-
-export interface ReconcileResult {
-  /** 判定为跟进中（回合内已回复且未到静默阈值） */
-  following: number
-  /** 静默收尾自动闭环 */
-  closed: number
-  /** 超期自动搁置 */
-  stalled: number
-  /** 实际发生状态写入的条数（供调度器判断是否需要广播刷新） */
-  changed: number
-}
-
-/**
- * 规则型跟进/收尾判定（确定性，每轮分析对**全部** open 问题执行，不限提取方式）。
- *
- * 为什么不用「LLM 下次又提取到同一议题」来刷新状态：
- * 模型没再提到某议题时跟进标记会永久冻结——跟进超时越算越真、永不消失，
- * 而 LLM 提取的问题也没有任何自动收尾通道（只能人工点）。这里用消息流事实兜住。
- *
- * - 锚点定位：读取窗口内第一个 createTime ≥ occurAt-2s 的消息；锚点早于读取窗口 → 本轮不判定；
- * - 回合内出现我方/团队消息（下一条客户消息之前）→ followUp=1 并记录回复时刻；
- * - 回合内无我方消息 → followUp=0（客户在等回复）；
- * - 静默收尾：已回复 + 本议题客户静默超 monitor.autoCloseHours(默认 72h，0=关闭) → done(auto)；
- * - 锚点早于回溯上限（14 天）仍无法判定 → stalled(auto)（不打扰，也不谎报已回复）。
- * LLM 只负责语义闭环（客户确认/已解决/无需处理）。
- */
-function reconcileOpenIssues(
-  wxid: string,
-  groupUsername: string,
-  msgs: ChatMessage[],
-  team: Set<string>
-): ReconcileResult {
-  const out: ReconcileResult = { following: 0, closed: 0, stalled: 0, changed: 0 }
-  const pending = listOpenIssuesByGroup(wxid, groupUsername)
-  if (pending.length === 0 || msgs.length === 0) return out
-  const windowStart = msgs[0].createTime
-  const now = Date.now()
-  const silentMs = getConfigNumber('monitor.autoCloseHours', AUTO_CLOSE_SILENT_HOURS) * 3600_000
-  for (const p of pending) {
-    // 锚点早于读取窗口：本轮无从判定（既不谎报已回复，也不误清跟进中）
-    if (p.occurAt < windowStart - ANCHOR_TOLERANCE_MS) {
-      if (now - p.occurAt > AUTO_CLOSE_MAX_AGE_MS) {
-        setIssueStatus(p.id, 'stalled', true)
-        out.stalled++
-        out.changed++
-      }
-      continue
-    }
-    let anchorIdx = -1
-    for (let i = 0; i < msgs.length; i++) {
-      if (msgs[i].createTime >= p.occurAt - ANCHOR_TOLERANCE_MS) {
-        anchorIdx = i
-        break
-      }
-    }
-    if (anchorIdx < 0) continue
-    const reply = staffReplyAt(msgs, anchorIdx, team)
-    if (reply === null) {
-      if (p.followUp || p.followUpAt !== undefined || p.lastReplyBy !== undefined) {
-        setIssueFollowUp(p.id, false)
-        out.changed++
-      }
-      continue
-    }
-    const replyAt = reply.at
-    // 静默收尾：本议题客户在客服回复后再无声音且超过阈值 → 自然结束（auto 标记，可重新打开复核）
-    const anchorMsg = msgs[anchorIdx]
-    const anchorSender = anchorMsg.isSend ? undefined : (anchorMsg.senderUsername ?? undefined)
-    if (silentCloseAt(msgs, anchorIdx, anchorSender, team, silentMs, now) !== null) {
-      setIssueStatus(p.id, 'done', true)
-      out.closed++
-      out.changed++
-      continue
-    }
-    if (!p.followUp || p.followUpAt !== replyAt || p.lastReplyBy !== reply.by) {
-      setIssueFollowUp(p.id, true, replyAt, reply.by)
-      out.changed++
-    }
-    out.following++
-  }
-  return out
-}
-
-/**
- * 收尾巡检（零 LLM）：只读消息、只做规则跟进/收尾判定，供后台调度对**有 open 问题的群**周期调用。
- *
- * 为什么必须独立于增量提取：静默收尾的前提恰恰是「群里没有新消息」，
- * 而增量提取在「水位后无新消息」时直接 skip（连消息都不读），永远走不到收尾判定。
- */
-export function reconcileGroupFollowups(wxid: string, groupUsername: string): ReconcileResult {
-  const empty: ReconcileResult = { following: 0, closed: 0, stalled: 0, changed: 0 }
-  if (!wxid || !groupUsername) return empty
-  const pending = listOpenIssuesByGroup(wxid, groupUsername)
-  if (pending.length === 0) return empty
-  const oldestAllowed = Date.now() - AUTO_CLOSE_MAX_AGE_MS
-  let readStart = Date.now() - INCR_TAIL_MS
-  for (const p of pending) {
-    readStart = Math.min(readStart, Math.max(p.occurAt - 1, oldestAllowed))
-  }
-  readStart = Math.max(readStart, oldestAllowed)
-  const { msgs } = readGroupMessages(wxid, groupUsername, readStart)
-  if (msgs.length === 0) return empty
-  return reconcileOpenIssues(wxid, groupUsername, msgs, getTeamUsernamesCached(wxid))
-}
 
 /** 读取某群最近一次分析尝试记录（成功或失败；失败携带 error 供 UI 透传） */
 interface GroupStamp {
@@ -951,8 +142,6 @@ export interface AnalyzeGroupResult {
 
 // ── 增量水位（防重复解读/防漏读）──
 
-/** 增量尾巴回看时长：新进展的上下文（结合 INCR_TAIL_ROWS 行数共同生效） */
-const INCR_TAIL_MS = 3 * 3600_000
 const wmKey = (wxid: string, group: string): string => `issue.wm:${wxid}:${group}`
 
 interface WmValue {
@@ -1463,8 +652,10 @@ export function cancelIssuesAnalysis(wxid: string): void {
 
 /** 分析并写库（带 in-flight 保护，按账号串行） */
 const runningWxids = new Map<string, Promise<void>>()
+
 /** 成功态（含 lastAt）配置键 */
 const stateConfigKey = (wxid: string): string => `issue.analyzed:${wxid}`
+
 /** 失败标记配置键：失败不写 lastAt，仅标记，避免每次进入都重复自动全量扫描 */
 const failConfigKey = (wxid: string): string => `issue.analyzeFail:${wxid}`
 
@@ -1613,142 +804,6 @@ export function listFeedbackIssues(wxid: string): FeedbackIssue[] {
 
 // ── 存量去重：合并历史锚点漂移留下的重复议题 ──
 
-export interface DuplicateMergePlanItem {
-  /** 保留的议题 id（组内最早发生的一条） */
-  keepId: number
-  keepTitle: string
-  /** 归档为「重复」的议题 id 与其标题 */
-  dropIds: number[]
-  dropTitles: string[]
-  groupName: string
-  /** 判定理由（人工复核用） */
-  reasons: string[]
-  /** 高置信（强信号连通）：开启自动合并后由后台直接处理 */
-  strong: boolean
-  /** 本可自动合并、但组内存在多个不同跟进人 → 留给人工决定归属 */
-  skippedAuto?: boolean
-}
-
-export interface DuplicateMergeResult {
-  /** 重复组数 */
-  clusters: number
-  /** 被归档的重复行数 */
-  merged: number
-  plan: DuplicateMergePlanItem[]
-}
-
-/**
- * 存量去重：把历史上因锚点漂移产生的重复议题合并回一条。
- * - 判据与实时合并完全一致（issueSimilarity.topicSame），因此清理之后新提取不会再生成同类重复；
- * - 每组保留最早发生的一条：合并证据（去重后按时间排序、限容）、取最高严重度、并集客户、沿用指派跟进人；
- * - 其余归档为「重复」(archived_from='duplicate')——不计入闭环率/趋势，也不作为 LLM 反例样本；
- * - dryRun=true 只返回方案供 UI 预览确认，不写库。
- */
-export function mergeDuplicateIssues(
-  wxid: string,
-  opts: {
-    dryRun?: boolean
-    /** 只处理高置信组（后台自动合并用：弱信号一律留给人工在监控页预览确认） */
-    strongOnly?: boolean
-  } = {}
-): DuplicateMergeResult {
-  const result: DuplicateMergeResult = { clusters: 0, merged: 0, plan: [] }
-  if (!wxid) return result
-  const open = listIssues(wxid, { status: 'open' })
-  if (open.length < 2) return result
-  const byGroup = new Map<string, FeedbackIssue[]>()
-  for (const it of open) {
-    const arr = byGroup.get(it.groupUsername)
-    if (arr) arr.push(it)
-    else byGroup.set(it.groupUsername, [it])
-  }
-  for (const [group, list] of byGroup) {
-    if (list.length < 2) continue
-    const idx = new Map(openTopicIndex(wxid, group).map((r) => [r.id, r]))
-    const rows = list.map((it) => {
-      const facts = idx.get(it.id)
-      return {
-        id: it.id,
-        key: it.key,
-        title: it.title,
-        type: it.type,
-        occurAt: it.occurAt,
-        customers: it.customers,
-        usernames: facts?.usernames ?? [],
-        evidenceTimes: facts?.evidenceTimes ?? [],
-        ref: it
-      }
-    })
-    const clusters = clusterTopics(rows, {
-      timeGapFor: (x, y) =>
-        x.key.includes(':unreplied:') || y.key.includes(':unreplied:')
-          ? UNREPLIED_MERGE_MS
-          : TOPIC_TIME_NEAR_MS
-    })
-    for (const c of clusters) {
-      const members = c.members
-      const keep = members.reduce((x, y) =>
-        y.occurAt < x.occurAt || (y.occurAt === x.occurAt && y.id < x.id) ? y : x
-      )
-      const drops = members.filter((m) => m.id !== keep.id)
-      // 自动合并的安全阀：组内若有多个不同跟进人，归属需要人来定，不自动并
-      const assignees = new Set(members.map((m) => m.ref.assignee).filter((x) => !!x))
-      const autoSafe = c.strong && assignees.size <= 1
-      if (opts.strongOnly && !autoSafe) continue
-      result.plan.push({
-        keepId: keep.id,
-        keepTitle: keep.title,
-        dropIds: drops.map((d) => d.id),
-        dropTitles: drops.map((d) => d.title),
-        groupName: keep.ref.groupName || group,
-        reasons: c.reasons,
-        strong: c.strong,
-        skippedAuto: c.strong && assignees.size > 1
-      })
-      result.merged += drops.length
-      if (opts.dryRun) continue
-      // 表达用字段：规则提取的标题是原文摘录，同组里有 LLM 概括时优先用它
-      const llm = members
-        .filter((m) => m.ref.method === 'llm')
-        .sort((x, y) => x.occurAt - y.occurAt)[0]
-      const src = keep.ref.method === 'rule' && llm ? llm.ref : keep.ref
-      const severity: FeedbackIssueSeverity = members.some((m) => m.ref.severity === '紧急')
-        ? '紧急'
-        : members.some((m) => m.ref.severity === '高')
-          ? '高'
-          : (keep.ref.severity ?? '一般')
-      const customers = Array.from(
-        new Set(
-          members
-            .flatMap((m) => m.ref.customers ?? [])
-            .map((x) => x.trim())
-            .filter(Boolean)
-        )
-      ).slice(0, 6)
-      applyIssueMerge({
-        id: keep.id,
-        title: src.title,
-        summary: src.summary,
-        type: src.type,
-        severity,
-        customers: customers.length > 0 ? customers : undefined,
-        occurAt: members.reduce((mn, m) => Math.min(mn, m.occurAt), keep.occurAt),
-        // 疑似口径取「有人确认过就算已确认」：合并本身不该把议题重新丢回疑似桶
-        needConfirm: members.some((m) => !m.ref.needConfirm) ? 0 : 1,
-        assignee: members.map((m) => m.ref.assignee).find((x) => !!x) ?? null,
-        reopenCount: members.reduce((mx, m) => Math.max(mx, m.ref.reopenCount ?? 0), 0),
-        msgs: mergeEvidence(
-          [],
-          members.flatMap((m) => getIssueMsgs(m.id))
-        )
-      })
-      archiveDuplicates(drops.map((d) => d.id))
-    }
-  }
-  result.clusters = result.plan.length
-  return result
-}
-
 export function updateIssueStatus(id: number, status: FeedbackIssueStatus): void {
   setIssueStatus(id, status)
 }
@@ -1762,3 +817,13 @@ export function clearFeedbackIssues(wxid: string): void {
   setConfig(failConfigKey(wxid), '')
   for (const g of groups) clearGroupRunState(wxid, g)
 }
+
+/** 增量模式的尾巴保留行数（上次分析点前未成议题的对话，作为新进展的上下文） */
+const INCR_TAIL_ROWS = 40
+
+// ── 对外保持原有入口（拆模块后调用方无需改动）──
+export { ISSUE_TYPES } from './shared'
+export { mergeDuplicateIssues } from './duplicates'
+export type { DuplicateMergePlanItem, DuplicateMergeResult } from './duplicates'
+export { reconcileGroupFollowups } from './reconcile'
+export type { ReconcileResult } from './reconcile'
