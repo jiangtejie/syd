@@ -454,6 +454,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   setGroupScope: async (excluded: boolean, opts?: { archiveOpen?: boolean }) => {
     const { wxid, activeSessionId } = get()
     if (!wxid || !activeSessionId) return
+    // preload 未更新时该桥不存在：给出明确提示，避免「点了没反应」
+    if (typeof issueApi?.setGroupScope !== 'function') {
+      toast.error('当前运行的版本较旧：请完全退出应用后重新启动再试')
+      return
+    }
     const res = await issueApi
       ?.setGroupScope(wxid, activeSessionId, excluded, opts)
       .catch(() => null)
@@ -477,7 +482,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   loadGroupSenders: async () => {
     const { wxid, activeSessionId } = get()
-    if (!wxid || !activeSessionId || !issueApi) return
+    if (!wxid || !activeSessionId) return
+    if (typeof issueApi?.groupSenders !== 'function') return
     set({ groupSendersLoading: true })
     const res = await issueApi.groupSenders(wxid, activeSessionId).catch(() => null)
     if (get().activeSessionId !== activeSessionId) return

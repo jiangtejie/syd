@@ -11,9 +11,9 @@ export default function ConfirmHost(): React.JSX.Element {
         message: options.message,
         confirmText: options.confirmText,
         cancelText: options.cancelText,
-        danger: options.danger,
-        onConfirm: () => close(true)
+        danger: options.danger
       }
     : null
-  return <ConfirmDialog options={display} onClose={() => close(false)} />
+  // onResolve 只调一次：close(ok) 结算 Promise 并清空 options（弹窗随之卸载）
+  return <ConfirmDialog options={display} onResolve={close} />
 }

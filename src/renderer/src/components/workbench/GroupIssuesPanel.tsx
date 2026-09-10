@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { confirmAsk } from '../../stores/confirmDialog'
+import { toast } from '../../stores/toast'
 import { useTeamNames } from '../../lib/teamNames'
 import { TeamMarkButton } from '../TeamMarkButton'
 import { SenderMarkFold } from './SenderMarkFold'
@@ -292,9 +293,16 @@ function GroupIssuesPanel(): React.JSX.Element {
     else void openDetail(null)
   }
 
+  /** 分析进行中时的统一反馈：按钮虽已置灰，键盘/快速点击仍可能命中，别让它「像没反应」 */
+  const busyHint = (): boolean => {
+    if (!analyzing) return false
+    toast.info('本群正在分析中，请稍候再操作')
+    return true
+  }
+
   /** 「重新分析」= 重算本群:有待处理时先确认是否清空重建(避免旧结果累加) */
   const onReanalyze = (): void => {
-    if (analyzing) return
+    if (busyHint()) return
     const openCount = issues.filter((i) => i.status === 'open').length
     if (openCount > 0) {
       void confirmAsk({
@@ -312,7 +320,7 @@ function GroupIssuesPanel(): React.JSX.Element {
 
   /** 群级参与开关：采购/供应链/内部群不该产出客户问题；排除时可选顺带归档现有待处理 */
   const onToggleScope = (): void => {
-    if (analyzing) return
+    if (busyHint()) return
     if (!excluded) {
       const openCount = issues.filter((i) => i.status === 'open').length
       void confirmAsk({
@@ -335,7 +343,7 @@ function GroupIssuesPanel(): React.JSX.Element {
 
   /** 「清空本群」:删除该群全部记录并自动重新提取(含历史,不可恢复) */
   const onClearAll = (): void => {
-    if (analyzing) return
+    if (busyHint()) return
     void confirmAsk({
       title: '清空本群记录',
       message: `将删除本群全部问题记录(共 ${issues.length} 条,含已解决/已归档与证据消息),此操作不可恢复。确认后将立即按近 ${days} 天从零重新分析提取。`,
@@ -498,16 +506,16 @@ function GroupIssuesPanel(): React.JSX.Element {
           </select>
           <button
             type="button"
-            className={`gip-btn${excluded ? ' danger' : ' ghost'}`}
+            className={`gip-btn${excluded ? '' : ' ghost'}`}
             disabled={analyzing}
             onClick={onToggleScope}
             title={
               excluded
                 ? '本群已排除监控：不自动提取、不做跟进判定；点击恢复监控'
-                : '本群没有客户诉求（采购/供应链/内部群）？点击排除监控，避免堆出无法跟进的假待办'
+                : '本群没有客户诉求（采购/供应链/叫货/内部群）？点击把本群移出监控，现有待处理会一并归档，避免堆出无法跟进的假待办'
             }
           >
-            {excluded ? '已排除监控' : '纳入监控'}
+            {excluded ? '✓ 恢复监控' : '⊘ 不监控本群'}
           </button>
           <button
             type="button"
