@@ -6,6 +6,7 @@ import {
   clearFeedbackIssues,
   clearGroupRunState,
   listFeedbackIssues,
+  mergeDuplicateIssues,
   readState,
   setIssueProgressSink,
   updateIssueStatus
@@ -116,6 +117,18 @@ export function registerIssueHandlers(): void {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
     cancelIssuesAnalysis(wxid)
     return { ok: true as const }
+  })
+
+  // 存量去重：合并历史锚点漂移留下的重复议题（dryRun 先给方案供 UI 预览确认）
+  ipcMain.handle('cs:issue:mergeDuplicates', (_e, wxid: string, dryRun?: boolean) => {
+    if (!wxid) return { ok: false as const, error: '缺少账号' }
+    try {
+      const r = mergeDuplicateIssues(wxid, { dryRun: !!dryRun })
+      if (!dryRun && r.merged > 0) notifyChanged({ wxid })
+      return { ok: true as const, ...r }
+    } catch (err) {
+      return fail(err)
+    }
   })
 
   // 归档 N 天前已闭环记录：活跃列表/盯办/徽标只留近期，闭环率与趋势照旧统计

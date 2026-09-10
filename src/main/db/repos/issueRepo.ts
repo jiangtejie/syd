@@ -587,6 +587,83 @@ export function countOpenByGroup(wxid: string): Record<string, number> {
   return out
 }
 
+/**
+ * 存量去重：把重复行归档为「重复」(archived_from='duplicate')。
+ * 该标记不属于闭环（不计入闭环率/趋势），也不算「人工判定不是问题」（不进 LLM 反例），
+ * 只是从活跃列表、盯办与徽标里挪走；需要时可人工「重新打开」。
+ */
+export function archiveDuplicates(ids: number[]): number {
+  const list = ids.filter((id) => Number.isInteger(id))
+  if (list.length === 0) return 0
+  const ph = list.map(() => '?').join(',')
+  return getDb()
+    .prepare(
+      `UPDATE issue_feedback SET status = 'archived', archived_from = 'duplicate', updated_at = ?,
+         resolved_at = NULL, follow_up = 0, follow_up_at = NULL
+       WHERE id IN (${ph}) AND status = 'open'`
+    )
+    .run(Date.now(), ...list).changes
+}
+
+/**
+ * 存量去重：把「存活行」按合并结果写回（标题/摘要/类型/严重度/客户/首现/人工字段/证据一次落库）。
+ * 只覆盖内容与证据，不动 status（仍是 open，闭环与跟进状态由引擎下一轮按事实重算）。
+ */
+export function applyIssueMerge(input: {
+  id: number
+  title: string
+  summary?: string
+  type: FeedbackIssueType
+  severity: FeedbackIssueSeverity
+  customers?: string[]
+  occurAt: number
+  needConfirm: number
+  assignee: string | null
+  reopenCount: number
+  msgs: FeedbackIssueMsg[]
+}): void {
+  const db = getDb()
+  const tx = db.transaction(() => {
+    db.prepare(
+      `UPDATE issue_feedback SET title = ?, summary = ?, type = ?, severity = ?, customers = ?,
+         occur_at = ?, need_confirm = ?, assignee = ?, reopen_count = ?, updated_at = ? WHERE id = ?`
+    ).run(
+      input.title,
+      input.summary ?? null,
+      input.type,
+      input.severity,
+      input.customers && input.customers.length > 0 ? JSON.stringify(input.customers) : null,
+      input.occurAt,
+      input.needConfirm,
+      input.assignee,
+      input.reopenCount,
+      Date.now(),
+      input.id
+    )
+    db.prepare(`DELETE FROM issue_feedback_msg WHERE issue_id = ?`).run(input.id)
+    const ins = db.prepare(
+      `INSERT INTO issue_feedback_msg
+         (issue_id, seq, msg_time, sender_name, sender_username, is_send, is_team, text, image_md5, local_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    input.msgs.forEach((m, i) => {
+      ins.run(
+        input.id,
+        i,
+        m.time,
+        m.senderName,
+        m.senderUsername ?? null,
+        m.isSend ? 1 : 0,
+        m.senderIsTeam ? 1 : 0,
+        m.text,
+        m.imageMd5 ?? null,
+        m.localType ?? null
+      )
+    })
+  })
+  tx()
+}
+
 /** 清空某账号的全部问题与关联消息（含人工状态，用于重新开始） */
 export function clearIssues(wxid: string): void {
   const db = getDb()
@@ -753,63 +830,66 @@ export function confirmIssueDoubt(id: number): boolean {
   return info.changes > 0
 }
 
-export interface MergeTarget {
+export interface OpenTopicRow {
   id: number
   key: string
+  type: string
+  method: 'llm' | 'rule'
+  title: string
   occurAt: number
+  customers?: string[]
+  /** 证据行里的客户 username（新数据才有；比昵称稳） */
+  usernames: string[]
+  /** 证据消息时间集合（同一性判据用） */
+  evidenceTimes: number[]
 }
 
-/** key 漂移兜底窗口：新证据锚点通常落在原锚点之后（追问/客服介入行），也可能略早 */
-const MERGE_BEFORE_MS = 5 * 60_000
-const MERGE_AFTER_MS = 6 * 3600_000
-
 /**
- * key 漂移兜底：同群同类型、客户有交叠、发生时间邻近的**现存 open 行**。
- * LLM 的 key 锚定「最早证据行」，一旦该行没被喂进上下文，模型会另起一条 → 同一议题两行。
- * 命中时复用原行 key（内容/证据合并到原行），避免重复待办与旧行永不闭环。
+ * 某群 open 议题的「同一性判据事实」：一次查询拿齐标题/类型/客户/证据时间，
+ * 供分析器在内存里比对（避免每个新议题都打一轮 SQL），也供存量去重聚类使用。
  */
-export function findMergeTarget(
-  wxid: string,
-  groupUsername: string,
-  type: string,
-  identity: IssueIdentity,
-  occurAt: number,
-  opts: {
-    /** 只复用该时刻之前就已存在的行（排除本轮刚建的：同一轮里同客户同类型的两个真议题不该被并成一条） */
-    createdBefore?: number
-    /** 「原行可以比新锚点早多久」：默认 6h（追问/客服介入行造成的锚点漂移）；未回复留言用更长窗口 */
-    mergeAfterMs?: number
-    /** 「原行可以比新锚点晚多久」：默认 5min */
-    mergeBeforeMs?: number
-  } = {}
-): MergeTarget | null {
-  if (!hasIdentity(identity)) return null
-  const guard = opts.createdBefore !== undefined ? ' AND created_at < ?' : ''
-  const afterMs = opts.mergeAfterMs ?? MERGE_AFTER_MS
-  const beforeMs = opts.mergeBeforeMs ?? MERGE_BEFORE_MS
-  const args: number[] = [occurAt - afterMs, occurAt + beforeMs]
-  if (opts.createdBefore !== undefined) args.push(opts.createdBefore)
+export function openTopicIndex(wxid: string, groupUsername: string): OpenTopicRow[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, key, occur_at, customers FROM issue_feedback
-       WHERE wxid = ? AND group_username = ? AND type = ? AND status = 'open'
-         AND occur_at >= ? AND occur_at <= ?${guard}
-       ORDER BY occur_at DESC LIMIT 12`
+      `SELECT id, key, type, method, title, occur_at, customers FROM issue_feedback
+       WHERE wxid = ? AND group_username = ? AND status = 'open' ORDER BY occur_at ASC`
     )
-    .all(wxid, groupUsername, type, ...args) as Array<{
+    .all(wxid, groupUsername) as Array<{
     id: number
     key: string
+    type: string
+    method: string
+    title: string
     occur_at: number
     customers: string | null
   }>
-  const userMap = evidenceCustomerUsernames(rows.map((r) => r.id))
-  for (const r of rows) {
-    const prev = parseCustomers(r.customers) ?? []
-    if (identityHit(prev, userMap.get(r.id) ?? new Set<string>(), identity)) {
-      return { id: r.id, key: r.key, occurAt: r.occur_at }
-    }
+  if (rows.length === 0) return []
+  const ids = rows.map((r) => r.id)
+  const times = new Map<number, number[]>()
+  const ph = ids.map(() => '?').join(',')
+  const evRows = getDb()
+    .prepare(
+      `SELECT issue_id, msg_time FROM issue_feedback_msg
+       WHERE issue_id IN (${ph}) ORDER BY msg_time ASC`
+    )
+    .all(...ids) as Array<{ issue_id: number; msg_time: number }>
+  for (const e of evRows) {
+    const arr = times.get(e.issue_id)
+    if (arr) arr.push(e.msg_time)
+    else times.set(e.issue_id, [e.msg_time])
   }
-  return null
+  const users = evidenceCustomerUsernames(ids)
+  return rows.map((r) => ({
+    id: r.id,
+    key: r.key,
+    type: r.type,
+    method: r.method === 'llm' ? ('llm' as const) : ('rule' as const),
+    title: r.title,
+    occurAt: r.occur_at,
+    customers: parseCustomers(r.customers),
+    usernames: Array.from(users.get(r.id) ?? []),
+    evidenceTimes: Array.from(new Set(times.get(r.id) ?? []))
+  }))
 }
 
 export interface ReopenCandidate {

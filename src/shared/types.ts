@@ -372,8 +372,13 @@ export interface FeedbackIssue {
   reopenCount?: number
   /** 复发来源：上一次闭环议题 id（详情可回溯上次处理） */
   reopenedFrom?: number
-  /** 归档前状态：open = 人工判定「不是问题」；done/stalled = 历史已闭环归档（不影响累计闭环率） */
-  archivedFrom?: FeedbackIssueStatus
+  /**
+   * 归档前状态：
+   * - open = 人工判定「不是问题」；
+   * - done/stalled = 历史已闭环归档（仍计入累计闭环率）；
+   * - duplicate = 存量去重合并掉的重复行（不算闭环、也不作为 LLM 反例）。
+   */
+  archivedFrom?: FeedbackIssueStatus | 'duplicate'
   /** 涉及的客户（LLM 输出 customers / 规则发送人归一；已持久化供复发与统计） */
   customers?: string[]
   createdAt: number

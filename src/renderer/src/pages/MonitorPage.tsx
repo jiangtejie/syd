@@ -474,6 +474,48 @@ function MonitorPage(): React.JSX.Element {
     }
   }
 
+  /**
+   * 存量去重:合并历史上因锚点漂移产生的重复议题。
+   * 先 dryRun 拿方案做预览(列出每组保留谁、合并几条),确认后才真正执行。
+   */
+  const runMergeDuplicates = async (): Promise<void> => {
+    if (!connected || !issueApi?.mergeDuplicates || anaBusy) return
+    const pre = await issueApi.mergeDuplicates(wxid!, true).catch(() => null)
+    if (!pre?.ok) {
+      toast.error((pre as { error?: string } | null)?.error || '重复检测失败')
+      return
+    }
+    if (!pre.merged || !pre.plan?.length) {
+      toast.success('没有发现重复议题')
+      return
+    }
+    const lines = pre.plan
+      .slice(0, 6)
+      .map((it) => `· ${it.dropIds.length + 1} 条 → ${it.keepTitle.slice(0, 20)}`)
+    const more = pre.plan.length > 6 ? `\n…等共 ${pre.plan.length} 组` : ''
+    const ok = await confirmAsk({
+      title: '合并重复议题',
+      message: `发现 ${pre.clusters} 组重复，共 ${pre.merged} 条冗余记录：\n${lines.join('\n')}${more}\n\n每组保留最早的一条（合并证据、取最高严重度、沿用指派跟进人），其余归档为「重复」：不计入闭环率与趋势，也不会被当作「不是问题」的反例样本，需要时可重新打开。`,
+      confirmText: '合并重复',
+      danger: true
+    })
+    if (!ok) return
+    setAnaBusy(true)
+    try {
+      const res = await issueApi.mergeDuplicates(wxid!, false).catch(() => null)
+      if (!res?.ok) {
+        toast.error((res as { error?: string } | null)?.error || '合并失败')
+        return
+      }
+      toast.success(`已合并 ${res.clusters ?? 0} 组，归档 ${res.merged ?? 0} 条重复记录`)
+      setActive(null)
+      setDetail(null)
+      await load()
+    } finally {
+      setAnaBusy(false)
+    }
+  }
+
   /** 归档 90 天前已闭环记录(长期运营收敛:活跃列表/盯办只留近期,闭环率与趋势不受影响) */
   const runArchiveStale = async (): Promise<void> => {
     if (!connected || !issueApi?.archiveStale) return
@@ -715,6 +757,15 @@ function MonitorPage(): React.JSX.Element {
               取消
             </button>
           )}
+          <button
+            type="button"
+            className="mon-btn ghost"
+            disabled={anaBusy || loading || !connected}
+            onClick={() => void runMergeDuplicates()}
+            title="按标题/证据/客户判据找出历史上被重复提取的同一议题,先预览再合并"
+          >
+            合并重复
+          </button>
           <button
             type="button"
             className="mon-btn ghost"

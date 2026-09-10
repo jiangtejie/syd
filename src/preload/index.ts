@@ -249,6 +249,24 @@ const api = {
         days: number
       ): Promise<{ ok: boolean; archived?: number; error?: string }> =>
         ipcRenderer.invoke('cs:issue:archiveStale', wxid, days),
+      /** 存量去重：dryRun=true 只返回方案（预览），false 才真正合并 */
+      mergeDuplicates: (
+        wxid: string,
+        dryRun?: boolean
+      ): Promise<{
+        ok: boolean
+        clusters?: number
+        merged?: number
+        plan?: Array<{
+          keepId: number
+          keepTitle: string
+          dropIds: number[]
+          dropTitles: string[]
+          groupName: string
+          reasons: string[]
+        }>
+        error?: string
+      }> => ipcRenderer.invoke('cs:issue:mergeDuplicates', wxid, dryRun),
       analyzeGroup: (
         wxid: string,
         groupUsername: string,

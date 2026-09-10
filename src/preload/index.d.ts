@@ -259,6 +259,24 @@ declare global {
             wxid: string,
             days: number
           ) => Promise<{ ok: boolean; archived?: number; error?: string }>
+          /** 存量去重：合并历史锚点漂移留下的重复议题；dryRun=true 只预览方案 */
+          mergeDuplicates: (
+            wxid: string,
+            dryRun?: boolean
+          ) => Promise<{
+            ok: boolean
+            clusters?: number
+            merged?: number
+            plan?: Array<{
+              keepId: number
+              keepTitle: string
+              dropIds: number[]
+              dropTitles: string[]
+              groupName: string
+              reasons: string[]
+            }>
+            error?: string
+          }>
           analyzeGroup: (
             wxid: string,
             groupUsername: string,

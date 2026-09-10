@@ -9,8 +9,11 @@ import {
   upsertIssue,
   listOpenIssuesByGroup,
   findIssueByKey,
-  findMergeTarget,
   getIssueMsgs,
+  openTopicIndex,
+  archiveDuplicates,
+  applyIssueMerge,
+  type OpenTopicRow,
   openIssueEvidenceTimes,
   openIssueAnchorTimes,
   openIssuesForGroup,
@@ -23,6 +26,7 @@ import {
   type NewIssue
 } from '../../db/repos/issueRepo'
 import { getConfig, getConfigNumber, setConfig } from '../../db/repos/config'
+import { clusterTopics, topicSame, TOPIC_TIME_NEAR_MS, type TopicFacts } from './issueSimilarity'
 import { getDb } from '../../db/database'
 import type {
   ChatMessage,
@@ -1204,6 +1208,45 @@ export async function analyzeGroupIssues(
         customers: deriveCustomers(issue),
         usernames: deriveCustomerUsernames(issue)
       })
+      // 议题同一性判据：一次查询取本群现存 open 议题事实，随本轮落库**增量维护**
+      // （这样同一轮里后一批/后一个议题也能认出前面刚建的同一议题，防分批重复）
+      const topicIndex: OpenTopicRow[] = openTopicIndex(wxid, groupUsername)
+      const rowFacts = (r: OpenTopicRow): TopicFacts => ({
+        title: r.title,
+        type: r.type,
+        customers: r.customers,
+        usernames: r.usernames,
+        evidenceTimes: r.evidenceTimes,
+        occurAt: r.occurAt
+      })
+      const issueFacts = (
+        it: NewIssue,
+        identity: { customers?: string[]; usernames: string[] }
+      ): TopicFacts => ({
+        title: it.title,
+        type: it.type,
+        customers: identity.customers,
+        usernames: identity.usernames,
+        evidenceTimes: Array.from(new Set(it.msgs.map((m) => m.time))),
+        occurAt: it.occurAt
+      })
+      /** 本轮新建的行 id：对它们禁用「时间邻近」判据（模型刚在同一批输入里主动拆成两条，不该按时间并回去） */
+      const createdThisRun = new Set<number>()
+      /** 在现存/本轮已建的 open 议题里找同一条（标题 / 证据重叠 / 同客户+同类型+时间邻近 三组判据） */
+      const matchExisting = (
+        it: NewIssue,
+        identity: { customers?: string[]; usernames: string[] }
+      ): OpenTopicRow | undefined => {
+        const facts = issueFacts(it, identity)
+        for (const row of topicIndex) {
+          const unreplied = it.key.includes(':unreplied:') || row.key.includes(':unreplied:')
+          // 未回复留言是「同一件没人处理的事」，时间窗放宽到 72h；
+          // 本轮刚建的行走 0（跳过时间判据），只认标题/证据这类更强信号
+          const gap = createdThisRun.has(row.id) ? 0 : unreplied ? UNREPLIED_MERGE_MS : undefined
+          if (topicSame(facts, rowFacts(row), { maxTimeGapMs: gap }).same) return row
+        }
+        return undefined
+      }
       /** 客户身份回退：从证据行取非我方发送人昵称（LLM/规则均可能缺 customers） */
       const deriveCustomers = (issue: NewIssue): string[] | undefined => {
         if (issue.customers && issue.customers.length > 0) return issue.customers
@@ -1226,15 +1269,8 @@ export async function analyzeGroupIssues(
             if (issue.resolved) {
               let existing = findIssueByKey(issue.key)
               if (!existing) {
-                // key 漂移兜底：模型判定已闭环，但锚点行变了 → 找到真正的旧行并闭环
-                const target = findMergeTarget(
-                  wxid,
-                  groupUsername,
-                  issue.type,
-                  deriveIdentity(issue),
-                  issue.occurAt,
-                  { createdBefore: startedAt }
-                )
+                // key 漂移兜底：模型判定已闭环，但锚点行变了 → 按同一性判据找到真正的旧行并闭环
+                const target = matchExisting(issue, deriveIdentity(issue))
                 if (target) existing = findIssueByKey(target.key)
               }
               if (existing && existing.status === 'open') {
@@ -1245,21 +1281,10 @@ export async function analyzeGroupIssues(
             const customers = deriveCustomers(issue)
             issue.customers = customers
             const identity = deriveIdentity(issue)
-            // 同 key 既有行；找不到再按「同群+同类型+客户交叠+时间邻近」兜底复用（防 key 漂移重复建行）
+            // 同 key 既有行；找不到再按同一性判据复用其 key（防锚点漂移重复建行）
             let prev = findIssueByKey(issue.key)
             if (!prev) {
-              // 「客户留言未回复」是同一件没被处理的事，跨天重复留言按同一议题收拢（窗口放宽到 72h）
-              const mergeAfterMs = issue.key.includes(':unreplied:')
-                ? UNREPLIED_MERGE_MS
-                : undefined
-              const target = findMergeTarget(
-                wxid,
-                groupUsername,
-                issue.type,
-                identity,
-                issue.occurAt,
-                { createdBefore: startedAt, mergeAfterMs }
-              )
+              const target = matchExisting(issue, identity)
               if (target) {
                 issue.key = target.key
                 prev = findIssueByKey(target.key)
@@ -1287,7 +1312,26 @@ export async function analyzeGroupIssues(
             }
             // 计数口径 = 真正新建的行（既有行的内容/状态更新不算「新问题」，
             // 否则提示音、桌面通知与飞书「新问题」推送会把老问题的更新当新问题播报）
-            if (upsertIssue(issue).created) n++
+            const res = upsertIssue(issue)
+            if (res.created) {
+              n++
+              createdThisRun.add(res.id)
+            }
+            // 增量维护判据索引（含证据/标题的最新值），供本轮后续议题与批次比对
+            const nextRow: OpenTopicRow = {
+              id: res.id,
+              key: issue.key,
+              type: issue.type,
+              method: issue.method,
+              title: issue.title,
+              occurAt: issue.occurAt,
+              customers: issue.customers,
+              usernames: deriveCustomerUsernames(issue),
+              evidenceTimes: Array.from(new Set(issue.msgs.map((m) => m.time)))
+            }
+            const at = topicIndex.findIndex((t) => t.key === issue.key)
+            if (at >= 0) topicIndex[at] = nextRow
+            else topicIndex.push(nextRow)
           }
         })
         tx()
@@ -1550,6 +1594,130 @@ export function readState(wxid: string): FeedbackAnalysisState {
 
 export function listFeedbackIssues(wxid: string): FeedbackIssue[] {
   return listIssues(wxid)
+}
+
+// ── 存量去重：合并历史锚点漂移留下的重复议题 ──
+
+export interface DuplicateMergePlanItem {
+  /** 保留的议题 id（组内最早发生的一条） */
+  keepId: number
+  keepTitle: string
+  /** 归档为「重复」的议题 id 与其标题 */
+  dropIds: number[]
+  dropTitles: string[]
+  groupName: string
+  /** 判定理由（人工复核用） */
+  reasons: string[]
+}
+
+export interface DuplicateMergeResult {
+  /** 重复组数 */
+  clusters: number
+  /** 被归档的重复行数 */
+  merged: number
+  plan: DuplicateMergePlanItem[]
+}
+
+/**
+ * 存量去重：把历史上因锚点漂移产生的重复议题合并回一条。
+ * - 判据与实时合并完全一致（issueSimilarity.topicSame），因此清理之后新提取不会再生成同类重复；
+ * - 每组保留最早发生的一条：合并证据（去重后按时间排序、限容）、取最高严重度、并集客户、沿用指派跟进人；
+ * - 其余归档为「重复」(archived_from='duplicate')——不计入闭环率/趋势，也不作为 LLM 反例样本；
+ * - dryRun=true 只返回方案供 UI 预览确认，不写库。
+ */
+export function mergeDuplicateIssues(
+  wxid: string,
+  opts: { dryRun?: boolean } = {}
+): DuplicateMergeResult {
+  const result: DuplicateMergeResult = { clusters: 0, merged: 0, plan: [] }
+  if (!wxid) return result
+  const open = listIssues(wxid, { status: 'open' })
+  if (open.length < 2) return result
+  const byGroup = new Map<string, FeedbackIssue[]>()
+  for (const it of open) {
+    const arr = byGroup.get(it.groupUsername)
+    if (arr) arr.push(it)
+    else byGroup.set(it.groupUsername, [it])
+  }
+  for (const [group, list] of byGroup) {
+    if (list.length < 2) continue
+    const idx = new Map(openTopicIndex(wxid, group).map((r) => [r.id, r]))
+    const rows = list.map((it) => {
+      const facts = idx.get(it.id)
+      return {
+        id: it.id,
+        key: it.key,
+        title: it.title,
+        type: it.type,
+        occurAt: it.occurAt,
+        customers: it.customers,
+        usernames: facts?.usernames ?? [],
+        evidenceTimes: facts?.evidenceTimes ?? [],
+        ref: it
+      }
+    })
+    const clusters = clusterTopics(rows, {
+      timeGapFor: (x, y) =>
+        x.key.includes(':unreplied:') || y.key.includes(':unreplied:')
+          ? UNREPLIED_MERGE_MS
+          : TOPIC_TIME_NEAR_MS
+    })
+    for (const c of clusters) {
+      const members = c.members
+      const keep = members.reduce((x, y) =>
+        y.occurAt < x.occurAt || (y.occurAt === x.occurAt && y.id < x.id) ? y : x
+      )
+      const drops = members.filter((m) => m.id !== keep.id)
+      result.plan.push({
+        keepId: keep.id,
+        keepTitle: keep.title,
+        dropIds: drops.map((d) => d.id),
+        dropTitles: drops.map((d) => d.title),
+        groupName: keep.ref.groupName || group,
+        reasons: c.reasons
+      })
+      result.merged += drops.length
+      if (opts.dryRun) continue
+      // 表达用字段：规则提取的标题是原文摘录，同组里有 LLM 概括时优先用它
+      const llm = members
+        .filter((m) => m.ref.method === 'llm')
+        .sort((x, y) => x.occurAt - y.occurAt)[0]
+      const src = keep.ref.method === 'rule' && llm ? llm.ref : keep.ref
+      const severity: FeedbackIssueSeverity = members.some((m) => m.ref.severity === '紧急')
+        ? '紧急'
+        : members.some((m) => m.ref.severity === '高')
+          ? '高'
+          : (keep.ref.severity ?? '一般')
+      const customers = Array.from(
+        new Set(
+          members
+            .flatMap((m) => m.ref.customers ?? [])
+            .map((x) => x.trim())
+            .filter(Boolean)
+        )
+      ).slice(0, 6)
+      applyIssueMerge({
+        id: keep.id,
+        title: src.title,
+        summary: src.summary,
+        type: src.type,
+        severity,
+        customers: customers.length > 0 ? customers : undefined,
+        occurAt: members.reduce((mn, m) => Math.min(mn, m.occurAt), keep.occurAt),
+        // 疑似口径取「有人确认过就算已确认」：合并本身不该把议题重新丢回疑似桶
+        needConfirm: members.some((m) => !m.ref.needConfirm) ? 0 : 1,
+        assignee: members.map((m) => m.ref.assignee).find((x) => !!x) ?? null,
+        reopenCount: members.reduce((mx, m) => Math.max(mx, m.ref.reopenCount ?? 0), 0),
+        msgs: mergeEvidence(
+          [],
+          members.flatMap((m) => getIssueMsgs(m.id))
+        )
+      })
+      archiveDuplicates(drops.map((d) => d.id))
+    }
+  }
+  result.clusters = result.plan.length
+  return result
 }
 
 export function updateIssueStatus(id: number, status: FeedbackIssueStatus): void {
