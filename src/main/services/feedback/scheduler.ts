@@ -3,6 +3,7 @@ import { analyzeGroupIssues, hasGroupWatermark, listFeedbackIssues } from './ana
 import { getSessions } from '../wechat/wxService'
 import { getConfig } from '../../db/repos/config'
 import { addDbChangeHook, type DbChangedPayload } from '../wechat/watchService'
+import { notifyIssueAlert, type AlertIssue } from '../lark/notify'
 import { createLogger } from '../logging'
 
 const issueLog = createLogger('issue')
@@ -57,6 +58,42 @@ function sendChanged(wxid: string, extra: { added?: number; escalate?: number })
   }
 }
 
+/** 问题对象 → 飞书告警条目(只带必要字段) */
+function toAlertIssue(i: {
+  id: number
+  type: string
+  title: string
+  severity?: string
+  groupName: string
+  occurAt: number
+  assignee?: string
+}): AlertIssue {
+  return {
+    id: i.id,
+    type: i.type,
+    title: i.title,
+    severity: i.severity,
+    groupName: i.groupName,
+    occurAt: i.occurAt,
+    assignee: i.assignee
+  }
+}
+
+/** 新问题 → 飞书推送(开关/节流/限额由 notify 层负责;失败不影响分析主流程) */
+function pushNewIssueAlert(wxid: string, groupUsername: string, count: number): void {
+  try {
+    const items = listFeedbackIssues(wxid)
+      .filter((i) => i.groupUsername === groupUsername && i.status === 'open')
+      .sort((a, b) => b.occurAt - a.occurAt)
+      .slice(0, Math.min(Math.max(count, 1), 10))
+      .map(toAlertIssue)
+    if (items.length === 0) return
+    void notifyIssueAlert({ kind: 'issue_new', wxid, issues: items })
+  } catch (e) {
+    issueLog.warn(`飞书推送(新问题)失败 ${wxid}: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
 /** 候选群（近 7 天活跃、非企微、有展示名），按最后消息倒序取前 30；读取失败返回空并触发下轮重试 */
 function listCandidates(wxid: string): Array<{ username: string; displayName: string }> {
   const hit = cache.get(wxid)
@@ -101,6 +138,7 @@ async function runPass(wxid: string): Promise<void> {
         if (!last || now - last >= GROUP_NOTIFY_MIN_MS) {
           groupNotifiedAt.set(k, now)
           sendChanged(wxid, { added: r.count })
+          pushNewIssueAlert(wxid, g.username, r.count)
         }
       }
       if (r && r.ok && !r.skipped && r.method === 'llm') {
@@ -178,6 +216,19 @@ async function runEscalate(wxid: string): Promise<void> {
     if (fresh.length > 0) {
       sendChanged(wxid, { escalate: fresh.length })
       issueLog.info(`盯办升级 ${wxid} n=${fresh.length} items=${fresh.map((f) => f.id).join(',')}`)
+      try {
+        const byId = new Map(listFeedbackIssues(wxid).map((i) => [i.id, i]))
+        const alertItems: AlertIssue[] = []
+        for (const f of fresh) {
+          const i = byId.get(f.id)
+          if (i) alertItems.push({ ...toAlertIssue(i), reason: f.reason })
+        }
+        if (alertItems.length > 0) {
+          void notifyIssueAlert({ kind: 'issue_escalate', wxid, issues: alertItems })
+        }
+      } catch (e) {
+        issueLog.warn(`飞书推送(盯办)失败 ${wxid}: ${e instanceof Error ? e.message : String(e)}`)
+      }
     }
   } catch (e) {
     issueLog.error(`盯办巡检异常 ${wxid}`, e)

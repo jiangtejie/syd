@@ -41,6 +41,9 @@ import { registerReportHandlers } from './ipc/reportHandlers'
 import { registerGrowthHandlers } from './ipc/growthHandlers'
 import { registerGrowthAiHandlers } from './ipc/growthAiHandlers'
 import { registerGrowthBuzzHandlers } from './ipc/growthBuzzHandlers'
+import { registerLarkHandlers } from './ipc/larkHandlers'
+import { migrateLegacyImAudit } from './db/repos/imAuditRepo'
+import { registerFeishuNotifyHandlers } from './ipc/feishuNotifyHandlers'
 import { startReportScheduler, stopReportScheduler } from './services/report/scheduler'
 import { startGrowthScheduler, stopGrowthScheduler } from './services/growth/scheduler'
 import { createLogger } from './services/logging'
@@ -369,6 +372,9 @@ if (!app.requestSingleInstanceLock()) {
     registerGrowthHandlers()
     registerGrowthAiHandlers()
     registerGrowthBuzzHandlers()
+    registerLarkHandlers()
+    registerFeishuNotifyHandlers()
+    migrateLegacyImAudit()
     registerMediaProtocol()
     registerGrowthMediaProtocol()
 

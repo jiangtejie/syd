@@ -99,7 +99,7 @@ function requestDecryptVideo(wxid: string, videoMd5: string): Promise<string | n
  * 调 cs:media:decryptImage 拉取真实图 URL（走上面的缓存/去重）；mock / 无 md5 时保持 null。
  * imageMd5 传 undefined 即表示“暂不解密”（懒加载场景由外层进入视口后再传值）。
  */
-export function useDecryptImage(
+function useDecryptImage(
   imageMd5?: string,
   kind: 'thumb' | 'orig' | 'hd' = 'orig'
 ): { url: string | null; busy: boolean } {
@@ -110,6 +110,7 @@ export function useDecryptImage(
 
   useEffect(() => {
     let alive = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 切换 md5/账号时先清空上一张图,避免异步返回后串图
     setUrl(null)
     if (!imageMd5 || source !== 'wx' || !wxid) {
       setBusy(false)
@@ -151,7 +152,7 @@ export function useDecryptImage(
 /**
  * 视频消息解密 hook：调 cs:media:decryptVideo 解密出可播放的 ct-media:// URL（缓存/去重同上）。
  */
-export function useDecryptVideo(videoMd5?: string): { url: string | null; busy: boolean } {
+function useDecryptVideo(videoMd5?: string): { url: string | null; busy: boolean } {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const source = useWorkbenchStore((s) => s.source)
   const [url, setUrl] = useState<string | null>(null)
@@ -159,6 +160,7 @@ export function useDecryptVideo(videoMd5?: string): { url: string | null; busy: 
 
   useEffect(() => {
     let alive = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 切换 md5/账号时先清空上一个视频,避免异步返回后串流
     setUrl(null)
     if (!videoMd5 || source !== 'wx' || !wxid) {
       setBusy(false)

@@ -87,6 +87,14 @@ function toolDecision(sessionId: number, toolName: string): 'allow' | 'deny' | '
   return prefs.mode // ask | allow | deny
 }
 
+/**
+ * 审批判定(供其它引擎复用):allow=直通(完全访问) / deny=始终拒绝 / ask=需人工确认。
+ * 优先级:会话本轮允许 > 工具始终允许名单 > 工具始终拒绝名单 > 全局模式。
+ */
+export function approvalDecision(sessionId: number, toolName: string): 'allow' | 'deny' | 'ask' {
+  return toolDecision(sessionId, toolName)
+}
+
 export function requestToolApproval(
   sessionId: number,
   toolName: string,

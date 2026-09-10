@@ -93,6 +93,7 @@ export function resolveSessionTableName(db: Database.Database): string | null {
  */
 const rowLowerKeys = new WeakMap<object, Map<string, string>>()
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- 微信库表结构随版本变化,此层刻意保持动态行取值 */
 /** 从行中按候选名取值（兼容大小写） */
 export function getRowField(row: Record<string, any>, candidates: string[]): any {
   for (const name of candidates) {
@@ -111,8 +112,10 @@ export function getRowField(row: Record<string, any>, candidates: string[]): any
   return undefined
 }
 
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 /** 数值字段安全取数 */
-export function toNumber(value: any, fallback = 0): number {
+export function toNumber(value: unknown, fallback = 0): number {
   if (value === null || value === undefined || value === '') return fallback
   if (typeof value === 'number') return Number.isFinite(value) ? value : fallback
   if (typeof value === 'bigint') return Number(value)
@@ -121,7 +124,7 @@ export function toNumber(value: any, fallback = 0): number {
 }
 
 /** 字符串字段安全取数（Buffer 转 utf8） */
-export function toString(value: any): string {
+export function toString(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (Buffer.isBuffer(value)) return value.toString('utf-8')
   if (value instanceof Uint8Array) return Buffer.from(value).toString('utf-8')

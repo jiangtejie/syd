@@ -84,7 +84,12 @@ export function registerImHandlers(): void {
         clawToken: input?.clawToken ? sealSecret(input.clawToken) : (prev?.clawToken ?? ''),
         baseUrl: (input?.baseUrl ?? '').trim() || prev?.baseUrl,
         wxid: (input?.wxid ?? '').trim() || undefined,
-        allowUsers: (input?.allowUsers ?? '').trim() || undefined
+        allowUsers: (input?.allowUsers ?? '').trim() || undefined,
+        receiveMode:
+          input?.receiveMode === 'off' || input?.receiveMode === 'allowlist'
+            ? input.receiveMode
+            : 'all',
+        permissions: input?.permissions ?? prev?.permissions
       }
       const saved = saveImAccount({
         id: input?.id,

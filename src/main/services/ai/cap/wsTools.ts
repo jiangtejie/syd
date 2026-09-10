@@ -12,6 +12,7 @@ import {
 import { basename, dirname, isAbsolute, join, normalize, resolve } from 'node:path'
 import type { ToolDef } from '../chat/skills'
 import { getChatWorkspace } from '../../../db/repos/chatRepo'
+import { getConfig } from '../../../db/repos/config'
 import { createLogger } from '../../logging'
 
 /**
@@ -29,15 +30,24 @@ const WRITE_CAP = 200 * 1024
 const LIST_CAP = 600
 const SKIP_DIRS = new Set(['.git', '.svn', 'node_modules', '.DS_Store'])
 
-/** 会话 → 工作区根(未绑定返回 null) */
+/**
+ * 会话 → 工作区根:
+ *   ① 会话绑定目录(工作台顶部「工作区」)→ 优先;
+ *   ② 未绑定时回退到全局默认工作区(config `wb.defaultWorkspace`,设置 → AI 助手),
+ *      使飞书/IM 渠道这类没有工作台界面的会话也能读写文件;
+ *   ③ 都没有则返回 null(工具返回可行动提示)。
+ */
 function rootOf(ctx: { sessionId?: string | undefined }): string | null {
   const sid = Number(ctx.sessionId)
-  const dir = Number.isInteger(sid) ? getChatWorkspace(sid) : null
-  return dir && existsSync(dir) ? dir : null
+  const bound = Number.isInteger(sid) ? getChatWorkspace(sid) : null
+  if (bound && existsSync(bound)) return bound
+  const fallback = (getConfig('wb.defaultWorkspace') ?? '').trim()
+  return fallback && existsSync(fallback) ? fallback : null
 }
 
 const NO_WS =
-  '当前会话未绑定工作区。请先在工作台顶部「工作区」选择文件夹(或解除后重新绑定),再使用文件工具。'
+  '当前会话没有可用工作区。请在「设置 → AI 助手 → 默认工作区」指定一个目录(飞书/IM 渠道用),' +
+  '或在工作台顶部「工作区」为该会话绑定文件夹后重试。'
 
 /** 前缀包含判断(兼容 Windows 反斜杠与正斜杠,忽略大小写) */
 function withinBase(base: string, target: string): boolean {
@@ -653,4 +663,10 @@ const WRITE_NAMES = new Set([
 ])
 export function isWsWriteTool(name: string): boolean {
   return WRITE_NAMES.has(name)
+}
+
+// 写类工具统一标记 confirm:引擎按「工具审批策略」(人工审批 / 完全访问)决定确认或直通,
+// 工作台与飞书/IM 两条链路共用同一判定
+for (const t of WS_TOOLS) {
+  if (WRITE_NAMES.has(t.name)) t.confirm = true
 }

@@ -146,6 +146,7 @@ export function extractWeComCorpName(
       const str = slice.toString('utf-8')
       if (!str || str.length < 2 || str.length > 50) continue
       if (/^@/.test(str)) continue
+      // eslint-disable-next-line no-control-regex -- 有意过滤含控制字符/替换符的候选串
       if (/[\x00-\x1F\x7F\uFFFD]/.test(str)) continue
       candidates.push(str)
       if (tag === 0) break // 防止错误回退导致无限循环

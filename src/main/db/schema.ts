@@ -100,6 +100,42 @@ const TABLES: string[] = [
     created_at INTEGER
   )`,
 
+  // IM 审计/任务（合并原 im_command_log + im_task：一条入站 = 一行，任务生命周期挂同一行）
+  `CREATE TABLE IF NOT EXISTS im_audit (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER,
+    chat_id TEXT,
+    session_id INTEGER,
+    sender_open_id TEXT,
+    chat_type TEXT,
+    kind TEXT,
+    text TEXT,
+    status TEXT,
+    progress TEXT,
+    result TEXT,
+    reply_len INTEGER,
+    tools TEXT,
+    elapsed_ms INTEGER,
+    error TEXT,
+    created_at INTEGER,
+    started_at INTEGER,
+    finished_at INTEGER
+  )`,
+
+  // 飞书出站消息审计（告警推送/测试/工具发送）
+  `CREATE TABLE IF NOT EXISTS feishu_send_log (
+    id INTEGER PRIMARY KEY,
+    target_kind TEXT,
+    target_id TEXT,
+    target_name TEXT,
+    content TEXT,
+    source TEXT,
+    result TEXT,
+    error TEXT,
+    message_id TEXT,
+    created_at INTEGER
+  )`,
+
   // 群问题反馈（看板：LLM/规则从群消息提取 + 人工处理状态）
   `CREATE TABLE IF NOT EXISTS issue_feedback (
     id INTEGER PRIMARY KEY,

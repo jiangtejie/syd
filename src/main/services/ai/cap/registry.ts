@@ -1,20 +1,23 @@
 import { getConfig } from '../../../db/repos/config'
 import { findTool } from '../chat/skills'
 import { findSoftwareTool } from './software'
+import { findLarkTool } from '../../lark/tools'
+import { findWsTool, isWsWriteTool } from './wsTools'
 import type { ToolDef } from '../chat/skills'
 
 /**
  * 能力注册表(会话工具装配;第三方技能/知识/MCP/自定义工具已下线)。
  *
- * 分层(现仅三组):
+ * 分层(现四组):
  *  - tier 0 核心:元技能(目录/挂载/卸载)恒在,任何会话可用,不占挂载预算;
  *  - tier 1 微信业务:内置 needsWx 工具,绑定账号的会话“默认挂载”;
- *  - tier 2 软件能力:软件自身只读信息(software_status/data_scope 等),按需挂载。
+ *  - tier 2 软件能力:软件自身只读信息(software_status/data_scope 等),按需挂载;
+ *  - tier 2 飞书云文档:只读读取飞书多维表格/云文档(lark_*),按需挂载(需先配置飞书应用凭证)。
  *
- * 名称唯一性:内置 → 软件能力(冲突时靠前胜出)。挂载粒度为“能力名”。
+ * 名称唯一性:内置 → 软件能力 → 飞书云文档(冲突时靠前胜出)。挂载粒度为“能力名”。
  */
 
-export type CapGroup = 'core' | 'wechat' | 'software'
+export type CapGroup = 'core' | 'wechat' | 'software' | 'cloud' | 'workspace'
 
 export interface CapInfo {
   /** 能力名(挂载/卸载/目录使用) */
@@ -37,7 +40,9 @@ export interface CapInfo {
 const TIER_TEXT: Record<CapGroup, string> = {
   core: '核心',
   wechat: '微信业务',
-  software: '软件能力'
+  software: '软件能力',
+  cloud: '飞书云文档',
+  workspace: '工作区文件'
 }
 
 const TIER_NO: Record<number, string> = { 0: 'L0', 1: 'L1', 2: 'L2' }
@@ -88,6 +93,18 @@ const WHEN_HINT: Record<string, { oneLine: string; when: string }> = {
   send_message: {
     oneLine: '发送文本消息给指定客户/群(写操作,执行前需人工确认)',
     when: '用户明确要求给某个客户/群发送微信消息时'
+  },
+  resolve_issue: {
+    oneLine: '把问题标记为已解决(写操作,按审批策略确认)',
+    when: '用户说“这个问题处理完了 / 已解决 / 结掉”时'
+  },
+  stall_issue: {
+    oneLine: '把问题标记为已搁置(写操作,按审批策略确认)',
+    when: '用户说“这个问题先搁置 / 暂不处理”时'
+  },
+  assign_issue: {
+    oneLine: '指派/取消问题的跟进人(写操作,按审批策略确认)',
+    when: '用户要求把问题分给某位同事跟进时'
   }
 }
 
@@ -133,6 +150,97 @@ export const SOFTWARE_CAPS: Array<{
     needsWx: true,
     oneLine: '导出数据范围估算(会话/消息/目标数,不执行导出)',
     when: '用户问“能导出什么、导多少”时'
+  }
+]
+
+/** 飞书云文档能力元数据(实现见 services/lark/tools.ts,此处仅提供注册表所需静态描述) */
+export const LARK_CAPS: Array<{
+  name: string
+  oneLine: string
+  when: string
+}> = [
+  {
+    name: 'lark_base_tables',
+    oneLine: '列出飞书多维表格(Base)里的数据表(表名 + table_id)',
+    when: '用户给了 /base/ 链接、或问“这张飞书表格里有哪些表”时'
+  },
+  {
+    name: 'lark_base_records',
+    oneLine: '读取飞书多维表格指定数据表的记录(只读,分页,Markdown 表格返回)',
+    when: '需要读飞书多维表格里的行数据(名单/台账/排期表)时'
+  },
+  {
+    name: 'lark_doc_read',
+    oneLine: '读取飞书云文档(docx/知识库)的纯文本内容',
+    when: '用户给了飞书文档链接、要你总结或提取其中内容时'
+  }
+]
+
+/** 工作区文件能力元数据(实现见 cap/wsTools.ts);写类工具执行前走审批桥 */
+export const WS_CAPS: Array<{
+  name: string
+  oneLine: string
+  when: string
+}> = [
+  {
+    name: 'workspace_list',
+    oneLine: '列出工作区目录与文件(相对路径,可递归)',
+    when: '想先看工作区里有哪些文件时'
+  },
+  {
+    name: 'workspace_read',
+    oneLine: '读取工作区内的文本文件(≤300KB)',
+    when: '需要某个文件的内容时'
+  },
+  {
+    name: 'workspace_search',
+    oneLine: '在工作区内按关键词搜索文件内容',
+    when: '问“哪份文件提到过 XX”时'
+  },
+  {
+    name: 'workspace_file_info',
+    oneLine: '查看文件/目录的大小与修改时间',
+    when: '确认文件是否存在、多大、何时改过时'
+  },
+  {
+    name: 'workspace_write',
+    oneLine: '写入/覆盖工作区文本文件(写操作,按审批策略确认)',
+    when: '需要新建或修改文件时'
+  },
+  {
+    name: 'workspace_mkdir',
+    oneLine: '在工作区新建目录(写操作,按审批策略确认)',
+    when: '需要建目录归类时'
+  },
+  {
+    name: 'workspace_delete',
+    oneLine: '删除工作区文件/空目录(写操作,按审批策略确认)',
+    when: '需要清理文件时'
+  },
+  {
+    name: 'csv_read',
+    oneLine: '读取 CSV 的表头与数据行',
+    when: '处理名单/台账等 CSV 时'
+  },
+  {
+    name: 'csv_append',
+    oneLine: '向 CSV 追加数据行(写操作,按审批策略确认)',
+    when: '往名单/台账追加记录时'
+  },
+  {
+    name: 'xlsx_preview',
+    oneLine: '预览 Excel 工作表结构与前若干行',
+    when: '处理 Excel 表格时'
+  },
+  {
+    name: 'xlsx_write',
+    oneLine: '写出 Excel(二维数组)(写操作,按审批策略确认)',
+    when: '需要生成 Excel 报表时'
+  },
+  {
+    name: 'site_scaffold',
+    oneLine: '生成静态站点骨架(写操作,按审批策略确认)',
+    when: '要做落地页/帮助页等静态页面时'
   }
 ]
 
@@ -205,7 +313,10 @@ export function listCaps(): CapInfo[] {
     findTool('monitor_summary'),
     findTool('customer_lookup'),
     findTool('recent_messages'),
-    findTool('send_message')
+    findTool('send_message'),
+    findTool('resolve_issue'),
+    findTool('stall_issue'),
+    findTool('assign_issue')
   ]) {
     if (!def) continue
     const hint = WHEN_HINT[def.name]
@@ -222,6 +333,17 @@ export function listCaps(): CapInfo[] {
   // L2 软件能力
   for (const c of SOFTWARE_CAPS) {
     push(c.name, 2, 'software', c.needsWx, c.oneLine, c.when)
+  }
+
+  // L2 飞书云文档(只读,按需挂载)
+  for (const c of LARK_CAPS) {
+    push(c.name, 2, 'cloud', false, c.oneLine, c.when)
+  }
+
+  // L2 工作区文件(需会话/默认工作区;写类工具走审批)
+  for (const c of WS_CAPS) {
+    if (!findWsTool(c.name)) continue
+    push(c.name, 2, 'workspace', false, c.oneLine, c.when)
   }
 
   capsCache = { key, caps: out }
@@ -262,7 +384,7 @@ export function catalogText(opts: {
       `- ${c.name}(${tierTag(c.tier)}·${groupText(c.group)}${state})${needWx} ${c.oneLine};适用:${c.when}`
     )
   }
-  const groups: CapGroup[] = ['core', 'wechat', 'software']
+  const groups: CapGroup[] = ['core', 'wechat', 'software', 'cloud', 'workspace']
   const wanted =
     scope === 'mounted'
       ? 'mounted'
@@ -270,7 +392,11 @@ export function catalogText(opts: {
         ? 'software'
         : scope === 'wechat'
           ? 'wechat'
-          : 'all'
+          : scope === 'cloud'
+            ? 'cloud'
+            : scope === 'workspace'
+              ? 'workspace'
+              : 'all'
   for (const g of groups) {
     const caps = listCaps().filter((c) => c.group === g && !c.disabled)
     if (caps.length === 0) continue
@@ -278,6 +404,8 @@ export function catalogText(opts: {
     if (wanted === 'mounted') seg = caps.filter((c) => c.tier === 0 || mounted.has(c.name))
     else if (wanted === 'software') seg = caps.filter((c) => c.group === 'software')
     else if (wanted === 'wechat') seg = caps.filter((c) => c.group === 'wechat')
+    else if (wanted === 'cloud') seg = caps.filter((c) => c.group === 'cloud')
+    else if (wanted === 'workspace') seg = caps.filter((c) => c.group === 'workspace')
     else seg = caps
     if (seg.length === 0) continue
     rows.push(`【${groupText(g)}】`)
@@ -290,7 +418,12 @@ export function catalogText(opts: {
 
 /** 能力名(单工具能力)解析为 ToolDef */
 export function resolveCapDef(name: string): ToolDef | undefined {
-  return findTool(name) ?? findSoftwareTool(name)
+  return findTool(name) ?? findSoftwareTool(name) ?? findLarkTool(name) ?? findWsTool(name)
+}
+
+/** 能力是否为写操作(供审批判定;工作区写类工具历史上由 isWsWriteTool 标记) */
+export function isWriteCap(name: string): boolean {
+  return resolveCapDef(name)?.confirm === true || isWsWriteTool(name)
 }
 
 /** 展开挂载集合 → 可见工具 defs(失效项跳过并回报) */

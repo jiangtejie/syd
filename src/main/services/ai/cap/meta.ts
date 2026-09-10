@@ -17,8 +17,8 @@ export function metaToolDefs(): Array<{
     {
       name: 'list_capabilities',
       description:
-        '查看能力目录:返回各层(核心/微信业务/软件能力)可挂载能力与其用途。args:{"scope":"all|mounted|software|wechat"}',
-      params: { scope: { type: 'string', desc: 'all(默认)|mounted|software|wechat' } }
+        '查看能力目录:返回各层(核心/微信业务/软件能力/飞书云文档)可挂载能力与其用途。args:{"scope":"all|mounted|software|wechat|cloud"}',
+      params: { scope: { type: 'string', desc: 'all(默认)|mounted|software|wechat|cloud' } }
     },
     {
       name: 'mount_capability',

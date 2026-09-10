@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type {
+  ImAuditEntry,
   KeySource,
   KeyAccountInfo,
   KeyStatusInfo,
@@ -379,6 +380,93 @@ declare global {
         agent: {
           list: () => Promise<Result<{ agents?: AiAgent[]; defaultId?: string | null }>>
           save: (input: AiAgentInput) => Promise<Result<{ agent?: AiAgent }>>
+        }
+        feishuNotify: {
+          get: () => Promise<
+            Result<{
+              config?: {
+                enabled: boolean
+                targets: Array<{ kind: 'chat' | 'user'; id: string; name: string }>
+                events: string[]
+                dailyLimit: number
+              }
+              credential?: {
+                configured: boolean
+                source: string
+                appIdMasked: string
+                accountName?: string
+              }
+              recent?: Array<{
+                id: number
+                targetKind: string
+                targetId: string
+                targetName: string
+                content: string
+                source: string
+                result: string
+                error?: string
+                createdAt: number
+              }>
+            }>
+          >
+          setEnabled: (on: boolean) => Promise<{ ok: boolean; error?: string }>
+          setEvent: (evt: string, on: boolean) => Promise<{ ok: boolean; error?: string }>
+          addTarget: (input: {
+            kind: 'chat' | 'user'
+            id: string
+            name?: string
+          }) => Promise<{ ok: boolean; error?: string }>
+          removeTarget: (
+            kind: 'chat' | 'user',
+            id: string
+          ) => Promise<{ ok: boolean; error?: string }>
+          test: () => Promise<{ ok: boolean; sent?: number; error?: string }>
+          listChats: () => Promise<
+            Result<{ chats?: Array<{ chatId: string; name: string; chatMode: string }> }>
+          >
+          resolveUser: (email: string) => Promise<Result<{ openId?: string }>>
+          contactScope: () => Promise<
+            Result<{
+              departments?: Array<{ id: string; name: string }>
+              users?: Array<{ openId: string; name: string; email?: string }>
+              empty?: boolean
+              authUrl?: string
+              appIdMasked?: string
+            }>
+          >
+          contactDepartments: (
+            parentId: string
+          ) => Promise<
+            Result<{ departments?: Array<{ id: string; name: string }>; hasMore?: boolean }>
+          >
+          contactUsers: (
+            deptId: string,
+            pageToken?: string
+          ) => Promise<
+            Result<{
+              users?: Array<{ openId: string; name: string; email?: string }>
+              hasMore?: boolean
+              pageToken?: string
+            }>
+          >
+          openAuthUrl: (url: string) => Promise<{ ok: boolean; error?: string }>
+          /** onlyTasks=true 只看任务,false 含被拒消息(同一张 im_audit) */
+          listAudit: (
+            limit?: number,
+            onlyTasks?: boolean
+          ) => Promise<Result<{ logs?: ImAuditEntry[] }>>
+        }
+        lark: {
+          status: () => Promise<
+            Result<{
+              configured?: boolean
+              source?: 'config' | 'im' | 'none'
+              appIdMasked?: string
+              accountName?: string
+              defaultUrl?: string
+            }>
+          >
+          test: (url: string) => Promise<Result<{ text?: string }>>
         }
         app: {
           onNavigate: (callback: (page: string) => void) => () => void

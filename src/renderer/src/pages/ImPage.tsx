@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ImChannelAccount, ImChannelAccountInput, KeyAccountInfo } from '../../../shared/types'
+import type {
+  ImChannelAccount,
+  ImChannelAccountInput,
+  ImChannelReceiveMode,
+  KeyAccountInfo
+} from '../../../shared/types'
 import { SettingsCard, SwitchRow } from '../components/settings/ui'
+import { FeishuNotifySection } from '../components/settings/FeishuNotifySection'
+import { FeishuTaskPanel } from '../components/settings/FeishuTaskPanel'
+import { FeishuAuditPanel } from '../components/settings/FeishuAuditPanel'
+import { ContactPicker } from '../components/settings/ContactPicker'
 import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
 import './im.css'
@@ -18,6 +27,22 @@ const keyStoreApi = window.api?.cs?.keyStore
 
 const CHAN_LABEL: Record<string, string> = { feishu: '飞书机器人', wechat_claw: '微信 ClawBot' }
 
+/** 权限名单文本 → 映射(每行 ou_xxx 或 ou_xxx=viewer|operator|admin;不写档位=operator) */
+function parsePermText(text: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const raw of (text ?? '').split(/[\n,，]+/)) {
+    const line = raw.trim()
+    if (!line) continue
+    const [idPart, tierPart] = line.split('=')
+    const id = (idPart ?? '').trim()
+    if (!/^ou_[A-Za-z0-9]+$/.test(id)) continue
+    const tier = (tierPart ?? '').trim().toLowerCase() || 'operator'
+    if (!['viewer', 'operator', 'admin'].includes(tier)) continue
+    out[id] = tier
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 export function ImSection(): React.JSX.Element {
   const [accounts, setAccounts] = useState<ImChannelAccount[] | null>(null)
   const [open, setOpen] = useState(false)
@@ -29,10 +54,13 @@ export function ImSection(): React.JSX.Element {
     appId: '',
     appSecret: '',
     wxid: '',
+    receiveMode: 'allowlist',
     enabled: false
   })
   const [editId, setEditId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
+  /** 指令权限名单(每行 ou_xxx 或 ou_xxx=viewer|operator|admin;不写档位=operator) */
+  const [permText, setPermText] = useState('')
   // ── ClawBot 扫码绑定状态(二维码由主进程获取,token 不进渲染层) ──
   const [scanBox, setScanBox] = useState<{ key: string; qrImg?: string; qrUrl?: string } | null>(
     null
@@ -168,6 +196,20 @@ export function ImSection(): React.JSX.Element {
     return off
   }, [])
 
+  // ── 组织联系人(用于挑接收白名单) ──
+  /** 追加 open_id 到白名单(去重) */
+  const appendAllowUser = (openId: string): void => {
+    setForm((f) => {
+      const cur = (f.allowUsers ?? '')
+        .split(/[,\s，]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+      if (cur.includes(openId)) return f
+      cur.push(openId)
+      return { ...f, allowUsers: cur.join(',') }
+    })
+  }
+
   const startNew = (): void => {
     setEditId(null)
     setManualWx(false)
@@ -180,8 +222,10 @@ export function ImSection(): React.JSX.Element {
       baseUrl: '',
       wxid: '',
       allowUsers: '',
+      receiveMode: 'allowlist',
       enabled: true
     })
+    setPermText('')
     setOpen(true)
   }
   const editAccount = (a: ImChannelAccount): void => {
@@ -199,14 +243,22 @@ export function ImSection(): React.JSX.Element {
       baseUrl: '',
       wxid: bound,
       allowUsers: a.allowUsers ?? '',
+      receiveMode: a.receiveMode ?? 'all',
       enabled: a.enabled
     })
+    setPermText(
+      Object.entries(a.permissions ?? {})
+        .map(([k, v]) => `${k}=${v}`)
+        .join('\n')
+    )
     setOpen(true)
   }
   const save = async (): Promise<void> => {
     setSaving(true)
     try {
-      const res = await imApi?.save(form).catch(() => null)
+      const res = await imApi
+        ?.save({ ...form, permissions: parsePermText(permText) })
+        .catch(() => null)
       if (!res?.ok) {
         toast.error((res as { error?: string } | null)?.error || '保存失败')
         return
@@ -300,15 +352,26 @@ export function ImSection(): React.JSX.Element {
                 ) : (
                   <span className="mcp-off">停用</span>
                 )}
+                {a.receiveMode === 'off' && <span className="mcp-kind">仅推送</span>}
+                {a.receiveMode === 'allowlist' && <span className="mcp-kind">只收白名单私聊</span>}
+                {Object.keys(a.permissions ?? {}).length > 0 && (
+                  <span className="mcp-kind">
+                    权限名单 {Object.keys(a.permissions ?? {}).length}
+                  </span>
+                )}
                 <span className="mcp-desc">
                   状态:
-                  {a.status === 'connected'
-                    ? '已连接'
-                    : a.status === 'connecting'
-                      ? '连接中…'
-                      : a.status === 'error'
-                        ? `连接失败:${a.statusText ?? ''}`
-                        : '未启动'}
+                  {a.receiveMode === 'off'
+                    ? '仅推送(不接收消息)'
+                    : a.status === 'connected'
+                      ? a.receiveMode === 'allowlist'
+                        ? '已连接(只收白名单私聊,拒收群消息)'
+                        : '已连接'
+                      : a.status === 'connecting'
+                        ? '连接中…'
+                        : a.status === 'error'
+                          ? `连接失败:${a.statusText ?? ''}`
+                          : '未启动'}
                   {a.wxid ? ` · 绑定业务:${a.wxid}` : ''}
                 </span>
               </div>
@@ -330,6 +393,27 @@ export function ImSection(): React.JSX.Element {
             </div>
           ))}
         </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="飞书任务(指令执行记录)"
+        desc="在飞书里对机器人下指令后,任务实体在这里留痕:标题、状态、耗时、进度与结果摘要。取消请在飞书发 /cancel。"
+      >
+        <FeishuTaskPanel />
+      </SettingsCard>
+
+      <SettingsCard
+        title="飞书指令审计"
+        desc="谁在飞书下了什么指令、是否被接收策略拒绝、执行成功还是失败(含被拦下的消息)。"
+      >
+        <FeishuAuditPanel />
+      </SettingsCard>
+
+      <SettingsCard
+        title="飞书通知(告警推送)"
+        desc="用机器人把「新问题 / 盯办提醒」推送到飞书群或同事单聊。只读业务数据、只推必要信息;发送记录可在下方查看。"
+      >
+        <FeishuNotifySection />
       </SettingsCard>
 
       {open && (
@@ -487,7 +571,7 @@ export function ImSection(): React.JSX.Element {
             绑定后该渠道的 AI 对话将以该账号查询客户/群问题/消息等业务数据,与客服工作台同源
           </div>
           <div className="st-row st-row-top">
-            <span className="st-label">业务查询白名单(可选)</span>
+            <span className="st-label">接收白名单(open_id)</span>
             <textarea
               className="st-input im-allow-area"
               rows={3}
@@ -496,14 +580,68 @@ export function ImSection(): React.JSX.Element {
               placeholder="ou_xxxxxxxx,ou_yyyyyyyy(每行一个或逗号分隔)"
             />
           </div>
+          <ContactPicker
+            onPick={(u) => appendAllowUser(u.openId)}
+            pickLabel="加入白名单"
+            withDepartments
+          />
+          {form.channel === 'feishu' && (
+            <>
+              <div className="st-row st-row-top">
+                <span className="st-label">命令权限名单(可选)</span>
+                <textarea
+                  className="st-input im-allow-area"
+                  rows={3}
+                  value={permText}
+                  onChange={(e) => setPermText(e.target.value)}
+                  placeholder={'ou_xxxxxxxx=admin\nou_yyyyyyyy\nou_zzzzzzzz=viewer'}
+                />
+              </div>
+              <div className="st-hint-inline im-bind-hint">
+                每行一个 open_id;不写档位 = **可写业务数据**;=viewer 只读;=admin 含代发微信消息。
+                未列入接收白名单的发送人一律按只读处理;名单里的工具会按其档位自动裁剪(/help
+                只显示可用能力)。
+              </div>
+            </>
+          )}
           <div className="st-hint-inline im-bind-hint">
-            仅当已绑定微信业务账号时生效:留空 = 所有能 @
-            机器人的人都能查询业务数据;填写后只有名单内的飞书用户可触发,其余消息被忽略。
-            获取自己的标识:logs/im.log 里每条入站会记录 sender=ou_…;也可在飞书后台查看。
+            接收策略为「只收白名单内同事的私聊」时,名单为空 = 拒绝全部来源(不会误收外部消息)。
+            名单同时在「全部接收」模式下过滤来源。获取标识:点「读取组织联系人」挑选,或从 logs/im.log
+            里的 sender=ou_… 复制;需应用具备通讯录权限,否则直接粘贴 ou_… 也可。
+          </div>
+          {form.channel === 'feishu' && (
+            <label className="st-row">
+              <span className="st-label">接收策略</span>
+              <select
+                className="st-input"
+                value={form.receiveMode ?? 'allowlist'}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    receiveMode: e.target.value as ImChannelReceiveMode
+                  }))
+                }
+              >
+                <option value="allowlist">只收白名单内同事的私聊(拒收所有群消息)· 推荐</option>
+                <option value="off">仅推送(完全不接收消息)</option>
+                <option value="all">全部接收(私聊 + 群聊@机器人)</option>
+              </select>
+            </label>
+          )}
+          <div className="st-hint-inline im-bind-hint">
+            {form.receiveMode === 'off'
+              ? '「仅推送」:不建立长连接、不订阅事件,机器人不接收任何消息,只保留主动推送(告警/通知)。'
+              : form.receiveMode === 'allowlist'
+                ? '只接收下方白名单内同事的私聊;所有群消息(含外部群 @ 机器人)一律拒绝。白名单为空时拒绝全部来源。'
+                : '私聊全部接收;群聊需 @ 机器人。下方白名单非空时同样会过滤来源。'}
           </div>
           <SwitchRow
             label="保存后启用"
-            desc="启用即建立长连接开始接收消息。"
+            desc={
+              form.receiveMode === 'off'
+                ? '启用后进入仅推送模式(不接收消息)。'
+                : '启用即建立长连接开始接收消息。'
+            }
             checked={form.enabled ?? false}
             onChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
           />

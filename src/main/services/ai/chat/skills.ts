@@ -1,5 +1,10 @@
 import { listFeedbackIssues } from '../../feedback/analyzer'
-import { listIssuesByGroup, searchIssues } from '../../../db/repos/issueRepo'
+import {
+  listIssuesByGroup,
+  searchIssues,
+  setIssueAssignee,
+  setIssueStatus
+} from '../../../db/repos/issueRepo'
 import { listTeamMembers } from '../../../db/repos/teamRepo'
 import { getSessions, getMessages } from '../../wechat/wxService'
 import { enqueueSend } from '../../send/sendService'
@@ -393,6 +398,79 @@ export const BUILTIN_TOOLS: ToolDef[] = [
         return `已发送给「${targetName}」${r.verified ? '(校验通过)' : '(待校验)'}。`
       }
       return `发送失败:${r.error ?? '未知原因'}`
+    }
+  },
+
+  /* ── 问题处理(写操作;执行前按「工具审批策略」确认,完全访问模式直通) ── */
+
+  {
+    name: 'resolve_issue',
+    kind: 'builtin',
+    needsWx: true,
+    confirm: true,
+    params: {
+      issue_id: {
+        type: 'number',
+        required: true,
+        desc: '问题 id(来自 query_issues/monitor_summary)'
+      },
+      note: { type: 'string', desc: '处理说明(可空)' }
+    },
+    description:
+      '把一条问题标记为「已解决」(写操作,需按审批策略确认)。' +
+      'args: {"issue_id":12,"note":"已电话沟通"}',
+    run: async (ctx, args) => {
+      const id = Number(args?.issue_id)
+      if (!Number.isFinite(id) || id <= 0) return '缺少参数 issue_id(问题 id)。'
+      let hit: { type: string; title: string } | null = null
+      try {
+        hit = listFeedbackIssues(ctx.wxid).find((i) => i.id === id) ?? null
+      } catch {
+        /* 读取失败不影响标记 */
+      }
+      setIssueStatus(id, 'done')
+      const note = String(args?.note ?? '').trim()
+      return `问题 #${id}${hit ? `(${hit.type} ${hit.title})` : ''} 已标记为已解决${note ? `,说明:${note}` : ''}。`
+    }
+  },
+  {
+    name: 'stall_issue',
+    kind: 'builtin',
+    needsWx: true,
+    confirm: true,
+    params: {
+      issue_id: { type: 'number', required: true, desc: '问题 id' },
+      note: { type: 'string', desc: '搁置原因(可空)' }
+    },
+    description:
+      '把一条问题标记为「已搁置」(写操作,需按审批策略确认)。args: {"issue_id":12,"note":"客户暂不需要"}',
+    run: async (_ctx, args) => {
+      const id = Number(args?.issue_id)
+      if (!Number.isFinite(id) || id <= 0) return '缺少参数 issue_id(问题 id)。'
+      setIssueStatus(id, 'stalled')
+      const note = String(args?.note ?? '').trim()
+      return `问题 #${id} 已标记为已搁置${note ? `,原因:${note}` : ''}。`
+    }
+  },
+  {
+    name: 'assign_issue',
+    kind: 'builtin',
+    needsWx: true,
+    confirm: true,
+    params: {
+      issue_id: { type: 'number', required: true, desc: '问题 id' },
+      assignee: { type: 'string', desc: '跟进人 username(来自 list_team_members);传空串=取消指派' }
+    },
+    description:
+      '指派/取消问题的跟进人(写操作,需按审批策略确认);跟进人须是团队名单里的 username。' +
+      'args: {"issue_id":12,"assignee":"zhangsan"}',
+    run: async (_ctx, args) => {
+      const id = Number(args?.issue_id)
+      if (!Number.isFinite(id) || id <= 0) return '缺少参数 issue_id(问题 id)。'
+      const who = String(args?.assignee ?? '').trim()
+      const ok = setIssueAssignee(id, who || null)
+      if (!ok) return `问题 #${id} 不存在。`
+      return who ? `问题 #${id} 已指派给 ${who}。` : `问题 #${id} 已取消指派。`
     }
   }
 ]

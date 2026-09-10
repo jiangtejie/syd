@@ -16,7 +16,7 @@ import { openSecret, sealSecret } from '../services/secrets'
  */
 export function registerConfigHandlers(): void {
   /** 敏感配置键(落库前 safeStorage 加封, 回读时开封) */
-  const SECRET_KEYS = ['ai.apiKey', 'growth.image.apiKey', 'growth.search.apiKey']
+  const SECRET_KEYS = ['ai.apiKey', 'growth.image.apiKey', 'growth.search.apiKey', 'lark.appSecret']
 
   ipcMain.handle('cs:config:getAll', () => {
     const all = getAllConfig()

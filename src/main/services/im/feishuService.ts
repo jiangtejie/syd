@@ -1,4 +1,13 @@
 import { mkdir, writeFile } from 'node:fs/promises'
+import {
+  finishImAudit,
+  findRunningImAudit,
+  insertImAudit,
+  startImAudit,
+  updateImAuditProgress
+} from '../../db/repos/imAuditRepo'
+import { parseCapTier, setSessionCapTier, type CapTier } from '../ai/cap/tiers'
+import { tryHandleFeishuCommand } from './feishuCommands'
 import { join, relative } from 'node:path'
 import { BrowserWindow } from 'electron'
 import * as lark from '@larksuiteoapi/node-sdk'
@@ -59,6 +68,10 @@ interface Runtime {
   businessWxid: string
   /** 业务查询白名单(逗号分隔用户标识;绑定后非空即启用) */
   allowUsers: string[]
+  /** 接收策略(off 仅推送 / allowlist 只收白名单私聊 / all 全收) */
+  receiveMode: 'off' | 'allowlist' | 'all'
+  /** 指令权限名单(open_id → 档位;白名单内未列出者默认 operator) */
+  permissions: Record<string, string>
   client: {
     im: {
       message: {
@@ -90,6 +103,8 @@ const CONNECT_TIMEOUT_MS = 20_000
 interface PendingItem {
   text: string
   messageId: string
+  /** 审计/任务行 id(进度与结果都回填到这一行) */
+  logId?: number | null
 }
 
 /** sessionId → 待续答内容(覆盖式:同会话多条只留最新) */
@@ -104,6 +119,59 @@ const IDLE_WAIT_MS = 5 * 60_000
 const CONFIRM_YES = new Set(['确认', '确认发送', '同意', '同意发送', '确认执行', 'yes', 'ok', 'y'])
 const CONFIRM_NO = new Set(['取消', '拒绝', '不同意', '拒绝发送', '不发送', 'no', 'n', 'cancel'])
 
+/** 审计/任务落库:任何失败都不影响主流程(审计不能成为单点) */
+function auditStart(input: {
+  accountId: number
+  chatId: string
+  sessionId: number | null
+  senderOpenId: string
+  chatType: string
+  kind: 'command' | 'message' | 'rejected'
+  text: string
+  status?: 'queued' | 'skipped'
+  error?: string
+}): number | null {
+  try {
+    return insertImAudit(input)
+  } catch {
+    return null
+  }
+}
+
+function auditFinish(
+  id: number | null,
+  patch: {
+    status: 'ok' | 'error' | 'skipped' | 'done' | 'failed' | 'cancelled'
+    tools?: string[]
+    replyLen?: number
+    elapsedMs?: number
+    error?: string
+    result?: string
+  }
+): void {
+  try {
+    finishImAudit(id, patch)
+  } catch {
+    /* 审计失败不影响回复 */
+  }
+}
+
+function auditProgress(id: number | null, progress: string): void {
+  try {
+    updateImAuditProgress(id, progress)
+  } catch {
+    /* ignore */
+  }
+}
+
+function auditBegin(id: number | null): void {
+  try {
+    startImAudit(id)
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 拆白名单配置(逗号/换行分隔) */
 function parseAllowUsers(raw: string | undefined): string[] {
   return (raw ?? '')
@@ -112,11 +180,41 @@ function parseAllowUsers(raw: string | undefined): string[] {
     .filter(Boolean)
 }
 
-/** 绑定 + 配置白名单时,校验发送者是否可用(三种 id 任一命中即可) */
-function allowUser(rt: Runtime, senderIds: SenderIds): boolean {
-  if (!rt.businessWxid || rt.allowUsers.length === 0) return true
+/** 发送者标识是否命中白名单(三种 id 任一命中即可) */
+function inAllowList(rt: Runtime, senderIds: SenderIds): boolean {
   const ids = [senderIds.openId, senderIds.unionId, senderIds.userId].filter(Boolean)
   return rt.allowUsers.some((w) => ids.includes(w))
+}
+
+/**
+ * 入站准入(接收策略):
+ *  - off:不接收(本不该走到这里,双保险);
+ *  - allowlist:只收白名单内同事的**私聊**,群消息一律拒绝;白名单为空时**全拒**(fail-closed);
+ *  - all:私聊全收;群聊需 @ 机器人;白名单非空时仍按名单过滤(不限是否绑定业务账号)。
+ * 返回 null 表示放行,否则返回拒绝原因(写日志/审计用)。
+ */
+function admitInbound(
+  rt: Runtime,
+  msg: ImMessage,
+  senderIds: SenderIds,
+  appId: string
+): string | null {
+  if (rt.receiveMode === 'off') return '接收策略为「仅推送」'
+  if (rt.receiveMode === 'allowlist') {
+    if (msg.chat_type !== 'p2p') return '接收策略只允许私聊(已拒绝群消息)'
+    if (rt.allowUsers.length === 0) return '未配置接收白名单(拒绝所有来源)'
+    return inAllowList(rt, senderIds) ? null : '不在接收白名单内'
+  }
+  // all:群聊需 @ 本应用
+  if (msg.chat_type !== 'p2p') {
+    const mentionedApp = (msg.mentions ?? []).some((m) => {
+      const id = m.id ?? {}
+      return id.app_id === appId || Object.keys(id).length === 0
+    })
+    if (!mentionedApp) return '群聊未@本应用'
+  }
+  if (rt.allowUsers.length > 0 && !inAllowList(rt, senderIds)) return '不在接收白名单内'
+  return null
 }
 
 /** 等待引擎对该会话空闲(轮询;超时返回 false) */
@@ -263,6 +361,8 @@ export async function startFeishuAccount(
       appId,
       businessWxid: (cfg.wxid ?? '').trim(),
       allowUsers: parseAllowUsers(cfg.allowUsers),
+      receiveMode: cfg.receiveMode ?? (cfg.pushOnly === true ? 'off' : 'all'),
+      permissions: cfg.permissions ?? {},
       client,
       wsc: null,
       name,
@@ -271,6 +371,15 @@ export async function startFeishuAccount(
       recent: new Map()
     }
     runtimes.set(accountId, rt)
+    if (rt.receiveMode === 'off') {
+      // 仅推送模式:不建立长连接、不注册任何事件 → 机器人不接收任何飞书消息(含外部群 @)
+      setStatus(rt, 'connected', '仅推送模式(不接收消息)')
+      imLog(
+        accountId,
+        `已启用「仅推送」模式(appId=${appId}):不建立长连接、不接收任何消息,仅用于主动推送`
+      )
+      return { ok: true }
+    }
     imLog(
       accountId,
       `开始建立飞书长连接(appId=${appId}${
@@ -307,25 +416,29 @@ export async function startFeishuAccount(
         imLog(accountId, `跳过:非用户消息 sender_type=${senderType}(${msg.message_id})`)
         return
       }
-      // 准入:私聊直接响应;群聊需要被 @ 本应用
-      if (msg.chat_type !== 'p2p') {
-        const mentionedApp = (msg.mentions ?? []).some((m) => {
-          const id = m.id ?? {}
-          return id.app_id === appId || Object.keys(id).length === 0
-        })
-        if (!mentionedApp) {
-          imLog(accountId, `跳过:群聊未@本应用(${msg.message_id})`)
-          return
-        }
-      }
       const openId = senderIds.openId ?? senderIds.unionId ?? senderIds.userId ?? '?'
-      if (isDuplicate(rt, msg.message_id)) {
-        imLog(accountId, `跳过:重复推送 ${msg.message_id}`)
+      // 准入(接收策略 + 白名单):拒绝原因写日志,便于排查"为什么没反应"
+      const denied = admitInbound(rt, msg, senderIds, appId)
+      if (denied) {
+        imLog(
+          accountId,
+          `跳过:${denied} sender=${openId} chat=${msg.chat_type ?? '-'}(${msg.message_id})`
+        )
+        auditStart({
+          accountId,
+          chatId: msg.chat_id!,
+          sessionId: null,
+          senderOpenId: openId,
+          chatType: msg.chat_type ?? '',
+          text: '',
+          kind: 'rejected',
+          status: 'skipped',
+          error: denied
+        })
         return
       }
-      // 业务白名单(绑定 + 配置后生效):名单外用户的消息整体忽略,不触发 AI
-      if (!allowUser(rt, senderIds)) {
-        imLog(accountId, `跳过:白名单外用户 ${openId}(${msg.message_id})`)
+      if (isDuplicate(rt, msg.message_id)) {
+        imLog(accountId, `跳过:重复推送 ${msg.message_id}`)
         return
       }
       const mtype = msg.message_type ?? ''
@@ -363,7 +476,15 @@ export async function startFeishuAccount(
       )
       // 立即给消息加"思考中"表情回应,避免用户以为机器人卡住;正式回复发出后移除
       void addThinkingReaction(rt, msg.message_id!)
-      void handleInbound(accountId, rt, msg.chat_id!, msg.message_id!, text)
+      void handleInbound(
+        accountId,
+        rt,
+        msg.chat_id!,
+        msg.message_id!,
+        text,
+        openId,
+        msg.chat_type ?? ''
+      )
     }
     dispatcher.register({ 'im.message.receive_v1': onReceive })
 
@@ -443,14 +564,54 @@ async function handleInbound(
   rt: Runtime,
   chatId: string,
   replyMessageId: string,
-  text: string
+  text: string,
+  senderOpenId: string,
+  chatType: string
 ): Promise<void> {
+  let auditId: number | null = null
   try {
     const sessionId = await createImSession(accountId, chatId, `${rt.name}·${chatId.slice(-8)}`)
+    // 指令权限档位:名单内默认 operator;未列名单(如全收模式下的陌生人)默认 viewer
+    const tier: CapTier | undefined =
+      parseCapTier(rt.permissions[senderOpenId]) ??
+      (rt.allowUsers.includes(senderOpenId) ? 'operator' : 'viewer')
+    setSessionCapTier(sessionId, tier)
+    const isCmd = text.trim().startsWith('/')
+    const logId = auditStart({
+      accountId,
+      chatId,
+      sessionId,
+      senderOpenId,
+      chatType,
+      kind: isCmd ? 'command' : 'message',
+      text
+    })
+    auditId = logId
+    // 斜杠指令(/help、/tasks、/task、/cancel):零成本确定性返回,不进模型上下文
+    const handled = await tryHandleFeishuCommand(
+      {
+        bound: !!rt.businessWxid,
+        reply: (messageId, text2) => safeReply(rt, messageId, text2),
+        removeReaction: (messageId) => void removeThinkingReaction(rt, messageId),
+        log: (msg) => imLog(accountId, msg),
+        finishAudit: (patch) => auditFinish(logId, { ...patch, elapsedMs: 0 })
+      },
+      {
+        accountId,
+        chatId,
+        sessionId,
+        messageId: replyMessageId,
+        businessWxid: rt.businessWxid,
+        text
+      }
+    )
+    if (handled) return
     // 「停止」命令:会话正在生成则中止并确认;空闲时按普通消息交给 AI 解释
     if (isStopCommand(text)) {
       if (isChatRunning(rt.businessWxid, sessionId)) {
+        const running = findRunningImAudit(rt.accountId, chatId)
         stopChat(rt.businessWxid, sessionId)
+        if (running) auditFinish(running.id, { status: 'cancelled' })
         imLog(accountId, `用户要求停止,已中止会话 ${sessionId}`)
         await safeReply(rt, replyMessageId, '已停止生成 ✅')
         void removeThinkingReaction(rt, replyMessageId)
@@ -476,13 +637,20 @@ async function handleInbound(
       text.length > MAX_INBOUND_CHARS
         ? `${text.slice(0, MAX_INBOUND_CHARS)}\n…(消息过长已截断)`
         : text
-    // 队列:生成中到达的新消息只保留最新一条,由 drain 在空闲后续答
-    pendingQueue.set(sessionId, { text: capped, messageId: replyMessageId })
+    // 队列:生成中到达的新消息只保留最新一条(覆盖式),由 drain 在空闲后续答。
+    // 覆盖前把上一条收尾,避免留下永远「排队中/执行中」的孤儿记录。
+    const prevItem = pendingQueue.get(sessionId)
+    if (prevItem) {
+      auditFinish(prevItem.logId ?? null, { status: 'cancelled', error: '被新指令取代' })
+    }
+    pendingQueue.set(sessionId, { text: capped, messageId: replyMessageId, logId })
     if (draining.has(sessionId)) return
     draining.add(sessionId)
     void drainInbound(sessionId, rt).finally(() => draining.delete(sessionId))
   } catch (e) {
-    imLog(accountId, `处理入站消息异常:${e instanceof Error ? (e.stack ?? e.message) : String(e)}`)
+    const msg = e instanceof Error ? (e.stack ?? e.message) : String(e)
+    imLog(accountId, `处理入站消息异常:${msg}`)
+    auditFinish(auditId, { status: 'error', error: msg })
     await safeReply(
       rt,
       replyMessageId,
@@ -747,19 +915,40 @@ async function drainInbound(sessionId: number, rt: Runtime): Promise<void> {
     if (!item) return
     pendingQueue.delete(sessionId)
     // 上一轮引擎未结束时新消息已入队:等空闲再跑,避免忙碌报错刷屏
+    const startedAt = Date.now()
     const idle = await waitIdle(rt.businessWxid, sessionId)
     if (!idle) {
+      auditFinish(item.logId ?? null, { status: 'failed', error: '等待引擎空闲超时' })
       await safeReply(rt, item.messageId, '上一轮生成仍在进行,已超过等待上限,请稍后重试')
       void removeThinkingReaction(rt, item.messageId)
       continue
     }
-    const out = await runAiTurn(sessionId, rt.businessWxid, item.text, rt, item.messageId)
+    auditBegin(item.logId ?? null)
+    const out = await runAiTurn(
+      sessionId,
+      rt.businessWxid,
+      item.text,
+      rt,
+      item.messageId,
+      item.logId ?? null
+    )
     feishuConfirm.delete(String(sessionId))
     if (out === null) {
+      auditFinish(item.logId ?? null, {
+        status: 'failed',
+        error: '生成超时(5 分钟)',
+        elapsedMs: Date.now() - startedAt
+      })
       await safeReply(rt, item.messageId, '处理超时(5 分钟),请稍后重试或直接在 AI 助手里查看')
       void removeThinkingReaction(rt, item.messageId)
       continue
     }
+    auditFinish(item.logId ?? null, {
+      status: 'done',
+      result: out,
+      replyLen: out.length,
+      elapsedMs: Date.now() - startedAt
+    })
     await safeReply(rt, item.messageId, out)
     // 回复已发出:撤掉"思考中"表情(回答完成)
     void removeThinkingReaction(rt, item.messageId)
@@ -776,16 +965,41 @@ async function runAiTurn(
   businessWxid: string,
   text: string,
   rt: Runtime,
-  replyMessageId: string
+  replyMessageId: string,
+  auditId: number | null = null
 ): Promise<string | null> {
   return await new Promise<string | null>((resolve) => {
     let finished = false
     const tools = new Map<string, number>()
+    const startedAt = Date.now()
+    /** 中途进度回执:最多 2 条,避免刷屏(20s / 60s 各一次,且必须已经有工具调用) */
+    let interimSent = 0
+    const progressTimer = setInterval(() => {
+      if (finished) return
+      const elapsed = Date.now() - startedAt
+      const thresholds = [20_000, 60_000]
+      if (interimSent >= thresholds.length) return
+      if (elapsed < thresholds[interimSent]) return
+      if (tools.size === 0) return
+      interimSent += 1
+      const brief = [...tools.entries()]
+        .map(([n, c]) => `${toolCnName(n)}${c > 1 ? `×${c}` : ''}`)
+        .join('、')
+      auditProgress(auditId, `已调用 ${brief}`)
+      void safeReply(
+        rt,
+        replyMessageId,
+        `⏳ 仍在处理(已 ${Math.round(elapsed / 1000)}s):已完成 ${brief};完成后会继续回你。`
+      ).catch(() => {
+        /* 中途回执失败不影响主流程 */
+      })
+    }, 5_000)
     const finish = (val: string | null): void => {
       if (finished) return
       finished = true
       feishuConfirm.delete(String(sessionId))
       clearTimeout(timer)
+      clearInterval(progressTimer)
       unreg()
       resolve(val)
     }
@@ -810,6 +1024,12 @@ async function runAiTurn(
       if (evt.type === 'tool' && evt.tool && evt.toolStatus) {
         if (evt.toolStatus === 'done' || evt.toolStatus === 'fail') {
           tools.set(evt.tool, (tools.get(evt.tool) ?? 0) + 1)
+          auditProgress(
+            auditId,
+            [...tools.entries()]
+              .map(([n, c]) => `${toolCnName(n)}${c > 1 ? `×${c}` : ''}`)
+              .join('、')
+          )
         }
         return
       }

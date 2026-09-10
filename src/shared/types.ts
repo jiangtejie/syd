@@ -449,6 +449,14 @@ export interface AiChatEvent {
 /** 渠道类型:feishu=飞书机器人;wechat_claw=微信官方 ClawBot(iLink) */
 export type ImChannelKind = 'feishu' | 'wechat_claw'
 
+/**
+ * 接收策略(飞书渠道):
+ *  - off       仅推送:不建立长连接、不接收任何消息;
+ *  - allowlist 只收白名单内同事的私聊,拒收所有群消息(默认推荐);
+ *  - all        私聊全收 + 群聊 @ 机器人(白名单非空时仍会过滤)。
+ */
+export type ImChannelReceiveMode = 'off' | 'allowlist' | 'all'
+
 export interface ImChannelAccount {
   id: number
   channel: ImChannelKind
@@ -460,6 +468,10 @@ export interface ImChannelAccount {
   wxid?: string
   /** 业务查询白名单(渠道用户标识,逗号分隔;绑定账号后非空即启用) */
   allowUsers?: string
+  /** 接收策略(默认按 all 兼容历史账号) */
+  receiveMode?: ImChannelReceiveMode
+  /** 指令权限名单(open_id → viewer/operator/admin);白名单内未列出者默认 operator */
+  permissions?: Record<string, string>
   /** 实时连接状态(查询时由主进程填充) */
   status?: 'connected' | 'connecting' | 'stopped' | 'error'
   statusText?: string
@@ -480,6 +492,81 @@ export interface ImChannelAccountInput {
   wxid?: string
   /** 业务查询白名单(逗号分隔的用户标识;空=不限制) */
   allowUsers?: string
+  /** 接收策略:off 仅推送 / allowlist 只收白名单私聊(拒群)/ all 全收 */
+  receiveMode?: ImChannelReceiveMode
+  /** 指令权限名单(open_id → viewer/operator/admin);白名单内未列出者默认 operator */
+  permissions?: Record<string, string>
+}
+
+// ── IM 审计/任务 + 飞书通知/通讯录(主进程产出 → 渲染端消费;避免 preload 手抄一份) ──
+
+/** im_audit 行:入站审计 + 任务生命周期 */
+export interface ImAuditEntry {
+  id: number
+  accountId: number
+  chatId: string
+  sessionId: number | null
+  senderOpenId: string
+  chatType: string
+  kind: string
+  text: string
+  status: string
+  progress: string
+  result: string
+  replyLen: number
+  tools: string
+  elapsedMs: number
+  error: string
+  createdAt: number
+  startedAt: number | null
+  finishedAt: number | null
+}
+
+/** 飞书通知接收目标 */
+export interface FeishuNotifyTargetInfo {
+  kind: 'chat' | 'user'
+  id: string
+  name: string
+}
+
+/** 飞书通知配置(设置页) */
+export interface FeishuNotifyConfigView {
+  enabled: boolean
+  targets: FeishuNotifyTargetInfo[]
+  events: string[]
+  dailyLimit: number
+}
+
+/** 飞书应用凭证状态(设置页展示) */
+export interface FeishuCredentialView {
+  configured: boolean
+  source: string
+  appIdMasked: string
+  accountName?: string
+  defaultUrl?: string
+}
+
+/** 通讯录成员 */
+export interface FeishuContactUser {
+  openId: string
+  name: string
+  email?: string
+}
+
+/** 通讯录可见范围 */
+export interface FeishuContactScopeView {
+  departments: Array<{ id: string; name: string }>
+  users: FeishuContactUser[]
+  empty: boolean
+  authUrl: string
+  appIdMasked: string
+}
+
+/** 机器人所在群 */
+export interface FeishuChatView {
+  chatId: string
+  name: string
+  chatMode: string
 }
 
 // ── 工作台工具名展示(渲染端工具卡/证据来源/审批条 + 主进程导出 Markdown 共用) ──

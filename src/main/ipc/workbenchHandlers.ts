@@ -39,6 +39,7 @@ import {
 } from '../services/ai/workbench/skills'
 import { readMemoNotes, writeMemoNotes } from '../services/ai/memo'
 import { dropSession } from '../services/ai/cap/mounts'
+import { dropSessionCapTier } from '../services/ai/cap/tiers'
 import { toolCnName } from '../../shared/types'
 import { existsSync, statSync } from 'node:fs'
 import { safeFileName } from '../services/_filename'
@@ -311,6 +312,7 @@ export function registerWorkbenchHandlers(): void {
     stopWorkbenchChat(id)
     clearSessionToolAllowed(id)
     dropSession(id) // 释放能力挂载的内存缓存(此前从不调用 → 缓存随会话数增长)
+    dropSessionCapTier(id) // 释放 IM 权限档位缓存(同一类泄漏)
     return removeChat(id) ? { ok: true as const } : { ok: false as const, error: '会话不存在' }
   })
 
@@ -379,6 +381,7 @@ export function registerWorkbenchHandlers(): void {
         stopWorkbenchChat(c.id)
         clearSessionToolAllowed(c.id)
         dropSession(c.id)
+        dropSessionCapTier(c.id)
         removeChat(c.id)
       }
       return { ok: true as const, removed: chats.length }

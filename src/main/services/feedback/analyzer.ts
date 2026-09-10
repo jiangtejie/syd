@@ -1047,9 +1047,9 @@ export async function analyzeGroupIssues(
 /** 分析并写库（带 in-flight 保护，按账号串行） */
 const runningWxids = new Map<string, Promise<void>>()
 /** 成功态（含 lastAt）配置键 */
-const stateConfigKey = (wxid: string) => `issue.analyzed:${wxid}`
+const stateConfigKey = (wxid: string): string => `issue.analyzed:${wxid}`
 /** 失败标记配置键：失败不写 lastAt，仅标记，避免每次进入都重复自动全量扫描 */
-const failConfigKey = (wxid: string) => `issue.analyzeFail:${wxid}`
+const failConfigKey = (wxid: string): string => `issue.analyzeFail:${wxid}`
 
 export async function analyzeIssues(
   wxid: string

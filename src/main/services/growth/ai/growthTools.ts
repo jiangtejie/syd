@@ -18,6 +18,7 @@ import {
   updateOutputFields
 } from '../../../db/repos/growthAiRepo'
 import { downloadMediaAssets } from '../collector/media/assetStore'
+import { readBaseAsText } from '../../lark/api'
 import { searchImages, searchWeb } from './searchProvider'
 import { generateImages, ImageSetupError } from './imageProvider'
 import { exportPublishPackage } from '../publisher/exporter'
@@ -163,6 +164,32 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
           return rows.map((r, i) => String(i + 1) + '. ' + r.source + ' | ' + r.url).join('\n')
         } catch (e) {
           return '图片检索失败: ' + (e instanceof Error ? e.message : String(e))
+        }
+      }
+    }),
+
+    growth_read_lark_base: tool({
+      description:
+        '读取飞书多维表格(Base)内容(只读)。用于读取运营在飞书里维护的选品表/排期表/门店清单/素材台账: ' +
+        '不带 table_id 先返回该 Base 的数据表清单, 带上 table_id 再返回该表的记录(默认 30 条)。',
+      inputSchema: zodSchema(
+        z.object({
+          url: z.string().optional().describe('飞书 Base 链接;不传则用设置里的默认链接'),
+          table_id: z.string().optional().describe('数据表 id(不传则先返回数据表清单)'),
+          view_id: z.string().optional().describe('视图 id(可空)'),
+          limit: z.number().optional().describe('读取条数上限(默认 30, 最大 200)')
+        })
+      ),
+      execute: async (args) => {
+        try {
+          return await readBaseAsText({
+            url: args.url,
+            tableId: args.table_id,
+            viewId: args.view_id,
+            limit: args.limit ?? 30
+          })
+        } catch (e) {
+          return '读取飞书表格失败: ' + (e instanceof Error ? e.message : String(e))
         }
       }
     }),

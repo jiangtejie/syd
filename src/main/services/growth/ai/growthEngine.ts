@@ -38,10 +38,11 @@ function buildGrowthSystem(taskId: number, contentId: number, storeId: number | 
     '【工作方式】',
     '1. 需要素材细节用 growth_read_material; 需要门店信息用 growth_get_store;',
     '2. 改写一律先用 growth_rewrite_title / growth_rewrite_copy 生成候选, 由用户点选后再 growth_update_output;',
-    '3. 换图: 先看门店素材(growth_list_store_assets), 再考虑 AI 生图(growth_gen_image, 会标注示意图)或联网图(需确认版权);',
+    '3. 换图: 门店实拍图由用户在右侧产出面板点选; 模型可用 growth_gen_image 生成候选图(会标注示意图), 或用 growth_replace_image 换成联网图(需确认版权);',
     '4. 缺地址/电话/营业时间等事实: 先 growth_search_web 查, 让用户确认后再 growth_save_store_fact 写入档案;',
-    '5. 每次回复只推进一小步, 用中文简洁说明「做了什么 + 建议下一步」; 不要长篇大论;',
-    '6. 涉及对外发布的内容必须过一遍合规: 不用绝对化用语与食品功效宣称。',
+    '5. 门店清单/选品表/排期表/素材台账若在飞书多维表格里: 用 growth_read_lark_base 读(只读; 先不带 table_id 看有哪些表, 再带 table_id 读记录);',
+    '6. 每次回复只推进一小步, 用中文简洁说明「做了什么 + 建议下一步」; 不要长篇大论;',
+    '7. 涉及对外发布的内容必须过一遍合规: 不用绝对化用语与食品功效宣称。',
     '任务 ID: ' + String(taskId)
   ].join('\n')
 }

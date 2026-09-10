@@ -3,6 +3,7 @@ import { getImAccountConfig, saveImAccount, listMappedSessionIds } from '../../d
 import { appendChatMessage, listChatMessages } from '../../db/repos/chatRepo'
 import { createLogger } from '../logging'
 import { createImSession } from './sessionBridge'
+import { parseCapTier, setSessionCapTier, type CapTier } from '../ai/cap/tiers'
 import {
   confirmToolRun,
   isChatRunning,
@@ -33,6 +34,8 @@ interface Runtime {
   token: string
   businessWxid: string
   allowUsers: string[]
+  /** 指令权限名单(用户标识 → 档位) */
+  permissions: Record<string, string>
   buffer: string
   controller: AbortController | null
   timer: ReturnType<typeof setInterval> | null
@@ -315,7 +318,13 @@ async function drainAccount(rt: Runtime): Promise<void> {
 }
 
 async function sessionOf(rt: Runtime, userId: string): Promise<number> {
-  return await createImSession(rt.accountId, userId, `${rt.name}·${userId.slice(0, 10)}`)
+  const sid = await createImSession(rt.accountId, userId, `${rt.name}·${userId.slice(0, 10)}`)
+  // 与飞书渠道一致:外部渠道默认只读;白名单内默认可写;权限名单可指定 admin(含代发微信)
+  const tier: CapTier =
+    parseCapTier(rt.permissions[userId]) ??
+    (rt.allowUsers.length === 0 || rt.allowUsers.includes(userId) ? 'operator' : 'viewer')
+  setSessionCapTier(sid, tier)
+  return sid
 }
 
 async function pollOnce(rt: Runtime): Promise<void> {
@@ -354,6 +363,7 @@ export async function startWechatClawAccount(
     token,
     businessWxid: (cfg.wxid ?? '').trim(),
     allowUsers: parseAllow(cfg.allowUsers),
+    permissions: cfg.permissions ?? {},
     buffer: '',
     controller: null,
     timer: null,

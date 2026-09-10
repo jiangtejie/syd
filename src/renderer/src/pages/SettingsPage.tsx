@@ -5,6 +5,7 @@ import AgentSettingsSection from '../components/settings/AgentSettingsSection'
 import { agentFormDirty } from '../components/settings/agentDirty'
 import WorkbenchApprovalSection from '../components/settings/WorkbenchApprovalSection'
 import WorkbenchMemoSection from '../components/settings/WorkbenchMemoSection'
+import { WorkbenchWorkspaceSection } from '../components/settings/WorkbenchWorkspaceSection'
 import WorkbenchReliabilitySection from '../components/settings/WorkbenchReliabilitySection'
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
 import ReportJobsSection from '../components/settings/ReportJobsSection'
@@ -41,6 +42,9 @@ interface FormState {
   'growth.search.enabled': string
   'growth.search.provider': string
   'growth.search.apiKey': string
+  'lark.appId': string
+  'lark.appSecret': string
+  'lark.defaultUrl': string
 }
 
 /** AI 通道预设（OpenAI 兼容 chat/completions）：仅预置官方接口地址；模型名不预置，通过「获取模型」拉取或手动填写 */
@@ -117,7 +121,10 @@ const DEFAULTS: FormState = {
   'growth.image.count': '2',
   'growth.search.enabled': '0',
   'growth.search.provider': 'bocha',
-  'growth.search.apiKey': ''
+  'growth.search.apiKey': '',
+  'lark.appId': '',
+  'lark.appSecret': '',
+  'lark.defaultUrl': ''
 }
 
 const configApi = window.api?.cs?.config
@@ -192,6 +199,36 @@ function SettingsPage(): React.JSX.Element {
   const [sendStatus, setSendStatus] = useState<SendStatusInfo | null>(null)
   const [aiTesting, setAiTesting] = useState(false)
   const [imgTesting, setImgTesting] = useState(false)
+  const [larkStatus, setLarkStatus] = useState<{
+    configured: boolean
+    source: 'config' | 'im' | 'none'
+    appIdMasked: string
+    accountName?: string
+    defaultUrl: string
+  } | null>(null)
+  const [larkTesting, setLarkTesting] = useState(false)
+  const [larkTestRes, setLarkTestRes] = useState<{ ok: boolean; text: string } | null>(null)
+  /** 飞书凭证状态刷新计数(保存配置后 +1 重新读取) */
+  const [larkReload, setLarkReload] = useState(0)
+  useEffect(() => {
+    let alive = true
+    void window.api?.cs?.lark
+      ?.status()
+      .then((res) => {
+        if (!alive || !res?.ok) return
+        setLarkStatus({
+          configured: !!res.configured,
+          source: res.source ?? 'none',
+          appIdMasked: res.appIdMasked ?? '',
+          accountName: res.accountName,
+          defaultUrl: res.defaultUrl ?? ''
+        })
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [larkReload])
   const [aiTestRes, setAiTestRes] = useState<{
     ok: boolean
     latencyMs?: number
@@ -354,6 +391,29 @@ function SettingsPage(): React.JSX.Element {
   }
   const patch = (key: keyof FormState, value: string): void => {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  /** 飞书云文档: 用表单里的链接实测能否读到(失败信息含权限修复指引) */
+  const testLark = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.test) return
+    const url = (form['lark.defaultUrl'] || larkStatus?.defaultUrl || '').trim()
+    if (!url) {
+      setLarkTestRes({
+        ok: false,
+        text: '请先填写飞书链接(如 https://xxx.feishu.cn/base/…?table=…)'
+      })
+      return
+    }
+    setLarkTesting(true)
+    try {
+      const res = await api.test(url)
+      setLarkTestRes(
+        res.ok ? { ok: true, text: res.text ?? '' } : { ok: false, text: res.error ?? '测试失败' }
+      )
+    } finally {
+      setLarkTesting(false)
+    }
   }
 
   /** 切换设置 Tab 并记忆选择（下次进入直接定位） */
@@ -701,10 +761,18 @@ function SettingsPage(): React.JSX.Element {
             <WorkbenchMemoSection />
           </SettingsCard>
 
+          {/* 默认工作区(飞书/IM 渠道文件工具的根目录) */}
+          <SettingsCard
+            title="默认工作区"
+            desc="飞书机器人 / 微信 ClawBot 这类没有工作台界面的会话,用它作为文件工具的根目录;工作台会话单独绑定的目录优先。"
+          >
+            <WorkbenchWorkspaceSection />
+          </SettingsCard>
+
           {/* 工具审批策略(工作台写/外部工具预留) */}
           <SettingsCard
             title="工具审批策略"
-            desc="需确认的写/外部工具的审批偏好;命中「始终允许」名单的工具不再询问。"
+            desc="写操作(代发消息、改问题状态、写文件等)的审批偏好:人工审批 / 完全访问;命中「始终允许」名单的工具不再询问。"
           >
             <WorkbenchApprovalSection />
           </SettingsCard>
@@ -811,6 +879,80 @@ function SettingsPage(): React.JSX.Element {
                 placeholder="搜索服务密钥(本地加密存储)"
               />
             </FieldRow>
+          </SettingsCard>
+
+          <SettingsCard
+            title="飞书云文档(读取多维表格/文档)"
+            desc="让 AI 能读飞书多维表格(Base)与云文档: 把 /base/ 或 /docx/ 链接发给 AI 即可。只读, 不会修改飞书里的数据。App ID / Secret 留空则自动复用 IM 渠道里的飞书机器人账号。"
+          >
+            <div className="st-hint">
+              {larkStatus === null
+                ? '读取配置中…'
+                : larkStatus.configured
+                  ? `已配置: ${larkStatus.source === 'im' ? `复用 IM 渠道账号「${larkStatus.accountName ?? '飞书机器人'}」` : '设置页凭证'}(App ID ${larkStatus.appIdMasked})`
+                  : '尚未配置飞书应用凭证 —— AI 读飞书表格/文档会提示去这里配置'}
+            </div>
+            <FieldRow label="App ID">
+              <input
+                className="st-input"
+                value={form['lark.appId'] ?? ''}
+                onChange={(e) => patch('lark.appId', e.target.value)}
+                placeholder="cli_… (留空则复用 IM 渠道的飞书账号)"
+              />
+            </FieldRow>
+            <FieldRow label="App Secret">
+              <input
+                className="st-input"
+                type="password"
+                value={form['lark.appSecret'] ?? ''}
+                onChange={(e) => patch('lark.appSecret', e.target.value)}
+                placeholder="应用密钥(本地加密存储)"
+              />
+            </FieldRow>
+            <FieldRow label="默认链接">
+              <input
+                className="st-input"
+                value={form['lark.defaultUrl'] ?? ''}
+                onChange={(e) => patch('lark.defaultUrl', e.target.value)}
+                placeholder="https://xxx.feishu.cn/base/<token>?table=<table_id>"
+              />
+            </FieldRow>
+            <div className="st-actions">
+              <button
+                type="button"
+                className="st-btn ghost"
+                disabled={larkTesting}
+                onClick={() => void testLark()}
+              >
+                {larkTesting ? '测试中…' : '测试读取'}
+              </button>
+              <button
+                type="button"
+                className="st-btn"
+                disabled={!loaded}
+                onClick={() => {
+                  void save(['lark.appId', 'lark.appSecret', 'lark.defaultUrl']).then(() =>
+                    setLarkReload((n) => n + 1)
+                  )
+                }}
+              >
+                保存飞书配置
+              </button>
+            </div>
+            {larkTestRes && (
+              <div className="st-ai-test">
+                <span className={larkTestRes.ok ? 'st-ok' : 'st-bad'}>
+                  {(larkTestRes.ok ? '✓ ' : '✗ ') +
+                    larkTestRes.text.slice(0, 400) +
+                    (larkTestRes.text.length > 400 ? '…' : '')}
+                </span>
+              </div>
+            )}
+            <div className="st-hint">
+              权限前提: 开放平台「权限管理」开通多维表格只读(bitable:app:readonly)与云文档只读
+              (docx:document:readonly)并发布版本; 再把应用加为目标文档的协作者(分享 → 添加协作者 →
+              选本应用), 否则接口会返回 403 / 权限类错误码。
+            </div>
           </SettingsCard>
         </div>
       )}

@@ -200,6 +200,7 @@ function CustomersPage(): React.JSX.Element {
 
   // 筛选/搜索/每页条数变化时回到第 1 页；数据增减导致当前页超界时自动收敛到最后一页
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 筛选条件变化时回到第 1 页(派生态无法表达)
     setPage(1)
     setJumpValue('')
   }, [effectiveTag, keyword, pageSize])

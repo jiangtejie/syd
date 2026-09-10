@@ -1,18 +1,17 @@
 import { tool, zodSchema, type Tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import { findTool, type ToolDef, type ToolParamDecl } from '../chat/skills'
-import { findSoftwareTool } from '../cap/software'
-import { findWsTool, isWsWriteTool } from './wsTools'
+import type { ToolDef, ToolParamDecl } from '../chat/skills'
+import { groupText, isWriteCap, listCaps, resolveCapDef, type CapGroup } from '../cap/registry'
 import type { WbToolGroup } from './types'
 import { requestToolApproval } from './approval'
 import { sendAgentEnabled, sendApproveEnabled } from '../sendGate'
 
 /**
  * 工作台工具注册表:产品原生能力 → AI SDK tool()。
- * - 高扩展:业务执行器沿用 chat/skills.ts 与 cap/software.ts 的 ToolDef(唯一实现),
- *   本层只负责“声明分组 + zod schema + 审批标记”;新增能力 = 注册 def + 加入分组;
+ * - **唯一清单来自能力注册表**(cap/registry.ts):分组、停用、审批标记都从那里派生,
+ *   新增能力只需在注册表登记,无需再改本文件(历史上这里有一份重复清单,已删除);
  * - 账号上下文由引擎注入(ctx.wxid),不暴露给模型;
- * - 除 send_message(写,需逐次审批)外全部只读;写/外部工具统一经审批确认后执行。
+ * - 写类工具(业务写 / 工作区写 / 云文档写)统一经审批桥,按「工具审批策略」判定直通或确认。
  */
 
 interface WbToolSpec {
@@ -34,74 +33,35 @@ export interface WbEvidenceRow {
   line: string
 }
 
-/** 常驻组:微信业务(绑定账号;send_message 为受审批写工具) */
-const BUSINESS_TOOLS = [
-  'query_issues',
-  'query_group_issues',
-  'search_issue_history',
-  'monitor_summary',
-  'customer_lookup',
-  'recent_messages',
-  'list_team_members',
-  'send_message'
-]
-
-/** 常驻组:软件自身状态(无账号也可用) */
-const SOFTWARE_TOOLS = [
-  'software_status',
-  'data_scope',
-  'bi_stats',
-  'export_preview',
-  'im_channels_status'
-]
-
-/** 工作区组:绑定目录后的文件读写(写/删需逐次审批) */
-const WS_TOOLS = [
-  'workspace_list',
-  'workspace_read',
-  'workspace_search',
-  'workspace_file_info',
-  'workspace_write',
-  'workspace_mkdir',
-  'workspace_delete',
-  'csv_read',
-  'csv_append',
-  'xlsx_preview',
-  'xlsx_write',
-  'site_scaffold'
-]
-
-export const WORKBENCH_TOOL_GROUPS: WbToolGroup[] = [
-  {
-    id: 'business',
-    label: '微信业务:问题/监控/客户/消息/团队查询与发送(需绑定账号;发送需审批)',
-    tools: BUSINESS_TOOLS
-  },
-  {
-    id: 'workspace',
-    label: '工作区文件:浏览/读取/搜索与写入/删除(需会话绑定工作区;写删需审批)',
-    tools: WS_TOOLS
-  },
-  { id: 'software', label: '软件状态:版本/账号/数据范围/统计/IM 状态', tools: SOFTWARE_TOOLS }
-]
-
+/** 工作台常驻能力:来自注册表(排除 L0 元技能与已停用能力) */
 export function workbenchToolNames(): string[] {
-  return [...BUSINESS_TOOLS, ...WS_TOOLS, ...SOFTWARE_TOOLS]
+  return listCaps()
+    .filter((c) => c.tier > 0 && !c.disabled)
+    .map((c) => c.name)
+}
+
+/** 分组菜单(给 system 的固定说明):按注册表分组聚合,新增能力自动出现 */
+export function workbenchToolGroups(): WbToolGroup[] {
+  const order: CapGroup[] = ['wechat', 'software', 'workspace', 'cloud']
+  const caps = listCaps().filter((c) => c.tier > 0 && !c.disabled)
+  const out: WbToolGroup[] = []
+  for (const g of order) {
+    const items = caps.filter((c) => c.group === g)
+    if (items.length === 0) continue
+    const writes = items.filter((c) => isWriteCap(c.name)).length
+    out.push({
+      id: g,
+      label: `${groupText(g)}(${items.length} 项${writes > 0 ? `,其中 ${writes} 项写操作需按审批策略确认` : ',只读'})`,
+      tools: items.map((c) => c.name)
+    })
+  }
+  return out
 }
 
 function resolveSpec(name: string): WbToolSpec | null {
-  if (BUSINESS_TOOLS.includes(name)) {
-    // send_message 是唯一写工具:需要走审批(总开关/逐次审批开关在工具内二次判定)
-    return { resolve: () => findTool(name), approval: name === 'send_message' }
-  }
-  if (WS_TOOLS.includes(name)) {
-    // 工作区写/删工具需逐次审批;只读工具直接可用(沙箱内已限大小)
-    return { resolve: () => findWsTool(name), approval: isWsWriteTool(name) }
-  }
-  if (SOFTWARE_TOOLS.includes(name)) {
-    return { resolve: () => findSoftwareTool(name), approval: false }
-  }
-  return null
+  const def = resolveCapDef(name)
+  if (!def) return null
+  return { resolve: () => def, approval: isWriteCap(name) }
 }
 
 /** ToolParamDecl → zod(自动生成参数 schema;高扩展:def 声明即生效) */
@@ -231,7 +191,7 @@ export function buildWorkbenchToolSet(
 
 /** 固定能力菜单(注入 system,跨轮不变;prompt-cache 友好) */
 export function buildToolMenuText(): string {
-  const lines = WORKBENCH_TOOL_GROUPS.map((g) => `- ${g.id}:${g.label}`)
+  const lines = workbenchToolGroups().map((g) => `- ${g.id}:${g.label}`)
   return `可用能力(按组,工具由系统原生提供):
 ${lines.join('\n')}
 需要数据时直接调用对应工具;列表外能力不可用。`

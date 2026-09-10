@@ -26,7 +26,7 @@ function decodeBinaryContent(data: Buffer): string {
 }
 
 /** 解码可能压缩的内容（Buffer / hex 字符串 / 普通字符串） */
-export function decodeMessageContent(raw: any): string {
+export function decodeMessageContent(raw: unknown): string {
   if (!raw) return ''
   if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) {
     return decodeBinaryContent(Buffer.from(raw))
@@ -40,8 +40,9 @@ export function decodeMessageContent(raw: any): string {
     }
     return raw
   }
-  if (typeof raw === 'object' && Array.isArray((raw as any).data)) {
-    return decodeBinaryContent(Buffer.from((raw as any).data))
+  if (typeof raw === 'object' && raw !== null) {
+    const data = (raw as { data?: unknown }).data
+    if (Array.isArray(data)) return decodeBinaryContent(Buffer.from(data as number[]))
   }
   return String(raw ?? '')
 }
@@ -281,11 +282,11 @@ export function parseImageMd5(content: string): string | undefined {
 }
 
 /** 解码 packed_info_data（protobuf 二进制），支持 Buffer / Uint8Array / hex / base64 / {data}（对齐 CipherTalk decodePackedInfo） */
-function decodePackedInfo(raw: any): Buffer | null {
+function decodePackedInfo(raw: unknown): Buffer | null {
   if (!raw) return null
   if (Buffer.isBuffer(raw)) return raw
   if (raw instanceof Uint8Array) return Buffer.from(raw)
-  if (Array.isArray(raw)) return Buffer.from(raw)
+  if (Array.isArray(raw)) return Buffer.from(raw as number[])
   if (typeof raw === 'string') {
     const trimmed = raw.trim()
     if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
@@ -301,8 +302,9 @@ function decodePackedInfo(raw: any): Buffer | null {
       /* ignore */
     }
   }
-  if (typeof raw === 'object' && Array.isArray((raw as any).data)) {
-    return Buffer.from((raw as any).data)
+  if (typeof raw === 'object' && raw !== null) {
+    const data = (raw as { data?: unknown }).data
+    if (Array.isArray(data)) return Buffer.from(data as number[])
   }
   return null
 }
@@ -314,7 +316,7 @@ function decodePackedInfo(raw: any): Buffer | null {
  * 对齐 CipherTalk parseImageDatNameFromRow：非可打印字节替换为空格后，
  * 优先匹配 `.dat` 文件名（8+ 位 hex），兜底匹配 16+ 位 hex。
  */
-export function parsePackedInfoMd5(raw: any): string | undefined {
+export function parsePackedInfoMd5(raw: unknown): string | undefined {
   const buffer = decodePackedInfo(raw)
   if (!buffer || buffer.length === 0) return undefined
   const printable: number[] = []
@@ -496,9 +498,9 @@ export function parseChatHistory(content: string): ChatRecordItem[] | undefined 
 function sanitizeQuotedContent(content: string): string {
   let result = content
   result = result.replace(/wxid_[A-Za-z0-9_-]{3,}/g, '')
-  result = result.replace(/^[\s:：\-]+/, '')
+  result = result.replace(/^[\s:：-]+/, '')
   result = result.replace(/[:：]{2,}/g, ':')
-  result = result.replace(/^[\s:：\-]+/, '')
+  result = result.replace(/^[\s:：-]+/, '')
   result = result.replace(/\s+/g, ' ').trim()
   return result
 }
@@ -525,7 +527,7 @@ export function parseQuoteMessage(content: string): QuoteInfo {
     let displayName = extractXmlValue(referMsgXml, 'displayname')
     if (displayName && /^wxid_/i.test(displayName)) displayName = ''
 
-    let referContent = decodeHtmlEntities(extractXmlValue(referMsgXml, 'content'))
+    const referContent = decodeHtmlEntities(extractXmlValue(referMsgXml, 'content'))
     const referType = extractXmlValue(referMsgXml, 'type')
     let imageMd5: string | undefined
 
@@ -584,9 +586,11 @@ export function parseQuoteMessage(content: string): QuoteInfo {
  * 清洗控制字符后非空则原样返回，否则按最后消息类型生成默认摘要（如 [文本]/[图片]）。
  */
 export function processSummary(summary: string, lastMsgType: number): string {
+  /* eslint-disable no-control-regex -- 有意清洗控制字符(会话摘要) */
   const cleaned = String(summary || '')
     .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '')
     .trim()
+  /* eslint-enable no-control-regex */
   if (cleaned) return cleaned
   return MESSAGE_TYPE_LABELS[lastMsgType] || '[消息]'
 }

@@ -20,6 +20,8 @@ import {
 import { findTool, schemaFromParams, type ToolCtx, type ToolDef } from './skills'
 import { describeModelError } from '../modelErrors'
 import { sendApproveEnabled, SEND_TOOL_NAME } from '../sendGate'
+import { approvalDecision } from '../workbench/approval'
+import { allowedByTier, getSessionCapTier, tierDeniedText } from '../cap/tiers'
 import { findSoftwareTool } from '../cap/software'
 import { expandMounted, capNameOfDef, isCapDisabled } from '../cap/registry'
 import { skillsInjectionText } from '../workbench/skills'
@@ -130,7 +132,18 @@ async function assembleTurnSystem(opts: {
   const bound = boundOf(opts.wxid)
   const { dropped } = beginTurn(opts.sessionId, bound)
   const names = mountedNames(opts.sessionId, bound)
-  const { defs, errors } = await expandMounted(names, { bound })
+  const { defs: allDefs, errors } = await expandMounted(names, { bound })
+  // 权限档位过滤:飞书/IM 会话按发送人档位裁掉越权能力(本地入口 tier=undefined 不限制)
+  const capTier = getSessionCapTier(opts.sessionId)
+  const defs = allDefs.filter((d) => allowedByTier(d.name, capTier))
+  if (capTier) {
+    const denied = allDefs.filter((d) => !allowedByTier(d.name, capTier))
+    if (denied.length > 0) {
+      errors.push(
+        `以下能力因当前飞书账号权限(${capTier})不可用:${denied.map((d) => d.name).join('、')}`
+      )
+    }
+  }
 
   const chunks: string[] = [agentSystemText(opts.agentId ?? null)]
   chunks.push(stateBlockText(bound, names, dropped, errors))
@@ -509,12 +522,22 @@ async function runTurn(opts: {
         thought
       })
 
-      // 高危工具:渲染端人工确认(60s 超时按取消;发送开关关闭时直通;未绑定会话不发确认直接按不可用处理)
-      const needConfirm =
-        def.confirm &&
-        (def.name !== SEND_TOOL_NAME || sendApproveEnabled()) &&
-        !(def.needsWx && !bound)
-      if (needConfirm) {
+      // 统一守卫:权限档位 + 审批策略(完全访问直通 / 始终拒绝拦截 / ask 人工确认)
+      const guard = guardToolExec({ sessionId, def, bound })
+      if (guard.deny) {
+        const msg = guard.deny
+        appendChatMessage(sessionId, 'user', 'tool_result', msg)
+        turns.push({ role: 'user', content: `[工具结果]\n${msg}` })
+        sendEvent(wxid, {
+          type: 'tool',
+          chatId: sessionId,
+          tool: def.name,
+          toolStatus: 'fail',
+          resultClip: msg
+        })
+        continue
+      }
+      if (guard.needConfirm) {
         const runId = `c${++confirmSeq}`
         const confirmed = await new Promise<boolean>((resolve) => {
           const timer = setTimeout(() => {
@@ -648,6 +671,37 @@ function schemaOf(tool: {
   }
 }
 
+/**
+ * 工具执行前的统一守卫(两条协议通道共用):
+ *   ① 权限档位:外部渠道越权直接拒绝(本地入口 tier=undefined 不限制);
+ *   ② 审批策略:deny(始终拒绝)拦截,ask 需人工确认,allow(完全访问)直通;
+ *   ③ 写类工具叠加发送总开关;未绑定会话不发确认直接按不可用处理。
+ * 返回 deny 时调用方负责把说明回给模型;needConfirm 为 true 时走既有确认流程。
+ */
+function guardToolExec(opts: { sessionId: number; def: ToolDef; bound: boolean }): {
+  deny?: string
+  needConfirm: boolean
+} {
+  const { sessionId, def, bound } = opts
+  const tier = getSessionCapTier(sessionId)
+  if (tier && !allowedByTier(def.name, tier)) {
+    return { deny: tierDeniedText(def.name, tier), needConfirm: false }
+  }
+  const mode = def.confirm ? approvalDecision(sessionId, def.name) : 'allow'
+  if (def.confirm && mode === 'deny') {
+    return {
+      deny: `工具 ${def.name} 已被「工具审批策略」设为始终拒绝,本次跳过。`,
+      needConfirm: false
+    }
+  }
+  const needConfirm =
+    !!def.confirm &&
+    mode === 'ask' &&
+    (def.name !== SEND_TOOL_NAME || sendApproveEnabled()) &&
+    !(def.needsWx && !bound)
+  return { needConfirm }
+}
+
 function isToolCapabilityError(e: unknown): boolean {
   const m = e instanceof Error ? e.message : String(e)
   // 通道不支持 tools / 参数非法等:降级 JSON 协议重跑(常见网关文案宽匹配)
@@ -659,7 +713,9 @@ function isToolCapabilityError(e: unknown): boolean {
 /** 原生通道 schemas:核心元技能 + 本会话已挂载能力的工具(挂载变更后每轮重建) */
 async function nativeSchemas(sessionId: number, bound: boolean): Promise<ToolSchema[]> {
   const names = mountedNames(sessionId, bound)
-  const { defs } = await expandMounted(names, { bound })
+  const { defs: allDefs } = await expandMounted(names, { bound })
+  const capTier = getSessionCapTier(sessionId)
+  const defs = allDefs.filter((d) => allowedByTier(d.name, capTier))
   return [...metaToolDefs().map(schemaOf), ...defs.map(schemaOf)]
 }
 
@@ -761,12 +817,22 @@ async function executeNativeToolCalls(opts: {
         continue
       }
     }
-    // 发送类确认同样受总开关/逐次审批开关与绑定态约束
-    if (
-      def.confirm &&
-      (def.name !== SEND_TOOL_NAME || sendApproveEnabled()) &&
-      !(def.needsWx && !bound)
-    ) {
+    // 统一守卫:权限档位 + 审批策略(与 JSON 通道同一实现)
+    const guard = guardToolExec({ sessionId, def, bound })
+    if (guard.deny) {
+      const msg = guard.deny
+      appendChatMessage(sessionId, 'user', 'tool_result', msg)
+      wire.push({ role: 'tool', tool_call_id: callId, content: msg })
+      sendEvent(wxid, {
+        type: 'tool',
+        chatId: sessionId,
+        tool: def.name,
+        toolStatus: 'fail',
+        resultClip: msg
+      })
+      continue
+    }
+    if (guard.needConfirm) {
       const runId = `n${++confirmSeq}`
       const ok = await new Promise<boolean>((resolve) => {
         const timer = setTimeout(() => {

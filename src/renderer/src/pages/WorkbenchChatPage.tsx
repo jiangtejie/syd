@@ -771,6 +771,16 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     setStick(true)
     pendingAnchorRef.current = null
     setStartIdx(Math.max(0, messages.length - WB_WINDOW))
+    // 直接滚到底:窗口未变化时 setStartIdx 是同值(React 会跳过重渲染),只靠「跟随滚动」effect
+    // 不会触发 —— 表现为点了「↓ 最新」没反应。这里显式滚动一次。
+    const el = bodyRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    // 若窗口被展开(超长会话),内容高度下一帧才更新,再补一次确保真正贴底
+    requestAnimationFrame(() => {
+      const el2 = bodyRef.current
+      if (el2 && stickRef.current) el2.scrollTop = el2.scrollHeight
+    })
   }
 
   /** 加载更早:记录原首条,展开后以它为锚保持位置(进入历史浏览态,停止跟随) */

@@ -1,5 +1,5 @@
 import { getDb } from '../database'
-import type { ImChannelAccount, ImChannelKind } from '../../../shared/types'
+import type { ImChannelAccount, ImChannelKind, ImChannelReceiveMode } from '../../../shared/types'
 
 /** im_channel_account / im_chat_map 持久化。 */
 
@@ -24,15 +24,23 @@ export interface ImAccountConfig {
   wxid?: string
   /** 业务查询白名单(逗号分隔用户标识;绑定账号后非空即启用) */
   allowUsers?: string
+  /** 飞书指令权限名单(open_id → viewer/operator/admin;未列出的白名单用户默认 operator) */
+  permissions?: Record<string, string>
+  /** 接收策略:off 仅推送 / allowlist 只收白名单私聊(拒群)/ all 全收 */
+  receiveMode?: ImChannelReceiveMode
+  /** 历史字段(已由 receiveMode 取代,仅用于读取老库时的兼容映射) */
+  pushOnly?: boolean
 }
 
 export function rowToAccount(r: AccountRow): ImChannelAccount {
   let wxid: string | undefined
   let allowUsers: string | undefined
+  let receiveMode: ImChannelReceiveMode = 'all'
   try {
     const cfg = JSON.parse(r.config) as ImAccountConfig
     wxid = (cfg.wxid ?? '').trim() || undefined
     allowUsers = (cfg.allowUsers ?? '').trim() || undefined
+    receiveMode = cfg.receiveMode ?? (cfg.pushOnly === true ? 'off' : 'all')
   } catch {
     /* config 损坏时仅忽略渠道扩展信息 */
   }
@@ -44,7 +52,8 @@ export function rowToAccount(r: AccountRow): ImChannelAccount {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     wxid,
-    allowUsers
+    allowUsers,
+    receiveMode
   }
 }
 
@@ -94,6 +103,22 @@ export function saveImAccount(input: {
   else delete cfg.allowUsers
   if (cfg.baseUrl) cfg.baseUrl = cfg.baseUrl.trim()
   else delete cfg.baseUrl
+  cfg.receiveMode =
+    cfg.receiveMode === 'off' || cfg.receiveMode === 'allowlist' ? cfg.receiveMode : 'all'
+  delete cfg.pushOnly // 派生/历史字段不再落库(读取时由 receiveMode 兼容映射)
+  // 权限名单:只留合法 open_id + 合法档位(渲染层已校验,这里再兜一层,防绕过 UI 写入脏值)
+  if (cfg.permissions) {
+    const clean: Record<string, string> = {}
+    for (const [k, v] of Object.entries(cfg.permissions)) {
+      const id = (k ?? '').trim()
+      const tier = (v ?? '').trim().toLowerCase()
+      if (!/^ou_[A-Za-z0-9]+$/.test(id)) continue
+      if (tier !== 'viewer' && tier !== 'operator' && tier !== 'admin') continue
+      clean[id] = tier
+    }
+    if (Object.keys(clean).length > 0) cfg.permissions = clean
+    else delete cfg.permissions
+  }
   if (!cfg.clawToken) delete cfg.clawToken
   const db = getDb()
   const now = Date.now()

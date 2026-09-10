@@ -60,10 +60,11 @@ function decryptMainDbToBuffer(
   let raw: Buffer
   try {
     raw = readFileSync(filePath)
-  } catch (e: any) {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
     return {
       ok: false,
-      error: `读取数据库失败（微信可能在占用该文件，请退出微信后重试）: ${e?.message || String(e)}`
+      error: `读取数据库失败（微信可能在占用该文件，请退出微信后重试）: ${msg}`
     }
   }
   if (raw.length < PAGE || raw.length % PAGE !== 0) {
@@ -171,8 +172,8 @@ export function decryptWxDbFile(filePath: string, hexKey: string, outPath: strin
   const buffer = mergeWalFrames(result.buffer, filePath, result.aesKey)
   try {
     writeFileSync(outPath, buffer)
-  } catch (e: any) {
-    return { ok: false, error: `写入明文库失败: ${e?.message || String(e)}` }
+  } catch (e) {
+    return { ok: false, error: `写入明文库失败: ${e instanceof Error ? e.message : String(e)}` }
   }
   return { ok: true }
 }
@@ -221,8 +222,8 @@ export function openWxDbFile(
     const db = new Database(tmpPath, { readonly: true })
     db.prepare('SELECT count(*) AS n FROM sqlite_master').get()
     return { db }
-  } catch (e: any) {
-    return { error: `明文库打开失败（密钥可能错误）: ${e?.message || String(e)}` }
+  } catch (e) {
+    return { error: `明文库打开失败（密钥可能错误）: ${e instanceof Error ? e.message : String(e)}` }
   }
 }
 

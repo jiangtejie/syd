@@ -1,7 +1,19 @@
 import { getDb } from '../database'
 import type { KeyProfile, KeySource, KeyStatus } from '../../../shared/types'
 
-function rowToProfile(row: any): KeyProfile {
+/** key_store 行(与 schema 列一一对应) */
+interface KeyRow {
+  id: number
+  wxid: string
+  db_path: string
+  key_encrypted: string
+  source: string
+  status: string
+  imported_at: number
+  updated_at: number
+}
+
+function rowToProfile(row: KeyRow): KeyProfile {
   return {
     id: row.id,
     wxid: row.wxid,
@@ -38,12 +50,16 @@ export function upsertKey(profile: KeyProfile): void {
 }
 
 export function getKey(wxid: string): KeyProfile | null {
-  const row = getDb().prepare(`SELECT * FROM key_store WHERE wxid = ?`).get(wxid)
+  const row = getDb().prepare(`SELECT * FROM key_store WHERE wxid = ?`).get(wxid) as
+    | KeyRow
+    | undefined
   return row ? rowToProfile(row) : null
 }
 
 export function getKeys(): KeyProfile[] {
-  const rows = getDb().prepare(`SELECT * FROM key_store ORDER BY updated_at DESC`).all() as any[]
+  const rows = getDb()
+    .prepare(`SELECT * FROM key_store ORDER BY updated_at DESC`)
+    .all() as KeyRow[]
   return rows.map(rowToProfile)
 }
 

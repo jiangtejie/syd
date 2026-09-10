@@ -54,7 +54,7 @@ export function connect(wxid: string): { ok: boolean; info?: WxConnectInfo; erro
 }
 
 /** 会话列表（enrich 联系人信息） */
-export function getSessions(wxid: string) {
+export function getSessions(wxid: string): ReturnType<typeof listSessions> {
   const session = buildWxSession(wxid)
   if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
   let result
@@ -71,7 +71,12 @@ export function getSessions(wxid: string) {
 }
 
 /** 消息分页读取（keyset）：before 为空取最新一页，否则取更早一页 */
-export function getMessages(wxid: string, sessionId: string, limit = 50, before?: MessageCursor) {
+export function getMessages(
+  wxid: string,
+  sessionId: string,
+  limit = 50,
+  before?: MessageCursor
+): ReturnType<typeof listMessages> {
   const session = buildWxSession(wxid)
   if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
   return listMessages(session, sessionId, limit, before)
@@ -83,14 +88,17 @@ export function getMessagesSince(
   sessionId: string,
   sinceSortSeq: number,
   limit = 200
-) {
+): ReturnType<typeof listMessagesSince> {
   const session = buildWxSession(wxid)
   if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
   return listMessagesSince(session, sessionId, sinceSortSeq, limit)
 }
 
 /** 会话内红包本地状态（general.db redEnvelopeTable） */
-export function getRedEnvelopeStatuses(wxid: string, sessionId: string) {
+export function getRedEnvelopeStatuses(
+  wxid: string,
+  sessionId: string
+): ReturnType<typeof queryRedEnvelopeStatuses> {
   const session = buildWxSession(wxid)
   if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
   return queryRedEnvelopeStatuses(session, sessionId)

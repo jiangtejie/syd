@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type {
+  ImAuditEntry,
   KeySource,
   DbChangedPayload,
   AiGenOptions,
@@ -499,6 +500,103 @@ const api = {
       }> => ipcRenderer.invoke('cs:agent:list'),
       save: (input: AiAgentInput): Promise<{ ok: boolean; agent?: AiAgent; error?: string }> =>
         ipcRenderer.invoke('cs:agent:save', input)
+    },
+    feishuNotify: {
+      get: (): Promise<{
+        ok: boolean
+        config?: {
+          enabled: boolean
+          targets: Array<{ kind: 'chat' | 'user'; id: string; name: string }>
+          events: string[]
+          dailyLimit: number
+        }
+        credential?: {
+          configured: boolean
+          source: string
+          appIdMasked: string
+          accountName?: string
+        }
+        recent?: Array<{
+          id: number
+          targetKind: string
+          targetId: string
+          targetName: string
+          content: string
+          source: string
+          result: string
+          error?: string
+          createdAt: number
+        }>
+        error?: string
+      }> => ipcRenderer.invoke('cs:feishu:notify:get'),
+      setEnabled: (on: boolean): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:notify:setEnabled', on),
+      setEvent: (evt: string, on: boolean): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:notify:setEvent', evt, on),
+      addTarget: (input: {
+        kind: 'chat' | 'user'
+        id: string
+        name?: string
+      }): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:notify:addTarget', input),
+      removeTarget: (kind: 'chat' | 'user', id: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:notify:removeTarget', kind, id),
+      test: (): Promise<{ ok: boolean; sent?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:notify:test'),
+      listChats: (): Promise<{
+        ok: boolean
+        chats?: Array<{ chatId: string; name: string; chatMode: string }>
+        error?: string
+      }> => ipcRenderer.invoke('cs:feishu:notify:listChats'),
+      resolveUser: (email: string): Promise<{ ok: boolean; openId?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:notify:resolveUser', email),
+      contactScope: (): Promise<{
+        ok: boolean
+        departments?: Array<{ id: string; name: string }>
+        users?: Array<{ openId: string; name: string; email?: string }>
+        empty?: boolean
+        authUrl?: string
+        appIdMasked?: string
+        error?: string
+      }> => ipcRenderer.invoke('cs:feishu:contact:scope'),
+      contactDepartments: (
+        parentId: string
+      ): Promise<{
+        ok: boolean
+        departments?: Array<{ id: string; name: string }>
+        hasMore?: boolean
+        error?: string
+      }> => ipcRenderer.invoke('cs:feishu:contact:departments', parentId),
+      contactUsers: (
+        deptId: string,
+        pageToken?: string
+      ): Promise<{
+        ok: boolean
+        users?: Array<{ openId: string; name: string; email?: string }>
+        hasMore?: boolean
+        pageToken?: string
+        error?: string
+      }> => ipcRenderer.invoke('cs:feishu:contact:users', deptId, pageToken),
+      openAuthUrl: (url: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:contact:openAuth', url),
+      listAudit: (
+        limit?: number,
+        onlyTasks?: boolean
+      ): Promise<{ ok: boolean; logs?: ImAuditEntry[]; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:audit:list', limit, onlyTasks)
+    },
+    lark: {
+      status: (): Promise<{
+        ok: boolean
+        configured?: boolean
+        source?: 'config' | 'im' | 'none'
+        appIdMasked?: string
+        accountName?: string
+        defaultUrl?: string
+        error?: string
+      }> => ipcRenderer.invoke('cs:lark:status'),
+      test: (url: string): Promise<{ ok: boolean; text?: string; error?: string }> =>
+        ipcRenderer.invoke('cs:lark:test', url)
     },
     app: {
       /** 菜单/托盘等触发的页面导航（如 Ctrl+, 打开设置） */

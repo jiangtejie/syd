@@ -11,7 +11,9 @@ export default defineConfig(
       '**/node_modules',
       '**/dist',
       '**/out',
-      '**/src/main/services/growth/collector/vendor/**'
+      '**/src/main/services/growth/collector/vendor/**',
+      // 开发用探针/验证脚本(不参与应用构建,无 TS 上下文)
+      'scripts/**'
     ]
   },
   tseslint.configs.recommended,

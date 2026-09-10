@@ -12,9 +12,9 @@ import { toast } from '../../stores/toast'
 type WbMode = 'ask' | 'allow' | 'deny'
 
 const MODE_LABELS: Record<WbMode, string> = {
-  ask: '每次询问（默认，最安全）',
-  allow: '默认允许（写操作仍建议保持询问）',
-  deny: '默认拒绝（未列入信任名单的工具一律不执行）'
+  ask: '人工审批 —— 每个写操作执行前都要确认（默认，最安全）',
+  allow: '完全访问 —— 写操作不再询问，直接执行',
+  deny: '只读 —— 未列入信任名单的写操作一律不执行'
 }
 
 function parseNames(text: string): string[] {
@@ -125,8 +125,10 @@ function WorkbenchApprovalSection(): React.JSX.Element {
         {errorTip && <span className="st-bad">{errorTip}</span>}
       </div>
       <div className="ag-scope">
-        作用于需要确认的写/外部工具(当前内置工具均为只读,不触发确认)。
-        在审批条上点「始终允许」会写入此名单;会话级「本轮允许」为临时放行,不在此保存。
+        作用于所有需要确认的写操作工具:代发微信消息、标记问题已解决/搁置、指派跟进人、工作区写/删、
+        AI 生图等。**同时作用于「AI 页」与「飞书/IM 渠道」两条链路**:
+        飞书里下指令触发写操作时,人工审批模式会先在飞书会话里发确认卡片(回复「确认」执行),完全访问模式则直接执行。
+        「始终允许」名单优先于默认策略;会话级「本轮允许」为临时放行,不在此保存。
       </div>
     </div>
   )
