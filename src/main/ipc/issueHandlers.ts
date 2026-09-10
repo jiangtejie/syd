@@ -21,7 +21,11 @@ import {
   confirmIssueDoubt
 } from '../db/repos/issueRepo'
 import type { FeedbackIssueStatus } from '../../shared/types'
+import { createLogger } from '../services/logging'
 import { fail } from './_util'
+
+/** 维护类操作的调用留痕：按钮点了没反应时，先看「设置 → 日志」里 IPC 有没有到主进程 */
+const issueLog = createLogger('issue')
 
 /**
  * 群问题反馈 IPC（看板 + 工作台）。
@@ -124,9 +128,11 @@ export function registerIssueHandlers(): void {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
     try {
       const r = mergeDuplicateIssues(wxid, { dryRun: !!dryRun })
+      issueLog.info(`重复议题${dryRun ? '预览' : '合并'} ${wxid} 组=${r.clusters} 冗余=${r.merged}`)
       if (!dryRun && r.merged > 0) notifyChanged({ wxid })
       return { ok: true as const, ...r }
     } catch (err) {
+      issueLog.error('重复议题合并失败', err)
       return fail(err)
     }
   })
@@ -136,6 +142,7 @@ export function registerIssueHandlers(): void {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
     try {
       const archived = archiveResolvedBefore(wxid, Number(days) || 90)
+      issueLog.info(`历史归档 ${wxid} days=${Number(days) || 90} 条数=${archived}`)
       if (archived > 0) notifyChanged({ wxid })
       return { ok: true as const, archived }
     } catch (err) {

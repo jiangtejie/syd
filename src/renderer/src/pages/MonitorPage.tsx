@@ -125,6 +125,11 @@ function MonitorPage(): React.JSX.Element {
   const locateIssueAt = useWorkbenchStore((s) => s.locateIssueAt)
   const connected = !!wxid && source === 'wx' && wxid !== 'wxid_demo'
   const issueApi = window.api?.cs?.issue
+  /**
+   * 前端桥自检：preload 属于「重启才生效」的部分，热更新只换来 UI 而桥还是旧的 ——
+   * 这时按钮看着在、点了却什么都不发生。显式探测并提示重启，比静默失败强。
+   */
+  const hasMaintenanceApi = typeof issueApi?.mergeDuplicates === 'function'
 
   const [issues, setIssues] = useState<FeedbackIssue[]>([])
   const [loading, setLoading] = useState(false)
@@ -479,10 +484,22 @@ function MonitorPage(): React.JSX.Element {
    * 先 dryRun 拿方案做预览(列出每组保留谁、合并几条),确认后才真正执行。
    */
   const runMergeDuplicates = async (): Promise<void> => {
-    if (!connected || !issueApi?.mergeDuplicates || anaBusy) return
-    const pre = await issueApi.mergeDuplicates(wxid!, true).catch(() => null)
-    if (!pre?.ok) {
-      toast.error((pre as { error?: string } | null)?.error || '重复检测失败')
+    if (anaBusy) return
+    if (!issueApi?.mergeDuplicates) {
+      toast.error('当前运行版本未加载该功能：请完全退出应用后重新启动（preload 变更需重启）')
+      return
+    }
+    if (!connected || !wxid) {
+      toast.error('尚未连接微信账号：请先到「设置 → 微信数据与密钥」连接')
+      return
+    }
+    const pre = await issueApi.mergeDuplicates(wxid, true).catch((e: unknown) => {
+      toast.error(`重复检测失败：${e instanceof Error ? e.message : String(e)}`)
+      return null
+    })
+    if (!pre) return
+    if (!pre.ok) {
+      toast.error(pre.error || '重复检测失败')
       return
     }
     if (!pre.merged || !pre.plan?.length) {
@@ -502,9 +519,13 @@ function MonitorPage(): React.JSX.Element {
     if (!ok) return
     setAnaBusy(true)
     try {
-      const res = await issueApi.mergeDuplicates(wxid!, false).catch(() => null)
-      if (!res?.ok) {
-        toast.error((res as { error?: string } | null)?.error || '合并失败')
+      const res = await issueApi.mergeDuplicates(wxid, false).catch((e: unknown) => {
+        toast.error(`合并失败：${e instanceof Error ? e.message : String(e)}`)
+        return null
+      })
+      if (!res) return
+      if (!res.ok) {
+        toast.error(res.error || '合并失败')
         return
       }
       toast.success(`已合并 ${res.clusters ?? 0} 组，归档 ${res.merged ?? 0} 条重复记录`)
@@ -518,7 +539,14 @@ function MonitorPage(): React.JSX.Element {
 
   /** 归档 90 天前已闭环记录(长期运营收敛:活跃列表/盯办只留近期,闭环率与趋势不受影响) */
   const runArchiveStale = async (): Promise<void> => {
-    if (!connected || !issueApi?.archiveStale) return
+    if (!issueApi?.archiveStale) {
+      toast.error('当前运行版本未加载该功能：请完全退出应用后重新启动（preload 变更需重启）')
+      return
+    }
+    if (!connected || !wxid) {
+      toast.error('尚未连接微信账号：请先到「设置 → 微信数据与密钥」连接')
+      return
+    }
     const ok = await confirmAsk({
       title: '归档历史记录',
       message:
@@ -526,9 +554,13 @@ function MonitorPage(): React.JSX.Element {
       confirmText: '归档历史'
     })
     if (!ok) return
-    const res = await issueApi.archiveStale(wxid!, 90).catch(() => null)
-    if (!res?.ok) {
-      toast.error((res as { error?: string } | null)?.error || '归档失败')
+    const res = await issueApi.archiveStale(wxid, 90).catch((e: unknown) => {
+      toast.error(`归档失败：${e instanceof Error ? e.message : String(e)}`)
+      return null
+    })
+    if (!res) return
+    if (!res.ok) {
+      toast.error(res.error || '归档失败')
       return
     }
     toast.success(res.archived ? `已归档 ${res.archived} 条历史记录` : '没有需要归档的历史记录')
@@ -760,7 +792,7 @@ function MonitorPage(): React.JSX.Element {
           <button
             type="button"
             className="mon-btn ghost"
-            disabled={anaBusy || loading || !connected}
+            disabled={anaBusy}
             onClick={() => void runMergeDuplicates()}
             title="按标题/证据/客户判据找出历史上被重复提取的同一议题,先预览再合并"
           >
@@ -769,7 +801,7 @@ function MonitorPage(): React.JSX.Element {
           <button
             type="button"
             className="mon-btn ghost"
-            disabled={anaBusy || loading || !connected}
+            disabled={anaBusy}
             onClick={() => void runArchiveStale()}
             title="把 90 天前已解决/已搁置的记录归档:不再占用活跃列表与盯办,闭环率与趋势照旧统计"
           >
@@ -783,6 +815,14 @@ function MonitorPage(): React.JSX.Element {
           >
             清空数据
           </button>
+          {!hasMaintenanceApi && (
+            <span
+              className="mon-ana-state"
+              title="preload 桥属于重启才生效的部分:热更新只换了界面,功能代码还是旧的"
+            >
+              ⚠ 维护功能未加载:请完全退出并重启应用
+            </span>
+          )}
         </div>
       </div>
 
