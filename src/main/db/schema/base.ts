@@ -146,6 +146,75 @@ export const CORE_TABLES: string[] = [
     updated_at INTEGER
   )`,
 
+  // ── 数字员工（值班自动应答）：话术库 / 群级开关 / 决策记录 / 值班水位 ──
+  /*
+   * 话术库：数字员工的「口径」。优先命中话术、LLM 只兜底 —— 口径统一才敢无人值守。
+   * patterns = JSON [{type:'kw'|'re', value}]：关键词或正则，命中即用（确定性、可审计）。
+   * risk_level：A=可自动发；B=需人工确认；C=永不自动（价格/退款/投诉/合同类）。
+   */
+  `CREATE TABLE IF NOT EXISTS reply_script (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_wxid TEXT NOT NULL DEFAULT '',
+    intent TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    patterns TEXT NOT NULL DEFAULT '[]',
+    reply_text TEXT NOT NULL DEFAULT '',
+    risk_level TEXT NOT NULL DEFAULT 'A',
+    priority INTEGER NOT NULL DEFAULT 100,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    source TEXT NOT NULL DEFAULT 'manual',
+    hit_count INTEGER NOT NULL DEFAULT 0,
+    last_hit_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  /* 群级自动回复开关：未建行 = 继承全局默认（客户群默认开，采购/内部群在「监控」里排除后不参与） */
+  `CREATE TABLE IF NOT EXISTS group_autoreply (
+    account_wxid TEXT NOT NULL,
+    group_username TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    mode TEXT NOT NULL DEFAULT 'shadow',
+    note TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (account_wxid, group_username)
+  )`,
+  /*
+   * 决策与回复记录：影子模式（只记录不发送）与实发共用一张表，
+   * 每条都能回答「依据哪条话术 / 为什么发 / 发出去没有」—— 数字员工出事时唯一能复盘的东西。
+   */
+  `CREATE TABLE IF NOT EXISTS agent_reply (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_wxid TEXT NOT NULL,
+    group_username TEXT NOT NULL,
+    group_name TEXT NOT NULL DEFAULT '',
+    trigger_seq INTEGER,
+    trigger_time INTEGER,
+    trigger_text TEXT NOT NULL DEFAULT '',
+    decision TEXT NOT NULL DEFAULT '',
+    script_id INTEGER,
+    intent TEXT NOT NULL DEFAULT '',
+    reply_text TEXT NOT NULL DEFAULT '',
+    risk_level TEXT NOT NULL DEFAULT 'A',
+    status TEXT NOT NULL DEFAULT 'shadow',
+    reason TEXT NOT NULL DEFAULT '',
+    feedback TEXT NOT NULL DEFAULT '',
+    sent_at INTEGER,
+    verify_ok INTEGER,
+    error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  /* 值班水位：每群记「已经决策到哪条消息」，与议题提取的水位彼此独立（语义不同，别混在一张表） */
+  `CREATE TABLE IF NOT EXISTS agent_duty_state (
+    account_wxid TEXT NOT NULL,
+    group_username TEXT NOT NULL,
+    last_seq INTEGER,
+    last_msg_time INTEGER,
+    last_run_at INTEGER,
+    updated_at INTEGER,
+    PRIMARY KEY (account_wxid, group_username)
+  )`,
+
   // 智能体（客服人设）：名称/描述/风格/自定义提示词，供回复建议 LLM 动态使用
   `CREATE TABLE IF NOT EXISTS ai_agent (
     id TEXT PRIMARY KEY,
@@ -295,5 +364,10 @@ export const CORE_INDEXES: string[] = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_feedback_msg ON wb_feedback (message_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_im_file_record_msg ON im_file_record (channel, message_id)`,
   `CREATE INDEX IF NOT EXISTS idx_report_run_job ON report_run (job_id, id DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_report_job_next ON report_job (enabled, next_at)`
+  `CREATE INDEX IF NOT EXISTS idx_report_job_next ON report_job (enabled, next_at)`,
+  // 数字员工：话术按「账号+启用+优先级」取；决策按群/按状态分页；同一群同一条消息只决策一次
+  `CREATE INDEX IF NOT EXISTS idx_reply_script_pick ON reply_script(account_wxid, enabled, priority)`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_reply_group ON agent_reply(account_wxid, group_username, trigger_time DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_reply_status ON agent_reply(account_wxid, status, created_at DESC)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_reply_seq ON agent_reply(group_username, trigger_seq) WHERE trigger_seq IS NOT NULL`,
 ]

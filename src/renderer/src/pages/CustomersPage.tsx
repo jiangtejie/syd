@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import { avatarColor, formatSessionTime } from '../lib/ui'
 import { useSessionAvatar } from '../lib/sessionAvatar'
 import { deriveCustomers, secondaryLabel, TAG_ORDER, type CustomerProfile } from '../lib/customers'
+import { toast } from '../stores/toast'
+import type { DutyGroupSwitch } from '../../../shared/types'
 import './customers.css'
 
 /**
@@ -152,6 +154,67 @@ function CustomersPage(): React.JSX.Element {
   /** 当前时间（mount 后异步测量 + 每分钟校准，避免渲染期取 Date.now） */
   const [nowMs, setNowMs] = useState<number>(0)
 
+  // ── 数字员工：群级自动回复开关（客户页是批量管理的入口）──
+  const wxid = useWorkbenchStore((s) => s.wxid)
+  /** 已单独设置过的群（未出现的群继承全局默认） */
+  const [switches, setSwitches] = useState<Record<string, DutyGroupSwitch>>({})
+  const [defaultOn, setDefaultOn] = useState(true)
+  const [defaultMode, setDefaultMode] = useState<'shadow' | 'live'>('shadow')
+  /** 多选：群 username */
+  const [pickedGroups, setPickedGroups] = useState<string[]>([])
+  /** 自动回复筛选：all=全部 / group=仅群聊 / on=已开 / off=已关 */
+  const [agentFilter, setAgentFilter] = useState<'all' | 'group' | 'on' | 'off'>('all')
+  const [savingScope, setSavingScope] = useState(false)
+
+  const loadSwitches = useCallback(async (): Promise<void> => {
+    if (!wxid) return
+    const [g, st] = await Promise.all([
+      window.api?.cs?.duty?.groups(wxid).catch(() => null),
+      window.api?.cs?.duty?.status(wxid).catch(() => null)
+    ])
+    if (g?.ok && g.switches) setSwitches(g.switches)
+    if (st?.ok && st.status) {
+      setDefaultOn(st.status.defaultEnabled)
+      setDefaultMode(st.status.defaultMode)
+    }
+  }, [wxid])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载/换账号时拉一次开关（异步，setState 在 await 之后）
+    void loadSwitches()
+  }, [loadSwitches])
+
+  /** 某群的生效开关（未配置 → 继承全局默认） */
+  const groupOn = useCallback(
+    (username: string): boolean => switches[username]?.enabled ?? defaultOn,
+    [switches, defaultOn]
+  )
+
+  /** 写开关：单个或批量（客户端乐观更新 + 失败回滚由重载兜底） */
+  const applyScope = useCallback(
+    async (
+      groups: string[],
+      patch: { enabled?: boolean; mode?: 'shadow' | 'live'; reset?: boolean }
+    ): Promise<void> => {
+      if (!wxid || groups.length === 0) return
+      setSavingScope(true)
+      const res = await window.api?.cs?.duty?.groupsSet(wxid, groups, patch).catch(() => null)
+      setSavingScope(false)
+      if (!res?.ok) {
+        toast.error(res?.error || '自动回复设置失败')
+        return
+      }
+      if (res.switches) setSwitches(res.switches)
+      setPickedGroups([])
+      toast.success(
+        patch.reset
+          ? `已让 ${groups.length} 个群跟随全局默认`
+          : `已${patch.enabled ? '开启' : '关闭'} ${groups.length} 个群的自动回复`
+      )
+    },
+    [wxid]
+  )
+
   useEffect(() => {
     const tick = window.setTimeout(() => setNowMs(Date.now()), 0)
     const timer = window.setInterval(() => setNowMs(Date.now()), 60_000)
@@ -187,6 +250,10 @@ function CustomersPage(): React.JSX.Element {
     const kw = keyword.trim().toLowerCase()
     return customers.filter((c) => {
       if (effectiveTag && !c.statusTags.includes(effectiveTag)) return false
+      // 自动回复维度只看群（单聊暂不管）；未配置的群按全局默认判定
+      if (agentFilter === 'group' && !c.isGroup) return false
+      if (agentFilter === 'on' && (!c.isGroup || !groupOn(c.wxid))) return false
+      if (agentFilter === 'off' && (!c.isGroup || groupOn(c.wxid))) return false
       if (!kw) return true
       return (
         c.name.toLowerCase().includes(kw) ||
@@ -196,7 +263,7 @@ function CustomersPage(): React.JSX.Element {
         c.statusTags.some((t) => t.includes(kw))
       )
     })
-  }, [customers, effectiveTag, keyword])
+  }, [customers, effectiveTag, keyword, agentFilter, groupOn])
 
   // 筛选/搜索/每页条数变化时回到第 1 页；数据增减导致当前页超界时自动收敛到最后一页
   useEffect(() => {
@@ -219,6 +286,16 @@ function CustomersPage(): React.JSX.Element {
   }
 
   const replyCount = tagCounts.get('待回复') ?? 0
+  /** 当前页可选中的群（批量操作的候选） */
+  const groupItems = useMemo(() => pageItems.filter((c) => c.isGroup), [pageItems])
+  const pickedOnPage = groupItems.filter((c) => pickedGroups.includes(c.wxid)).length
+  const groupCount = customers.filter((c) => c.isGroup).length
+  const agentOnCount = customers.filter((c) => c.isGroup && groupOn(c.wxid)).length
+  const overrideCount = Object.keys(switches).length
+  const togglePick = (username: string): void =>
+    setPickedGroups((p) =>
+      p.includes(username) ? p.filter((x) => x !== username) : [...p, username]
+    )
 
   return (
     <div className="page-scroll">
@@ -267,14 +344,93 @@ function CustomersPage(): React.JSX.Element {
         </div>
       </div>
 
+      {/* 数字员工：群级自动回复的批量管理（客户页是唯一入口） */}
+      <div className="cu-agentbar">
+        <span className="cu-agent-title">数字员工</span>
+        <span className="cu-agent-meta">
+          全局默认 {defaultOn ? '开' : '关'} ·{' '}
+          {defaultMode === 'shadow' ? '影子模式（只记录不发送）' : '正式模式'} · 群 {groupCount}{' '}
+          个（已开 {agentOnCount}）· 单独设置 {overrideCount} 个
+        </span>
+        <div className="cu-agent-filters">
+          {(
+            [
+              ['all', '全部'],
+              ['group', '仅群聊'],
+              ['on', '自动回复开'],
+              ['off', '自动回复关']
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              className={`cu-filter${agentFilter === k ? ' is-active' : ''}`}
+              onClick={() => setAgentFilter(k)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="cu-agent-pick">
+          <input
+            type="checkbox"
+            checked={groupItems.length > 0 && pickedOnPage === groupItems.length}
+            onChange={(e) => {
+              const on = e.target.checked
+              const names = groupItems.map((c) => c.wxid)
+              setPickedGroups((p) =>
+                on ? [...new Set([...p, ...names])] : p.filter((x) => !names.includes(x))
+              )
+            }}
+          />
+          选中本页群
+        </label>
+        <span className="cu-agent-picked">已选 {pickedGroups.length}</span>
+        <button
+          type="button"
+          className="cu-filter"
+          disabled={savingScope || pickedGroups.length === 0}
+          onClick={() => void applyScope(pickedGroups, { enabled: true })}
+        >
+          批量开启
+        </button>
+        <button
+          type="button"
+          className="cu-filter"
+          disabled={savingScope || pickedGroups.length === 0}
+          onClick={() => void applyScope(pickedGroups, { enabled: false })}
+        >
+          批量关闭
+        </button>
+        <button
+          type="button"
+          className="cu-filter"
+          disabled={savingScope || pickedGroups.length === 0}
+          onClick={() => void applyScope(pickedGroups, { reset: true })}
+          title="删掉这些群的单独设置，跟随全局默认"
+        >
+          跟随默认
+        </button>
+        {pickedGroups.length > 0 && (
+          <button
+            type="button"
+            className="cu-filter cu-filter-clear"
+            onClick={() => setPickedGroups([])}
+          >
+            清空选择
+          </button>
+        )}
+      </div>
       <div className="cu-list page-card">
         <div className="cu-row cu-row-head">
+          <span />
           <span>客户</span>
           <span>类型</span>
           <span>状态标签</span>
           <span>最近消息</span>
           <span>最近活跃</span>
           <span>未读</span>
+          <span>数字员工</span>
         </div>
         {pageItems.map((c) => (
           <div
@@ -290,6 +446,18 @@ function CustomersPage(): React.JSX.Element {
               }
             }}
           >
+            <span className="cu-cell-pick" onClick={(e) => e.stopPropagation()}>
+              {c.isGroup ? (
+                <input
+                  type="checkbox"
+                  checked={pickedGroups.includes(c.wxid)}
+                  onChange={() => togglePick(c.wxid)}
+                  aria-label={`选择 ${c.name}`}
+                />
+              ) : (
+                <span className="cu-muted">—</span>
+              )}
+            </span>
             <span className="cu-cell-name">
               <CustomerAvatar profile={c} />
               <span className="cu-name-stack">
@@ -315,6 +483,26 @@ function CustomersPage(): React.JSX.Element {
             <span>
               {c.unreadCount > 0 ? (
                 <span className="cu-unread">{c.unreadCount}</span>
+              ) : (
+                <span className="cu-muted">—</span>
+              )}
+            </span>
+            <span className="cu-cell-agent" onClick={(e) => e.stopPropagation()}>
+              {c.isGroup ? (
+                <button
+                  type="button"
+                  className={`cu-agent-toggle${groupOn(c.wxid) ? ' is-on' : ''}`}
+                  title={
+                    groupOn(c.wxid)
+                      ? `自动回复已开启（${(switches[c.wxid]?.mode ?? defaultMode) === 'shadow' ? '影子模式：只记录不发送' : '正式模式'}）—— 点击关闭`
+                      : '自动回复已关闭 —— 点击开启（未单独设置的群跟随全局默认）'
+                  }
+                  onClick={() => void applyScope([c.wxid], { enabled: !groupOn(c.wxid) })}
+                  disabled={savingScope}
+                >
+                  {groupOn(c.wxid) ? '开' : '关'}
+                  {switches[c.wxid] ? '' : '*'}
+                </button>
               ) : (
                 <span className="cu-muted">—</span>
               )}

@@ -21,16 +21,42 @@ function normalize(text: string): string {
 }
 
 /**
+ * 请求/询问信号：出现即说明「这是问句或指令」，不是单纯的事务性通知或纯应答。
+ * 用途：把「对账单一起发我哦」（客户在要东西）从「对账单通知」里救出来；
+ * 也用来判断「收到，我去安排」这种短回执之后是否跟着真实指令。
+ */
+const REQUEST_RE =
+  /(发我|给我|发一下|发下|帮我|请问|问一下|查一下|看一下|看下|有没有|还有|吗|呢|吧|几时|什么时候|多久|催)/
+
+/**
+ * 指令信号（比 REQUEST_RE 更宽）：只用于判断「短回执之后是否跟着真实指令」。
+ * 不能用于通知判定 —— 否则「已安排发货，请查收」这种带「请/安排」的真通知会被放行。
+ */
+const IMPERATIVE_RE =
+  /(发我|给我|发一下|发下|帮我|请问|问一下|查一下|看一下|看下|有没有|还有|吗|呢|吧|几时|什么时候|多久|催|麻烦|安排|发货|送货|下单|订货|补发|加单|排车|请)/
+
+/**
  * 纯应答/寒暄：整句（可叠加 1~3 个词）都是应答语，不含任何诉求信息。
  * 例：收到 / 好的 / 嗯嗯 / 谢谢老板 / 好的谢谢 / 辛苦了
+ * 变体：应答语开头 + **很短的**后续且不含请求信号（「收到，我去安排」「好的辛苦了」）——
+ * 这类是回执不是诉求，数字员工回了反而像机器人刷屏。
  */
 export function isAckOnly(text: string): boolean {
   const t = normalize(text)
-  if (!t || t.length > 12) return false
+  if (!t) return false
   // 允许多个应答词叠加（好的谢谢），末尾可带称呼（谢谢老板/辛苦了哥）
-  return /^(收到|好|好的|好滴|好嘞|行|可以|没问题|没事|嗯|哦|噢|ok|谢谢|多谢|感谢|辛苦|辛苦了|麻烦|麻烦了|是的|对的|对|没错|明白|了解|知道了){1,3}(老板|亲|哥|姐|总|老师|大大)?$/i.test(
-    t
-  )
+  const ACK_WORD =
+    /^(收到|好|好的|好滴|好嘞|行|可以|没问题|没事|嗯|哦|噢|ok|谢谢|多谢|感谢|辛苦|辛苦了|麻烦|麻烦了|是的|对的|对|没错|明白|了解|知道了){1,3}(老板|亲|哥|姐|总|老师|大大)?$/i
+  if (t.length <= 12 && ACK_WORD.test(t)) return true
+  if (t.length > 20) return false
+  const m = /^(收到|好的|好嘞|好滴|行|嗯|ok|明白|知道了|没问题)(.*)$/i.exec(t)
+  if (!m) return false
+  const rest = m[2] ?? ''
+  if (!rest) return true
+  // 自称动作 = 对方自己去做（「收到，我去安排」），是回执不是给我们的指令
+  if (/^(我|我们|这边|马上|立刻|这就|去)/.test(rest)) return true
+  if (rest.length > 10) return false
+  return !IMPERATIVE_RE.test(rest)
 }
 
 /** 事务性通知的特征词：寄送/开票/对账/单号/查收 */
@@ -49,6 +75,8 @@ export function isTransactionalNotice(text: string): boolean {
   const t = normalize(text)
   if (!t) return false
   if (COMPLAINT_RE.test(t)) return false
+  // 请求/询问信号优先：客户说「对账单一起发我哦」是在要东西，不是发通知
+  if (REQUEST_RE.test(t)) return false
   return NOTICE_RE.test(t)
 }
 

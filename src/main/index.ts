@@ -32,6 +32,7 @@ import { registerAppHandlers } from './ipc/appHandlers'
 import { registerMediaHandlers } from './ipc/mediaHandlers'
 import { registerIssueHandlers } from './ipc/issueHandlers'
 import { registerAgentHandlers } from './ipc/agentHandlers'
+import { registerDutyHandlers } from './ipc/dutyHandlers'
 import { registerTeamHandlers } from './ipc/teamHandlers'
 import { registerImHandlers, bootImAccounts, stopAllIm } from './ipc/imHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
@@ -374,6 +375,7 @@ if (!app.requestSingleInstanceLock()) {
     registerMediaHandlers()
     registerIssueHandlers()
     registerAgentHandlers()
+    registerDutyHandlers()
     registerTeamHandlers()
     registerImHandlers()
     registerExportHandlers()

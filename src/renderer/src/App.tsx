@@ -9,6 +9,7 @@ import WorkbenchChatPage from './pages/WorkbenchChatPage'
  */
 const MonitorPage = lazy(() => import('./pages/MonitorPage'))
 const CustomersPage = lazy(() => import('./pages/CustomersPage'))
+const DutyPage = lazy(() => import('./pages/DutyPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const ExportPage = lazy(() => import('./pages/ExportPage'))
 const GrowthPage = lazy(() => import('./pages/GrowthPage'))
@@ -31,7 +32,15 @@ import './pages/shell.css'
  */
 
 type NavIconName =
-  'workbench' | 'monitor' | 'chat' | 'customers' | 'dashboard' | 'export' | 'growth' | 'settings'
+  | 'workbench'
+  | 'monitor'
+  | 'chat'
+  | 'customers'
+  | 'duty'
+  | 'dashboard'
+  | 'export'
+  | 'growth'
+  | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -74,6 +83,19 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
       )
+    case 'duty':
+      // 数字员工：戴耳机的机器人头（值班在线）
+      return (
+        <svg {...attrs}>
+          <rect x="4" y="8" width="16" height="11" rx="3" />
+          <path d="M12 4.5V8" />
+          <circle cx="12" cy="3.4" r="1.1" />
+          <path d="M2.5 12v3" />
+          <path d="M21.5 12v3" />
+          <circle cx="9" cy="13" r="1" />
+          <circle cx="15" cy="13" r="1" />
+        </svg>
+      )
     case 'dashboard':
       return (
         <svg {...attrs}>
@@ -114,6 +136,7 @@ const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }>
   { key: 'dashboard', icon: 'dashboard', label: '看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
   { key: 'customers', icon: 'customers', label: '客户' },
+  { key: 'duty', icon: 'duty', label: '值班' },
   { key: 'growth', icon: 'growth', label: '营销' },
   { key: 'export', icon: 'export', label: '数据' }
 ]
@@ -270,6 +293,13 @@ function App(): React.JSX.Element {
               <div className="app-page">
                 <Suspense fallback={<PageLoading />}>
                   <CustomersPage />
+                </Suspense>
+              </div>
+            )}
+            {page === 'duty' && (
+              <div className="app-page">
+                <Suspense fallback={<PageLoading />}>
+                  <DutyPage />
                 </Suspense>
               </div>
             )}

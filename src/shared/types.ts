@@ -723,3 +723,117 @@ export const REPORT_SESSION_MODE_LABEL: Record<string, string> = {
   single: '仅单聊',
   list: '白名单会话'
 }
+
+// ── 数字员工（值班自动应答）──────────────────────────────
+
+/** 话术命中模式：kw=关键词包含；re=正则 */
+export interface DutyScriptPattern {
+  type: 'kw' | 're'
+  value: string
+}
+
+/** 风险等级：A=可自动发；B=需人工确认；C=永不自动（价格/退款/投诉/合同类） */
+export type DutyRiskLevel = 'A' | 'B' | 'C'
+
+/** 话术（数字员工的口径） */
+export interface DutyScript {
+  id: number
+  accountWxid: string
+  intent: string
+  title: string
+  patterns: DutyScriptPattern[]
+  replyText: string
+  riskLevel: DutyRiskLevel
+  priority: number
+  enabled: boolean
+  source: string
+  hitCount: number
+  lastHitAt?: number
+}
+
+export interface DutyScriptInput {
+  id?: number
+  intent: string
+  title?: string
+  patterns: DutyScriptPattern[]
+  replyText: string
+  riskLevel?: DutyRiskLevel
+  priority?: number
+  enabled?: boolean
+}
+
+/** 群级自动回复设置：未配置的群继承全局默认 */
+export interface DutyGroupSwitch {
+  enabled: boolean
+  /** shadow=只记录不发送（校准期）；live=可发送（仍过风险闸门） */
+  mode: 'shadow' | 'live'
+  note: string
+}
+
+/** 一条决策记录（影子模式与实发共用） */
+export interface DutyReply {
+  id: number
+  accountWxid: string
+  groupUsername: string
+  groupName: string
+  triggerSeq?: number
+  triggerTime?: number
+  triggerText: string
+  decision: 'script' | 'llm' | 'handoff' | 'skip'
+  scriptId?: number
+  intent: string
+  replyText: string
+  riskLevel: string
+  status: 'shadow' | 'queued' | 'approved' | 'sent' | 'failed' | 'rejected'
+  reason: string
+  feedback: string
+  sentAt?: number
+  verifyOk?: number
+  error?: string
+  createdAt: number
+}
+
+export interface DutyStatus {
+  enabled: boolean
+  defaultEnabled: boolean
+  defaultMode: 'shadow' | 'live'
+  /** 已单独设置过的群数 */
+  overrides: number
+  scripts: number
+  shadowLlm: boolean
+}
+
+export interface DutyStats {
+  total: number
+  script: number
+  llm: number
+  handoff: number
+  noMatchRate: number
+}
+
+export interface DutyPreviewRow {
+  group: string
+  groupName: string
+  time: number
+  sender: string
+  text: string
+  action: 'reply' | 'handoff' | 'llm'
+  intent: string
+  reply: string
+  reason: string
+}
+
+export interface DutyPreview {
+  days: number
+  groups: Array<{
+    group: string
+    name: string
+    msgs: number
+    decisions: number
+    handoff: number
+    nonText: number
+  }>
+  samples: DutyPreviewRow[]
+  intents: Array<{ intent: string; n: number }>
+  totals: { groups: number; msgs: number; decisions: number; handoff: number; nonText: number }
+}

@@ -16,6 +16,13 @@ import type {
   ReplyCandidate,
   AiAgent,
   AiAgentInput,
+  DutyGroupSwitch,
+  DutyPreview,
+  DutyReply,
+  DutyScript,
+  DutyScriptInput,
+  DutyStats,
+  DutyStatus,
   SendResult,
   SendStatusInfo,
   SendOverview,
@@ -451,6 +458,58 @@ export interface CsApi {
     list: () => Promise<Result<{ agents?: AiAgent[]; defaultId?: string | null }>>
     save: (input: AiAgentInput) => Promise<Result<{ agent?: AiAgent }>>
   }
+  duty: {
+    /** 值班总览：开关/模式/话术数 + 近 7 天决策分布 */
+    status: (wxid: string) => Promise<Result<{ status?: DutyStatus; stats?: DutyStats }>>
+    /** 话术库 */
+    scripts: (wxid: string) => Promise<Result<{ scripts?: DutyScript[] }>>
+    scriptSave: (wxid: string, input: DutyScriptInput) => Promise<Result<{ id?: number; scripts?: DutyScript[] }>>
+    scriptRemove: (wxid: string, id: number) => Promise<Result<{ removed?: boolean; scripts?: DutyScript[] }>>
+    scriptToggle: (wxid: string, id: number, enabled: boolean) => Promise<Result<{ scripts?: DutyScript[] }>>
+    scriptImport: (
+      wxid: string,
+      rows: DutyScriptInput[]
+    ) => Promise<Result<{ inserted?: number; updated?: number; skipped?: number; scripts?: DutyScript[] }>>
+    /** 导入推荐话术模板（只承诺动作、不承诺事实；按 intent 幂等） */
+    seedStarters: (
+      wxid: string
+    ) => Promise<Result<{ inserted?: number; updated?: number; skipped?: number; scripts?: DutyScript[] }>>
+    /** 群级开关（客户页批量管理）：键=群 username */
+    groups: (wxid: string) => Promise<Result<{ switches?: Record<string, DutyGroupSwitch> }>>
+    groupsSet: (
+      wxid: string,
+      groups: string[],
+      patch: { enabled?: boolean; mode?: 'shadow' | 'live'; reset?: boolean }
+    ) => Promise<Result<{ count?: number; switches?: Record<string, DutyGroupSwitch> }>>
+    groupOne: (wxid: string, group: string) => Promise<Result<{ sw?: DutyGroupSwitch | null }>>
+    groupSet: (
+      wxid: string,
+      group: string,
+      patch: { enabled?: boolean; mode?: 'shadow' | 'live'; reset?: boolean }
+    ) => Promise<Result<{ sw?: DutyGroupSwitch | null }>>
+    /** 决策记录（影子审核）与人工反馈 */
+    replies: (
+      wxid: string,
+      opts?: { status?: DutyReply['status']; group?: string; limit?: number }
+    ) => Promise<Result<{ replies?: DutyReply[] }>>
+    feedback: (id: number, feedback: string) => Promise<Result<Record<string, never>>>
+    /** 手动跑一轮（影子期即时看效果） */
+    run: (wxid: string) => Promise<
+      Result<{
+        result?: {
+          groups: number
+          scanned: number
+          decided: number
+          handoff: number
+          llm: number
+          skipped: number
+        }
+      }>
+    >
+    /** 历史回放预演：不写库不发送，只报告「会对哪些消息回什么」 */
+    preview: (wxid: string, opts?: { days?: number; limitGroups?: number }) => Promise<Result<DutyPreview>>
+  }
+
   feishuNotify: {
     get: () => Promise<
       Result<{

@@ -11,6 +11,7 @@ const PAGE_NAMES: Record<string, string> = {
   monitor: '监控',
   chat: '对话',
   customers: '客户',
+  duty: '值班',
   dashboard: '看板',
   export: '数据',
   settings: '设置'

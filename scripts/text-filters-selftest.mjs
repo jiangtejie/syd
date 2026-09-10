@@ -40,5 +40,22 @@ log(!isTransactionalNotice('单号 123456 的货少了2件'), 'notice+short')
 console.log('\n[5] 长文本不应被判成纯应答')
 log(!isAckOnly('收到货了但是少了两袋麻烦看一下'), 'long not ack')
 
+// 数字员工值班上线时补的两条口径（真实群原话）：
+// - 「对账单一起发我哦」是客户在要东西（请求），不能被当作「对账单通知」滤掉；
+// - 「收到，我去安排」是回执不是诉求，数字员工回它等于刷屏。
+console.log('\n[6] 请求 ≠ 通知；短回执 = 纯应答')
+for (const t of ['对账单一起发我哦', '单号发我一下', '发票发我', '对账单对吗']) {
+  log(!isTransactionalNotice(t), `请求保留: "${t}"`)
+}
+for (const t of ['对账单明细如上', '本月对账单已发邮箱']) {
+  log(isTransactionalNotice(t), `通知过滤: "${t}"`)
+}
+for (const t of ['收到，我去安排', '好的辛苦了', '收到', '嗯嗯好的']) {
+  log(isAckOnly(t), `回执过滤: "${t}"`)
+}
+for (const t of ['收到，麻烦安排明天发货', '好的，那明天发货吧']) {
+  log(!isAckOnly(t), `带指令不判回执: "${t}"`)
+}
+
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)

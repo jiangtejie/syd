@@ -578,6 +578,26 @@ const api: PreloadApi = {
       save: (input: AiAgentInput): Promise<{ ok: boolean; agent?: AiAgent; error?: string }> =>
         ipcRenderer.invoke('cs:agent:save', input)
     },
+    duty: {
+      status: (wxid: string) => ipcRenderer.invoke('cs:duty:status', wxid),
+      scripts: (wxid: string) => ipcRenderer.invoke('cs:duty:scripts', wxid),
+      scriptSave: (wxid, input) => ipcRenderer.invoke('cs:duty:scriptSave', wxid, input),
+      scriptRemove: (wxid, id) => ipcRenderer.invoke('cs:duty:scriptRemove', wxid, id),
+      scriptToggle: (wxid, id, enabled) =>
+        ipcRenderer.invoke('cs:duty:scriptToggle', wxid, id, enabled),
+      scriptImport: (wxid, rows) => ipcRenderer.invoke('cs:duty:scriptImport', wxid, rows),
+      seedStarters: (wxid: string) => ipcRenderer.invoke('cs:duty:seedStarters', wxid),
+      groups: (wxid: string) => ipcRenderer.invoke('cs:duty:groups', wxid),
+      groupsSet: (wxid, groups, patch) =>
+        ipcRenderer.invoke('cs:duty:groupsSet', wxid, groups, patch),
+      groupOne: (wxid: string, group: string) =>
+        ipcRenderer.invoke('cs:duty:groupOne', wxid, group),
+      groupSet: (wxid, group, patch) => ipcRenderer.invoke('cs:duty:groupSet', wxid, group, patch),
+      replies: (wxid, opts) => ipcRenderer.invoke('cs:duty:replies', wxid, opts),
+      feedback: (id, feedback) => ipcRenderer.invoke('cs:duty:feedback', id, feedback),
+      run: (wxid: string) => ipcRenderer.invoke('cs:duty:run', wxid),
+      preview: (wxid, opts) => ipcRenderer.invoke('cs:duty:preview', wxid, opts)
+    },
     feishuNotify: {
       get: (): Promise<{
         ok: boolean

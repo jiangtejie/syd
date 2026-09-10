@@ -68,6 +68,7 @@ src/
 │     │  ├─ issueSimilarity.ts   议题同一性判据（纯函数，阈值真实数据标定）
 │     │  ├─ scheduler.ts         后台入口（定时器 + 库变更钩子）
 │     │  └─ passes/              extract / settle / escalate 三条通道 + shared
+│     ├─ agent/                  数字员工值班：matcher（话术判定，纯函数）、duty（值班通道）、starters（推荐话术）
 │     ├─ ai/                     provider（模型通道）、suggest（建议）、agentLoop/agentTools（迷你 Agent）、
 │     │                          chat（AI 助手）、workbench（引擎/工具/审批/工作区）、cap（能力注册表/分层/软件包）
 │     ├─ send/                   发送执行与闸门（队列/频控/熔断/闭环校验/审计）
@@ -263,6 +264,10 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | --- | --- | --- |
 | `app_config` | 在用 | 全局 KV 配置（见 §13）。**只放配置，不放状态**：分析水位/节流戳曾以 `issue.wm:*` 之类的 JSON 串塞在这里，已迁至下面两张状态表 |
 | `issue_group_state` | 在用 | 每账号每群一行：增量水位（msg_time + sort_seq）+ 自动分析节流戳 + 覆盖度 |
+| `reply_script` | 在用 | 话术库（数字员工的口径）：意图 + 触发模式（关键词/正则）+ 回复模板 + 风险等级 A/B/C |
+| `group_autoreply` | 在用 | 群级自动回复开关与模式（shadow/live）；未建行 = 继承全局默认 |
+| `agent_reply` | 在用 | 决策与回复记录（影子与实发共用）：依据哪条话术、为什么发、发出去没有、人工反馈 |
+| `agent_duty_state` | 在用 | 值班水位（每群决策到哪条消息），与议题提取水位彼此独立 |
 | `issue_account_state` | 在用 | 每账号一行：最近一次全量重析结果与失败标记 |
 | `key_store` | 在用 | 微信密钥（safeStorage 密文）+ 来源 + 状态 |
 | `send_log` | 在用 | 发送审计（结果/闭环校验/失败原因） |
@@ -292,6 +297,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | `key` | `getStatus/list/importKey/test` | 密钥状态/导入/验证 |
 | `wx` | `connect/getSessions/getMessages/getMessagesSince/getAvatar/contactNames/opsStats/startWatch` | 微信读库、联系人、运营统计、监控 |
 | `issue` | `list/overview/analyze/analyzeGroup/cancel/state/detail/setStatus/assign/confirmDoubt/groupBadges/mergeDuplicates/archiveStale/clear/clearGroup/listGroup` | 群问题闭环全链路 |
+| `duty` | `status/scripts/scriptSave/scriptRemove/scriptToggle/scriptImport/seedStarters/groups/groupsSet/groupOne/groupSet/replies/feedback/run/preview` | 数字员工：话术库、群开关（批量）、决策记录、手动值班、回放预演 |
 | `team` | `list/save/remove` | 团队客服名单 |
 | `reply` | `overview/stats/getSendStatus/resetCircuit/stopAll` | 发送质量与熔断 |
 | `ai` `agent` | 生成候选、智能体 CRUD | AI 建议 |
@@ -348,10 +354,37 @@ npm run build         # typecheck + electron-vite 三端构建
 
 ---
 
-## 16. 待完善与已知边界
+## 16. 数字员工（值班自动应答）
+
+定位：这套东西**不只是监看台**，还要作为「数字员工」部署在闲置电脑上替人值班。
+当前阶段 = **一期影子模式**：判定照跑、结果只记录不发送，用来校准话术与风险分级。
+
+**通道**：`passes/reply.ts` 挂在既有调度器上，与议题引擎三条通道并列但**开关独立**
+（`agent.reply.enabled`，关掉问题自动扫描不该让值班停摆）。影子期约 110s 一轮、live 期 50s 一轮，
+群与群之间留 150ms 间隔；每群一轮只处理「最新一条（合并客户连发）」，冷却 90s。
+
+**判定（纯函数）**：`agent/matcher.ts` —— 先否决（我方/同事已发言、纯应答、事务性通知、非文本、过短），
+再按优先级命中话术（关键词/正则），未命中交 LLM 兜底；风险 `C` 一律转人工。
+「请求 ≠ 通知」的口径落在 `feedback/textFilters.ts`：带 `发我/给我/吗/吧/多久` 等请求信号时不算事务性通知，
+「收到 + 自称动作（我去安排）」算回执不算诉求。
+
+**与议题引擎的关系**：两边各自水位、互不干扰 —— 议题引擎回答「这是不是一个要跟的问题」，
+值班通道回答「这条消息要不要回、怎么回」；同事已发言时两边都退让（同一份团队名单）。
+
+**安全边界（一期硬约束）**：不发送；非文本（图片/语音/文件）一律转人工；只承诺动作不承诺事实；
+`agent_reply` 用唯一索引 `(group_username, trigger_seq)` 保证同一条消息只决策一次。
+
+**为什么先影子**：话术覆盖与误回只能在真实消息上看出来。真实数据回放（307 条客户侧消息 + 15 条推荐话术）
+得到：会按话术回 77 条（物流 35 / 缺货先发 18 / 到货 6 / 对账单 6 / 发票 4…）、转人工 5 条（退款、合同）、
+非文本转人工 41 条、纯应答或通知跳过 37 条、需 LLM 兜底 147 条 —— 兜底占比偏高说明话术还没覆盖「系统下单异常」
+这类真实高频场景（已补模板），也说明图片/语音理解是二期必须补的能力。
+
+## 17. 待完善与已知边界
 
 - **预留表未接入**：`customer`（客户档案，当前客户页由会话+问题派生）、`session`（门控/转人工）、`tier_rule`、`knowledge_item`、`reply_decision` —— DDL 在 `schema/reserved.ts`，**不再建表**，接入功能时搬回 `base.ts`。
 - **密钥存储两种策略**：微信 DB 密钥走 `key_store` + safeStorage，图片解密密钥（`img:<wxid>:aesKey/xorKey`）仍是 `app_config` 明文，敏感度不同但应统一。
+- **数字员工只到影子模式**：发送通道（live）未开；图片/语音不理解；单聊不管；话术匹配是关键词/正则，没有语义召回。
+- **数字员工的前置条件**：「我方同事」名单不全时会去回同事的话 —— 上线前必须把名单标全（群问题面板的「同事标记」可批量补）。
 - **growth 域无外键/级联**：父子表（素材/拆解/产出/发布结果）目前靠应用层保证，删除路径需自行清理。
 - **约束偏松**：核心表 `NOT NULL` 覆盖率低（靠代码纪律保证），布尔/枚举列无 `CHECK`；`AUTOINCREMENT` 用法不统一（growth 域与审计表用，核心表不用）。
 - **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入。
