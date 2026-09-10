@@ -62,6 +62,8 @@ function MonitorPage(): React.JSX.Element {
   const [serverMetrics, setServerMetrics] = useState<MonitorData | null>(null)
   /** 明细载荷信息：total=账号总条数，loaded=本次回传条数，truncated=是否被上限截断 */
   const [rowInfo, setRowInfo] = useState({ total: 0, loaded: 0, truncated: false })
+  /** 渲染端比主进程新（未重启）：已退回全量通道，提示重启即可恢复聚合与限量 */
+  const [skewed, setSkewed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [range, setRange] = useState(7)
   // 筛选与钻取
@@ -95,26 +97,40 @@ function MonitorPage(): React.JSX.Element {
   const [ownerFilter, setOwnerFilter] = useState('')
   const [sevFilter, setSevFilter] = useState<'all' | FeedbackIssueSeverity>('all')
 
+  /**
+   * 取监控数据。
+   * 优先用 `cs:issue:overview`（主进程按全量聚合、明细限量）；
+   * 若主进程还是旧版（渲染端热更新后没重启，主进程没有该 handler），
+   * 自动退回旧的 `cs:issue:list` 全量通道并提示重启 —— 版本错位不该表现为「报错 + 空列表」。
+   */
   const load = useCallback(async (): Promise<void> => {
     if (!connected || !issueApi) return
     setLoading(true)
     try {
-      const res = await issueApi.overview(wxid!, {
-        rangeDays: range,
-        backlogHours: thresh.backlog,
-        limit: ROW_LIMIT
-      })
-      if (!res.ok) {
-        toast.error(res.error || '读取问题失败')
+      if (typeof issueApi.overview === 'function') {
+        const res = await issueApi
+          .overview(wxid!, {
+            rangeDays: range,
+            backlogHours: thresh.backlog,
+            limit: ROW_LIMIT
+          })
+          .catch(() => null)
+        if (res && res.ok) {
+          const rows = res.issues ?? []
+          setIssues(rows)
+          setServerMetrics(res.metrics ?? null)
+          setRowInfo({
+            total: res.total ?? rows.length,
+            loaded: res.loaded ?? rows.length,
+            truncated: !!res.truncated
+          })
+          setSkewed(false)
+        } else {
+          if (res && res.error) toast.error(res.error)
+          await loadLegacy()
+        }
       } else {
-        const rows = res.issues ?? []
-        setIssues(rows)
-        setServerMetrics(res.metrics ?? null)
-        setRowInfo({
-          total: res.total ?? rows.length,
-          loaded: res.loaded ?? rows.length,
-          truncated: !!res.truncated
-        })
+        await loadLegacy()
       }
       const st = await issueApi.state(wxid!)
       if (st.ok && st.state) setAnaState(st.state)
@@ -122,6 +138,19 @@ function MonitorPage(): React.JSX.Element {
       toast.error(e instanceof Error ? e.message : '读取问题失败')
     } finally {
       setLoading(false)
+    }
+    /** 旧主进程兜底：全量列表 + 本地算指标（与 overview 同一份纯函数，口径一致） */
+    async function loadLegacy(): Promise<void> {
+      const legacy = await issueApi?.list(wxid!).catch(() => null)
+      if (legacy && legacy.ok && legacy.issues) {
+        const rows = legacy.issues
+        setIssues(rows)
+        setServerMetrics(null)
+        setRowInfo({ total: rows.length, loaded: rows.length, truncated: false })
+        setSkewed(true)
+      } else {
+        toast.error((legacy as { error?: string } | null)?.error || '读取问题失败')
+      }
     }
   }, [connected, wxid, issueApi, range, thresh.backlog])
 
@@ -616,6 +645,14 @@ function MonitorPage(): React.JSX.Element {
               title="preload 桥属于重启才生效的部分:热更新只换了界面,功能代码还是旧的"
             >
               ⚠ 维护功能未加载:请完全退出并重启应用
+            </span>
+          )}
+          {skewed && hasMaintenanceApi && (
+            <span
+              className="mon-ana-state"
+              title="主进程还是旧版(没有 cs:issue:overview):已自动退回全量列表 + 本地算指标。重启应用即可恢复主进程聚合与明细限量。"
+            >
+              ⚠ 主进程版本较旧:已用兼容模式加载,建议重启应用
             </span>
           )}
         </div>
