@@ -251,6 +251,7 @@ const api: PreloadApi = {
     issue: {
       list: (wxid: string): Promise<Result<{ issues?: FeedbackIssue[] }>> =>
         ipcRenderer.invoke('cs:issue:list', wxid),
+      overview: (wxid, opts) => ipcRenderer.invoke('cs:issue:overview', wxid, opts),
       analyze: (
         wxid: string
       ): Promise<{ ok: boolean; error?: string; state?: FeedbackAnalysisState }> =>
@@ -442,8 +443,10 @@ const api: PreloadApi = {
       ): Promise<{ ok: boolean; path?: string; error?: string }> =>
         ipcRenderer.invoke('cs:export:writeFile', folder, name, content),
       onProgress: (callback) => {
-        const listener = (_e: Electron.IpcRendererEvent, evt: Parameters<typeof callback>[0]): void =>
-          callback(evt)
+        const listener = (
+          _e: Electron.IpcRendererEvent,
+          evt: Parameters<typeof callback>[0]
+        ): void => callback(evt)
         ipcRenderer.on('cs:export:progress', listener)
         return () => ipcRenderer.removeListener('cs:export:progress', listener)
       }
@@ -534,8 +537,18 @@ const api: PreloadApi = {
         ipcRenderer.invoke('cs:wb:exportSession', id),
       removeAll: (wxid: string): Promise<{ ok: boolean; removed?: number; error?: string }> =>
         ipcRenderer.invoke('cs:wb:removeAll', wxid),
-      skills: (): Promise<Result<{ skills?: { name: string; description: string; enabled: boolean; sizeBytes: number; dirName: string }[]; maxOn?: number }>> =>
-        ipcRenderer.invoke('cs:wb:skills'),
+      skills: (): Promise<
+        Result<{
+          skills?: {
+            name: string
+            description: string
+            enabled: boolean
+            sizeBytes: number
+            dirName: string
+          }[]
+          maxOn?: number
+        }>
+      > => ipcRenderer.invoke('cs:wb:skills'),
       setSkillLimit: (n: number): Promise<{ ok: boolean; maxOn?: number; error?: string }> =>
         ipcRenderer.invoke('cs:wb:setSkillLimit', n),
       toggleSkill: (name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>

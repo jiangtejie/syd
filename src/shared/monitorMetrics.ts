@@ -1,7 +1,9 @@
-import type { FeedbackIssue, FeedbackIssueStatus, FeedbackIssueType } from '../../../shared/types'
+import type { FeedbackIssue, FeedbackIssueStatus, FeedbackIssueType } from './types'
 
 /**
  * 问题监控中心指标(BI 聚合纯函数,输入 = 该账号全量 issue,窗口影响趋势统计)。
+ * 放在 shared:主进程用它在 **不把全量问题过 IPC** 的前提下算 KPI/趋势(见 cs:issue:overview),
+ * 渲染端复用同一份口径,避免两端算法漂移。
  * 时间口径:
  * - 新增时间 = occurAt(首现);
  * - 解决时间 = resolvedAt(置 done/stalled 时写入,重开清空)——旧数据缺该字段时回落 updatedAt。
@@ -168,7 +170,12 @@ export function computeMonitorData(
       typeCount.set(it.type, (typeCount.get(it.type) ?? 0) + 1)
       const g = groupCount.get(it.groupUsername)
       if (g) g.value++
-      else groupCount.set(it.groupUsername, { name: it.groupName || it.groupUsername, username: it.groupUsername, value: 1 })
+      else
+        groupCount.set(it.groupUsername, {
+          name: it.groupName || it.groupUsername,
+          username: it.groupUsername,
+          value: 1
+        })
     }
   }
 

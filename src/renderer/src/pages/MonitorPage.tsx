@@ -4,7 +4,12 @@ import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
 import EChart from '../components/EChart'
 import type { EChartsOption } from 'echarts'
-import { computeMonitorData, fmtTimeShort, ageText } from '../lib/monitorMetrics'
+import {
+  computeMonitorData,
+  fmtTimeShort,
+  ageText,
+  type MonitorData
+} from '../../../shared/monitorMetrics'
 import { useTeamNames } from '../lib/teamNames'
 import type {
   FeedbackIssue,
@@ -26,6 +31,8 @@ type StatusFilter = 'open' | 'doubt' | 'done' | 'stalled' | 'archived' | 'all'
 const TYPE_OPTIONS: FeedbackIssueType[] = ['客诉', '售后', '物流', '价格', '咨询', '建议', '其他']
 
 const RANGE_OPTIONS = [7, 14, 30]
+/** 单次回传的明细行上限（KPI 已由主进程按全量算，明细超限即截断并提示） */
+const ROW_LIMIT = 1000
 /** 问题列表每页条数选项（默认 15） */
 const PAGE_SIZES = [15, 30, 50, 100]
 
@@ -132,6 +139,10 @@ function MonitorPage(): React.JSX.Element {
   const hasMaintenanceApi = typeof issueApi?.mergeDuplicates === 'function'
 
   const [issues, setIssues] = useState<FeedbackIssue[]>([])
+  /** 指标由主进程按**全量**数据算好回传（不再把全部问题过 IPC）；首次/异常时本地兜底 */
+  const [serverMetrics, setServerMetrics] = useState<MonitorData | null>(null)
+  /** 明细载荷信息：total=账号总条数，loaded=本次回传条数，truncated=是否被上限截断 */
+  const [rowInfo, setRowInfo] = useState({ total: 0, loaded: 0, truncated: false })
   const [loading, setLoading] = useState(false)
   const [range, setRange] = useState(7)
   // 筛选与钻取
@@ -191,20 +202,31 @@ function MonitorPage(): React.JSX.Element {
     if (!connected || !issueApi) return
     setLoading(true)
     try {
-      const res = await issueApi.list(wxid!)
-      if (res.ok && res.issues) {
-        setIssues(res.issues as FeedbackIssue[])
+      const res = await issueApi.overview(wxid!, {
+        rangeDays: range,
+        backlogHours: thresh.backlog,
+        limit: ROW_LIMIT
+      })
+      if (!res.ok) {
+        toast.error(res.error || '读取问题失败')
       } else {
-        toast.error((res as { error?: string }).error || '读取问题失败')
+        const rows = res.issues ?? []
+        setIssues(rows)
+        setServerMetrics(res.metrics ?? null)
+        setRowInfo({
+          total: res.total ?? rows.length,
+          loaded: res.loaded ?? rows.length,
+          truncated: !!res.truncated
+        })
       }
       const st = await issueApi.state(wxid!)
-      if (st.ok && st.state) setAnaState(st.state as FeedbackAnalysisState)
+      if (st.ok && st.state) setAnaState(st.state)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '读取问题失败')
     } finally {
       setLoading(false)
     }
-  }, [connected, wxid, issueApi])
+  }, [connected, wxid, issueApi, range, thresh.backlog])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面异步加载(回调内 setState,全仓同款模式)
@@ -266,9 +288,11 @@ function MonitorPage(): React.JSX.Element {
   const doubtIssues = useMemo(() => issues.filter((i) => i.needConfirm), [issues])
   const doubtOpen = doubtIssues.filter((i) => i.status === 'open').length
 
+  // 服务端口径优先（基于全量数据），未就绪时用同一份纯函数本地兜底，保证首屏不空
   const metrics = useMemo(
-    () => computeMonitorData(formalIssues, range, { backlogHours: thresh.backlog }),
-    [formalIssues, range, thresh.backlog]
+    () =>
+      serverMetrics ?? computeMonitorData(formalIssues, range, { backlogHours: thresh.backlog }),
+    [serverMetrics, formalIssues, range, thresh.backlog]
   )
   // 严重度计数(正式 open):紧急/高危 卡片与筛选项
   const sevCount = useMemo(() => {
@@ -1047,6 +1071,14 @@ function MonitorPage(): React.JSX.Element {
                     setPage(1)
                   }}
                 />
+                {rowInfo.truncated && (
+                  <span
+                    className="mon-ana-state"
+                    title="KPI/趋势按全量数据统计；明细为控制传输量只回传最近的若干条，更早的可用状态/类型筛选或「归档历史」收敛"
+                  >
+                    明细已加载 {rowInfo.loaded}/{rowInfo.total} 条
+                  </span>
+                )}
               </div>
 
               {pageItems.length === 0 ? (

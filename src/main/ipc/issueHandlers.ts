@@ -20,6 +20,7 @@ import {
   setIssueAssignee,
   confirmIssueDoubt
 } from '../db/repos/issueRepo'
+import { computeMonitorData } from '../../shared/monitorMetrics'
 import type { FeedbackIssueStatus } from '../../shared/types'
 import { createLogger } from '../services/logging'
 import { fail } from './_util'
@@ -46,6 +47,9 @@ export function registerIssueHandlers(): void {
     }
   })
 
+  /** 默认返回行数上限：历史越长全量过 IPC 越贵，KPI 已在主进程算好，明细超限即截断并告知 */
+  const OVERVIEW_LIMIT = 1000
+
   ipcMain.handle('cs:issue:list', (_e, wxid: string) => {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
     try {
@@ -57,6 +61,35 @@ export function registerIssueHandlers(): void {
       }
     }
   })
+
+  /**
+   * 监控总览：KPI/趋势/分布**在主进程按全量数据算**，只把上限内的明细行过 IPC。
+   * 之前渲染端每收到一次数据变更通知就拉一次全量问题（历史累积后单次可达数 MB）。
+   */
+  ipcMain.handle(
+    'cs:issue:overview',
+    (_e, wxid: string, opts?: { rangeDays?: number; backlogHours?: number; limit?: number }) => {
+      if (!wxid) return { ok: false as const, error: '缺少账号' }
+      try {
+        const all = listFeedbackIssues(wxid)
+        const rangeDays = Math.min(Math.max(Math.floor(opts?.rangeDays ?? 7), 1), 90)
+        const metrics = computeMonitorData(all, rangeDays, {
+          backlogHours: opts?.backlogHours ?? 48
+        })
+        const limit = Math.min(Math.max(Math.floor(opts?.limit ?? OVERVIEW_LIMIT), 1), 5000)
+        return {
+          ok: true as const,
+          metrics,
+          issues: all.slice(0, limit),
+          total: all.length,
+          loaded: Math.min(all.length, limit),
+          truncated: all.length > limit
+        }
+      } catch (err) {
+        return fail(err)
+      }
+    }
+  )
 
   ipcMain.handle('cs:issue:analyze', async (_e, wxid: string) => {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
