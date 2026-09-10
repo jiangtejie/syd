@@ -4,6 +4,7 @@ import {
   listSessions,
   listMessages,
   listMessagesSince,
+  enrichMessagesWithSenders,
   enrichSessionsWithContacts,
   annotateUnreadLastSender,
   getAvatar,
@@ -11,7 +12,7 @@ import {
   getRedEnvelopeStatuses as queryRedEnvelopeStatuses
 } from './queries'
 import { computeOpsStats } from './opsStats'
-import type { OpsStats, WxConnectInfo, MessageCursor } from '../../../shared/types'
+import type { ChatMessage, OpsStats, WxConnectInfo, MessageCursor } from '../../../shared/types'
 
 /**
  * 微信通道门面（T4）。
@@ -70,16 +71,32 @@ export function getSessions(wxid: string): ReturnType<typeof listSessions> {
   return { ok: true as const, sessions }
 }
 
-/** 消息分页读取（keyset）：before 为空取最新一页，否则取更早一页 */
+/**
+ * 消息分页读取（keyset）：before 为空取最新一页，否则取更早一页。
+ * skipEnrich=true 用于「只关心时间/序号等元信息」或「多页读完再统一 enrich」的场景：
+ * 每页 enrich 都要打开一次联系人库，翻 5 页就是 5 次开库（见 scripts/perf 记录）。
+ */
 export function getMessages(
   wxid: string,
   sessionId: string,
   limit = 50,
-  before?: MessageCursor
+  before?: MessageCursor,
+  skipEnrich = false
 ): ReturnType<typeof listMessages> {
   const session = buildWxSession(wxid)
   if (!session) return { ok: false as const, error: '未配置密钥，请先导入' }
-  return listMessages(session, sessionId, limit, before)
+  return listMessages(session, sessionId, limit, before, skipEnrich)
+}
+
+/** 按会话批量补发送人昵称/头像（配合 getMessages(skipEnrich=true) 使用，一次开库补完整批） */
+export function enrichMessages(
+  wxid: string,
+  sessionId: string,
+  messages: ChatMessage[]
+): ChatMessage[] {
+  const session = buildWxSession(wxid)
+  if (!session || messages.length === 0) return messages
+  return enrichMessagesWithSenders(messages, session, sessionId)
 }
 
 /** 增量消息（T5 轮询用） */

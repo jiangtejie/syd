@@ -590,6 +590,33 @@ export function clearIssuesByGroup(wxid: string, groupUsername: string): number 
   return info.changes
 }
 
+/**
+ * 有 open 问题的群（去重）。
+ * 收尾巡检只需要「哪些群要跑」，用它替代 listIssues 全量拉取 + 装饰（后者随历史累积越来越重）。
+ */
+export function openGroupUsernames(wxid: string): string[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT DISTINCT group_username FROM issue_feedback
+       WHERE wxid = ? AND status = 'open' AND group_username <> ''`
+    )
+    .all(wxid) as Array<{ group_username: string }>
+  return rows.map((r) => r.group_username)
+}
+
+/** 是否存在「同群 ≥2 条 open」的可疑重复（自动合并的前置判断：没有就不必做聚类） */
+export function hasDuplicateCandidates(wxid: string): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM (
+         SELECT group_username FROM issue_feedback
+         WHERE wxid = ? AND status = 'open' GROUP BY group_username HAVING COUNT(*) > 1
+       )`
+    )
+    .get(wxid) as { n: number } | undefined
+  return (row?.n ?? 0) > 0
+}
+
 /** 按群聚合 open 计数（工作台会话列表徽标） */
 export function countOpenByGroup(wxid: string): Record<string, number> {
   const rows = getDb()
@@ -813,15 +840,6 @@ export function typeCounts(wxid: string): FeedbackTypeCount[] {
   return rows
     .map((r) => ({ type: r.type as FeedbackIssueType, count: r.n }))
     .sort((a, b) => b.count - a.count || order.indexOf(a.type) - order.indexOf(b.type))
-}
-
-export function countByStatus(wxid: string): Partial<Record<FeedbackIssueStatus, number>> {
-  const rows = getDb()
-    .prepare(`SELECT status, COUNT(*) AS n FROM issue_feedback WHERE wxid = ? GROUP BY status`)
-    .all(wxid) as Array<{ status: string; n: number }>
-  const out: Partial<Record<FeedbackIssueStatus, number>> = {}
-  for (const r of rows) out[r.status as FeedbackIssueStatus] = r.n
-  return out
 }
 
 /** 跨群关键词搜索客户问题（标题/摘要 LIKE；排除已归档），供建议 Agent 判断客户历史诉求 */

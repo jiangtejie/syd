@@ -5,14 +5,14 @@ import { confirmAsk } from '../stores/confirmDialog'
 import EChart from '../components/EChart'
 import type { EChartsOption } from 'echarts'
 import { computeMonitorData, fmtTimeShort, ageText } from '../lib/monitorMetrics'
+import { useTeamNames } from '../lib/teamNames'
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
   FeedbackIssueSeverity,
   FeedbackIssueStatus,
   FeedbackIssueType,
-  FeedbackAnalysisState,
-  TeamMemberInfo
+  FeedbackAnalysisState
 } from '../../../shared/types'
 import './monitor.css'
 
@@ -182,9 +182,8 @@ function MonitorPage(): React.JSX.Element {
   useEffect(() => {
     if (dupPlan || archiveAsk) bannerRef.current?.scrollIntoView({ block: 'nearest' })
   }, [dupPlan, archiveAsk])
-  // 跟进人：团队成员(按账号作用域) + 微信联系人展示名回显(label 为空时)
-  const [members, setMembers] = useState<TeamMemberInfo[]>([])
-  const [memberNames, setMemberNames] = useState<Record<string, string>>({})
+  // 跟进人：团队成员 + 展示名解析（与聊天右侧面板共用同一个 hook，口径一致）
+  const { members, nameOf: ownerName } = useTeamNames(connected ? wxid : null)
   const [ownerFilter, setOwnerFilter] = useState('')
   const [sevFilter, setSevFilter] = useState<'all' | FeedbackIssueSeverity>('all')
 
@@ -207,34 +206,10 @@ function MonitorPage(): React.JSX.Element {
     }
   }, [connected, wxid, issueApi])
 
-  // 团队成员加载（指派候选）；label 为空时用微信联系人备注/昵称回显
-  const loadTeam = useCallback(async (): Promise<void> => {
-    const teamApi = window.api?.cs?.team
-    if (!connected || !teamApi) {
-      setMembers([])
-      return
-    }
-    const res = await teamApi.list(wxid!).catch(() => null)
-    if (!res?.ok || !res.members) {
-      setMembers([])
-      return
-    }
-    const list = res.members as TeamMemberInfo[]
-    setMembers(list)
-    const needName = list.filter((m) => !(m.label ?? '').trim()).map((m) => m.username)
-    setMemberNames({})
-    if (needName.length > 0) {
-      const namesApi = window.api?.cs?.wx?.contactNames
-      const nr = namesApi ? await namesApi(wxid!, needName).catch(() => null) : null
-      if (nr?.ok && nr.names) setMemberNames(nr.names)
-    }
-  }, [connected, wxid])
-
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面异步加载(回调内 setState,全仓同款模式)
     void load()
-    void loadTeam()
-  }, [load, loadTeam])
+  }, [load])
 
   // 阈值读取(设置 → 偏好与数据 可配)
   useEffect(() => {
@@ -402,14 +377,6 @@ function MonitorPage(): React.JSX.Element {
     sevFilter,
     keyword
   ])
-
-  // 跟进人展示名：成员备注 label 优先，其次微信联系人备注/昵称，最后 username
-  const ownerName = (username: string): string => {
-    if (!username) return ''
-    const m = members.find((x) => x.username === username)
-    if (m && (m.label ?? '').trim()) return m.label ?? ''
-    return memberNames[username] || username
-  }
 
   // 指派/更换/取消跟进人：乐观更新(列表/抽屉/详情) + 回写，失败重载
   const applyAssignee = async (id: number, username: string): Promise<void> => {

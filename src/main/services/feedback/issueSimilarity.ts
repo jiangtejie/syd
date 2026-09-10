@@ -115,51 +115,52 @@ export function topicSame(
   const identity = identityOverlap(a, b)
   const typeSame = !!a.type && a.type === b.type
 
+  // 逐条判据累积（不能命中即返回：弱判据先命中会把强判据的结论盖掉，
+  // 例如「标题只 0.40 但证据 4 条全覆盖、同客户同类型」本该是高置信，短路后就变成弱信号了）
+  const hits: string[] = []
+  let same = false
+  let strong = false
+  const mark = (isSame: boolean, isStrong: boolean, reason: string): void => {
+    if (!isSame) return
+    same = true
+    if (isStrong) strong = true
+    // 强判据排前面：预览里只显示前两条理由，得先说清楚「凭什么认定是同一条」
+    if (isStrong) hits.unshift(reason)
+    else hits.push(reason)
+  }
+
   // ① 主题措辞一致 + （同一客户 或 证据有交集）：防止「不同客户问法相似」被误并成一条
-  if (title >= TITLE_SAME && (identity || shared >= 1)) {
-    return {
-      same: true,
-      strong: title >= TITLE_STRONG && (identity || shared >= 2),
-      reason: `标题相似 ${title.toFixed(2)}${identity ? '+同客户' : ''}${shared ? `+共享证据${shared}条` : ''}`
-    }
-  }
+  mark(
+    title >= TITLE_SAME && (identity || shared >= 1),
+    title >= TITLE_STRONG && (identity || shared >= 2),
+    `标题相似 ${title.toFixed(2)}${identity ? '+同客户' : ''}${shared ? `+共享证据${shared}条` : ''}`
+  )
   // ② 同一客户 + 同类型 + 证据大幅重叠（长议题：跨天漂移也认）
-  if (identity && typeSame && shared >= 2 && cover >= 0.6) {
-    return {
-      same: true,
-      strong: shared >= 3 && cover >= 0.8,
-      reason: `同客户同类型+证据覆盖 ${(cover * 100) | 0}%(${shared}条)`
-    }
-  }
+  mark(
+    identity && typeSame && shared >= 2 && cover >= 0.6,
+    shared >= 3 && cover >= 0.8,
+    `同客户同类型+证据覆盖 ${(cover * 100) | 0}%(${shared}条)`
+  )
   // ③ 同一客户 + 同类型 + 证据被完全包含（规则提取常只有 1~2 条证据）
-  if (identity && typeSame && shared >= 1 && cover >= 0.9) {
-    return {
-      same: true,
-      strong: shared >= 2 || cover >= 1,
-      reason: `同客户同类型+证据包含(${shared}条)`
-    }
-  }
+  mark(
+    identity && typeSame && shared >= 1 && cover >= 0.9,
+    shared >= 2 || cover >= 1,
+    `同客户同类型+证据包含(${shared}条)`
+  )
   // ④ 同类型 + 证据高度一致（身份缺失时兜底）
-  if (typeSame && shared >= 3 && cover >= 0.8) {
-    return {
-      same: true,
-      strong: shared >= 4 && cover >= 0.9,
-      reason: `同类型+证据高度重叠(${shared}条/${(cover * 100) | 0}%)`
-    }
-  }
+  mark(
+    typeSame && shared >= 3 && cover >= 0.8,
+    shared >= 4 && cover >= 0.9,
+    `同类型+证据高度重叠(${shared}条/${(cover * 100) | 0}%)`
+  )
   // ⑤ 同一客户 + 同类型 + 时间邻近（无证据交集的短时重复：未回复留言跨天收拢）
+  //    只有时间邻近 = 弱信号（可能是同一客户的两件同类事）：绝不自动合并
   const gap = opts.maxTimeGapMs ?? TIME_NEAR_MS
   if (gap > 0 && identity && typeSame && a.occurAt !== undefined && b.occurAt !== undefined) {
-    if (Math.abs(a.occurAt - b.occurAt) <= gap) {
-      // 只有时间邻近 = 弱信号（可能是同一客户的两件同类事）：绝不自动合并
-      return {
-        same: true,
-        strong: false,
-        reason: `同客户同类型+时间邻近${Math.round(Math.abs(a.occurAt - b.occurAt) / 60000)}分`
-      }
-    }
+    const diff = Math.abs(a.occurAt - b.occurAt)
+    if (diff <= gap) mark(true, false, `同客户同类型+时间邻近${Math.round(diff / 60000)}分`)
   }
-  return { same: false, reason: '', strong: false }
+  return { same, strong: same && strong, reason: hits.slice(0, 2).join(' + ') }
 }
 
 /**

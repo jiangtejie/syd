@@ -343,7 +343,9 @@ function readGroupMessages(
   const all: ChatMessage[] = []
   let cursor: Parameters<typeof wxService.getMessages>[3] = undefined
   for (;;) {
-    const res = wxService.getMessages(wxid, groupUsername, READ_PAGE, cursor)
+    // skipEnrich：每页 enrich 都要开一次联系人库，多页就是多次开库；
+    // 读完整窗后在下面统一补一次发送人昵称即可（群昵称/头像与分页无关）
+    const res = wxService.getMessages(wxid, groupUsername, READ_PAGE, cursor, true)
     if (!res.ok || !res.messages || res.messages.length === 0) break
     all.unshift(...res.messages) // 返回按序号升序，向后翻更旧页，因此插到头部
     const oldest = res.messages[0]
@@ -358,7 +360,8 @@ function readGroupMessages(
   // 限容：超限时保留最新（序号升序 => 截尾部）
   const truncated = all.length > MAX_GROUP_MSGS
   const msgs = truncated ? all.slice(all.length - MAX_GROUP_MSGS) : all
-  return { msgs, truncated }
+  // 统一补发送人昵称/团队标记：一次开联系人库，替代「每页 enrich 一次」
+  return { msgs: wxService.enrichMessages(wxid, groupUsername, msgs), truncated }
 }
 
 /** 规则议题聚类窗：同一客户同一类型诉求间隔 ≤ 该值视为同一议题的多句跟进 */
@@ -991,13 +994,17 @@ export function clearGroupRunState(wxid: string, groupUsername: string): void {
   setConfig(groupStampKey(wxid, groupUsername), '')
 }
 
-/** 群消息库当前最新一条消息（peek 一页；读失败返回 null 表示不拦截） */
+/**
+ * 群消息库当前最新一条消息（peek 一页；读失败返回 null 表示不拦截）。
+ * 只看时间/序号，跳过 enrich —— 这条路径每分钟每群都被巡检调用，
+ * 之前每次都白开一次联系人库给 80 条消息查昵称。
+ */
 function peekLatestRow(
   wxid: string,
   groupUsername: string
 ): { createTime: number; sortSeq: number } | null {
   try {
-    const res = wxService.getMessages(wxid, groupUsername, 80)
+    const res = wxService.getMessages(wxid, groupUsername, 80, undefined, true)
     if (!res.ok || !res.messages || res.messages.length === 0) return null
     const newest = res.messages[res.messages.length - 1]
     return { createTime: newest.createTime, sortSeq: newest.sortSeq }

@@ -464,6 +464,16 @@
   background: var(--bg-panel);
 }
 
+/* 危险操作(清空/合并):与 confirm-primary.is-danger 同色系 */
+.mon-btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.mon-btn.danger:hover {
+  background: rgba(250, 81, 81, 0.08);
+}
+
 .mon-btn:disabled {
   opacity: 0.55;
   cursor: default;

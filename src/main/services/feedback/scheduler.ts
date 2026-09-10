@@ -8,6 +8,7 @@ import {
 } from './analyzer'
 import { getSessions } from '../wechat/wxService'
 import { getConfig } from '../../db/repos/config'
+import { hasDuplicateCandidates, openGroupUsernames } from '../../db/repos/issueRepo'
 import { addDbChangeHook, type DbChangedPayload } from '../wechat/watchService'
 import { notifyIssueAlert, type AlertIssue } from '../lark/notify'
 import { createLogger } from '../logging'
@@ -240,12 +241,8 @@ async function runSettle(wxid: string): Promise<void> {
   if (runningSettle.has(wxid) || !enabled()) return
   runningSettle.add(wxid)
   try {
-    const groups = new Set(
-      listFeedbackIssues(wxid)
-        .filter((i) => i.status === 'open')
-        .map((i) => i.groupUsername)
-        .filter((g) => !!g)
-    )
+    // 只取「有 open 问题的群名」（一条 DISTINCT 查询），不必把全部历史问题拉出来装饰一遍
+    const groups = new Set(openGroupUsernames(wxid))
     if (groups.size === 0) return
     let changed = 0
     for (const g of groups) {
@@ -256,7 +253,8 @@ async function runSettle(wxid: string): Promise<void> {
       }
     }
     // 高置信重复议题自动合并（零 LLM，纯判据；弱信号不碰）
-    if (autoMergeEnabled()) {
+    // 前置：没有「同群 ≥2 条 open」就跳过聚类，避免每 10 分钟做无用功
+    if (autoMergeEnabled() && hasDuplicateCandidates(wxid)) {
       try {
         const m = mergeDuplicateIssues(wxid, { strongOnly: true })
         if (m.merged > 0) {
@@ -317,7 +315,8 @@ async function runEscalate(wxid: string): Promise<void> {
     for (const [k, v] of escalateNotifiedAt) {
       if (now - v.at > ESCALATE_KEEP_MS) escalateNotifiedAt.delete(k)
     }
-    const items = listFeedbackIssues(wxid).filter((i) => i.status === 'open' && !i.needConfirm)
+    const all = listFeedbackIssues(wxid)
+    const items = all.filter((i) => i.status === 'open' && !i.needConfirm)
     const fresh: Array<{ id: number; reason: string }> = []
     for (const i of items) {
       let reason = ''
@@ -345,7 +344,7 @@ async function runEscalate(wxid: string): Promise<void> {
       sendChanged(wxid, { escalate: fresh.length })
       issueLog.info(`盯办升级 ${wxid} n=${fresh.length} items=${fresh.map((f) => f.id).join(',')}`)
       try {
-        const byId = new Map(listFeedbackIssues(wxid).map((i) => [i.id, i]))
+        const byId = new Map(all.map((i) => [i.id, i]))
         const alertItems: AlertIssue[] = []
         for (const f of fresh) {
           const i = byId.get(f.id)
