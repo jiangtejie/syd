@@ -40,6 +40,7 @@ interface IssueRow {
   follow_up_at?: number | null
   resolved_at?: number | null
   archived_from?: string | null
+  last_reply_by?: string | null
   created_at: number
   updated_at: number
 }
@@ -141,6 +142,7 @@ function rowToIssue(r: IssueRow): FeedbackIssue {
     autoDone: r.auto_done === 1,
     followUp: r.follow_up === 1,
     followUpAt: r.follow_up_at ?? undefined,
+    lastReplyBy: r.last_reply_by ?? undefined,
     resolvedAt: r.resolved_at ?? undefined,
     archivedFrom: (r.archived_from as FeedbackIssue['archivedFrom']) ?? undefined,
     createdAt: r.created_at,
@@ -374,13 +376,23 @@ export function archiveResolvedBefore(wxid: string, days: number): number {
  * 客服/团队在同一回合内已回复 → 跟进中(1) 并记录回复时刻（跟进超时计时起点）；
  * 回合内无我方回复 → 回到待处理(0) 并清空计时起点。只作用于 open 行，不动 updated_at（处理时间口径）。
  */
-export function setIssueFollowUp(id: number, followUp: boolean, replyAt?: number): void {
+export function setIssueFollowUp(
+  id: number,
+  followUp: boolean,
+  replyAt?: number,
+  replyBy?: string
+): void {
   getDb()
     .prepare(
-      `UPDATE issue_feedback SET follow_up = ?, follow_up_at = ?
+      `UPDATE issue_feedback SET follow_up = ?, follow_up_at = ?, last_reply_by = ?
        WHERE id = ? AND status = 'open'`
     )
-    .run(followUp ? 1 : 0, followUp ? (replyAt ?? null) : null, id)
+    .run(
+      followUp ? 1 : 0,
+      followUp ? (replyAt ?? null) : null,
+      followUp ? (replyBy ?? null) : null,
+      id
+    )
 }
 
 /** 指派/更换/取消跟进人（团队成员 username；null/空串 = 未指派）。不动 updated_at（处理时间口径） */
@@ -466,6 +478,8 @@ export interface OpenIssueRef {
   method: FeedbackIssueMethod
   followUp: boolean
   followUpAt?: number
+  /** 最后回复该议题的团队客服（未指派时的默认跟进人依据） */
+  lastReplyBy?: string
 }
 
 /**
@@ -475,7 +489,7 @@ export interface OpenIssueRef {
 export function listOpenIssuesByGroup(wxid: string, groupUsername: string): OpenIssueRef[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, key, occur_at, method, follow_up, follow_up_at FROM issue_feedback
+      `SELECT id, key, occur_at, method, follow_up, follow_up_at, last_reply_by FROM issue_feedback
        WHERE wxid = ? AND group_username = ? AND status = 'open' ORDER BY occur_at ASC`
     )
     .all(wxid, groupUsername) as Array<{
@@ -485,6 +499,7 @@ export function listOpenIssuesByGroup(wxid: string, groupUsername: string): Open
     method: string
     follow_up: number
     follow_up_at: number | null
+    last_reply_by: string | null
   }>
   return rows.map((r) => ({
     id: r.id,
@@ -492,7 +507,8 @@ export function listOpenIssuesByGroup(wxid: string, groupUsername: string): Open
     occurAt: r.occur_at,
     method: r.method === 'llm' ? 'llm' : 'rule',
     followUp: r.follow_up === 1,
-    followUpAt: r.follow_up_at ?? undefined
+    followUpAt: r.follow_up_at ?? undefined,
+    lastReplyBy: r.last_reply_by ?? undefined
   }))
 }
 

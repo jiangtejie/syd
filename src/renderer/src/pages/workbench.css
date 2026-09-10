@@ -2066,3 +2066,67 @@
   line-height: 1.5;
   color: var(--text-4);
 }
+
+/* 鈹€鈹€ 缇ら棶棰橀潰鏉匡細璺熻繘浜猴紙榛樿鏄剧ず + 涓€閿寚娲惧缓璁級 鈹€鈹€ */
+.gip-owner-tag {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  flex: none;
+  white-space: nowrap;
+  background: rgba(7, 193, 96, 0.14);
+  color: #0a8f4d;
+  font-weight: 600;
+}
+
+.gip-owner-none {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  flex: none;
+  white-space: nowrap;
+  background: var(--bg-hover);
+  color: var(--text-3);
+}
+
+.gip-owner-sug {
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: var(--r-pill);
+  border: 1px dashed var(--brand);
+  background: transparent;
+  color: var(--brand);
+  cursor: pointer;
+  flex: none;
+  white-space: nowrap;
+}
+
+.gip-owner-sug:hover {
+  background: var(--brand-soft, rgba(7, 193, 96, 0.12));
+}
+
+.gip-owner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gip-owner-label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.gip-owner-select {
+  max-width: 150px;
+}
+
+.gip-owner-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}

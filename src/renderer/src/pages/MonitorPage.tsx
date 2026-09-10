@@ -1263,6 +1263,15 @@ function MonitorPage(): React.JSX.Element {
                     <span className="mon-drawer-owner-state">
                       由 <b>{ownerName(active.assignee)}</b> 跟进
                     </span>
+                  ) : active.lastReplyBy ? (
+                    <button
+                      type="button"
+                      className="mon-btn ghost"
+                      title={`${ownerName(active.lastReplyBy)} 回复过这条问题：点击指派为跟进人`}
+                      onClick={() => void applyAssignee(active.id, active.lastReplyBy ?? '')}
+                    >
+                      指派给 {ownerName(active.lastReplyBy)}
+                    </button>
                   ) : members.length === 0 ? (
                     <span className="mon-drawer-owner-hint">
                       暂无团队成员：对话页右键消息「标记为团队客服」后即可指派

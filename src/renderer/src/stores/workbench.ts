@@ -112,6 +112,8 @@ interface WorkbenchState {
   setGroupIssueStatus: (id: number, status: FeedbackIssueStatus) => Promise<void>
   /** 疑似确认：核实为真问题 → 移出疑似桶并计入正式待办 */
   confirmGroupIssue: (id: number) => Promise<void>
+  /** 指派/更换/取消本群问题的跟进人（团队成员 username；null = 取消指派） */
+  assignGroupIssue: (id: number, username: string | null) => Promise<void>
   /** 清理群问题状态（切到非群会话/换账号时） */
   resetGroupState: () => void
   /** 清空当前群全部问题记录(含已解决/归档与证据,不可恢复);随后可手动重新分析 */
@@ -426,6 +428,22 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   /** 疑似确认：核实为真问题 → 移出疑似桶并计入正式待办 */
+  assignGroupIssue: async (id: number, username: string | null) => {
+    const assignee = username ?? undefined
+    set((s) => ({
+      groupIssues: s.groupIssues.map((it) => (it.id === id ? { ...it, assignee } : it)),
+      groupActiveDetail:
+        s.groupActiveDetail && s.groupActiveDetail.id === id
+          ? { ...s.groupActiveDetail, assignee }
+          : s.groupActiveDetail
+    }))
+    const res = await issueApi?.assign(id, username).catch(() => null)
+    if (!res?.ok) {
+      toast.error(res?.error || '跟进人设置失败')
+      void get().refreshGroupIssues() // 回滚为真实状态
+    }
+  },
+
   confirmGroupIssue: async (id: number) => {
     set((s) => ({
       groupIssues: s.groupIssues.map((it) => (it.id === id ? { ...it, needConfirm: false } : it)),

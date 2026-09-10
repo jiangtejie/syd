@@ -216,16 +216,23 @@ function isRuleText(m: ChatMessage): boolean {
 /**
  * 会话语义「已跟进」判定：消息 idx 之后、下一条客户（非我方/非团队）消息之前，
  * 是否存在我方或团队客服消息。不再使用固定 30 分钟窗（隔夜/迟回复不误报）。
- * 返回该回复的时间（跟进超时计时起点），null = 本回合无我方回复。
+ * 返回该回复的时间（跟进超时计时起点）与**回复人**（团队客服 username；我本人回复时为 undefined），
+ * null = 本回合无我方回复。回复人可用于未指派时给出默认跟进人建议。
  */
-function staffReplyAt(msgs: ChatMessage[], idx: number, team: Set<string>): number | null {
+function staffReplyAt(
+  msgs: ChatMessage[],
+  idx: number,
+  team: Set<string>
+): { at: number; by?: string } | null {
   for (let j = idx + 1; j < msgs.length; j++) {
     const x = msgs[j]
-    const isStaff = x.isSend || (!!x.senderUsername && team.has(x.senderUsername))
-    if (isStaff) return x.createTime
+    if (x.isSend) return { at: x.createTime }
+    if (x.senderUsername && team.has(x.senderUsername)) {
+      return { at: x.createTime, by: x.senderUsername }
+    }
     // 系统消息等非客户对象不影响回合判定；遇到下一条客户消息仍未回复 → 视为未跟进
-    if (!x.isSend && !x.senderUsername) continue
-    if (!x.isSend) return null
+    if (!x.senderUsername) continue
+    return null
   }
   return null
 }
@@ -826,14 +833,15 @@ function reconcileOpenIssues(
       }
     }
     if (anchorIdx < 0) continue
-    const replyAt = staffReplyAt(msgs, anchorIdx, team)
-    if (replyAt === null) {
-      if (p.followUp || p.followUpAt !== undefined) {
+    const reply = staffReplyAt(msgs, anchorIdx, team)
+    if (reply === null) {
+      if (p.followUp || p.followUpAt !== undefined || p.lastReplyBy !== undefined) {
         setIssueFollowUp(p.id, false)
         out.changed++
       }
       continue
     }
+    const replyAt = reply.at
     // 静默收尾：本议题客户在客服回复后再无声音且超过阈值 → 自然结束（auto 标记，可重新打开复核）
     const anchorMsg = msgs[anchorIdx]
     const anchorSender = anchorMsg.isSend ? undefined : (anchorMsg.senderUsername ?? undefined)
@@ -843,8 +851,8 @@ function reconcileOpenIssues(
       out.changed++
       continue
     }
-    if (!p.followUp || p.followUpAt !== replyAt) {
-      setIssueFollowUp(p.id, true, replyAt)
+    if (!p.followUp || p.followUpAt !== replyAt || p.lastReplyBy !== reply.by) {
+      setIssueFollowUp(p.id, true, replyAt, reply.by)
       out.changed++
     }
     out.following++

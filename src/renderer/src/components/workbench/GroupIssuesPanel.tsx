@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { confirmAsk } from '../../stores/confirmDialog'
+import { useTeamNames } from '../../lib/teamNames'
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
-  FeedbackIssueStatus
+  FeedbackIssueStatus,
+  TeamMemberInfo
 } from '../../../../shared/types'
 
 /**
@@ -37,6 +39,41 @@ function fmtTime(ts: number): string {
   const yest = new Date(now.getTime() - 86_400_000)
   if (sameDay(d, yest)) return `昨天 ${hhmm}`
   return `${d.getMonth() + 1}月${d.getDate()}日 ${hhmm}`
+}
+
+/** 展开区：跟进人指派（团队成员；空 = 未指派） */
+function OwnerPicker({
+  issue,
+  members,
+  nameOf
+}: {
+  issue: FeedbackIssue | FeedbackIssueDetail
+  members: TeamMemberInfo[]
+  nameOf: (u?: string) => string
+}): React.JSX.Element {
+  const assign = useWorkbenchStore((s) => s.assignGroupIssue)
+  return (
+    <label className="gip-owner" title="指派/更换跟进人（团队成员，空 = 取消指派）">
+      <span className="gip-owner-label">跟进人</span>
+      <select
+        className="gip-select gip-owner-select"
+        value={issue.assignee ?? ''}
+        onChange={(e) => void assign(issue.id, e.target.value || null)}
+      >
+        <option value="">未指派</option>
+        {members.map((m) => (
+          <option key={m.username} value={m.username}>
+            {nameOf(m.username)}
+          </option>
+        ))}
+      </select>
+      {members.length === 0 && (
+        <span className="gip-owner-hint">
+          暂无团队成员：对话页右键消息「标记为团队客服」后可指派
+        </span>
+      )}
+    </label>
+  )
 }
 
 /** 展开区状态操作 */
@@ -96,11 +133,15 @@ function StatusActions({
 function IssueTimeline({
   detail,
   issue,
-  onLocate
+  onLocate,
+  members,
+  nameOf
 }: {
   detail: FeedbackIssueDetail | null
   issue: FeedbackIssue
   onLocate: (ts: number) => void
+  members: TeamMemberInfo[]
+  nameOf: (u?: string) => string
 }): React.JSX.Element {
   const msgs = detail?.related ?? []
   const cur = detail ?? issue
@@ -136,6 +177,7 @@ function IssueTimeline({
         ))}
       </div>
       <div className="gip-detail-foot">
+        <OwnerPicker issue={cur} members={members} nameOf={nameOf} />
         <StatusActions issue={cur} />
         <button
           type="button"
@@ -175,6 +217,9 @@ function GroupIssuesPanel(): React.JSX.Element {
   const openDetail = useWorkbenchStore((s) => s.openGroupIssue)
   const locateIssueAt = useWorkbenchStore((s) => s.locateIssueAt)
   const activeSessionId = useWorkbenchStore((s) => s.activeSessionId)
+  const wxid = useWorkbenchStore((s) => s.wxid)
+  const assignIssue = useWorkbenchStore((s) => s.assignGroupIssue)
+  const { members, nameOf } = useTeamNames(wxid)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [collapsed, setCollapsed] = useState<{ history: boolean; ignored: boolean }>({
     history: true,
@@ -324,11 +369,32 @@ function GroupIssuesPanel(): React.JSX.Element {
                   {(it.reopenCount ?? 0) > 0 && (
                     <em className="gip-sev is-reopen">复发×{it.reopenCount}</em>
                   )}
+                  {/* 默认跟进人：已指派显示人名；未指派但有人回复过 → 一键指派给回复人 */}
+                  {it.assignee ? (
+                    <em className="gip-owner-tag" title={`跟进人：${nameOf(it.assignee)}`}>
+                      {nameOf(it.assignee)}
+                    </em>
+                  ) : it.lastReplyBy ? (
+                    <button
+                      type="button"
+                      className="gip-owner-sug"
+                      title={`${nameOf(it.lastReplyBy)} 回复过这条问题：点击指派为跟进人`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void assignIssue(it.id, it.lastReplyBy ?? null)
+                      }}
+                    >
+                      + 指派给{nameOf(it.lastReplyBy)}
+                    </button>
+                  ) : (
+                    <em className="gip-owner-none">未指派</em>
+                  )}
                   <b>{it.title}</b>
                 </span>
                 <span className="gip-sub-line">
                   首现 {fmtTime(it.occurAt)} · 证据 {it.msgCount} 条
                   {it.method === 'llm' ? ' · AI 提炼' : ' · 规则'}
+                  {it.assignee ? ` · 跟进 ${nameOf(it.assignee)}` : ''}
                 </span>
               </span>
               <span className="gip-cell-x gip-caret">{expanded ? '▾' : '▸'}</span>
@@ -338,7 +404,13 @@ function GroupIssuesPanel(): React.JSX.Element {
                 {detailLoading && !detail ? (
                   <div className="gip-empty-box">加载证据中…</div>
                 ) : (
-                  <IssueTimeline detail={detail} issue={it} onLocate={locate} />
+                  <IssueTimeline
+                    detail={detail}
+                    issue={it}
+                    onLocate={locate}
+                    members={members}
+                    nameOf={nameOf}
+                  />
                 )}
               </div>
             )}

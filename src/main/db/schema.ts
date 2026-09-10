@@ -335,6 +335,9 @@ export function migrate(db: Database.Database): void {
   // 增量列迁移：archived_from（归档前状态）——区分「人工判定不是问题」(open) 与「历史已解决归档」(done/stalled)：
   // 前者是 LLM 反例样本，后者仍要计入累计闭环率
   ensureColumn(db, 'issue_feedback', 'archived_from', 'TEXT')
+  // 增量列迁移：last_reply_by（最后回复该议题的团队客服 username；NULL = 我本人回复或无人回复）——
+  // 未指派跟进人时，面板据此给出「默认跟进人」建议
+  ensureColumn(db, 'issue_feedback', 'last_reply_by', 'TEXT')
   // 增量列迁移：chat_session.caps（能力分层挂载集合 JSON：{v:1,names:[...]}，会话级渐进式工具可见性）
   ensureColumn(db, 'chat_session', 'caps', 'TEXT')
   // 增量列迁移:chat_session.workspace(工作区任务绑定的真实目录;NULL=未绑定,仅查询模式)

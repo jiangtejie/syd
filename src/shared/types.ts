@@ -362,6 +362,11 @@ export interface FeedbackIssue {
   followUp?: boolean
   /** 客服最后一次回复时间（跟进超时的计时起点；仅规则判定写入） */
   followUpAt?: number
+  /**
+   * 最后回复该议题的团队客服 username（规则判定写入；NULL = 我本人回复或无人回复）。
+   * 未指派跟进人时，面板据此给出「默认跟进人」建议。
+   */
+  lastReplyBy?: string
   /** 跟进超时：followUp 且客服最后回复距今超 12 小时仍未闭环（仅 open 行动态计算） */
   followUpOverdue?: boolean
   /** 严重度（提取写入；规则情绪词可升级） */
