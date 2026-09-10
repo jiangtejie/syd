@@ -252,6 +252,13 @@ declare global {
           analyze: (
             wxid: string
           ) => Promise<{ ok: boolean; state?: FeedbackAnalysisState; error?: string }>
+          /** 取消正在跑的全量重析（按群边界停下，已扫过的群结果保留） */
+          cancel: (wxid: string) => Promise<{ ok: boolean; error?: string }>
+          /** 归档 N 天前已闭环记录（闭环率与趋势照旧统计，仅从活跃列表挪走） */
+          archiveStale: (
+            wxid: string,
+            days: number
+          ) => Promise<{ ok: boolean; archived?: number; error?: string }>
           analyzeGroup: (
             wxid: string,
             groupUsername: string,
@@ -264,6 +271,11 @@ declare global {
             method?: 'llm' | 'rule'
             count?: number
             lastAt?: number
+            /** 覆盖度：truncated=true 表示单群条数上限截断（窗口比实际覆盖范围更宽） */
+            coverage?: { msgs: number; truncated: boolean }
+            following?: number
+            closed?: number
+            stalled?: number
           }>
           listGroup: (
             wxid: string,
@@ -291,6 +303,17 @@ declare global {
               wxid?: string
               added?: number
               escalate?: number
+              settled?: number
+            }) => void
+          ) => () => void
+          /** 全量重析进度（逐群推进 + 收尾/取消） */
+          onProgress: (
+            callback: (payload: {
+              wxid?: string
+              phase?: 'group' | 'done' | 'cancelled'
+              done?: number
+              total?: number
+              current?: string
             }) => void
           ) => () => void
         }

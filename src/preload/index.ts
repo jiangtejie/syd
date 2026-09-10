@@ -242,6 +242,13 @@ const api = {
         ipcRenderer.invoke('cs:issue:list', wxid),
       analyze: (wxid: string): Promise<{ ok: boolean; error?: string; state?: unknown }> =>
         ipcRenderer.invoke('cs:issue:analyze', wxid),
+      cancel: (wxid: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:cancel', wxid),
+      archiveStale: (
+        wxid: string,
+        days: number
+      ): Promise<{ ok: boolean; archived?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:issue:archiveStale', wxid, days),
       analyzeGroup: (
         wxid: string,
         groupUsername: string,
@@ -284,14 +291,44 @@ const api = {
           wxid?: string
           added?: number
           escalate?: number
+          settled?: number
         }) => void
       ): (() => void) => {
         const listener = (
           _e: Electron.IpcRendererEvent,
-          payload: { at?: number; wxid?: string; added?: number; escalate?: number }
+          payload: {
+            at?: number
+            wxid?: string
+            added?: number
+            escalate?: number
+            settled?: number
+          }
         ): void => callback(payload)
         ipcRenderer.on('cs:issue:changed', listener)
         return () => ipcRenderer.removeListener('cs:issue:changed', listener)
+      },
+      /** 全量重析进度（phase=group 逐群推进；done/cancelled 收尾） */
+      onProgress: (
+        callback: (payload: {
+          wxid?: string
+          phase?: 'group' | 'done' | 'cancelled'
+          done?: number
+          total?: number
+          current?: string
+        }) => void
+      ): (() => void) => {
+        const listener = (
+          _e: Electron.IpcRendererEvent,
+          payload: {
+            wxid?: string
+            phase?: 'group' | 'done' | 'cancelled'
+            done?: number
+            total?: number
+            current?: string
+          }
+        ): void => callback(payload)
+        ipcRenderer.on('cs:issue:progress', listener)
+        return () => ipcRenderer.removeListener('cs:issue:progress', listener)
       }
     },
     team: {

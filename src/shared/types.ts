@@ -328,6 +328,8 @@ export type FeedbackIssueMethod = 'llm' | 'rule'
 export interface FeedbackIssueMsg {
   time: number
   senderName: string
+  /** 发送人 username（客户身份归并/复发识别用；改昵称也能认出同一个人） */
+  senderUsername?: string
   isSend: boolean
   /** 是否团队客服成员（我方同事） */
   senderIsTeam?: boolean
@@ -338,6 +340,8 @@ export interface FeedbackIssueMsg {
 
 export interface FeedbackIssue {
   id: number
+  /** 稳定 key（提取锚点派生）：重复分析复用同一行，也用于人工字段在重算中的回填 */
+  key: string
   wxid: string
   groupUsername: string
   groupName: string
@@ -350,10 +354,14 @@ export interface FeedbackIssue {
   method: FeedbackIssueMethod
   /** 跟进人：团队客服成员 username（cs:team 维护，按账号作用域）；空 = 未指派 */
   assignee?: string
-  /** 是否由引擎自动闭环（unreplied 问题检测到客服已回复后自动 done） */
+  /** 是否由引擎自动闭环（客户静默收尾 / 检测到客服已回复后自动 done） */
   autoDone?: boolean
+  /** 闭环时间（置 done/stalled 时写入，重开清空）：趋势与「今日解决」的口径来源 */
+  resolvedAt?: number
   /** 跟进中：客服/团队已回复但尚未闭环（规则按回复判定、LLM 按 status=跟进中 输出） */
   followUp?: boolean
+  /** 客服最后一次回复时间（跟进超时的计时起点；仅规则判定写入） */
+  followUpAt?: number
   /** 跟进超时：followUp 且客服最后回复距今超 12 小时仍未闭环（仅 open 行动态计算） */
   followUpOverdue?: boolean
   /** 严重度（提取写入；规则情绪词可升级） */
@@ -364,6 +372,8 @@ export interface FeedbackIssue {
   reopenCount?: number
   /** 复发来源：上一次闭环议题 id（详情可回溯上次处理） */
   reopenedFrom?: number
+  /** 归档前状态：open = 人工判定「不是问题」；done/stalled = 历史已闭环归档（不影响累计闭环率） */
+  archivedFrom?: FeedbackIssueStatus
   /** 涉及的客户（LLM 输出 customers / 规则发送人归一；已持久化供复发与统计） */
   customers?: string[]
   createdAt: number
@@ -384,6 +394,14 @@ export interface FeedbackAnalysisState {
   error?: string
   lastAt?: number
   issueCount?: number
+  /** 上次全量重析实际覆盖的群数 */
+  groups?: number
+  /** 窗口内活跃群总数（groups < groupsTotal 说明被 MAX_GROUPS 截断） */
+  groupsTotal?: number
+  /** 活跃群超过单次扫描上限（UI 明示未覆盖全部群） */
+  groupsCapped?: boolean
+  /** 上次全量重析被用户取消（已扫过的群结果保留） */
+  cancelled?: boolean
 }
 
 export interface FeedbackTypeCount {

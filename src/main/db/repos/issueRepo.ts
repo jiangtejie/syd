@@ -3,6 +3,7 @@ import { getConfigNumber } from './config'
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
+  FeedbackIssueMethod,
   FeedbackIssueMsg,
   FeedbackIssueSeverity,
   FeedbackIssueStatus,
@@ -36,6 +37,9 @@ interface IssueRow {
   customers: string | null
   auto_done?: number | null
   follow_up?: number | null
+  follow_up_at?: number | null
+  resolved_at?: number | null
+  archived_from?: string | null
   created_at: number
   updated_at: number
 }
@@ -45,10 +49,26 @@ interface MsgRow {
   issue_id: number
   msg_time: number
   sender_name: string
+  sender_username: string | null
   is_send: number
+  is_team: number | null
   text: string
   image_md5: string | null
   local_type: number | null
+}
+
+/** 证据行 → 领域对象（两处读取共用，避免字段漏映射） */
+function rowToIssueMsg(m: MsgRow): FeedbackIssueMsg {
+  return {
+    time: m.msg_time,
+    senderName: m.sender_name,
+    senderUsername: m.sender_username ?? undefined,
+    isSend: m.is_send === 1,
+    senderIsTeam: m.is_team === 1,
+    text: m.text,
+    imageMd5: m.image_md5 ?? undefined,
+    localType: m.local_type ?? undefined
+  }
 }
 
 export interface NewIssue {
@@ -102,6 +122,7 @@ function normSeverity(v: string | null | undefined): FeedbackIssueSeverity {
 function rowToIssue(r: IssueRow): FeedbackIssue {
   return {
     id: r.id,
+    key: r.key,
     wxid: r.wxid,
     groupUsername: r.group_username,
     groupName: r.group_name,
@@ -119,6 +140,9 @@ function rowToIssue(r: IssueRow): FeedbackIssue {
     customers: parseCustomers(r.customers),
     autoDone: r.auto_done === 1,
     followUp: r.follow_up === 1,
+    followUpAt: r.follow_up_at ?? undefined,
+    resolvedAt: r.resolved_at ?? undefined,
+    archivedFrom: (r.archived_from as FeedbackIssue['archivedFrom']) ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     msgCount: 0
@@ -140,7 +164,11 @@ function decorateIssues(issues: FeedbackIssue[]): void {
   const ids = issues.map((i) => i.id)
   const countMap = new Map<number, number>()
   const lastMap = new Map<number, { msg_time: number; is_send: number }>()
-  const followIds = issues.filter((i) => i.followUp && i.status === 'open').map((i) => i.id)
+  // 跟进超时计时起点：优先 follow_up_at（规则判定的客服最后回复时间，精确到回复时刻）；
+  // 历史行缺该字段时回落旧口径（最后一条证据是我方发出）
+  const legacyFollowIds = issues
+    .filter((i) => i.followUp && i.status === 'open' && !i.followUpAt)
+    .map((i) => i.id)
 
   for (let i = 0; i < ids.length; i += DECORATE_CHUNK) {
     const batch = ids.slice(i, i + DECORATE_CHUNK)
@@ -154,8 +182,8 @@ function decorateIssues(issues: FeedbackIssue[]): void {
     for (const r of rows) countMap.set(r.issue_id, r.n)
   }
 
-  for (let i = 0; i < followIds.length; i += DECORATE_CHUNK) {
-    const batch = followIds.slice(i, i + DECORATE_CHUNK)
+  for (let i = 0; i < legacyFollowIds.length; i += DECORATE_CHUNK) {
+    const batch = legacyFollowIds.slice(i, i + DECORATE_CHUNK)
     const ph = batch.map(() => '?').join(',')
     const rows = db
       .prepare(
@@ -174,10 +202,12 @@ function decorateIssues(issues: FeedbackIssue[]): void {
   for (const issue of issues) {
     issue.msgCount = countMap.get(issue.id) ?? 0
     if (!issue.followUp || issue.status !== 'open') continue
-    const last = lastMap.get(issue.id)
-    if (last && last.is_send === 1 && now - last.msg_time > limitMs) {
-      issue.followUpOverdue = true
+    let replyAt = issue.followUpAt
+    if (replyAt === undefined) {
+      const last = lastMap.get(issue.id)
+      if (last && last.is_send === 1) replyAt = last.msg_time
     }
+    if (replyAt !== undefined && now - replyAt > limitMs) issue.followUpOverdue = true
   }
 }
 
@@ -255,8 +285,9 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
   // 重建关联消息（外键未强制启用，先删后插）
   // 包在事务里:逐条自动提交在 WAL 下是数量级差距,且中途失败会留下"删了一半"的中间态
   const insMsg = db.prepare(
-    `INSERT INTO issue_feedback_msg (issue_id, seq, msg_time, sender_name, is_send, text, image_md5, local_type)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO issue_feedback_msg
+       (issue_id, seq, msg_time, sender_name, sender_username, is_send, is_team, text, image_md5, local_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   const rebuildMsgs = db.transaction((rows: NewIssue['msgs']) => {
     db.prepare(`DELETE FROM issue_feedback_msg WHERE issue_id = ?`).run(row.id)
@@ -266,7 +297,9 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
         i,
         m.time,
         m.senderName,
+        m.senderUsername ?? null,
         m.isSend ? 1 : 0,
+        m.senderIsTeam ? 1 : 0,
         m.text,
         m.imageMd5 ?? null,
         m.localType ?? null
@@ -277,26 +310,77 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
   return { id: row.id, created }
 }
 
-/** 人工/自动状态流转。auto=true 表示引擎自动闭环（unreplied 检测到回复），auto_done 标记保留供 UI 区分 */
+/**
+ * 人工/自动状态流转。auto=true 表示引擎自动处置（规则判定闭环/超期搁置），auto_done 标记保留供 UI 区分。
+ * resolved_at 只在处置态写入（done/stalled），重新打开或归档时清空——趋势与「今日解决」据此计算，
+ * 不再受 upsert 刷新 updated_at 的影响。
+ */
 export function setIssueStatus(id: number, status: FeedbackIssueStatus, auto = false): void {
+  const now = Date.now()
+  const resolvedAt = status === 'done' || status === 'stalled' ? now : null
+  // 归档时记录「归档前的状态」：open = 人工判定不是问题（LLM 反例样本），
+  // done/stalled = 历史已闭环归档（累计闭环率仍要算它）；重新打开/流转时清空
+  let archivedFrom: string | null = null
+  if (status === 'archived') {
+    const prev = getDb().prepare(`SELECT status FROM issue_feedback WHERE id = ?`).get(id) as
+      { status: string } | undefined
+    archivedFrom = prev?.status ?? 'open'
+  }
   if (auto && status === 'done') {
     getDb()
       .prepare(
-        `UPDATE issue_feedback SET status = ?, updated_at = ?, auto_done = 1, follow_up = 0 WHERE id = ?`
+        `UPDATE issue_feedback SET status = ?, updated_at = ?, resolved_at = ?, archived_from = ?,
+           auto_done = 1, follow_up = 0, follow_up_at = NULL WHERE id = ?`
       )
-      .run(status, Date.now(), id)
+      .run(status, now, resolvedAt, archivedFrom, id)
   } else if (auto) {
     getDb()
-      .prepare(`UPDATE issue_feedback SET status = ?, updated_at = ?, follow_up = 0 WHERE id = ?`)
-      .run(status, Date.now(), id)
+      .prepare(
+        `UPDATE issue_feedback SET status = ?, updated_at = ?, resolved_at = ?, archived_from = ?,
+           follow_up = 0, follow_up_at = NULL WHERE id = ?`
+      )
+      .run(status, now, resolvedAt, archivedFrom, id)
   } else {
     // 人工操作：清除自动闭环与跟进中标记（人工重新打开/处理即不再展示“自动解决/跟进中”）
     getDb()
       .prepare(
-        `UPDATE issue_feedback SET status = ?, updated_at = ?, auto_done = 0, follow_up = 0 WHERE id = ?`
+        `UPDATE issue_feedback SET status = ?, updated_at = ?, resolved_at = ?, archived_from = ?,
+           auto_done = 0, follow_up = 0, follow_up_at = NULL WHERE id = ?`
       )
-      .run(status, Date.now(), id)
+      .run(status, now, resolvedAt, archivedFrom, id)
   }
+}
+
+/**
+ * 历史归档（长期运营收敛）：把 N 天前已闭环（done/stalled）的记录标为 archived。
+ * - 用 archived_from 记住原状态，累计闭环率与趋势照旧统计它们（归档只是从活跃列表里挪走）；
+ * - 人工判定「不是问题」的归档(archived_from=open)不受影响，仍是 LLM 反例样本。
+ */
+export function archiveResolvedBefore(wxid: string, days: number): number {
+  const d = Math.min(Math.max(Math.floor(days), 1), 3650)
+  const cutoff = Date.now() - d * 24 * 3600_000
+  const info = getDb()
+    .prepare(
+      `UPDATE issue_feedback SET status = 'archived', archived_from = status, updated_at = ?
+       WHERE wxid = ? AND status IN ('done', 'stalled')
+         AND COALESCE(resolved_at, updated_at) < ?`
+    )
+    .run(Date.now(), wxid, cutoff)
+  return info.changes
+}
+
+/**
+ * 规则判定的跟进状态写回（确定性，分析器每轮调用）：
+ * 客服/团队在同一回合内已回复 → 跟进中(1) 并记录回复时刻（跟进超时计时起点）；
+ * 回合内无我方回复 → 回到待处理(0) 并清空计时起点。只作用于 open 行，不动 updated_at（处理时间口径）。
+ */
+export function setIssueFollowUp(id: number, followUp: boolean, replyAt?: number): void {
+  getDb()
+    .prepare(
+      `UPDATE issue_feedback SET follow_up = ?, follow_up_at = ?
+       WHERE id = ? AND status = 'open'`
+    )
+    .run(followUp ? 1 : 0, followUp ? (replyAt ?? null) : null, id)
 }
 
 /** 指派/更换/取消跟进人（团队成员 username；null/空串 = 未指派）。不动 updated_at（处理时间口径） */
@@ -307,24 +391,156 @@ export function setIssueAssignee(id: number, assignee: string | null): boolean {
 }
 
 /** 按稳定 key 查已有行（供 resolved 判定：存在 open 时自动闭环，不存在则不新建） */
-export function findIssueByKey(key: string): { id: number; status: string } | undefined {
-  return getDb().prepare(`SELECT id, status FROM issue_feedback WHERE key = ?`).get(key) as
-    { id: number; status: string } | undefined
+export function findIssueByKey(
+  key: string
+): { id: number; status: string; occurAt: number } | undefined {
+  return getDb()
+    .prepare(`SELECT id, status, occur_at FROM issue_feedback WHERE key = ?`)
+    .get(key) as { id: number; status: string; occurAt: number } | undefined
 }
 
-/** 某群待自动闭环的 open 问题（rule 型 unreplied，key 含 :unreplied:），返回 id + 锚时间 */
-export function listOpenUnrepliedByGroup(
-  wxid: string,
-  groupUsername: string
-): Array<{ id: number; key: string; occurAt: number }> {
+/** 某问题现有证据消息（key 复用时用于合并证据，保住最早锚点行） */
+export function getIssueMsgs(id: number): FeedbackIssueMsg[] {
+  const rows = getDb()
+    .prepare(`SELECT * FROM issue_feedback_msg WHERE issue_id = ? ORDER BY seq ASC`)
+    .all(id) as MsgRow[]
+  return rows.map(rowToIssueMsg)
+}
+
+/**
+ * 批量取「客户 username 集合」（证据行里非我方、非团队客服的发送人）。
+ * 昵称会随群昵称/备注变化，username 才是稳定身份——复发识别与同议题合并据此更稳。
+ */
+function evidenceCustomerUsernames(ids: number[]): Map<number, Set<string>> {
+  const out = new Map<number, Set<string>>()
+  if (ids.length === 0) return out
+  const ph = ids.map(() => '?').join(',')
   const rows = getDb()
     .prepare(
-      `SELECT id, key, occur_at FROM issue_feedback
-       WHERE wxid = ? AND group_username = ? AND status = 'open' AND method = 'rule'
-         AND key LIKE '%:unreplied:%'`
+      `SELECT issue_id, sender_username FROM issue_feedback_msg
+       WHERE issue_id IN (${ph}) AND is_send = 0 AND COALESCE(is_team, 0) = 0
+         AND sender_username IS NOT NULL AND sender_username <> ''`
     )
-    .all(wxid, groupUsername) as Array<{ id: number; key: string; occur_at: number }>
-  return rows.map((r) => ({ id: r.id, key: r.key, occurAt: r.occur_at }))
+    .all(...ids) as Array<{ issue_id: number; sender_username: string }>
+  for (const r of rows) {
+    const set = out.get(r.issue_id) ?? new Set<string>()
+    set.add(r.sender_username)
+    out.set(r.issue_id, set)
+  }
+  return out
+}
+
+/** 议题身份（客户昵称 + 客户 username）：任一命中即视为同一位客户 */
+export interface IssueIdentity {
+  customers?: string[]
+  usernames?: string[]
+}
+
+/** 身份是否有可用信号（都没有则不做身份匹配，避免误合并） */
+function hasIdentity(id: IssueIdentity): boolean {
+  return (id.customers?.length ?? 0) > 0 || (id.usernames?.length ?? 0) > 0
+}
+
+/** 昵称或 username 任一交叠 */
+function identityHit(
+  prevCustomers: string[],
+  prevUsernames: Set<string>,
+  id: IssueIdentity
+): boolean {
+  const names = new Set((id.customers ?? []).map((n) => n.trim()).filter(Boolean))
+  if (names.size > 0) {
+    for (const n of prevCustomers) {
+      if (names.has(n.trim())) return true
+    }
+  }
+  for (const u of id.usernames ?? []) {
+    if (prevUsernames.has(u)) return true
+  }
+  return false
+}
+
+export interface OpenIssueRef {
+  id: number
+  key: string
+  occurAt: number
+  method: FeedbackIssueMethod
+  followUp: boolean
+  followUpAt?: number
+}
+
+/**
+ * 某群全部 open 问题（不限提取方式）。
+ * 引擎每轮据此做「规则跟进判定」——跟进中/待处理是消息流事实，不能只靠 LLM 是否又提取到同一议题。
+ */
+export function listOpenIssuesByGroup(wxid: string, groupUsername: string): OpenIssueRef[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, key, occur_at, method, follow_up, follow_up_at FROM issue_feedback
+       WHERE wxid = ? AND group_username = ? AND status = 'open' ORDER BY occur_at ASC`
+    )
+    .all(wxid, groupUsername) as Array<{
+    id: number
+    key: string
+    occur_at: number
+    method: string
+    follow_up: number
+    follow_up_at: number | null
+  }>
+  return rows.map((r) => ({
+    id: r.id,
+    key: r.key,
+    occurAt: r.occur_at,
+    method: r.method === 'llm' ? 'llm' : 'rule',
+    followUp: r.follow_up === 1,
+    followUpAt: r.follow_up_at ?? undefined
+  }))
+}
+
+export interface ManualFieldSnapshot {
+  key: string
+  assignee: string | null
+  needConfirm: number
+}
+
+/** 重算前快照 open 行的人工字段（指派跟进人 / 疑似已确认），重算后按 key 回填 */
+export function snapshotOpenManualFields(
+  wxid: string,
+  groupUsername: string
+): ManualFieldSnapshot[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT key, assignee, need_confirm FROM issue_feedback
+       WHERE wxid = ? AND group_username = ? AND status = 'open'`
+    )
+    .all(wxid, groupUsername) as Array<{
+    key: string
+    assignee: string | null
+    need_confirm: number | null
+  }>
+  return rows.map((r) => ({
+    key: r.key,
+    assignee: r.assignee ?? null,
+    needConfirm: r.need_confirm ?? 0
+  }))
+}
+
+/**
+ * 重算后回填人工字段：指派仅在仍为空时补（不复盖新一轮结果），疑似确认状态按快照还原。
+ * 「重新分析」会先删除 open 行，若不回填，指派跟进人/人工确认会被无声清掉。
+ */
+export function restoreManualFields(rows: ManualFieldSnapshot[]): number {
+  if (rows.length === 0) return 0
+  const db = getDb()
+  const stmt = db.prepare(
+    `UPDATE issue_feedback SET assignee = COALESCE(assignee, ?), need_confirm = ?
+     WHERE key = ? AND status = 'open'`
+  )
+  let n = 0
+  const run = db.transaction(() => {
+    for (const r of rows) n += stmt.run(r.assignee, r.needConfirm, r.key).changes
+  })
+  run()
+  return n
 }
 
 /** 清空某群 open(待处理/跟进中)记录与其证据——「重新分析」前重算用;已解决/搁置/归档历史保留 */
@@ -409,6 +625,29 @@ export function openIssueEvidenceTimes(wxid: string, groupUsername: string): Set
   return new Set(rows.map((r) => r.msg_time))
 }
 
+/**
+ * 每个 open 议题的锚点行（最早证据）时间，升序去重。
+ * 附录行有行数上限时优先保留这些行：LLM 只能引用「看得见」的行，
+ * 锚点行一旦被挤出上下文，模型就会为同一议题另起一条(新 key) → 重复问题 + 旧行永不闭环。
+ */
+export function openIssueAnchorTimes(wxid: string, groupUsername: string): number[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT f.id AS id, f.occur_at AS occur_at, MIN(m.msg_time) AS first_msg
+       FROM issue_feedback f
+       LEFT JOIN issue_feedback_msg m ON m.issue_id = f.id
+       WHERE f.wxid = ? AND f.group_username = ? AND f.status = 'open'
+       GROUP BY f.id`
+    )
+    .all(wxid, groupUsername) as Array<{ id: number; occur_at: number; first_msg: number | null }>
+  const times = new Set<number>()
+  for (const r of rows) {
+    const t = r.first_msg ?? r.occur_at
+    if (typeof t === 'number' && Number.isFinite(t)) times.add(t)
+  }
+  return Array.from(times).sort((a, b) => a - b)
+}
+
 export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }): FeedbackIssue[] {
   const rows = (
     opts?.status
@@ -455,20 +694,14 @@ export function getIssueDetail(id: number): FeedbackIssueDetail | null {
     .prepare(`SELECT * FROM issue_feedback_msg WHERE issue_id = ? ORDER BY seq ASC`)
     .all(id) as MsgRow[]
   const issue = rowToIssue(row) as FeedbackIssueDetail
-  issue.related = msgs.map((m) => ({
-    time: m.msg_time,
-    senderName: m.sender_name,
-    isSend: m.is_send === 1,
-    text: m.text,
-    imageMd5: m.image_md5 ?? undefined,
-    localType: m.local_type ?? undefined
-  }))
+  issue.related = msgs.map(rowToIssueMsg)
   issue.msgCount = msgs.length
-  // 详情页证据已全部读入:直接用最后一条判定跟进超时(无需再查一次库)
+  // 详情页证据已全部读入:优先按规则记录的回复时刻判定跟进超时(无需再查一次库)
   if (issue.followUp && issue.status === 'open') {
     const last = msgs.length > 0 ? msgs[msgs.length - 1] : undefined
+    const replyAt = issue.followUpAt ?? (last && last.is_send === 1 ? last.msg_time : undefined)
     const hours = getConfigNumber('monitor.followUpHours', FOLLOW_UP_DEFAULT_HOURS)
-    if (last && last.is_send === 1 && Date.now() - last.msg_time > Math.max(1, hours) * 3600_000) {
+    if (replyAt !== undefined && Date.now() - replyAt > Math.max(1, hours) * 3600_000) {
       issue.followUpOverdue = true
     }
   }
@@ -520,6 +753,65 @@ export function confirmIssueDoubt(id: number): boolean {
   return info.changes > 0
 }
 
+export interface MergeTarget {
+  id: number
+  key: string
+  occurAt: number
+}
+
+/** key 漂移兜底窗口：新证据锚点通常落在原锚点之后（追问/客服介入行），也可能略早 */
+const MERGE_BEFORE_MS = 5 * 60_000
+const MERGE_AFTER_MS = 6 * 3600_000
+
+/**
+ * key 漂移兜底：同群同类型、客户有交叠、发生时间邻近的**现存 open 行**。
+ * LLM 的 key 锚定「最早证据行」，一旦该行没被喂进上下文，模型会另起一条 → 同一议题两行。
+ * 命中时复用原行 key（内容/证据合并到原行），避免重复待办与旧行永不闭环。
+ */
+export function findMergeTarget(
+  wxid: string,
+  groupUsername: string,
+  type: string,
+  identity: IssueIdentity,
+  occurAt: number,
+  opts: {
+    /** 只复用该时刻之前就已存在的行（排除本轮刚建的：同一轮里同客户同类型的两个真议题不该被并成一条） */
+    createdBefore?: number
+    /** 「原行可以比新锚点早多久」：默认 6h（追问/客服介入行造成的锚点漂移）；未回复留言用更长窗口 */
+    mergeAfterMs?: number
+    /** 「原行可以比新锚点晚多久」：默认 5min */
+    mergeBeforeMs?: number
+  } = {}
+): MergeTarget | null {
+  if (!hasIdentity(identity)) return null
+  const guard = opts.createdBefore !== undefined ? ' AND created_at < ?' : ''
+  const afterMs = opts.mergeAfterMs ?? MERGE_AFTER_MS
+  const beforeMs = opts.mergeBeforeMs ?? MERGE_BEFORE_MS
+  const args: number[] = [occurAt - afterMs, occurAt + beforeMs]
+  if (opts.createdBefore !== undefined) args.push(opts.createdBefore)
+  const rows = getDb()
+    .prepare(
+      `SELECT id, key, occur_at, customers FROM issue_feedback
+       WHERE wxid = ? AND group_username = ? AND type = ? AND status = 'open'
+         AND occur_at >= ? AND occur_at <= ?${guard}
+       ORDER BY occur_at DESC LIMIT 12`
+    )
+    .all(wxid, groupUsername, type, ...args) as Array<{
+    id: number
+    key: string
+    occur_at: number
+    customers: string | null
+  }>
+  const userMap = evidenceCustomerUsernames(rows.map((r) => r.id))
+  for (const r of rows) {
+    const prev = parseCustomers(r.customers) ?? []
+    if (identityHit(prev, userMap.get(r.id) ?? new Set<string>(), identity)) {
+      return { id: r.id, key: r.key, occurAt: r.occur_at }
+    }
+  }
+  return null
+}
+
 export interface ReopenCandidate {
   id: number
   reopenCount: number
@@ -533,11 +825,10 @@ export function findReopenCandidate(
   wxid: string,
   groupUsername: string,
   type: string,
-  customers: string[] | undefined,
+  identity: IssueIdentity,
   occurAt: number
 ): ReopenCandidate | null {
-  const names = new Set((customers ?? []).map((n) => n.trim()).filter(Boolean))
-  if (names.size === 0) return null
+  if (!hasIdentity(identity)) return null
   const minGap = 2 * 3600_000
   const rows = getDb()
     .prepare(
@@ -552,16 +843,12 @@ export function findReopenCandidate(
     customers: string | null
     reopen_count: number
   }>
+  const userMap = evidenceCustomerUsernames(rows.map((r) => r.id))
   for (const r of rows) {
-    const prev = new Set((parseCustomers(r.customers) ?? []).map((n) => n.trim()))
-    let overlap = false
-    for (const n of names) {
-      if (prev.has(n)) {
-        overlap = true
-        break
-      }
+    const prev = parseCustomers(r.customers) ?? []
+    if (identityHit(prev, userMap.get(r.id) ?? new Set<string>(), identity)) {
+      return { id: r.id, reopenCount: r.reopen_count ?? 0 }
     }
-    if (overlap) return { id: r.id, reopenCount: r.reopen_count ?? 0 }
   }
   return null
 }
@@ -572,6 +859,7 @@ export function recentRejectedSamples(wxid: string, groupUsername: string, limit
     .prepare(
       `SELECT type, title FROM issue_feedback
        WHERE wxid = ? AND group_username = ? AND status = 'archived'
+         AND COALESCE(archived_from, 'open') = 'open'
          AND updated_at >= ?
        ORDER BY updated_at DESC LIMIT ?`
     )

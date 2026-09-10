@@ -158,7 +158,9 @@ const TABLES: string[] = [
     seq INTEGER,
     msg_time INTEGER,
     sender_name TEXT,
+    sender_username TEXT,
     is_send INTEGER DEFAULT 0,
+    is_team INTEGER DEFAULT 0,
     text TEXT,
     image_md5 TEXT,
     local_type INTEGER,
@@ -322,6 +324,17 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'issue_feedback', 'reopened_from', 'INTEGER')
   // 增量列迁移：customers（涉及的客户昵称 JSON 数组，供复发/统计归一）
   ensureColumn(db, 'issue_feedback', 'customers', 'TEXT')
+  // 增量列迁移：follow_up_at（客服最后一次回复时间，跟进超时据此动态计算；NULL=规则未判定或未回复）
+  ensureColumn(db, 'issue_feedback', 'follow_up_at', 'INTEGER')
+  // 增量列迁移：resolved_at（闭环时间：置 done/stalled 时写入，重开清空）——趋势/今日解决口径专用，
+  // 避免 upsert 内容刷新 updated_at 时把老问题的解决日算到今天
+  ensureColumn(db, 'issue_feedback', 'resolved_at', 'INTEGER')
+  // 增量列迁移：证据行发送人 username / 是否团队客服（客户身份归并、复发识别、时间线我方标记）
+  ensureColumn(db, 'issue_feedback_msg', 'sender_username', 'TEXT')
+  ensureColumn(db, 'issue_feedback_msg', 'is_team', 'INTEGER NOT NULL DEFAULT 0')
+  // 增量列迁移：archived_from（归档前状态）——区分「人工判定不是问题」(open) 与「历史已解决归档」(done/stalled)：
+  // 前者是 LLM 反例样本，后者仍要计入累计闭环率
+  ensureColumn(db, 'issue_feedback', 'archived_from', 'TEXT')
   // 增量列迁移：chat_session.caps（能力分层挂载集合 JSON：{v:1,names:[...]}，会话级渐进式工具可见性）
   ensureColumn(db, 'chat_session', 'caps', 'TEXT')
   // 增量列迁移:chat_session.workspace(工作区任务绑定的真实目录;NULL=未绑定,仅查询模式)

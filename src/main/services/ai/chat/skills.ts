@@ -6,6 +6,7 @@ import {
   setIssueStatus
 } from '../../../db/repos/issueRepo'
 import { listTeamMembers } from '../../../db/repos/teamRepo'
+import { issueStatusLabel } from '../issueLabel'
 import { getSessions, getMessages } from '../../wechat/wxService'
 import { enqueueSend } from '../../send/sendService'
 import { sendAgentEnabled } from '../sendGate'
@@ -106,26 +107,16 @@ function issueLine(
     assignee?: string
     autoDone?: boolean
     followUp?: boolean
+    followUpOverdue?: boolean
+    archivedFrom?: string
   },
   withGroup: boolean
 ): string {
-  const st =
-    it.status === 'open'
-      ? it.needConfirm
-        ? '疑似'
-        : it.followUp
-          ? '跟进中'
-          : '待处理'
-      : it.status === 'done'
-        ? `已解决${it.autoDone ? '(自动)' : ''}`
-        : it.status === 'stalled'
-          ? '已搁置'
-          : '已归档'
   const sev = it.severity && it.severity !== '一般' ? `【${it.severity}】` : ''
   const g = withGroup ? `(群:${it.groupName || it.groupUsername || '-'})` : ''
-  return `- [${st}] ${sev}${it.type} ${it.title} ${g} 首现 ${fmtTime(it.occurAt)}${
+  return `- [${issueStatusLabel(it)}] ${sev}${it.type} ${it.title} ${g} 首现 ${fmtTime(it.occurAt)}${
     it.msgCount ? `,${it.msgCount} 条证据` : ''
-  }${it.assignee ? `,跟进人已指派` : ''}`
+  }${it.assignee ? `,跟进人 ${it.assignee}` : ',未指派'}`
 }
 
 export const BUILTIN_TOOLS: ToolDef[] = [

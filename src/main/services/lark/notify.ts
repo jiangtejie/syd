@@ -236,8 +236,11 @@ export async function notifyIssueAlert(input: {
   if (input.issues.length > 10) lines.push(`…等共 ${input.issues.length} 条`)
   const text = [head, ...lines, '', '打开微信客服工作台查看详情'].join('\n')
 
-  // 幂等键按「事件+问题集合」派生:同一批问题被重复触发时由飞书侧去重,不重复轰炸
-  const key = `${input.kind}-${input.issues
+  // 幂等键按「事件+时间片+问题集合」派生:同一批问题的重复触发仍由飞书侧去重(不重复轰炸),
+  // 但跨时间片的再次提醒必须发得出去——纯按问题 id 派生时,45 分钟后的再次提醒会带着同一个 uuid,
+  // 被飞书当成重复消息静默丢弃(调度器侧的退避就白设了)。时间片取 45 分钟,与盯办首个退避档对齐。
+  const bucket = Math.floor(Date.now() / (45 * 60_000))
+  const key = `${input.kind}-${bucket}-${input.issues
     .slice(0, 6)
     .map((i) => i.id)
     .join('_')}`

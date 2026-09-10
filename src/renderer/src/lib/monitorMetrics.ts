@@ -3,7 +3,9 @@ import type { FeedbackIssue, FeedbackIssueStatus, FeedbackIssueType } from '../.
 /**
  * 问题监控中心指标(BI 聚合纯函数,输入 = 该账号全量 issue,窗口影响趋势统计)。
  * 时间口径:
- * - 新增时间 = occurAt(首现);解决时间 = done 且 updatedAt(状态变更时间,upsert 不再刷新无实质变化的行);
+ * - 新增时间 = occurAt(首现);
+ * - 解决时间 = resolvedAt(置 done/stalled 时写入,重开清空)——旧数据缺该字段时回落 updatedAt。
+ *   注意不能用 updatedAt 当唯一口径:重析对内容有变化的行会刷新它,会把老问题的解决日算到今天;
  * - open 积压类指标不受窗口限制(更真实反映当前库存)。
  */
 
@@ -20,8 +22,10 @@ export interface MonitorKpis {
   createdToday: number
   /** 今日解决(done 且 updatedAt 在今天) */
   resolvedToday: number
-  /** 闭环率 = done ÷ (done + open + stalled) */
+  /** 闭环率 = (done + 已闭环后归档) ÷ (done + open + stalled + 已闭环后归档) */
   closedRate: number | null
+  /** 已闭环后归档的历史条数（计入闭环率，不再占用活跃列表；人工「不是问题」的归档不计入） */
+  archivedClosed: number
 }
 
 export interface TrendPoint {
@@ -54,6 +58,20 @@ function startOfDay(ts: number): number {
   return d.getTime()
 }
 
+/** 闭环时间：resolvedAt 优先(精确到状态流转时刻)，旧数据回落 updatedAt */
+function resolvedTime(it: FeedbackIssue): number {
+  return it.resolvedAt ?? it.updatedAt
+}
+
+/**
+ * 是否是「已闭环后被归档」的历史记录（archived_from = done/stalled）。
+ * 这类记录要照旧计入闭环率与趋势，只是不再出现在活跃列表里；
+ * 人工把未解决的议题标成「不是问题」的归档(archived_from=open)不算闭环。
+ */
+function isArchivedClosed(it: FeedbackIssue): boolean {
+  return it.status === 'archived' && (it.archivedFrom === 'done' || it.archivedFrom === 'stalled')
+}
+
 export function computeMonitorData(
   issues: FeedbackIssue[],
   rangeDays: number,
@@ -78,14 +96,14 @@ export function computeMonitorData(
   }
   // 按天降序生成数组后反转升序
   for (const it of issues) {
-    if (it.status === 'archived') continue
+    if (it.status === 'archived' && !isArchivedClosed(it)) continue
     const oDay = startOfDay(it.occurAt)
     if (oDay >= rangeStart && oDay <= today0) {
       const p = trendMap.get(oDay)
       if (p) p.created++
     }
-    if (it.status === 'done') {
-      const rDay = startOfDay(it.updatedAt)
+    if (it.status === 'done' || isArchivedClosed(it)) {
+      const rDay = startOfDay(resolvedTime(it))
       if (rDay >= rangeStart && rDay <= today0) {
         const p = trendMap.get(rDay)
         if (p) p.resolved++
@@ -106,6 +124,7 @@ export function computeMonitorData(
   let done = 0
   let stalled = 0
   let openTotal = 0
+  let archivedClosed = 0
 
   const typeCount = new Map<FeedbackIssueType, number>()
   for (const t of TYPE_ORDER) typeCount.set(t, 0)
@@ -121,12 +140,15 @@ export function computeMonitorData(
     const st = it.status
     if (st === 'done') done++
     else if (st === 'stalled') stalled++
-    else if (st === 'archived') continue
+    else if (st === 'archived') {
+      if (isArchivedClosed(it)) archivedClosed++
+      continue
+    }
 
     if (it.status !== 'archived') {
       if (startOfDay(it.occurAt) === today0) createdToday++
     }
-    if (st === 'done' && startOfDay(it.updatedAt) === today0) resolvedToday++
+    if (st === 'done' && startOfDay(resolvedTime(it)) === today0) resolvedToday++
 
     if (st === 'open') {
       openTotal++
@@ -150,7 +172,7 @@ export function computeMonitorData(
     }
   }
 
-  const closedBase = done + openTotal + stalled
+  const closedBase = done + openTotal + stalled + archivedClosed
   const kpis: MonitorKpis = {
     pending,
     following,
@@ -158,7 +180,9 @@ export function computeMonitorData(
     backlog48,
     createdToday,
     resolvedToday,
-    closedRate: closedBase > 0 ? Math.round((done / closedBase) * 1000) / 10 : null
+    archivedClosed,
+    closedRate:
+      closedBase > 0 ? Math.round(((done + archivedClosed) / closedBase) * 1000) / 10 : null
   }
 
   return {

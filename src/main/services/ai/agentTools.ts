@@ -1,5 +1,6 @@
 import { listIssuesByGroup, searchIssues } from '../../db/repos/issueRepo'
 import { listTeamMembers } from '../../db/repos/teamRepo'
+import { issueStatusLabel } from './issueLabel'
 
 /**
  * 建议 Agent 只读工具面（迷你自研 Agent 层的工具注册表）。
@@ -54,8 +55,8 @@ export const SUGGEST_TOOLS: AgentTool[] = [
       if (issues.length === 0) return '该群近期没有记录到问题。'
       return issues
         .map((it) => {
-          const st = it.status === 'open' ? '待处理' : it.status === 'done' ? `已解决${it.autoDone ? '(自动)' : ''}` : it.status === 'stalled' ? '已搁置' : '已归档'
-          return `- [${st}] ${it.type} ${it.title}（首现 ${fmtTime(it.occurAt)}，${it.msgCount} 条证据）`
+          const owner = it.assignee ? `，跟进人 ${it.assignee}` : '，未指派'
+          return `- [${issueStatusLabel(it)}] ${it.type} ${it.title}（首现 ${fmtTime(it.occurAt)}，${it.msgCount} 条证据${owner}）`
         })
         .join('\n')
     }
@@ -73,13 +74,8 @@ export const SUGGEST_TOOLS: AgentTool[] = [
       if (issues.length === 0) return `没有找到与「${q}」相关的历史问题。`
       return issues
         .map((it) => {
-          const st =
-            it.status === 'open'
-              ? '待处理'
-              : it.status === 'done'
-                ? `已解决${it.autoDone ? '(自动)' : ''}`
-                : '已搁置'
-          return `- [${st}] ${it.type} ${it.title}（群 ${it.groupName || it.groupUsername}，首现 ${fmtTime(it.occurAt)}）`
+          const g = it.groupName || it.groupUsername
+          return `- [${issueStatusLabel(it)}] ${it.type} ${it.title}（群 ${g}，首现 ${fmtTime(it.occurAt)}）`
         })
         .join('\n')
     }

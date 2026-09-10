@@ -2,13 +2,16 @@ import { BrowserWindow, ipcMain } from 'electron'
 import {
   analyzeGroupIssues,
   analyzeIssues,
+  cancelIssuesAnalysis,
   clearFeedbackIssues,
   clearGroupRunState,
   listFeedbackIssues,
   readState,
+  setIssueProgressSink,
   updateIssueStatus
 } from '../services/feedback/analyzer'
 import {
+  archiveResolvedBefore,
   getIssueDetail,
   listIssuesByGroup,
   countOpenByGroup,
@@ -31,6 +34,12 @@ export function registerIssueHandlers(): void {
       win.webContents.send('cs:issue:changed', { at: Date.now(), ...extra })
     }
   }
+  // 全量重析进度出口（30 个群串行可能几分钟）：analyzer 只管回调，推送交给 IPC 层
+  setIssueProgressSink((p) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('cs:issue:progress', p)
+    }
+  })
 
   ipcMain.handle('cs:issue:list', (_e, wxid: string) => {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
@@ -99,6 +108,25 @@ export function registerIssueHandlers(): void {
         ok: false as const,
         error: err instanceof Error ? err.message : String(err)
       }
+    }
+  })
+
+  // 取消正在跑的全量重析（按群边界停下，已扫过的群结果保留）
+  ipcMain.handle('cs:issue:cancel', (_e, wxid: string) => {
+    if (!wxid) return { ok: false as const, error: '缺少账号' }
+    cancelIssuesAnalysis(wxid)
+    return { ok: true as const }
+  })
+
+  // 归档 N 天前已闭环记录：活跃列表/盯办/徽标只留近期，闭环率与趋势照旧统计
+  ipcMain.handle('cs:issue:archiveStale', (_e, wxid: string, days: number) => {
+    if (!wxid) return { ok: false as const, error: '缺少账号' }
+    try {
+      const archived = archiveResolvedBefore(wxid, Number(days) || 90)
+      if (archived > 0) notifyChanged({ wxid })
+      return { ok: true as const, archived }
+    } catch (err) {
+      return fail(err)
     }
   })
 

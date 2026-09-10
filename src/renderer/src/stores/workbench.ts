@@ -65,6 +65,8 @@ interface WorkbenchState {
 
   /** 群问题（右栏「群问题」视图，仅群会话；数据来自 issue_feedback，与看板同源同状态） */
   groupIssues: FeedbackIssue[]
+  /** 上次单群分析覆盖度（条数上限截断时面板明示「未覆盖整个窗口」） */
+  groupCoverage: { msgs: number; truncated: boolean } | null
   groupIssueLoading: boolean
   groupAnalyzing: boolean
   groupIssueError: string | null
@@ -193,6 +195,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   suggestAutoAt: 0,
 
   groupIssues: [],
+  groupCoverage: null,
   groupIssueLoading: false,
   groupAnalyzing: false,
   groupIssueError: null,
@@ -312,7 +315,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (!wxid || !session?.isGroup) return
     const groupName = session.displayName || session.nickname || ''
     // 1) 立即读本地问题列表（秒开；分析完成后会刷新）
-    set({ groupIssueLoading: true, groupIssueError: null, groupActiveDetail: null })
+    set({
+      groupIssueLoading: true,
+      groupIssueError: null,
+      groupActiveDetail: null,
+      groupCoverage: null
+    })
     const listRes = await issueApi?.listGroup(wxid, sessionId).catch(() => null)
     if (get().activeSessionId !== sessionId) return
     set({
@@ -329,6 +337,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     set({
       groupAnalyzing: false,
       groupAnalyzedAt: an?.ok && an.lastAt ? an.lastAt : get().groupAnalyzedAt,
+      groupCoverage: an?.coverage ?? get().groupCoverage,
       groupIssueError: an
         ? an.ok
           ? an.skipped
@@ -347,7 +356,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const session = get().sessions.find((s) => s.username === activeSessionId)
     if (!session?.isGroup) return
     const groupName = session.displayName || session.nickname || ''
-    set({ groupAnalyzing: true, groupIssueError: null })
+    set({ groupAnalyzing: true, groupIssueError: null, groupCoverage: null })
     const an = await issueApi
       ?.analyzeGroup(wxid, activeSessionId, groupName || undefined, {
         force: true,
@@ -359,6 +368,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     set({
       groupAnalyzing: false,
       groupAnalyzedAt: an?.ok && an.lastAt ? an.lastAt : get().groupAnalyzedAt,
+      groupCoverage: an?.coverage ?? null,
       groupIssueError: an && !an.ok ? (an.error ?? '分析失败') : null
     })
     if (an?.ok) await get().refreshGroupIssues()
@@ -438,6 +448,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     detailReqSeq++
     set({
       groupIssues: [],
+      groupCoverage: null,
       groupIssueLoading: false,
       groupAnalyzing: false,
       groupIssueError: null,

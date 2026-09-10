@@ -251,6 +251,10 @@ function SettingsPage(): React.JSX.Element {
   // 问题监控口径(小时):积压超时 / 跟进超时
   const [backlogHours, setBacklogHours] = useState(48)
   const [followUpHours, setFollowUpHours] = useState(12)
+  // 静默收尾阈值(小时；0 = 关闭该策略)
+  const [autoCloseHours, setAutoCloseHours] = useState(72)
+  // 已指派未闭环盯办阈值(小时)
+  const [escalateAssignedHours, setEscalateAssignedHours] = useState(8)
   // 后台自动增量分析(全部活跃群,不限于当前打开的群;默认开)
   const [autoScanIssue, setAutoScanIssue] = useState(true)
   // 盯办提醒(未指派超时/跟进超时升级;默认开)
@@ -297,6 +301,14 @@ function SettingsPage(): React.JSX.Element {
       }
       setBacklogHours(hours(cfg['monitor.backlogHours'], 48))
       setFollowUpHours(hours(cfg['monitor.followUpHours'], 12))
+      // 自动收尾允许 0（=关闭），不能用上面的 hours()（它把 0 当非法值回落默认）
+      const acRaw = Number(cfg['monitor.autoCloseHours'])
+      setAutoCloseHours(
+        cfg['monitor.autoCloseHours'] !== undefined && Number.isFinite(acRaw) && acRaw >= 0
+          ? Math.floor(acRaw)
+          : 72
+      )
+      setEscalateAssignedHours(hours(cfg['issue.escalateAssignedHours'], 8))
       setAutoScanIssue(cfg['issue.autoScan.enabled'] !== '0')
       setEscalateIssue(cfg['issue.escalate.enabled'] !== '0')
       setAgentSendEnabled(cfg['send.agentEnabled'] !== '0')
@@ -339,16 +351,23 @@ function SettingsPage(): React.JSX.Element {
     await applyCachePath('')
   }
 
-  /** 保存监控口径阈值(失焦/回车),非法值回落默认 */
+  /** 保存口径阈值(失焦/回车)：非法值回落默认并回填输入框；静默收尾允许 0(=关闭策略) */
   const saveThreshold = (
-    key: 'monitor.backlogHours' | 'monitor.followUpHours',
+    key:
+      | 'monitor.backlogHours'
+      | 'monitor.followUpHours'
+      | 'monitor.autoCloseHours'
+      | 'issue.escalateAssignedHours',
     value: number,
-    fallback: number
+    fallback: number,
+    apply: (v: number) => void
   ): void => {
-    if (!Number.isFinite(value) || value < 1 || value > 24 * 30) {
-      if (key === 'monitor.backlogHours') setBacklogHours(fallback)
-      else setFollowUpHours(fallback)
-      toast.error('请输入 1~720 之间的整数小时')
+    const min = key === 'monitor.autoCloseHours' ? 0 : 1
+    if (!Number.isFinite(value) || value < min || value > 24 * 30) {
+      apply(fallback)
+      toast.error(
+        min === 0 ? '请输入 0~720 之间的整数小时(0 = 关闭)' : '请输入 1~720 之间的整数小时'
+      )
       return
     }
     void configApi?.set(key, String(Math.floor(value)))
@@ -1131,7 +1150,7 @@ function SettingsPage(): React.JSX.Element {
             >
               <SwitchRow
                 label="后台自动增量分析"
-                desc="覆盖全部活跃群的新消息自动提取(不限于当前打开的群),无新消息时不消耗模型。"
+                desc="覆盖全部活跃群的新消息自动提取(不限于当前打开的群),无新消息时不消耗模型;还没分析过的新群每分钟补扫一个,直到全部建好水位。"
                 checked={autoScanIssue}
                 onChange={(v) => {
                   setAutoScanIssue(v)
@@ -1143,7 +1162,7 @@ function SettingsPage(): React.JSX.Element {
               />
               <SwitchRow
                 label="盯办升级提醒"
-                desc="未指派超时(紧急>1h/其余>4h)与跟进超时的问题,后台每分钟巡检、窗口未聚焦时桌面提醒。"
+                desc="未指派超时(紧急>1h/其余>4h)、已指派长期未闭环与跟进超时的问题,后台每分钟巡检、窗口未聚焦时桌面提醒;同一问题的重复提醒间隔递增(45min → 90min → 3h → 6h)。"
                 checked={escalateIssue}
                 onChange={(v) => {
                   setEscalateIssue(v)
@@ -1161,9 +1180,12 @@ function SettingsPage(): React.JSX.Element {
                   className="st-input st-th-input"
                   value={backlogHours}
                   onChange={(e) => setBacklogHours(Number(e.target.value))}
-                  onBlur={() => saveThreshold('monitor.backlogHours', backlogHours, 48)}
+                  onBlur={() =>
+                    saveThreshold('monitor.backlogHours', backlogHours, 48, setBacklogHours)
+                  }
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') saveThreshold('monitor.backlogHours', backlogHours, 48)
+                    if (e.key === 'Enter')
+                      saveThreshold('monitor.backlogHours', backlogHours, 48, setBacklogHours)
                   }}
                 />
               </FieldRow>
@@ -1178,9 +1200,62 @@ function SettingsPage(): React.JSX.Element {
                   className="st-input st-th-input"
                   value={followUpHours}
                   onChange={(e) => setFollowUpHours(Number(e.target.value))}
-                  onBlur={() => saveThreshold('monitor.followUpHours', followUpHours, 12)}
+                  onBlur={() =>
+                    saveThreshold('monitor.followUpHours', followUpHours, 12, setFollowUpHours)
+                  }
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') saveThreshold('monitor.followUpHours', followUpHours, 12)
+                    if (e.key === 'Enter')
+                      saveThreshold('monitor.followUpHours', followUpHours, 12, setFollowUpHours)
+                  }}
+                />
+              </FieldRow>
+              <FieldRow
+                label="静默收尾阈值"
+                hint="小时:客服已回复、客户超过该时长再无消息 → 自动闭环(标记「自动解决」,可重新打开复核);0 = 关闭"
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={720}
+                  className="st-input st-th-input"
+                  value={autoCloseHours}
+                  onChange={(e) => setAutoCloseHours(Number(e.target.value))}
+                  onBlur={() =>
+                    saveThreshold('monitor.autoCloseHours', autoCloseHours, 72, setAutoCloseHours)
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter')
+                      saveThreshold('monitor.autoCloseHours', autoCloseHours, 72, setAutoCloseHours)
+                  }}
+                />
+              </FieldRow>
+              <FieldRow
+                label="已指派未闭环阈值"
+                hint="小时:问题已指派跟进人但超过该时长仍未闭环,同样计入盯办升级"
+              >
+                <input
+                  type="number"
+                  min={1}
+                  max={720}
+                  className="st-input st-th-input"
+                  value={escalateAssignedHours}
+                  onChange={(e) => setEscalateAssignedHours(Number(e.target.value))}
+                  onBlur={() =>
+                    saveThreshold(
+                      'issue.escalateAssignedHours',
+                      escalateAssignedHours,
+                      8,
+                      setEscalateAssignedHours
+                    )
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter')
+                      saveThreshold(
+                        'issue.escalateAssignedHours',
+                        escalateAssignedHours,
+                        8,
+                        setEscalateAssignedHours
+                      )
                   }}
                 />
               </FieldRow>

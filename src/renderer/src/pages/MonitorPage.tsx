@@ -147,6 +147,12 @@ function MonitorPage(): React.JSX.Element {
   // 分析管理(全量重析/清空/最近分析状态)
   const [anaBusy, setAnaBusy] = useState(false)
   const [anaState, setAnaState] = useState<FeedbackAnalysisState | null>(null)
+  // 全量重析进度(逐群推进;可中途取消)
+  const [progress, setProgress] = useState<{
+    done: number
+    total: number
+    current?: string
+  } | null>(null)
   // 跟进人：团队成员(按账号作用域) + 微信联系人展示名回显(label 为空时)
   const [members, setMembers] = useState<TeamMemberInfo[]>([])
   const [memberNames, setMemberNames] = useState<Record<string, string>>({})
@@ -219,6 +225,18 @@ function MonitorPage(): React.JSX.Element {
       })
       .catch(() => undefined)
   }, [])
+
+  // 全量重析进度推送(逐群推进;done/cancelled 收尾即收起)
+  useEffect(() => {
+    const unsub = issueApi?.onProgress?.((p) => {
+      if (p?.phase === 'done' || p?.phase === 'cancelled') {
+        setProgress(null)
+        return
+      }
+      setProgress({ done: p?.done ?? 0, total: p?.total ?? 0, current: p?.current })
+    })
+    return () => unsub?.()
+  }, [issueApi])
 
   // 数据变更自动刷新(主进程 cs:issue:changed 推送:任何页面处置/分析后同步)+ 窗口聚焦兜底
   useEffect(() => {
@@ -429,10 +447,18 @@ function MonitorPage(): React.JSX.Element {
       else toast.error(w?.error || '快照导出失败')
     }
 
+  /** 取消正在跑的全量重析(按群边界停下,已扫过的群结果保留) */
+  const cancelAnalyze = async (): Promise<void> => {
+    if (!connected || !issueApi) return
+    await issueApi.cancel(wxid!).catch(() => null)
+    toast.success('已请求取消:当前群跑完即停止')
+  }
+
   /** 全量重析(近 7 天全部活跃群;原看板维护操作迁移至此) */
   const runFullAnalyze = async (): Promise<void> => {
     if (!connected || !issueApi || anaBusy) return
     setAnaBusy(true)
+    setProgress(null)
     try {
       const res = await issueApi.analyze(wxid!)
       if (!res.ok) {
@@ -446,6 +472,25 @@ function MonitorPage(): React.JSX.Element {
     } finally {
       setAnaBusy(false)
     }
+  }
+
+  /** 归档 90 天前已闭环记录(长期运营收敛:活跃列表/盯办只留近期,闭环率与趋势不受影响) */
+  const runArchiveStale = async (): Promise<void> => {
+    if (!connected || !issueApi?.archiveStale) return
+    const ok = await confirmAsk({
+      title: '归档历史记录',
+      message:
+        '将把 90 天前「已解决 / 已搁置」的记录标记为已归档：不再出现在待办列表、盯办提醒与徽标里，累计闭环率与历史趋势照旧统计它们。可在「已归档」筛选里查看。此后仍可手动重新打开。',
+      confirmText: '归档历史'
+    })
+    if (!ok) return
+    const res = await issueApi.archiveStale(wxid!, 90).catch(() => null)
+    if (!res?.ok) {
+      toast.error((res as { error?: string } | null)?.error || '归档失败')
+      return
+    }
+    toast.success(res.archived ? `已归档 ${res.archived} 条历史记录` : '没有需要归档的历史记录')
+    await load()
   }
 
   /** 清空账号全部问题记录(含证据与历史,不可恢复) */
@@ -629,10 +674,21 @@ function MonitorPage(): React.JSX.Element {
           >
             导出快照
           </button>
-          {anaState?.lastAt && (
-            <span className="mon-ana-state" title={anaState.error || '最近一次全量分析状态'}>
+          {anaState?.lastAt && !anaBusy && (
+            <span
+              className="mon-ana-state"
+              title={
+                anaState.error ||
+                `上次全量重析覆盖 ${anaState.groups ?? '?'}/${anaState.groupsTotal ?? '?'} 个活跃群`
+              }
+            >
               上次分析 {fmtTimeShort(anaState.lastAt)}
               {anaState.method === 'llm' ? ' · AI 提取' : ' · 规则提取'}
+              {anaState.cancelled ? ' · 已取消' : ''}
+              {typeof anaState.groups === 'number' && anaState.groupsTotal
+                ? ` · ${anaState.groups}/${anaState.groupsTotal} 群`
+                : ''}
+              {anaState.groupsCapped ? ' · 群数超限' : ''}
               {anaState.error ? ' · 上次失败' : ''}
             </span>
           )}
@@ -641,9 +697,32 @@ function MonitorPage(): React.JSX.Element {
             className="mon-btn ghost"
             disabled={anaBusy || loading}
             onClick={() => void runFullAnalyze()}
-            title="对全部活跃群按近 7 天重新分析提取(数据量大时较慢)"
+            title="对全部活跃群按近 7 天重新分析提取(数据量大时较慢,可中途取消)"
           >
-            {anaBusy ? '分析中…' : '全量重析'}
+            {anaBusy
+              ? progress
+                ? `分析中 ${progress.done}/${progress.total}`
+                : '分析中…'
+              : '全量重析'}
+          </button>
+          {anaBusy && (
+            <button
+              type="button"
+              className="mon-btn ghost"
+              onClick={() => void cancelAnalyze()}
+              title="停止剩余群的分析;已扫过的群结果保留"
+            >
+              取消
+            </button>
+          )}
+          <button
+            type="button"
+            className="mon-btn ghost"
+            disabled={anaBusy || loading || !connected}
+            onClick={() => void runArchiveStale()}
+            title="把 90 天前已解决/已搁置的记录归档:不再占用活跃列表与盯办,闭环率与趋势照旧统计"
+          >
+            归档历史
           </button>
           <button
             type="button"
@@ -694,7 +773,11 @@ function MonitorPage(): React.JSX.Element {
             <KpiCard
               label="闭环率(累计)"
               value={metrics.kpis.closedRate === null ? '—' : `${metrics.kpis.closedRate}%`}
-              hint="已解决 ÷ 全部非归档"
+              hint={
+                metrics.kpis.archivedClosed > 0
+                  ? `已闭环 ÷ 全部已处理过；含历史归档 ${metrics.kpis.archivedClosed} 条`
+                  : '已闭环 ÷ 全部已处理过'
+              }
               tone="ok"
             />
           </div>

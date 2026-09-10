@@ -166,6 +166,7 @@ function GroupIssuesPanel(): React.JSX.Element {
   const error = useWorkbenchStore((s) => s.groupIssueError)
   const analyzedAt = useWorkbenchStore((s) => s.groupAnalyzedAt)
   const days = useWorkbenchStore((s) => s.groupDays)
+  const coverage = useWorkbenchStore((s) => s.groupCoverage)
   const setDays = useWorkbenchStore((s) => s.setGroupDays)
   const activeDetail = useWorkbenchStore((s) => s.groupActiveDetail)
   const detailLoading = useWorkbenchStore((s) => s.groupDetailLoading)
@@ -416,10 +417,19 @@ function GroupIssuesPanel(): React.JSX.Element {
             已搁置 {groups.history.filter((i) => i.status === 'stalled').length}
           </span>
         )}
-        {(analyzedAt || methodHint) && (
-          <span className="gip-meta">
+        {(analyzedAt || methodHint || coverage) && (
+          <span
+            className="gip-meta"
+            title={
+              coverage?.truncated
+                ? `本群消息超过单次扫描上限，本次只分析了最新的 ${coverage.msgs} 条：窗口内更早的消息未覆盖，可用「重新分析」缩小窗口或分批处理`
+                : '本次分析实际读取并参与提取的消息条数'
+            }
+          >
             {analyzedAt ? `${fmtTime(analyzedAt)} · ` : ''}
             {methodHint}
+            {coverage ? ` · 覆盖 ${coverage.msgs} 条` : ''}
+            {coverage?.truncated ? ' · 条数超限未覆盖全窗口' : ''}
           </span>
         )}
       </div>
