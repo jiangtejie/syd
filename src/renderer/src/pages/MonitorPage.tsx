@@ -158,6 +158,28 @@ function MonitorPage(): React.JSX.Element {
     total: number
     current?: string
   } | null>(null)
+  /**
+   * 维护类操作的**页内**方案/确认：
+   * 不再走全局确认弹窗 —— 弹窗什么时候没渲染出来，用户看到的就是「点了没反应」；
+   * 方案直接铺在工具栏下方（确认按钮就在手边），看得见、点得到、可取消。
+   */
+  const [dupPlan, setDupPlan] = useState<{
+    clusters: number
+    merged: number
+    plan: Array<{
+      keepId: number
+      keepTitle: string
+      dropIds: number[]
+      dropTitles: string[]
+      groupName: string
+      reasons: string[]
+    }>
+  } | null>(null)
+  const [archiveAsk, setArchiveAsk] = useState(false)
+  const bannerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (dupPlan || archiveAsk) bannerRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [dupPlan, archiveAsk])
   // 跟进人：团队成员(按账号作用域) + 微信联系人展示名回显(label 为空时)
   const [members, setMembers] = useState<TeamMemberInfo[]>([])
   const [memberNames, setMemberNames] = useState<Record<string, string>>({})
@@ -503,20 +525,17 @@ function MonitorPage(): React.JSX.Element {
       return
     }
     if (!pre.merged || !pre.plan?.length) {
+      setDupPlan(null)
       toast.success('没有发现重复议题')
       return
     }
-    const lines = pre.plan
-      .slice(0, 6)
-      .map((it) => `· ${it.dropIds.length + 1} 条 → ${it.keepTitle.slice(0, 20)}`)
-    const more = pre.plan.length > 6 ? `\n…等共 ${pre.plan.length} 组` : ''
-    const ok = await confirmAsk({
-      title: '合并重复议题',
-      message: `发现 ${pre.clusters} 组重复，共 ${pre.merged} 条冗余记录：\n${lines.join('\n')}${more}\n\n每组保留最早的一条（合并证据、取最高严重度、沿用指派跟进人），其余归档为「重复」：不计入闭环率与趋势，也不会被当作「不是问题」的反例样本，需要时可重新打开。`,
-      confirmText: '合并重复',
-      danger: true
-    })
-    if (!ok) return
+    setArchiveAsk(false)
+    setDupPlan({ clusters: pre.clusters ?? 0, merged: pre.merged, plan: pre.plan })
+  }
+
+  /** 用户点「执行合并」：真正落库（方案已在页内展示过） */
+  const executeMergeDuplicates = async (): Promise<void> => {
+    if (!issueApi?.mergeDuplicates || !wxid) return
     setAnaBusy(true)
     try {
       const res = await issueApi.mergeDuplicates(wxid, false).catch((e: unknown) => {
@@ -528,6 +547,7 @@ function MonitorPage(): React.JSX.Element {
         toast.error(res.error || '合并失败')
         return
       }
+      setDupPlan(null)
       toast.success(`已合并 ${res.clusters ?? 0} 组，归档 ${res.merged ?? 0} 条重复记录`)
       setActive(null)
       setDetail(null)
@@ -547,13 +567,13 @@ function MonitorPage(): React.JSX.Element {
       toast.error('尚未连接微信账号：请先到「设置 → 微信数据与密钥」连接')
       return
     }
-    const ok = await confirmAsk({
-      title: '归档历史记录',
-      message:
-        '将把 90 天前「已解决 / 已搁置」的记录标记为已归档：不再出现在待办列表、盯办提醒与徽标里，累计闭环率与历史趋势照旧统计它们。可在「已归档」筛选里查看。此后仍可手动重新打开。',
-      confirmText: '归档历史'
-    })
-    if (!ok) return
+    setDupPlan(null)
+    setArchiveAsk(true)
+  }
+
+  /** 用户点「确认归档」：真正执行 */
+  const executeArchiveStale = async (): Promise<void> => {
+    if (!issueApi?.archiveStale || !wxid) return
     const res = await issueApi.archiveStale(wxid, 90).catch((e: unknown) => {
       toast.error(`归档失败：${e instanceof Error ? e.message : String(e)}`)
       return null
@@ -563,6 +583,7 @@ function MonitorPage(): React.JSX.Element {
       toast.error(res.error || '归档失败')
       return
     }
+    setArchiveAsk(false)
     toast.success(res.archived ? `已归档 ${res.archived} 条历史记录` : '没有需要归档的历史记录')
     await load()
   }
@@ -824,6 +845,88 @@ function MonitorPage(): React.JSX.Element {
             </span>
           )}
         </div>
+      </div>
+
+      {/* 维护操作方案/确认（页内展示，不依赖全局弹窗；确认按钮就在手边） */}
+      <div ref={bannerRef}>
+        {dupPlan && (
+          <div className="mon-card mon-plan">
+            <div className="mon-plan-head">
+              <b>合并重复议题</b>
+              <span className="mon-plan-sub">
+                发现 <b>{dupPlan.clusters}</b> 组重复、共 <b>{dupPlan.merged}</b> 条冗余记录（
+                {dupPlan.plan.reduce((s, x) => s + x.dropIds.length + 1, 0)} 条 → {dupPlan.clusters}{' '}
+                条）
+              </span>
+              <span className="mon-plan-spacer" />
+              <button
+                type="button"
+                className="mon-btn danger"
+                disabled={anaBusy}
+                onClick={() => void executeMergeDuplicates()}
+              >
+                {anaBusy ? '合并中…' : `执行合并(${dupPlan.merged})`}
+              </button>
+              <button
+                type="button"
+                className="mon-btn ghost"
+                disabled={anaBusy}
+                onClick={() => setDupPlan(null)}
+              >
+                取消
+              </button>
+            </div>
+            <div className="mon-plan-list">
+              {dupPlan.plan.map((it) => (
+                <div key={it.keepId} className="mon-plan-item">
+                  <span className="mon-plan-keep" title={it.keepTitle}>
+                    保留 · {it.keepTitle}
+                  </span>
+                  <span className="mon-plan-drop">
+                    ← 合并 {it.dropIds.length} 条
+                    {it.dropTitles.length > 0
+                      ? `：${it.dropTitles
+                          .slice(0, 2)
+                          .map((x) => x.slice(0, 14))
+                          .join(' / ')}${it.dropTitles.length > 2 ? ' 等' : ''}`
+                      : ''}
+                  </span>
+                  {it.reasons.length > 0 && (
+                    <span className="mon-plan-why" title={it.reasons.join('；')}>
+                      {it.reasons[0]}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mon-plan-note">
+              每组保留最早的一条：合并证据、取最高严重度、沿用指派跟进人；其余归档为「重复」——
+              不计入闭环率与趋势、不作为「不是问题」的反例样本，需要时可重新打开。
+            </div>
+          </div>
+        )}
+        {archiveAsk && (
+          <div className="mon-card mon-plan">
+            <div className="mon-plan-head">
+              <b>归档历史记录</b>
+              <span className="mon-plan-sub">
+                把 90 天前「已解决 / 已搁置」的记录标为已归档：不再出现在待办、盯办与徽标里，
+                累计闭环率与趋势照旧统计它们，可在「已归档」筛选查看。
+              </span>
+              <span className="mon-plan-spacer" />
+              <button
+                type="button"
+                className="mon-btn primary"
+                onClick={() => void executeArchiveStale()}
+              >
+                确认归档
+              </button>
+              <button type="button" className="mon-btn ghost" onClick={() => setArchiveAsk(false)}>
+                取消
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {!connected ? (
