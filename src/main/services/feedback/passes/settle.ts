@@ -1,5 +1,6 @@
 import { mergeDuplicateIssues, reconcileGroupFollowups } from '../analyzer'
 import { hasDuplicateCandidates, openGroupUsernames } from '../../../db/repos/issueRepo'
+import { skipAutoAnalysis } from '../groupScope'
 import { autoMergeEnabled, autoScanEnabled, issueLog, sendChanged } from './shared'
 
 /**
@@ -22,7 +23,8 @@ export async function runSettlePass(wxid: string): Promise<void> {
   running.add(wxid)
   try {
     // 只取「有 open 问题的群名」（一条 DISTINCT 查询），不必把全部历史问题拉出来装饰一遍
-    const groups = new Set(openGroupUsernames(wxid))
+    // 已排除的群不再做跟进/收尾判定（其历史记录由排除时的归档动作处理）
+    const groups = new Set(openGroupUsernames(wxid).filter((g) => !skipAutoAnalysis(wxid, g)))
     if (groups.size === 0) return
     let changed = 0
     for (const g of groups) {

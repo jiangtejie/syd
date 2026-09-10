@@ -3,6 +3,7 @@ import { useWorkbenchStore } from '../../stores/workbench'
 import { confirmAsk } from '../../stores/confirmDialog'
 import { useTeamNames } from '../../lib/teamNames'
 import { TeamMarkButton } from '../TeamMarkButton'
+import { SenderMarkFold } from './SenderMarkFold'
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
@@ -229,6 +230,8 @@ function GroupIssuesPanel(): React.JSX.Element {
   const activeDetail = useWorkbenchStore((s) => s.groupActiveDetail)
   const detailLoading = useWorkbenchStore((s) => s.groupDetailLoading)
   const analyzeNow = useWorkbenchStore((s) => s.analyzeGroupNow)
+  const excluded = useWorkbenchStore((s) => s.groupExcluded)
+  const setScope = useWorkbenchStore((s) => s.setGroupScope)
   const clearGroupAll = useWorkbenchStore((s) => s.clearGroupAll)
   const openDetail = useWorkbenchStore((s) => s.openGroupIssue)
   const locateIssueAt = useWorkbenchStore((s) => s.locateIssueAt)
@@ -304,6 +307,29 @@ function GroupIssuesPanel(): React.JSX.Element {
       })
     } else {
       void analyzeNow()
+    }
+  }
+
+  /** 群级参与开关：采购/供应链/内部群不该产出客户问题；排除时可选顺带归档现有待处理 */
+  const onToggleScope = (): void => {
+    if (analyzing) return
+    if (!excluded) {
+      const openCount = issues.filter((i) => i.status === 'open').length
+      void confirmAsk({
+        title: '本群不再纳入问题监控',
+        message:
+          `排除后：本群不再自动提取问题、也不做跟进/收尾判定（不再占用待办与盯办提醒）。` +
+          (openCount > 0
+            ? `\n\n现有 ${openCount} 条待处理/跟进中记录将一并归档（可在「已归档」里重新打开）。`
+            : '') +
+          `\n\n适合采购群、供应链/叫货群、内部协作群这类没有客户诉求的群。手动「重新分析」不受影响。`,
+        confirmText: openCount > 0 ? '排除并归档' : '排除监控',
+        danger: true
+      }).then((ok) => {
+        if (ok) void setScope(true, { archiveOpen: true })
+      })
+    } else {
+      void setScope(false)
     }
   }
 
@@ -472,6 +498,19 @@ function GroupIssuesPanel(): React.JSX.Element {
           </select>
           <button
             type="button"
+            className={`gip-btn${excluded ? ' danger' : ' ghost'}`}
+            disabled={analyzing}
+            onClick={onToggleScope}
+            title={
+              excluded
+                ? '本群已排除监控：不自动提取、不做跟进判定；点击恢复监控'
+                : '本群没有客户诉求（采购/供应链/内部群）？点击排除监控，避免堆出无法跟进的假待办'
+            }
+          >
+            {excluded ? '已排除监控' : '纳入监控'}
+          </button>
+          <button
+            type="button"
             className="gip-btn ghost"
             disabled={analyzing}
             onClick={onReanalyze}
@@ -489,6 +528,8 @@ function GroupIssuesPanel(): React.JSX.Element {
             清空重析
           </button>
         </div>
+        {/* 一次标完本群同事：名单缺人会让议题永远停在「待处理」 */}
+        <SenderMarkFold teamUsernames={teamUsernames} />
       </div>
 
       {/* 统计 */}
@@ -528,6 +569,11 @@ function GroupIssuesPanel(): React.JSX.Element {
       </div>
 
       {/* 提示与错误 */}
+      {excluded && (
+        <div className="gip-busy">
+          本群已排除监控：不再自动提取与跟进判定（手动「重新分析」仍可用）
+        </div>
+      )}
       {analyzing && <div className="gip-busy">正在提炼近 {days} 天消息中的问题…</div>}
       {!analyzing && error && (
         <div className="gip-error">

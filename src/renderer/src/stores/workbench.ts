@@ -67,6 +67,8 @@ interface WorkbenchState {
   groupIssues: FeedbackIssue[]
   /** 上次单群分析覆盖度（条数上限截断时面板明示「未覆盖整个窗口」） */
   groupCoverage: { msgs: number; truncated: boolean } | null
+  /** 本群是否已排除监控（采购/供应链/内部群不该产出客户问题） */
+  groupExcluded: boolean
   groupIssueLoading: boolean
   groupAnalyzing: boolean
   groupIssueError: string | null
@@ -114,6 +116,15 @@ interface WorkbenchState {
   confirmGroupIssue: (id: number) => Promise<void>
   /** 指派/更换/取消本群问题的跟进人（团队成员 username；null = 取消指派） */
   assignGroupIssue: (id: number, username: string | null) => Promise<void>
+  /** 群级参与开关：排除时可选顺带归档现有待处理记录 */
+  setGroupScope: (excluded: boolean, opts?: { archiveOpen?: boolean }) => Promise<void>
+  /** 本群发言人（尚未标记为同事的，按证据条数排序）：供「批量标记同事」 */
+  groupSenders: Array<{ username: string; name: string; count: number }>
+  groupSendersLoading: boolean
+  /** 拉取本群发言人候选（懒加载：展开面板时才请求） */
+  loadGroupSenders: () => Promise<void>
+  /** 批量标记同事：逐条写入 team_member，并把已加载消息就地打标 */
+  markSendersTeam: (usernames: string[]) => Promise<void>
   /** 清理群问题状态（切到非群会话/换账号时） */
   resetGroupState: () => void
   /** 清空当前群全部问题记录(含已解决/归档与证据,不可恢复);随后可手动重新分析 */
@@ -198,6 +209,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   groupIssues: [],
   groupCoverage: null,
+  groupExcluded: false,
+  groupSenders: [],
+  groupSendersLoading: false,
   groupIssueLoading: false,
   groupAnalyzing: false,
   groupIssueError: null,
@@ -325,11 +339,18 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     })
     const listRes = await issueApi?.listGroup(wxid, sessionId).catch(() => null)
     if (get().activeSessionId !== sessionId) return
+    const excludedNow = !!(listRes?.ok && listRes.excluded)
     set({
       groupIssues: (listRes?.ok && listRes.issues ? listRes.issues : []) as FeedbackIssue[],
+      groupExcluded: excludedNow,
       groupIssueLoading: false,
       groupIssueError: listRes && !listRes.ok ? (listRes.error ?? '读取问题列表失败') : null
     })
+    // 已排除监控的群不做自动提取（否则一点进群就把噪音提回来了）；手动「重新分析」仍可用
+    if (excludedNow) {
+      set({ groupAnalyzing: false })
+      return
+    }
     // 2) 自动窗口分析（主进程侧节流：2 分钟内已尝试则 skipped）
     set({ groupAnalyzing: true })
     const an = await issueApi
@@ -391,7 +412,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (!wxid || !activeSessionId) return
     const res = await issueApi?.listGroup(wxid, activeSessionId).catch(() => null)
     if (get().activeSessionId !== activeSessionId) return
-    if (res?.ok && res.issues) set({ groupIssues: res.issues as FeedbackIssue[] })
+    if (res?.ok && res.issues) {
+      set({ groupIssues: res.issues as FeedbackIssue[], groupExcluded: !!res.excluded })
+    }
     void get().refreshGroupBadges()
   },
 
@@ -428,6 +451,66 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   /** 疑似确认：核实为真问题 → 移出疑似桶并计入正式待办 */
+  setGroupScope: async (excluded: boolean, opts?: { archiveOpen?: boolean }) => {
+    const { wxid, activeSessionId } = get()
+    if (!wxid || !activeSessionId) return
+    const res = await issueApi
+      ?.setGroupScope(wxid, activeSessionId, excluded, opts)
+      .catch(() => null)
+    if (!res?.ok) {
+      toast.error(res?.error || '群监控开关设置失败')
+      return
+    }
+    set({ groupExcluded: excluded })
+    if (excluded) {
+      toast.success(
+        res.archived
+          ? `本群已排除监控，归档 ${res.archived} 条待处理记录`
+          : '本群已排除监控（不再自动提取/跟进）'
+      )
+    } else {
+      toast.success('本群已恢复监控：下次自动分析会重新提取（历史归档记录需手动重开）')
+    }
+    await get().refreshGroupIssues()
+    void get().refreshGroupBadges()
+  },
+
+  loadGroupSenders: async () => {
+    const { wxid, activeSessionId } = get()
+    if (!wxid || !activeSessionId || !issueApi) return
+    set({ groupSendersLoading: true })
+    const res = await issueApi.groupSenders(wxid, activeSessionId).catch(() => null)
+    if (get().activeSessionId !== activeSessionId) return
+    set({
+      groupSendersLoading: false,
+      groupSenders: res?.ok && res.senders ? res.senders : []
+    })
+  },
+
+  markSendersTeam: async (usernames: string[]) => {
+    const { wxid } = get()
+    const teamApi = window.api?.cs?.team
+    const list = usernames.filter(Boolean)
+    if (!wxid || !teamApi || list.length === 0) return
+    // 逐个写入（team_member 是全局名单，量小；单个失败不影响其余）
+    const results = await Promise.all(list.map((u) => teamApi.save(wxid, u).catch(() => null)))
+    const done = list.filter((_, i) => results[i]?.ok)
+    if (done.length === 0) {
+      toast.error('标记失败，请重试')
+      return
+    }
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.senderUsername && done.includes(m.senderUsername) ? { ...m, senderIsTeam: true } : m
+      ),
+      groupSenders: s.groupSenders.filter((x) => !done.includes(x.username))
+    }))
+    toast.success(
+      `已标记 ${done.length} 位同事为团队客服：TA 们的发言会算作我方回复` +
+        (done.length < list.length ? `（${list.length - done.length} 位失败，可重试）` : '')
+    )
+  },
+
   assignGroupIssue: async (id: number, username: string | null) => {
     const assignee = username ?? undefined
     set((s) => ({
@@ -467,6 +550,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     set({
       groupIssues: [],
       groupCoverage: null,
+      groupExcluded: false,
+      groupSenders: [],
+      groupSendersLoading: false,
       groupIssueLoading: false,
       groupAnalyzing: false,
       groupIssueError: null,

@@ -297,8 +297,12 @@ const api: PreloadApi = {
       listGroup: (
         wxid: string,
         groupUsername: string
-      ): Promise<Result<{ issues?: FeedbackIssue[] }>> =>
+      ): Promise<Result<{ issues?: FeedbackIssue[]; excluded?: boolean }>> =>
         ipcRenderer.invoke('cs:issue:listGroup', wxid, groupUsername),
+      setGroupScope: (wxid, groupUsername, excluded, opts) =>
+        ipcRenderer.invoke('cs:issue:setGroupScope', wxid, groupUsername, excluded, opts),
+      groupSenders: (wxid, groupUsername) =>
+        ipcRenderer.invoke('cs:issue:groupSenders', wxid, groupUsername),
       state: (wxid: string): Promise<{ ok: boolean; state?: FeedbackAnalysisState }> =>
         ipcRenderer.invoke('cs:issue:state', wxid),
       clear: (wxid: string): Promise<{ ok: boolean; error?: string }> =>

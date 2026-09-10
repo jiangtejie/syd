@@ -22,6 +22,7 @@ import {
   type OpenTopicRow
 } from '../../db/repos/issueRepo'
 import { getConfig, setConfig } from '../../db/repos/config'
+import { listExcludedGroups } from './groupScope'
 import { getDb } from '../../db/database'
 import { topicSame, type TopicFacts } from './issueSimilarity'
 import { ruleExtract } from './ruleExtract'
@@ -683,10 +684,15 @@ export async function analyzeIssues(
     today.setHours(0, 0, 0, 0)
     const windowStart = today.getTime() - (WINDOW_DAYS - 1) * 24 * 3600_000
 
+    const excluded = listExcludedGroups(wxid)
     const candidates = sessionsRes.sessions
       .filter(
         (s) =>
-          s.isGroup && !s.isWeCom && s.lastTimestamp >= windowStart && s.displayName.trim() !== ''
+          s.isGroup &&
+          !s.isWeCom &&
+          !excluded.has(s.username) &&
+          s.lastTimestamp >= windowStart &&
+          s.displayName.trim() !== ''
       )
       .sort((a, b) => b.lastTimestamp - a.lastTimestamp)
     const groups = candidates.slice(0, MAX_GROUPS)

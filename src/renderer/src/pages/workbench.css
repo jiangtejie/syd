@@ -1837,6 +1837,68 @@
   background: var(--bg-hover);
 }
 
+/* 同事标记折叠面板（批量把本群发言人标为团队客服） */
+.gip-senders {
+  margin-top: 6px;
+}
+
+.gip-senders-body {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  margin-top: 4px;
+}
+
+.gip-senders-hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.gip-senders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.gip-sender-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.gip-sender-row:hover {
+  background: var(--bg-hover);
+}
+
+.gip-sender-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gip-sender-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-4);
+}
+
+.gip-senders-ops {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 /* 跟进中(琥珀)与跟进超时状态徽标 */
 .gip-st.is-follow {
   background: var(--warn-soft);

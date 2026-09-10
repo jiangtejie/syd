@@ -12,14 +12,17 @@ import {
   updateIssueStatus
 } from '../services/feedback/analyzer'
 import {
+  archiveOpenIssuesByGroup,
   archiveResolvedBefore,
   getIssueDetail,
+  groupSenders,
   listIssuesByGroup,
   countOpenByGroup,
   clearIssuesByGroup,
   setIssueAssignee,
   confirmIssueDoubt
 } from '../db/repos/issueRepo'
+import { isGroupExcluded, setGroupExcluded } from '../services/feedback/groupScope'
 import { computeMonitorData } from '../../shared/monitorMetrics'
 import type { FeedbackIssueStatus } from '../../shared/types'
 import { createLogger } from '../services/logging'
@@ -120,11 +123,15 @@ export function registerIssueHandlers(): void {
     }
   )
 
-  // 某群的问题列表（工作台「群问题」视图本地读取，秒开）
+  // 某群的问题列表（工作台「群问题」视图本地读取，秒开）；excluded=该群是否已排除监控
   ipcMain.handle('cs:issue:listGroup', (_e, wxid: string, groupUsername: string) => {
     if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
     try {
-      return { ok: true as const, issues: listIssuesByGroup(wxid, groupUsername) }
+      return {
+        ok: true as const,
+        issues: listIssuesByGroup(wxid, groupUsername),
+        excluded: isGroupExcluded(wxid, groupUsername)
+      }
     } catch (err) {
       return {
         ok: false as const,
@@ -132,6 +139,47 @@ export function registerIssueHandlers(): void {
       }
     }
   })
+
+  // 本群发言人（非我方、非团队）：供「批量标记同事」，未标记的同事会被当成客户
+  ipcMain.handle('cs:issue:groupSenders', (_e, wxid: string, groupUsername: string) => {
+    if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
+    try {
+      return { ok: true as const, senders: groupSenders(wxid, groupUsername) }
+    } catch (err) {
+      return fail(err)
+    }
+  })
+
+  /**
+   * 群级参与开关：excluded=true 该群不再参与自动分析（后台增量 / 收尾巡检 / 全量重析）；
+   * archiveOpen=true 时顺带把现有 open 记录归档（archived_from='excluded'，可重新打开）。
+   */
+  ipcMain.handle(
+    'cs:issue:setGroupScope',
+    (
+      _e,
+      wxid: string,
+      groupUsername: string,
+      excluded: boolean,
+      opts?: { archiveOpen?: boolean }
+    ) => {
+      if (!wxid || !groupUsername) return { ok: false as const, error: '缺少账号或群标识' }
+      try {
+        setGroupExcluded(wxid, groupUsername, !!excluded)
+        const archived =
+          excluded && opts?.archiveOpen
+            ? archiveOpenIssuesByGroup(wxid, groupUsername, 'excluded')
+            : 0
+        issueLog.info(
+          `群级监控开关 ${wxid} ${groupUsername} excluded=${!!excluded} 归档=${archived}`
+        )
+        notifyChanged({ wxid })
+        return { ok: true as const, archived, excluded: !!excluded }
+      } catch (err) {
+        return fail(err)
+      }
+    }
+  )
 
   // 清空某群全部记录(含历史/证据)并复位该群分析状态——「从零开始」,不可恢复
   ipcMain.handle('cs:issue:clearGroup', (_e, wxid: string, groupUsername: string) => {

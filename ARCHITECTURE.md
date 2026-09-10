@@ -62,6 +62,8 @@ src/
 │     │  ├─ llmExtract.ts        LLM 提取（分批消费、按段排版、行号回映射、归一化）
 │     │  ├─ reconcile.ts         规则型跟进/收尾判定（归属式）
 │     │  ├─ replyAttribution.ts  回复归属（纯函数，可自检）
+│     │  ├─ textFilters.ts       噪音过滤：纯应答/事务性通知（纯函数，可自检）
+│     │  ├─ groupScope.ts        群级监控开关（采购/供应链/内部群可排除）
 │     │  ├─ duplicates.ts        存量重复议题合并
 │     │  ├─ issueSimilarity.ts   议题同一性判据（纯函数，阈值真实数据标定）
 │     │  ├─ scheduler.ts         后台入口（定时器 + 库变更钩子）

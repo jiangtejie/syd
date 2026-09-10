@@ -631,6 +631,47 @@ export function countOpenByGroup(wxid: string): Record<string, number> {
 }
 
 /**
+ * 归档某群全部 open 记录（archived_from='excluded' = 该群已不纳入监控）。
+ * 语义同其它归档：可重新打开、不计入闭环率、也不作为「不是问题」的 LLM 反例。
+ */
+export function archiveOpenIssuesByGroup(
+  wxid: string,
+  groupUsername: string,
+  archivedFrom: string
+): number {
+  return getDb()
+    .prepare(
+      `UPDATE issue_feedback SET status = 'archived', archived_from = ?, updated_at = ?,
+         resolved_at = NULL, follow_up = 0, follow_up_at = NULL
+       WHERE wxid = ? AND group_username = ? AND status = 'open'`
+    )
+    .run(archivedFrom, Date.now(), wxid, groupUsername).changes
+}
+
+/**
+ * 某群出现过的「非我方、非团队」发言人（按证据条数排序）。
+ * 用途：一次把同事标记完 —— 未标记的同事发言会被当成客户，议题会永远停在「待处理」。
+ */
+export function groupSenders(
+  wxid: string,
+  groupUsername: string,
+  limit = 40
+): Array<{ username: string; name: string; count: number }> {
+  const rows = getDb()
+    .prepare(
+      `SELECT m.sender_username AS username, MAX(m.sender_name) AS name, COUNT(*) AS n
+       FROM issue_feedback_msg m
+       JOIN issue_feedback f ON f.id = m.issue_id
+       WHERE f.wxid = ? AND f.group_username = ? AND m.is_send = 0
+         AND COALESCE(m.is_team, 0) = 0
+         AND m.sender_username IS NOT NULL AND m.sender_username <> ''
+       GROUP BY m.sender_username ORDER BY n DESC LIMIT ?`
+    )
+    .all(wxid, groupUsername, limit) as Array<{ username: string; name: string | null; n: number }>
+  return rows.map((r) => ({ username: r.username, name: r.name || r.username, count: r.n }))
+}
+
+/**
  * 存量去重：把重复行归档为「重复」(archived_from='duplicate')。
  * 该标记不属于闭环（不计入闭环率/趋势），也不算「人工判定不是问题」（不进 LLM 反例），
  * 只是从活跃列表、盯办与徽标里挪走；需要时可人工「重新打开」。

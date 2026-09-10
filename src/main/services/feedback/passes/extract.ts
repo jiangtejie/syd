@@ -1,6 +1,7 @@
 import { analyzeGroupIssues, hasGroupWatermark, listFeedbackIssues } from '../analyzer'
 import { notifyIssueAlert, type AlertIssue } from '../../lark/notify'
 import { getSessions } from '../../wechat/wxService'
+import { skipAutoAnalysis } from '../groupScope'
 import { autoScanEnabled, issueLog, sendChanged, sleep } from './shared'
 
 /**
@@ -121,7 +122,8 @@ export async function runExtractPass(wxid: string): Promise<void> {
   let added = 0
   let llmGroups = 0
   try {
-    const groups = listCandidates(wxid)
+    // 群级参与开关：被排除的群（采购/供应链/内部群）不参与任何自动分析
+    const groups = listCandidates(wxid).filter((g) => !skipAutoAnalysis(wxid, g.username))
     const fresh = groups.filter((g) => !hasGroupWatermark(wxid, g.username))
     let bootstrapped: string | null = null
     if (fresh.length > 0) {

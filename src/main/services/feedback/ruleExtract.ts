@@ -4,6 +4,7 @@
 import type { NewIssue } from '../../db/repos/issueRepo'
 import type { ChatMessage, FeedbackIssueSeverity, FeedbackIssueType } from '../../../shared/types'
 import { attributeStaffReplies, replyForAnchor } from './replyAttribution'
+import { shouldSkipAsNoise } from './textFilters'
 import { isRuleText, isTeamMsg, msgToSummaryMsg, msgToText, senderLabel } from './shared'
 
 /** 本地兜底规则：命中即归类，文本仅在客户消息上匹配 */
@@ -98,6 +99,9 @@ export function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] 
     const u = m.senderUsername
     if (m.isSend || (u && team.has(u)) || !isRuleText(m)) continue
     const text = msgToText(m)
+    // 降噪：纯应答（收到/好的）与事务性通知（请查收/单号/开票资料…）不是客户诉求，
+    // 否则采购/供应链群会堆出一批永远无法「跟进」的假待办
+    if (shouldSkipAsNoise(text)) continue
     const rule = RULE_KEYWORDS.find((r) => r.keywords.some((k) => text.includes(k)))
     if (!rule) continue
     hits.push({ i, m, type: rule.type })
@@ -164,15 +168,16 @@ export function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] 
     })
   }
 
-  // 末尾「客户留言无回复」：窗内最后一条客户真文本消息，不属于任何关键词议题，且仍无我方/团队回复
+  // 末尾「客户留言无回复」：窗内最后一条客户真文本消息，不属于任何关键词议题，且仍无我方/团队回复。
+  // 同样跳过纯应答与事务性通知（"收到""发票请查收"这类被建议题是纯噪音）。
   let tailIdx = -1
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i]
     const u = m.senderUsername
-    if (!m.isSend && !(u && team.has(u)) && isRuleText(m)) {
-      tailIdx = i
-      break
-    }
+    if (m.isSend || (u && team.has(u)) || !isRuleText(m)) continue
+    if (shouldSkipAsNoise(msgToText(m))) continue
+    tailIdx = i
+    break
   }
   const tail = tailIdx >= 0 ? msgs[tailIdx] : undefined
   if (

@@ -323,7 +323,22 @@ export interface CsApi {
     listGroup: (
       wxid: string,
       groupUsername: string
-    ) => Promise<Result<{ issues?: FeedbackIssue[] }>>
+    ) => Promise<Result<{ issues?: FeedbackIssue[]; excluded?: boolean }>>
+    /**
+     * 群级参与开关：excluded=true 该群不参与**自动**分析（后台增量/收尾/全量重析），
+     * 手动「重新分析」不受影响；archiveOpen=true 顺带归档该群现有 open 记录。
+     */
+    setGroupScope: (
+      wxid: string,
+      groupUsername: string,
+      excluded: boolean,
+      opts?: { archiveOpen?: boolean }
+    ) => Promise<{ ok: boolean; archived?: number; excluded?: boolean; error?: string }>
+    /** 本群发言人（非我方、非团队，按证据条数排序）：供「批量标记同事」 */
+    groupSenders: (
+      wxid: string,
+      groupUsername: string
+    ) => Promise<Result<{ senders?: Array<{ username: string; name: string; count: number }> }>>
     state: (wxid: string) => Promise<{ ok: boolean; state?: FeedbackAnalysisState }>
     clear: (wxid: string) => Promise<{ ok: boolean; error?: string }>
     clearGroup: (wxid: string, groupUsername: string) => Promise<{ ok: boolean; error?: string }>
