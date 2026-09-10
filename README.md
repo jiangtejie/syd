@@ -269,7 +269,7 @@ KPI/趋势按全量统计，明细为控制传输量只回传最近 1000 条。�
 
 | 文档 | 内容 |
 | --- | --- |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 微信接入/密钥/消息读取/AI 建议/发送执行/本地数据模型/IPC 一览 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | **全仓技术架构**：进程与桥契约、微信接入（解密/密钥/读库/监控）、群问题引擎、AI 能力层、发送闸门、外部集成、数据模型、IPC 与配置键 |
 | [docs/ai-workbench-design.md](docs/ai-workbench-design.md) | AI 工作台（标准 agent 循环 + 原生能力调用） |
 | [docs/ai-assistant-design.md](docs/ai-assistant-design.md) | AI 对话助手页与技能/工具面 |
 | [docs/report-tasks-design.md](docs/report-tasks-design.md) | 定时任务 · 数据上报（→ PostgreSQL） |
@@ -293,7 +293,6 @@ KPI/趋势按全量统计，明细为控制传输量只回传最近 1000 条。�
 
 **路线图（未做）**
 
-- `feedback/scheduler.ts` 三块职责（增量提取 / 收尾巡检 / 盯办）再拆一层。
 - 语言模型输出「闭环依据」并落库，让自动闭环可审计。
 - 问题明细服务端分页（当前为限量回传 + 归档收敛）。
 - 更细粒度的团队 SLA（按人/按类型设定跟进时限）。

@@ -1,277 +1,340 @@
-# 微信私域智能客服（wechat-cs-desktop）技术架构与功能要点
+# 微信私域智能客服工作台 · 技术架构与实现要点
 
-> 本文档梳理项目的整体技术架构、模块划分、核心功能实现要点与数据模型，作为后续开发与维护的参考。
-
----
-
-## 1. 项目概述
-
-`wechat-cs-desktop` 是一款面向微信私域客服的 **Electron 桌面客户端**，核心目标：把个人微信的数据（会话、消息、图片附件）读入本地工作台，并辅助真人客服 **生成回复建议、一键发送**，同时提供客户分层、数据看板、审计等运营能力。
-
-产品名称（应用内）：**微信私域智能客服**。
-
-关键技术特征：
-
-- 读取并解密本地微信数据库（微信 4.x「魔改 SQLCipher」格式）。
-- 通过 PowerShell + Win32 API 模拟键盘/剪贴板，向真实微信客户端「注入」发送消息。
-- AI 话术建议由 LLM 生成（OpenAI 兼容），AI 未启用/未配置时不产出任何候选（内置示例模板与兜底话术已移除，避免模拟话术误导），由 UI 提示引导配置。
+> 面向维护者：**为什么这么实现**、模块边界在哪、口径怎么定。产品能力与使用说明见 [README.md](README.md)。
 
 ---
 
-## 2. 技术栈
+## 1. 定位与技术栈
+
+Electron 桌面应用：读本机微信数据 → 本地库与工作台 → AI 辅助（建议 / 提炼 / 复盘 / 营销内容）→ 人工闸门后发送。
 
 | 层 | 技术 | 说明 |
 | --- | --- | --- |
-| 桌面框架 | Electron 39 + electron-vite 5 | 主进程 / preload / 渲染进程三端构建 |
-| 前端 | React 19 + TypeScript 5 | 渲染层 UI |
-| 状态管理 | zustand 5 | 工作台全局状态 |
-| 本地数据库 | better-sqlite3-multiple-ciphers | 本地业务库 + 打开微信加密库（兼容 SQLCipher/明文） |
-| 消息解压 | fzstd | 微信消息正文 zstd 解压 |
-| 图片解密/转码 | node:crypto + 外部 ffmpeg | .dat 解密、wxgf（HEVC）转 JPEG |
-| 打包 | electron-builder 26 | 产物、图标、安装包 |
-| 代码规范 | ESLint 9 + Prettier 3 | 统一风格 |
+| 桌面框架 | Electron 39 + electron-vite 5 | 主进程 / preload / 渲染三端构建；Node 要求 `^20.19.0 \|\| >=22.12.0` |
+| 渲染端 | React 19 + TypeScript 5.9 + zustand 5 | 页面、状态管理（工作台 / 会话 / toast / 确认框） |
+| 图表 | ECharts 6 | 监控中心与看板的纯函数配置（`renderer/src/pages/monitorCharts.ts` 等） |
+| 样式 | Tailwind 4 + 手写 CSS | 页面级 CSS 与设计 token（`assets/*.css`） |
+| 本地库 | better-sqlite3-multiple-ciphers 13 | cs.db（WAL）+ 打开微信加密库（兼容 SQLCipher / 明文） |
+| 模型 | AI SDK v7（OpenAI 兼容） | 任意兼容 Base URL；预设 OpenAI / DeepSeek / 百炼 / 智谱 / Moonshot / 硅基流动 / 火山方舟 / Ollama |
+| 其他 | pg 8（上报）、飞书 Node SDK、fzstd（zstd）、exceljs、qrcode | — |
+| 打包 | electron-builder 26 | win / mac / linux |
+
+---
+
+## 2. 进程架构与共享契约
+
+```
+主进程 main：窗口/托盘/菜单 + cs.db + 微信库解密读库监控 + 群问题引擎 + AI + 发送注入 + 上报 + 飞书
+   ▲ ipcRenderer.invoke                      │ webContents.send（事件推送）
+preload：contextBridge 暴露 window.api.cs.*（实现即契约，见下）
+   ▲
+渲染进程 renderer：七个页面 + zustand；只经 window.api 调 IPC，不直连任何库
+```
+
+**桥接口唯一真源**：`src/shared/api.ts` 定义 `PreloadApi`/`CsApi`，preload 以 `const api: PreloadApi = {…}` 对着它编译，
+`src/preload/index.d.ts` 只剩 15 行（`window.api: PreloadApi`）。任何一边漏改都会**编译失败** ——
+历史上出现过「实现加了方法、声明忘了同步」的漂移，这条约束是为此加的。
+
+**版本错位防御**：preload 与主进程改动必须**完全重启应用**才生效（热更新只换渲染端）。
+渲染端因此做了自检与降级：桥缺失时工具栏显示「⚠ 维护功能未加载」；
+主进程较旧（新 IPC 无 handler）时监控页自动退回旧通道并提示「⚠ 主进程版本较旧」。
 
 ---
 
 ## 3. 目录结构
 
 ```
-wechat-cs-desktop/
-├── src/
-│   ├── main/                     # 主进程
-│   │   ├── index.ts              # 入口：窗口、托盘、菜单、单实例锁、media 协议
-│   │   ├── db/                   # 本地业务库（cs.db）
-│   │   │   ├── database.ts       # 单例 + WAL
-│   │   │   ├── schema.ts         # 建表 / 迁移
-│   │   │   └── repos/            # 数据访问层（config / keyStore / sendLog）
-│   │   ├── ipc/                  # IPC handler 注册（按域拆分）
-│   │   └── services/
-│   │       ├── wechat/           # 微信读库核心（解密/定位/查询/监控/注入）
-│   │       ├── ai/               # AI 建议生成
-│   │       ├── send/             # 发送执行层（队列/频控/熔断/审计）
-│   │       ├── media/            # 图片 .dat 解密
-│   │       ├── keyStoreService.ts# 密钥管理
-│   │       └── paths.ts          # 缓存目录策略
-│   ├── preload/
-│   │   ├── index.ts              # contextBridge 暴露 window.api
-│   │   └── index.d.ts            # 类型声明
-│   ├── renderer/
-│   │   └── src/
-│   │       ├── App.tsx           # 应用外壳（标题栏 + 左侧导航 + 页面区）
-│   │       ├── pages/            # 对话/客户/看板/设置 四大页面
-│   │       ├── components/       # 标题栏、工作台子组件、设置组件
-│   │       ├── stores/           # zustand（workbench / toast）
-│   │       └── lib/              # 客户派生算法、UI 工具
-│   └── shared/
-│       └── types.ts              # 三端共享类型（IPC 契约）
-├── resources/
-│   ├── ps/wechat-inject.ps1      # Windows 注入脚本（Win32 API）
-│   └── icon.png
-├── scripts/                      # 开发期 spike/probe 脚本
-├── build/                        # 图标 / 打包资源
-└── electron.vite.config.ts
+src/
+├─ main/
+│  ├─ index.ts                   入口：窗口/托盘/单实例锁/ct-media 协议/调度器起停
+│  ├─ db/
+│  │  ├─ database.ts             cs.db 单例（WAL、busy_timeout、mmap）
+│  │  ├─ schema.ts               建表 + 增量列迁移（ensureColumn）+ 索引
+│  │  └─ repos/                  数据访问：config / keyStore / issueRepo / teamRepo / chatRepo /
+│  │                             imRepo / imFileRepo / imAuditRepo / growthRepo / reportRepo / sendLog …
+│  ├─ ipc/                       按域注册 handler（21 命名空间 / 149 通道，见 §12）
+│  └─ services/
+│     ├─ wechat/                 解密/定位/读库/监控/注入/企微（见 §4）
+│     ├─ feedback/               群问题闭环引擎（见 §5）
+│     │  ├─ analyzer.ts          编排：读取窗口与水位、单群/全量分析、进度与取消、对外状态
+│     │  ├─ shared.ts            消息/文本层公共件：消息→文本、发送人标签、证据合并、分段、读取窗口
+│     │  ├─ ruleExtract.ts       规则提取（LLM 兜底：关键词聚类 + 末尾未回复）
+│     │  ├─ llmExtract.ts        LLM 提取（分批消费、按段排版、行号回映射、归一化）
+│     │  ├─ reconcile.ts         规则型跟进/收尾判定（归属式）
+│     │  ├─ replyAttribution.ts  回复归属（纯函数，可自检）
+│     │  ├─ duplicates.ts        存量重复议题合并
+│     │  ├─ issueSimilarity.ts   议题同一性判据（纯函数，阈值真实数据标定）
+│     │  ├─ scheduler.ts         后台入口（定时器 + 库变更钩子）
+│     │  └─ passes/              extract / settle / escalate 三条通道 + shared
+│     ├─ ai/                     provider（模型通道）、suggest（建议）、agentLoop/agentTools（迷你 Agent）、
+│     │                          chat（AI 助手）、workbench（引擎/工具/审批/工作区）、cap（能力注册表/分层/软件包）
+│     ├─ send/                   发送执行与闸门（队列/频控/熔断/闭环校验/审计）
+│     ├─ report/                 定时任务 · 数据上报（chat_sync → PostgreSQL）
+│     ├─ lark/                   飞书：client/api/im/contact/notify/tools
+│     ├─ im/                     外部 IM 渠道（飞书长连接、微信 ClawBot）+ 渠道文件
+│     ├─ growth/                 营销增长：collector / warehouse / buzz / remix / publisher / ai
+│     ├─ media/                  图片 .dat 解密、表情、视频缓存
+│     ├─ export/                 会话/业务导出
+│     ├─ logging.ts  paths.ts    统一日志、缓存分区与路径策略
+│     └─ keyStoreService.ts      微信密钥（safeStorage）
+├─ preload/                      contextBridge（index.ts 实现 + 15 行 index.d.ts）
+├─ renderer/src/
+│  ├─ App.tsx                    外壳：标题栏 + 左导航 + 页面区 + ToastHost/ConfirmHost/ErrorBoundary
+│  ├─ pages/                     对话(Workbench) / AI(WorkbenchChat) / 监控 / 看板 / 客户 / 营销 / 数据 / 设置
+│  ├─ components/                workbench(消息面板/群问题面板/建议面板/文件托盘) · monitor(抽屉/方案条/KPI) · settings · growth
+│  ├─ stores/                    workbench / workbenchChat / toast / confirmDialog
+│  └─ lib/                       customers / monitorMetrics(已迁 shared) / monitorChips / teamNames / ui / useCountUp
+└─ shared/                       types.ts（领域类型）· api.ts（桥接口真源）· monitorMetrics.ts（BI 纯函数）· growth.ts
 ```
 
 ---
 
-## 4. 进程架构
+## 4. 微信数据接入
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    主进程 (main)                         │
-│  - 窗口/托盘/菜单/单实例锁                               │
-│  - 本地库 cs.db（better-sqlite3）                       │
-│  - 微信库解密/读库/监控                                  │
-│  - 发送队列 + 注入引擎（PowerShell）                     │
-│  - AI 建议生成、媒体解密                                  │
-│  - ct-media:// 自定义协议                                │
-└───────────────▲──────────────────────┬──────────────────┘
-                │ ipcRenderer.invoke   │ webContents.send
-┌───────────────┴──────────────────────▼──────────────────┐
-│                 preload (contextBridge)                  │
-│  暴露 window.api.cs.{wx,keyStore,ai,reply,config,dialog,  │
-│  media,app}；window.electron（electron-toolkit）          │
-└───────────────▲─────────────────────────────────────────┘
-                │
-┌───────────────┴─────────────────────────────────────────┐
-│                  渲染进程 (React 19)                     │
-│  对话工作台 / 客户 / 看板 / 设置，zustand 状态管理        │
-└─────────────────────────────────────────────────────────┘
-```
+### 4.1 库解密与定位
 
-- **安全隔离**：`contextIsolation` 开启（`sandbox: false` 供 preload 使用 Node API），渲染层只能通过 `window.api` 调用受控 IPC，不直接接触明文密钥。
-- **共享契约**：`src/shared/types.ts` 定义跨进程类型，preload 用 `invoke` 双向传递结构化数据。
+微信 4.x 库为魔改 SQLCipher，实现见 `services/wechat/decrypt.ts`：
 
----
+- **页结构**：页 4096，reserve=80（IV 16B + HMAC-SHA512 64B）。页 1 前 16B 为 salt，加密区 `file[16:4016]`，解密后补写 `SQLite format 3\0`；页 N 加密区 `page[0:4016]`，IV 在 `page[4016:4032]`。
+- **密钥派生**：`AES key = PBKDF2-HMAC-SHA512(encKey, salt, iter=256000, dklen=32)`，逐页 AES-256-CBC（无 padding）。
+- **WAL 合并**：解析 WAL 帧（32B 头 + N×(24B 帧头 + 4096B 页)），把「文件头第一周期」的帧解密合并进主库并修正 db size，失败静默回退主库。
+- **明文副本**：解密结果落 `<cache>/db/<name>_<hash>.db`（以「源库路径 + key」的 md5 命名复用；历史目录 `wx-plain` 启动自动并入），只读打开、用完即关。
 
-## 5. 核心功能模块
+缓存分区由 `paths.ts` 统一管理（**禁止硬编码子目录**）：
+`db/` 明文库副本 · `media/<wxid>/` 附件解码产物（ct-media 映射根）· `files/` 渠道接收文件 · `tmp/` 一次性临时 · `export/` 导出产物 · `growth/` 营销素材。
 
-### 5.1 微信库解密与定位（T4）
+库定位 `dbLocator.ts` 兼容 `<root>/db_storage`、`<root>/<wxid>/db_storage`、`<root>/<wxid>_xxx/db_storage`，递归扫描 `msg_*.db / message_*.db`，加权定位 `session.db / contact.db / head_image.db`。
 
-微信 4.x 数据库为腾讯魔改 SQLCipher 格式，实现位于 `services/wechat/decrypt.ts`：
+### 4.2 密钥管理
 
-- **页结构**：页大小 4096，reserve=80（IV 16B + HMAC-SHA512 64B）。
-  - 页 1：前 16B 为 salt；加密区为 `file[16:4016]`，解密后补写标准头 `SQLite format 3\0`。
-  - 页 N：加密区为 `page[0:4016]`，IV 在 `page[4016:4032]`。
-- **密钥派生**：`AES key = PBKDF2-HMAC-SHA512(encKey, salt, iter=256000, dklen=32)`，逐页 AES-256-CBC 解密（无 padding）。
-- **WAL 合并**：解析 WAL 帧（32B 头 + N×(24B 帧头 + 4096B 帧页)），将「文件头第一周期帧」解密合并到主库，覆盖新页并修正 db size 字段，失败时静默回退主库。
-- **明文缓存**：解密结果落盘到缓存目录 **db 分区**（`db/<name>_<hash>.db`，历史目录 `wx-plain` 已并入，启动自动迁移），以「源库路径 + key」的 md5 命名复用；每次打开只读、用完即关。
+`keyStoreService.ts`：取 key 与用 key 解耦，渲染端只看到状态。
 
-> 缓存目录规范结构（由 `services/paths.ts` 统一管理，写缓存代码禁止硬编码子目录）：
-> `db/` 解密微信明文库副本 · `media/<wxid>/` 附件解码产物（图片/视频，ct-media 协议映射根）· `tmp/` 一次性临时文件 · `export/` 用户导出产物；「清理缓存」会整目录清除。
+- 来源 `registry`（注册表，待探测）/ `import`（导入）/ `manual`（手填）；导入校验 64 位十六进制。
+- 落库：`safeStorage.encryptString` 加密后存 `key_store`；**明文 key 只在主进程内存**。
+- 状态机 `pending → valid / invalid`：`testKey` 以「试开真实库」验证并回写错误原因。
 
-数据库定位 `dbLocator.ts` 兼容多种目录形态：
+### 4.3 消息读取（`queries.ts` / `content.ts`）
 
-- `<root>/db_storage`
-- `<root>/<wxid>/db_storage`
-- `<root>/<wxid>_xxxx/db_storage`
+- 会话列表读 `session.db`（兼容多表名），按 `sort_timestamp` 倒序，过滤系统号；enrich 补备注/昵称/头像/置顶/折叠。
+- 消息读取：会话 id 经 md5 得表名 `msg_<hash>`，跨多个消息库合并去重，按 `(sort_seq, create_time, local_id)` keyset 分页。
+- **增量读取**：`listMessagesSince` / `listMessages(..., sinceSeq)` 走 `WHERE sort_seq > ?`，SQL 侧过滤。
+- **enrich 成本**：每页 enrich 都要开一次联系人库，因此大批量场景（群问题分析、上报同步）统一用 `skipEnrich` 读完整批再一次 `enrichMessages`。
+- 发送人判定：Msg 表无 `is_send`，用 `real_sender_id` 对照 `Name2Id` 里「我的 rowid」。
+- 内容解析：zstd 解压（magic `0xFD2FB528`）、XML/HTML 实体、按 `localType` 映射摘要（文本/图片/语音/名片/视频/表情/位置/文件/系统），提取图片 md5、语音时长、文件名大小。
 
-并递归扫描 `msg_*.db / message_*.db` 消息库、加权定位 `session.db`、`contact.db`、`head_image.db`。
+### 4.4 库变更监控（`monitor.ts` + `watchService.ts`）
 
-### 5.2 密钥管理（§4.9）
-
-`keyStoreService.ts`：取 key 与用 key 解耦，客户端只「安全持有 + 解密」。
-
-- 密钥来源：`registry`（注册表，待探测）/ `import`（导入）/ `manual`（手动）。
-- 导入校验：64 位十六进制（32 字节）。
-- 落库：用 Electron `safeStorage.encryptString` 加密后存 `key_store`，**明文 key 仅在主进程内存中解密持有，不落盘**。
-- 状态机：`pending → valid / invalid`，`testKey` 通过「试开真实库」验证并回写状态与错误原因。
-
-### 5.3 消息读取（queries.ts）
-
-- 会话列表：读 `session.db`（`SessionTable / Session / session` 兼容），按 `sort_timestamp` 倒序，过滤系统号/服务号（`weixin`、`qqmail`、`fmessage` 等）。
-- 联系人 enrich：读 `contact.db`，补备注/昵称/别名/头像/置顶（flag `0x800`）/折叠（flag `0x10000000`）。
-- 消息读取：会话 id 经 `md5` 得到消息表名 `msg_<hash>`，跨多个消息库合并、去重、时间倒序分页。
-- 发送人判定：微信 4.x Msg 表无 `is_send` 列，用 `real_sender_id` 对照 `Name2Id` 表中的「我的 rowid」判断是否己方发出。
-- 内容解析：`content.ts` 处理 zstd 解压（magic `0xFD2FB528`）、XML/HTML 实体、按 `localType` 映射摘要（文本/图片/语音/名片/视频/表情/位置/链接文件/系统消息），并提取图片 md5、语音时长、文件名大小。
-- 头像解析：`contact` 表 URL（big/small）优先，`head_image.db` 的 `image_buffer` BLOB 兜底转 base64。
-- 列名兼容：`schema.ts` 通过 `PRAGMA table_info` 探测多种列名候选（`message_content/display_content/content` 等），适配不同微信版本。
-
-### 5.4 库变更监控（T5）
-
-`monitor.ts` + `watchService.ts`：
-
-- 双通道：`fs.watch` 监听库目录 + 2s 轮询对比 mtime/size 兜底。
-- 变化经 500ms debounce 后广播 `cs:wx:dbChanged` 给渲染层，并触发主进程新消息提醒。
-- 生命周期按 wxid 管理（`startWatch/stopWatch/stopAllWatches`），幂等。
-
-### 5.5 AI 建议生成（T7）
-
-`suggest.ts`：输入「会话上下文（最近消息）+ 智能体人设」→ 输出 1~3 条候选（ai_free）。流程：
-
-- **LLM 生成**：`provider.ts` 抽象任意 OpenAI 兼容接口（`/chat/completions`），配置 `ai.baseUrl/ai.apiKey/ai.model/ai.enabled`，按智能体（`ai_agent`）组装系统提示词（名称+人设+风格+自定义守则），输出 JSON 数组解析为候选。
-- **空结果与错误**：AI 未启用/未配置 Key/生成失败时不返回任何内置话术，仅回传错误提示由 UI 展示（设置页可开启通道并测试）。
-
-> 内置示例模板（kb_direct 关键词底稿：价格/试用/寒暄等虚构文案）与兜底话术已随「去除模拟数据」移除；真实知识库命中待 `knowledge_item` 接入后另行实现。
-
-### 5.6 发送执行（T8）
-
-`sendService.ts` + `injector.ts`：
-
-- **全局串行队列**：注入是独占资源，多任务排队逐个执行。
-- **注入引擎**：`injector.ts` 调 PowerShell（`resources/ps/wechat-inject.ps1`），Win32 API 找窗口 → 抢前台 → `Ctrl+F` 搜索会话 → 剪贴板粘贴正文 → Enter 发送。
-- **拟人化延迟**：发送前随机 0.9~2.6s，会话间随机 2.5~7s（可关闭）。
-- **频控**：每日上限（默认 200）。
-- **闭环校验**：发完回查微信库确认己方消息存在；连续 2 次校验失败自动 **熔断**（`send.halted`）。
-- **审计**：所有发送（自动/人工）写 `send_log`，含 mode/source/result/verified。
-
-### 5.7 图片媒体解密（M3）
-
-`media/mediaService.ts` + `media/datDecrypt.ts`：
-
-- 定位 `msg/attach` 下 `<md5>.dat / _t.dat / _h.dat`。
-- 解密 `.dat`：V1/V2（15B 头，AES-128-ECB + XOR）、V3（整文件 XOR），密钥从 `img:{wxid}:xorKey / aesKey` 配置读取。
-- 解密后处理 wxgf（微信 HEVC 容器）：优先内嵌 JPEG/PNG 截取；纯 HEVC 时切 NAL 流交外部 ffmpeg 转 JPEG 首帧。
-- 结果写缓存目录 `media/<wxid>/<md5>_<kind><ext>`，通过自定义 `ct-media://` 协议暴露给渲染层（`index.ts` 的 `registerMediaProtocol`，含路径/文件名强校验）。
+`fs.watch` 监听库目录 + 2s 轮询比对 mtime/size 兜底 → 500ms debounce → 广播 `cs:wx:dbChanged`（含 `sessionChanged`）并触发主进程提醒；按 wxid 管理生命周期，幂等。
 
 ---
 
-## 6. IPC 接口一览
+## 5. 群问题闭环引擎（核心）
 
-preload 暴露 `window.api.cs.*`，主进程 `ipc/` 按域注册：
+### 5.1 数据流
 
-| 域 | 通道 | 说明 |
+```
+微信库 ──readGroupMessages(窗口+序号水位)──▶ 消息窗
+   ├─ 主区：水位后的新行（含补录的旧时间行）──▶ LLM 分批提炼 / 规则兜底 ──▶ 议题(NewIssue)
+   └─ 附录：每个 open 议题的锚点行 + 最近尾巴 ──▶ 供模型理解延续与闭环
+议题 ──同一性判据(复用既有 key / 合并)──▶ upsert(cs.db: issue_feedback + _msg)
+   └─ 规则跟进/收尾判定（归属式）──▶ follow_up / follow_up_at / last_reply_by / 静默收尾 / 超期搁置
+```
+
+### 5.2 提取
+
+- **窗口与水位**：增量按水位（`msgTime` + `sortSeq` 双线单调推进），补录/回拨的旧时间消息也能读到；首次/重算按自然日窗口（默认 2 天），并向前扩展到 open 议题锚点（上限 14 天）。
+- **LLM 分批**：主区按会话段（间隔 ≥15min 分段）切成 ≤200 行/批，逐批落库后再取下一批的「现存待办」提示；某批失败则从成功边界起用规则补读，杜绝高活跃群截断丢段。
+- **规则兜底**：关键词命中按「同客户 + 同类型 + 60min 窗」聚成议题，另加末尾「客户留言无回复」兜底。
+- **计数口径**：`count` = **真正新建**的行数（既有行更新不计），提示音/桌面通知/飞书推送据此触发。
+
+### 5.3 跟进与收尾判定（规则管跟进、LLM 管闭环）
+
+判定在 `reconcile.ts`，输入是消息窗 + 团队名单，输出是状态写入：
+
+- **归属式回复判定**（`replyAttribution.ts`）：每条我方/团队消息归属给**最近一条客户消息的发送人**；议题只看「本议题客户名下、且不早于锚点」的回复。
+  > 为什么不用「下一条客户消息即结束回合」：客户连发几句（补图/追问/@客服）极常见，回合会被截断，
+  > 客服回复被漏掉，跟进状态永远不变（线上 issue 82 实测）。归属法同时避免了「群里另一位客户被回复」被误算。
+- 锚点本身是我方/团队消息（模型把客服回复当最早证据）→ 视为已在处理中。
+- **静默收尾**：本议题客户在该回复后再无发言、且静默超 `monitor.autoCloseHours`（默认 72h，0=关）→ `done(autoDone)`。
+- **超期搁置**：锚点早于 14 天回溯范围且无法判定 → `stalled(auto)`。
+- 跟进超时按 `follow_up_at` 动态计算（`monitor.followUpHours`，默认 12h），**不再用「最后一条证据是不是我方」这种会被重析污染的旧口径**。
+
+### 5.4 去重（三层）
+
+1. LLM 可指认「与既有待办 #N 是同一条」→ 直接复用其 key（`topic` 字段）；
+2. 附录**优先保住每个 open 议题的锚点行**，让模型看得见原议题；证据合并（key 复用时保留最早锚点）；
+3. 同一性判据兜底（`issueSimilarity.ts`，阈值用真实库标定）：标题 bigram 相似度（真重复 ≥0.40 / 不同主题 ≤0.20）、证据消息重叠覆盖率、同客户+同类型+时间邻近（弱兜底）。
+   判据分**强/弱**：高置信（证据几乎完全重合、标题逐字一致、同客户同类型且证据被包含）由后台自动合并；弱信号只在监控页预览确认。合并保留最早一条（并集证据/最高严重度/并集客户/沿用跟进人），其余归档 `duplicate`。
+
+### 5.5 后台三通道（`scheduler.ts` + `passes/`）
+
+| 通道 | 频率 | 说明 |
 | --- | --- | --- |
-| keyStore | `cs:key:getStatus/list/import/test/refresh` | 密钥状态/导入/验证 |
-| wx | `cs:wx:connect/getSessions/getMessages/getMessagesSince/getAvatar/startWatch/stopWatch` | 微信读库与监控 |
-| ai | `cs:ai:generateReply` | 生成回复候选 |
-| reply | `cs:reply:sendText/getSendStatus/stats7d/resetCircuit/stopAll` | 发送与状态 |
-| config | `cs:config:getAll/set/cachePath` | 全局配置 KV |
-| dialog | `cs:dialog:pickDirectory` | 目录选择 |
-| media | `cs:media:decryptImage/testImageDecrypt` | 图片解密 |
-| app | `cs:app:info/getAutoLaunch/setAutoLaunch/dataStats/clearCache` | 应用级能力 |
+| `passes/extract` | 库变化事件(15s 冷却) + 60s | 近 7 天活跃群前 30 增量提取；无新消息/2 分钟内已尝试 → skipped（零 LLM）；失败不推进水位，下轮补读；**冷启动补扫**每分钟补 1 个无水位的群（不打开面板也能覆盖） |
+| `passes/settle` | 2 分钟 | 对**有 open 问题的群**做规则跟进/收尾判定（零 LLM，跳过联系人 enrich）+ 高置信重复自动合并；只在真正写入时广播 |
+| `passes/escalate` | 60s | 盯办升级：未指派超时（紧急 1h / 其余 4h）、已指派未处理（8h）、跟进超时 → 应用内 + 飞书，退避 45min→90min→3h→6h |
 
-推送事件：`cs:wx:dbChanged`（库变化）、`app:navigate`（菜单/托盘触发导航）。
+### 5.6 统计口径
+
+- 闭环率 =（done + 已闭环后归档）÷（done + open + stalled + 已闭环后归档）；人工「不是问题」的归档不计入闭环，也不作为 LLM 反例。
+- 「今日解决 / 趋势」用 `resolved_at`（置 done/stalled 时写入，重开清空），不受重析刷新 `updated_at` 影响。
+- 监控总览由**主进程按全量聚合**（KPI/趋势/类型/群榜/积压年龄），只回传上限内明细（默认 1000）→ 见 `cs:issue:overview`。
 
 ---
 
-## 7. 本地数据模型（cs.db）
+## 6. AI 能力层
 
-本地业务库只存「密钥、配置、决策、审计」，消息本体存于微信 DB。表结构见 `db/schema.ts`：
+### 6.1 模型通道（`ai/provider.ts`）
 
-| 表 | 用途 |
+统一 `complete(system, user, opts)`，配置 `ai.enabled/baseUrl/apiKey/model/temperature`（API Key 落库前 safeStorage 加封）。
+未配置或调用失败时，各功能按自己的降级策略处理（建议 → 空并对 UI 报错；群问题提取 → 规则兜底；工作台 → 报错提示）。
+
+### 6.2 回复建议（`ai/suggest.ts` + `agentLoop.ts` + `agentTools.ts`）
+
+本地背景（本群待办、历史问题、团队名单）零成本注入 → 模型可调用**只读工具**（读群问题/搜历史/查团队）→ 输出 1~3 条候选。发送始终是人工闸门。
+
+### 6.3 AI 工作台（`ai/workbench/*`）
+
+标准 agent 循环：`engine`（多轮 + 工具调用 + 事件流）· `tools`（能力注册表派生的工具面）· `skills`（技能说明）· `approval`（写操作审批）· `context`/`memo`（会话上下文与备忘录）· `events`（`ai:wb` 推向渲染端）。会话可绑定**工作区目录**，智能体可读写其文件。
+
+### 6.4 AI 助手与能力分层（`ai/chat/*` + `ai/cap/*`）
+
+多会话助手，工具来自 `cap/registry.ts`（唯一清单：分组/停用/审批标记）与 `cap/tiers`（会话级能力分层，`chat_session.caps`）、`cap/software`（软件能力包）、`cap/mounts`、`cap/meta`（元工具，让模型自查可用能力）。
+
+---
+
+## 7. 发送执行与闸门（`send/*`）
+
+- **全局串行队列**：注入是独占资源，排队逐个执行。
+- **注入引擎**：`injector.ts` 调 PowerShell（`resources/ps/wechat-inject.ps1`）→ Win32 找窗口 → 抢前台 → `Ctrl+F` 搜会话 → 剪贴板粘贴 → Enter。
+- **闸门与会话策略**：`sendGate.ts` 决定「AI 是否可发 / 是否需人工审批」（`send.agentEnabled`、`send.approve`）。
+- **频控与熔断**：日上限（默认 200）、拟人化延迟；发送后回查微信库做**闭环校验**，连续失败自动熔断。
+- **审计**：全部发送写 `send_log`（mode/source/result/verified/error_reason），看板据此出「闭环校验通过率 / 失败原因 Top」。
+
+---
+
+## 8. 外部集成
+
+### 8.1 飞书（`lark/*` + `im/feishuService.ts`）
+
+- **通知**：新问题 / 盯办升级 → 群或个人的文本消息（开关、事件级节流、日限额、幂等键按「事件 + 45 分钟时间片 + 问题集合」派生，跨时间片的再次提醒不会被去重吞掉），全部落 `feishu_send_log`。
+- **机器人**：长连接收消息/图片/文件 → 按接收策略（`all` 私聊全收 + 群聊 @）、身份分级 → 任务化处理 → 回复（`im_audit`/`im_chat_map`/`im_file_record`）。
+- **云文档工具**：Docx/Wiki/Sheets/Base/妙记/画板等经 lark-cli 工具注册表暴露给 AI（见 `docs/feishu-cloud-doc-design.md`）。
+
+### 8.2 外部 IM 渠道（`im/*`）
+
+飞书与微信 ClawBot 账号管理（凭证 safeStorage 加封）、渠道接收文件按 `files/` 分区归档（上限/保留期可配）、会话桥接到本地 AI 会话。
+
+### 8.3 数据上报（`report/*`）
+
+`chat_sync` 任务把会话/消息/媒体增量写入**你自己的 PostgreSQL**：游标增量（`report_cursor`）、媒体归档（`media_path`）、进度事件、取消、运行历史（`report_job`/`report_run`）。见 `docs/report-tasks-design.md`。
+
+---
+
+## 9. 营销增长模块（`growth/*`）
+
+采集（抖音/小红书，vendor 脚本 + 解析器 + 本地导入）→ 仓库（去重/评分/标签）→ 舆情（`buzz`：门店相关评论/提及与诊断）→ 二创（`remix`：prompt + 合规检查）→ 发布/导出（`publisher/exporter`）→ AI 工作台（任务化生成/图片通道/搜索通道）。
+
+---
+
+## 10. 媒体与文件
+
+- **图片**：`mediaService` + `datDecrypt` —— 定位 `msg/attach` 下 `<md5>.dat`；V1/V2（15B 头 + AES-128-ECB + XOR）、V3（整文件 XOR）；解密后处理 wxgf（HEVC 容器）：优先内嵌 JPEG/PNG，纯 HEVC 交外部 ffmpeg 转首帧；结果写 `media/<wxid>/`，经自定义 `ct-media://` 协议暴露（含路径与文件名强校验）。
+- **表情/视频/语音**：表情解析、视频与语音缓存到 media 分区；语音不做本地转写。
+- **渠道文件**：`im/channelFiles` 统一归档 + 限额策略 + 管理面板。
+
+---
+
+## 11. 本地数据模型（cs.db）
+
+只存「索引、状态、配置、审计」，消息本体在微信库。表由 `db/schema.ts` 创建，新列走 `ensureColumn` 增量迁移。
+
+| 表 | 状态 | 用途 |
+| --- | --- | --- |
+| `app_config` | 在用 | 全局 KV 配置（见 §13） |
+| `key_store` | 在用 | 微信密钥（safeStorage 密文）+ 来源 + 状态 |
+| `send_log` | 在用 | 发送审计（结果/闭环校验/失败原因） |
+| `issue_feedback` / `issue_feedback_msg` | 在用 | 群问题议题与证据（状态/跟进/指派/复发/归档来源） |
+| `team_member` | 在用 | 团队客服名单（判定「我方同事」的唯一来源） |
+| `ai_agent` | 在用 | 智能体（人设/风格/提示词） |
+| `chat_session` / `chat_message` / `wb_feedback` | 在用 | AI 助手/工作台会话、消息、反馈（👍/👎） |
+| `im_channel_account` / `im_chat_map` / `im_audit` / `im_file_record` | 在用 | 外部 IM 渠道、会话映射、审计、接收文件索引 |
+| `feishu_send_log` | 在用 | 飞书通知审计（目标/内容/结果/幂等） |
+| `report_job` / `report_run` / `report_cursor` | 在用 | 定时上报任务、运行历史、增量游标 |
+| `growth_*` | 在用 | 营销：门店/品牌档案、内容与素材、任务、舆情评论与提及、二创与产出 |
+| `customer` / `session` / `tier_rule` / `knowledge_item` / `reply_decision` | 预留（仅建表） | 客户库、门控/转人工、条件规则、知识库、决策状态机 |
+| `skill_package` / `agent_memory` / `ai_custom_tool` / `ai_mcp_server` | 预留（仅建表） | 早期能力包/记忆/自定义工具/MCP 方案，已下线或未接入 |
+
+---
+
+## 12. IPC 一览
+
+渲染端只经 `window.api.cs.<域>.<方法>` 调用；**21 个命名空间 / 149 个通道**，按域注册在 `src/main/ipc/*.ts`：
+
+| 域 | 代表通道 | 说明 |
+| --- | --- | --- |
+| `key` | `getStatus/list/importKey/test` | 密钥状态/导入/验证 |
+| `wx` | `connect/getSessions/getMessages/getMessagesSince/getAvatar/contactNames/opsStats/startWatch` | 微信读库、联系人、运营统计、监控 |
+| `issue` | `list/overview/analyze/analyzeGroup/cancel/state/detail/setStatus/assign/confirmDoubt/groupBadges/mergeDuplicates/archiveStale/clear/clearGroup/listGroup` | 群问题闭环全链路 |
+| `team` | `list/save/remove` | 团队客服名单 |
+| `reply` | `overview/stats/getSendStatus/resetCircuit/stopAll` | 发送质量与熔断 |
+| `ai` `agent` | 生成候选、智能体 CRUD | AI 建议 |
+| `wb` | `listChats/searchChats/messages/create/stop/retry/approve/workspace/skills/trustTool/…` | AI 工作台 |
+| `media` | `decryptImage/decryptVideo/resolveEmoji/testImageDecrypt` | 媒体解密 |
+| `files` | `policy/prune/remove/reveal` | 渠道文件管理 |
+| `im` | `list/save/remove/toggle/clawQrPoll` | 外部 IM 渠道 |
+| `feishu` `lark` | `notify/audit/contact/status/test` | 飞书通知与云文档 |
+| `report` | `list/save/remove/setEnabled/runNow/cancel/history/testConn` | 定时上报 |
+| `growth` `growthai` `growthbuzz` | 采集/仓库/二创/舆情/任务 | 营销增长 |
+| `export` | `chat/business/openFolder/writeFile` | 导出 |
+| `config` `app` `dialog` `logs` | 配置 KV、应用信息、目录选择、日志 | 通用 |
+
+**推送事件**（主进程 → 渲染端）：`cs:wx:dbChanged`、`cs:issue:changed`、`cs:issue:progress`、`cs:export:progress`、`cs:report:progress`、`ai:wb`、`app:navigate`。
+
+---
+
+## 13. app_config 配置键
+
+| 分组 | 键 |
 | --- | --- |
-| `key_store` | 微信库密钥（加密存储）+ 来源 + 状态 |
-| `app_config` | 全局 KV 配置（门控/频控/AI/注入/缓存路径） |
-| `customer` | 客户档案（预留，当前客户页由会话派生） |
-| `session` | 会话状态（支撑门控与转人工，预留） |
-| `tier_rule` | 条件规则 P1~P4（预留，P5~P8 为引擎内建） |
-| `knowledge_item` | 知识库条目（预留） |
-| `reply_decision` | 回复候选与决策状态机（预留） |
-| `send_log` | 发送审计日志（已使用） |
-
-当前实际落地使用：`key_store`、`app_config`、`send_log`；其余表为方案设计预留（客户库/知识库/规则引擎接入后使用）。
+| AI | `ai.enabled/baseUrl/apiKey/model/temperature/agent/nativeTools`、`wb.allowReasoner`、`wb.skills.enabled/maxOn`、`cap.disable` |
+| 发送 | `send.agentEnabled`、`send.approve`、`send.dailyLimit`、`send.humanizeDelay`、`send.halted`、`inject.enabled` |
+| 群问题 | `issue.autoScan.enabled`、`issue.escalate.enabled`、`issue.escalateUrgentHours`、`issue.escalateUnassignedHours`、`issue.escalateAssignedHours`、`issue.autoMergeDuplicates`、`monitor.followUpHours`、`monitor.backlogHours`、`monitor.autoCloseHours`、`monitor.alertSound` |
+| 飞书 | `lark.appId`、`lark.appSecret`、`lark.defaultUrl`、`feishu.notify.enabled/targets/events/dailyLimit` |
+| 上报 | `report.*`（任务本体存 `report_job`） |
+| 营销 | `growth.enabled/provider/providerApiKey`、`growth.image.*`、`growth.search.*` |
+| 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
+| 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
 
 ---
 
-## 8. 配置键（app_config）
+## 14. 桌面体验
 
-| 键 | 默认 | 说明 |
-| --- | --- | --- |
-| `ai.enabled` | `0` | 启用 LLM 生成 |
-| `ai.baseUrl` | `https://api.openai.com/v1` | OpenAI 兼容接口 |
-| `ai.apiKey` | 空 | API Key（落库前 safeStorage 加封，`enc1:` 前缀；明文形态兼容，启动时迁移存量） |
-| `ai.model` | 空 | 模型名（不预置；由「获取模型」拉取或手动填写，未填时通道视为未配置） |
-| `send.dailyLimit` | `200` | 每日发送上限 |
-| `send.humanizeDelay` | `1` | 拟人化延迟开关 |
-| `send.halted` | `0` | 熔断状态 |
-| `inject.enabled` | `1` | 注入发送总开关 |
-| `notify.enabled` | `1` | 新消息系统通知 |
-| `cache.path` | 空（自动） | 缓存目录 |
-| `img:{wxid}:xorKey` / `aesKey` | 空 | 图片解密密钥 |
-| `key:{wxid}:error` | 空 | 密钥错误原因 |
-| `media.ffmpegPath` | 空 | 外部 ffmpeg 路径 |
+单实例锁（二次启动聚焦已有窗口）· 自定义标题栏（`titleBarStyle: hidden` + 自绘 36px 拖拽区）· 关闭最小化到托盘 · 未聚焦时桌面通知 + 任务栏闪烁（节流）· 窗口背景色与渲染端一致防白闪 · `ct-media://` 统一 dev/生产子资源加载 · 渲染端错误边界（崩了给兜底页而不是白屏）。
 
 ---
 
-## 9. 桌面体验设计
-
-- **单实例锁**：二次启动聚焦已有窗口。
-- **自定义标题栏**：`titleBarStyle: hidden` + `titleBarOverlay`，渲染端自绘 36px 拖拽区，保留原生窗控。
-- **关闭最小化到托盘**：客服工作台常驻后台，托盘菜单「退出」才真正退出。
-- **新消息提醒**：窗口未聚焦时 `flashFrame` + 系统通知（节流 5s），点击通知聚焦。
-- **防白闪**：窗口背景色与渲染端一致；`ready-to-show` 后再显示。
-- **媒体协议**：`ct-media://` 解决 dev（http）/生产（file）渲染源下子资源加载一致性问题。
-
----
-
-## 10. 待完善 / 预留项
-
-- `customer`、`session`、`tier_rule`、`knowledge_item`、`reply_decision` 表已建，但对应功能（客户库、知识库、条件规则引擎、门控 G1/G3/G4、转人工）尚未接入，客户页/看板部分数据为示例算法。
-- 密钥 `registry` 直读（M3 探测）尚未实现，当前 `refreshKey` 仅返回现有状态，需走手动导入。
-- 看板「近 7 日消息量」为示例数据，解密层接入后可替换为真实统计。
-- 图片 HEVC 原图依赖外部 ffmpeg，需在设置中配置路径。
-
----
-
-## 11. 开发与构建
+## 15. 质量与验证
 
 ```bash
-npm install        # 安装依赖
-npm run dev        # 开发模式（electron-vite dev + HMR）
-npm run typecheck  # node + web 两侧类型检查
-npm run lint       # ESLint
-npm run build:win  # 打包 Windows（mac/linux 同理）
+npm run typecheck     # tsc --noEmit（主进程 + 渲染端）
+npm run lint          # ESLint（Prettier 规则内含）
+npm run test:feedback # 跟进判定「回复归属」+ 议题同一性判据 回归自检（真实数据标定）
+npm run build         # typecheck + electron-vite 三端构建
 ```
 
-关键脚本：`npm run typecheck`（`typecheck:node` + `typecheck:web`）、`npm run build`（typecheck + electron-vite build）、`electron-builder --win` 出安装包。
+- **纯函数优先**：判据、归属、指标聚合都做成无 IO 的纯函数（`issueSimilarity` / `replyAttribution` / `shared/monitorMetrics`），既能两端复用，也能用真实样本做回归断言。
+- **阈值留证据**：判据阈值、窗口、上限写成模块级常量并注明标定依据；调参先看自检与线上样本。
+- **事故驱动的加固**（都已沉淀为代码约束）：桥接口唯一真源（防类型漂移）、渲染端降级 + 版本提示（防主进程/渲染错位）、页内确认条（防全局弹窗不渲染导致「点了没反应」）、`skipEnrich` + 批量 enrich（防逐页开库）。
+
+---
+
+## 16. 待完善与已知边界
+
+- **预留表未接入**：`customer`（客户档案，当前客户页由会话+问题派生）、`session`（门控/转人工）、`tier_rule`、`knowledge_item`、`reply_decision`，以及已下线的 `skill_package`/`agent_memory`/`ai_custom_tool`/`ai_mcp_server`。
+- **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入。
+- **语音转写**：本地不做 ASR，语音以 `[语音]` 占位参与分析；需要转写走飞书妙记。
+- **HEVC 原图**：纯 HEVC 依赖外部 ffmpeg（设置里配路径）。
+- **LLM 闭环依据**：自动闭环目前不落「依据行号」，不可审计（LLM 只输出状态）。
+- **明细分页**：监控明细为主进程限量回传 + 归档收敛，未做服务端游标分页。
+- **企微群**：后台候选群过滤掉 `isWeCom` 会话，这类群目前只在手动打开/全量重析时分析。
