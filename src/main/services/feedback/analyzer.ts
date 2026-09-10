@@ -21,7 +21,21 @@ import {
   type NewIssue,
   type OpenTopicRow
 } from '../../db/repos/issueRepo'
-import { getConfig, setConfig } from '../../db/repos/config'
+import {
+  clearAccountFail,
+  clearAccountState,
+  clearGroupState,
+  getAccountFail,
+  getAccountRunState,
+  getGroupStamp,
+  getGroupWatermark,
+  saveAccountFail,
+  saveAccountRunState,
+  saveGroupStamp,
+  saveGroupWatermark,
+  type GroupStamp,
+  type GroupWatermark
+} from '../../db/repos/issueStateRepo'
 import { listExcludedGroups } from './groupScope'
 import { getDb } from '../../db/database'
 import { topicSame, type TopicFacts } from './issueSimilarity'
@@ -74,45 +88,6 @@ const MAX_GROUPS = 30
 /** 工作台单群分析节流：距上次尝试（成功或失败）短于该值时自动触发直接跳过（force 忽略） */
 const GROUP_AUTO_REANALYZE_MS = 2 * 60_000
 
-/** 单群分析尝试记录配置键（工作台「切群自动分析」防抖与失败信息透传） */
-const groupStampKey = (wxid: string, group: string): string => `issue.groupAt:${wxid}:${group}`
-
-/** 读取某群最近一次分析尝试记录（成功或失败；失败携带 error 供 UI 透传） */
-interface GroupStamp {
-  at: number
-  method?: 'llm' | 'rule'
-  count?: number
-  error?: string
-  coverage?: IssueCoverage
-}
-
-function readGroupStamp(wxid: string, groupUsername: string): GroupStamp | null {
-  const raw = getConfig(groupStampKey(wxid, groupUsername))
-  if (!raw) return null
-  try {
-    const p = JSON.parse(raw) as {
-      at?: number
-      method?: string
-      count?: number
-      error?: string
-      coverage?: IssueCoverage
-    }
-    if (typeof p.at !== 'number') return null
-    return {
-      at: p.at,
-      method: p.method === 'llm' || p.method === 'rule' ? p.method : undefined,
-      count: typeof p.count === 'number' ? p.count : undefined,
-      error: p.error,
-      coverage:
-        p.coverage && typeof p.coverage.msgs === 'number'
-          ? { msgs: p.coverage.msgs, truncated: !!p.coverage.truncated }
-          : undefined
-    }
-  } catch {
-    return null
-  }
-}
-
 const groupRunKeys = new Map<string, Promise<AnalyzeGroupResult>>()
 
 /** 单群分析覆盖度（面板据此提示「窗口是否被截断」） */
@@ -141,47 +116,11 @@ export interface AnalyzeGroupResult {
   stalled?: number
 }
 
-// ── 增量水位（防重复解读/防漏读）──
-
-const wmKey = (wxid: string, group: string): string => `issue.wm:${wxid}:${group}`
-
-interface WmValue {
-  at: number
-  msgTime: number
-  /** 已消费最新消息的 sortSeq（防「迟到写入」：时间未前进但序号前进的新消息不被 skip 吞掉） */
-  sortSeq?: number
-}
-
-function readWm(wxid: string, groupUsername: string): WmValue | null {
-  const raw = getConfig(wmKey(wxid, groupUsername))
-  if (!raw) return null
-  try {
-    const p = JSON.parse(raw) as { at?: number; msgTime?: number; sortSeq?: number }
-    if (typeof p.at === 'number' && typeof p.msgTime === 'number') {
-      return {
-        at: p.at,
-        msgTime: p.msgTime,
-        sortSeq: typeof p.sortSeq === 'number' ? p.sortSeq : undefined
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return null
-}
-
-/** 保存/推进水位（msgTime 单调推进；sortSeq 取已消费最新一条） */
-function saveWm(wxid: string, groupUsername: string, wm: WmValue): void {
-  setConfig(
-    wmKey(wxid, groupUsername),
-    JSON.stringify({ at: wm.at, msgTime: wm.msgTime, sortSeq: wm.sortSeq })
-  )
-}
+// ── 增量水位与节流戳：持久化在 issue_group_state（见 db/repos/issueStateRepo.ts）──
 
 /** 清除某群分析状态(水位+节流标记):清空/重算后调用,保证下次进入走全量而不是被旧水位跳过 */
 export function clearGroupRunState(wxid: string, groupUsername: string): void {
-  setConfig(wmKey(wxid, groupUsername), '')
-  setConfig(groupStampKey(wxid, groupUsername), '')
+  clearGroupState(wxid, groupUsername)
 }
 
 /**
@@ -238,7 +177,7 @@ export async function analyzeGroupIssues(
   const reset = !!opts.reset
   const force = !!opts.force || reset // 重算模式必然全量,避免「只清不扫」
 
-  const stamp = readGroupStamp(wxid, groupUsername)
+  const stamp: GroupStamp | null = getGroupStamp(wxid, groupUsername)
   if (!force && stamp && Date.now() - stamp.at < GROUP_AUTO_REANALYZE_MS) {
     return {
       ok: true,
@@ -259,7 +198,7 @@ export async function analyzeGroupIssues(
     } catch {
       // 首发起方已返回错误
     }
-    const last = readGroupStamp(wxid, groupUsername)
+    const last = getGroupStamp(wxid, groupUsername)
     return {
       ok: true,
       skipped: true,
@@ -274,16 +213,13 @@ export async function analyzeGroupIssues(
     at: number,
     extra: { method?: 'llm' | 'rule'; count?: number; error?: string; coverage?: IssueCoverage }
   ): void => {
-    setConfig(
-      groupStampKey(wxid, groupUsername),
-      JSON.stringify({
-        at,
-        method: extra.method,
-        count: extra.count,
-        error: extra.error ?? '',
-        coverage: extra.coverage
-      })
-    )
+    saveGroupStamp(wxid, groupUsername, {
+      at,
+      method: extra.method,
+      count: extra.count,
+      error: extra.error,
+      coverage: extra.coverage
+    })
   }
 
   const run = (async (): Promise<AnalyzeGroupResult> => {
@@ -300,7 +236,7 @@ export async function analyzeGroupIssues(
       // 1) 水位判定：增量模式且水位后无新消息 → 跳过（不重复解读）。
       //    时间未超水位但 sortSeq 已前进 = 迟到写入（补录/回拨的旧时间消息）：不 skip，
       //    主区按「序号前进 或 时间前进」判定，迟到行照样能被提取；水位按两条线各自单调推进。
-      const wm = readWm(wxid, groupUsername)
+      const wm: GroupWatermark | null = getGroupWatermark(wxid, groupUsername)
       let incremental = false
       if (!force && wm) {
         const latest = peekLatestRow(wxid, groupUsername)
@@ -590,13 +526,17 @@ export async function analyzeGroupIssues(
       const rec = reconcileOpenIssues(wxid, groupUsername, msgs, team)
 
       // 6) 成功推进水位（时间与序号各自单调推进；失败不推进，下次自动补读）
-      const prevWm = readWm(wxid, groupUsername)
+      const prevWm = getGroupWatermark(wxid, groupUsername)
       const maxCreateTime = msgs.reduce((m, x) => (x.createTime > m ? x.createTime : m), 0)
       const newestRow = msgs[msgs.length - 1]
       const nextMsgTime = Math.max(maxCreateTime, prevWm?.msgTime ?? 0)
       const nextSeq = Math.max(newestRow.sortSeq, prevWm?.sortSeq ?? -1)
       if (!prevWm || nextMsgTime > prevWm.msgTime || nextSeq > (prevWm.sortSeq ?? -1)) {
-        saveWm(wxid, groupUsername, { at: Date.now(), msgTime: nextMsgTime, sortSeq: nextSeq })
+        saveGroupWatermark(wxid, groupUsername, {
+          at: Date.now(),
+          msgTime: nextMsgTime,
+          sortSeq: nextSeq
+        })
       }
       stampNow(Date.now(), { method, count: n, coverage })
       return {
@@ -653,12 +593,6 @@ export function cancelIssuesAnalysis(wxid: string): void {
 
 /** 分析并写库（带 in-flight 保护，按账号串行） */
 const runningWxids = new Map<string, Promise<void>>()
-
-/** 成功态（含 lastAt）配置键 */
-const stateConfigKey = (wxid: string): string => `issue.analyzed:${wxid}`
-
-/** 失败标记配置键：失败不写 lastAt，仅标记，避免每次进入都重复自动全量扫描 */
-const failConfigKey = (wxid: string): string => `issue.analyzeFail:${wxid}`
 
 export async function analyzeIssues(
   wxid: string
@@ -741,8 +675,8 @@ export async function analyzeIssues(
       capped,
       cancelled
     }
-    setConfig(stateConfigKey(wxid), JSON.stringify(payload))
-    setConfig(failConfigKey(wxid), '') // 成功后清除历史失败标记
+    saveAccountRunState(wxid, payload)
+    clearAccountFail(wxid) // 成功后清除历史失败标记
     const state: FeedbackAnalysisState = {
       running: false,
       wxid,
@@ -753,7 +687,7 @@ export async function analyzeIssues(
     return { ok: true, state }
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e)
-    setConfig(failConfigKey(wxid), JSON.stringify({ at: Date.now(), error }))
+    saveAccountFail(wxid, error)
     const state = readState(wxid)
     return { ok: false, error, state: { ...state, running: false } }
   } finally {
@@ -764,43 +698,24 @@ export async function analyzeIssues(
 
 /** 该群是否已有增量水位（后台调度只对已建水位的群做增量；未扫过的群由「打开群/手动」首次全量，避免冷启动风暴） */
 export function hasGroupWatermark(wxid: string, groupUsername: string): boolean {
-  return readWm(wxid, groupUsername) !== null
+  return getGroupWatermark(wxid, groupUsername) !== null
 }
 
-/** 读取最近一次分析记录（app_config 持久化；失败标记会随 state.error 返回） */
+/** 读取最近一次分析记录（issue_account_state 持久化；失败标记会随 state.error 返回） */
 export function readState(wxid: string): FeedbackAnalysisState {
   const state: FeedbackAnalysisState = { running: runningWxids.has(wxid), wxid }
-  const raw = getConfig(stateConfigKey(wxid))
-  if (raw) {
-    try {
-      const p = JSON.parse(raw) as {
-        at?: number
-        method?: string
-        groups?: number
-        groupsTotal?: number
-        capped?: boolean
-        cancelled?: boolean
-      }
-      if (p.method === 'llm' || p.method === 'rule') state.method = p.method
-      if (typeof p.at === 'number') state.lastAt = p.at
-      if (typeof p.groups === 'number') state.groups = p.groups
-      if (typeof p.groupsTotal === 'number') state.groupsTotal = p.groupsTotal
-      if (p.capped) state.groupsCapped = true
-      if (p.cancelled) state.cancelled = true
-      state.issueCount = listIssues(wxid).length
-    } catch {
-      // 配置损坏则仅返回运行态
-    }
+  const run = getAccountRunState(wxid)
+  if (run) {
+    if (run.method) state.method = run.method
+    state.lastAt = run.at
+    if (run.groups !== undefined) state.groups = run.groups
+    if (run.groupsTotal !== undefined) state.groupsTotal = run.groupsTotal
+    if (run.capped) state.groupsCapped = true
+    if (run.cancelled) state.cancelled = true
+    state.issueCount = listIssues(wxid).length
   }
-  const failRaw = getConfig(failConfigKey(wxid))
-  if (failRaw) {
-    try {
-      const f = JSON.parse(failRaw) as { error?: string }
-      if (f.error) state.error = f.error.slice(0, 200)
-    } catch {
-      state.error = '上次分析失败'
-    }
-  }
+  const fail = getAccountFail(wxid)
+  if (fail?.error) state.error = fail.error.slice(0, 200)
   return state
 }
 
@@ -819,8 +734,7 @@ export function clearFeedbackIssues(wxid: string): void {
   // 先收集该账号出现过的群,逐一清除增量水位与节流标记,避免清空后被旧水位跳过
   const groups = new Set(listIssues(wxid).map((i) => i.groupUsername))
   clearIssues(wxid)
-  setConfig(stateConfigKey(wxid), '')
-  setConfig(failConfigKey(wxid), '')
+  clearAccountState(wxid)
   for (const g of groups) clearGroupRunState(wxid, g)
 }
 

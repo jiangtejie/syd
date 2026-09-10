@@ -427,7 +427,9 @@ export function growthOverview(): import('../../../shared/growth').GrowthOvervie
     return row.n
   }
   const sum = db
-    .prepare('SELECT COALESCE(SUM(leads),0) AS leads, COALESCE(SUM(amount),0) AS amount FROM growth_metric_snapshot')
+    .prepare(
+      'SELECT COALESCE(SUM(leads),0) AS leads, COALESCE(SUM(amount),0) AS amount FROM growth_metric_snapshot'
+    )
     .get() as { leads: number; amount: number }
   const recent = db
     .prepare(

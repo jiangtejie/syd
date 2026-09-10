@@ -199,7 +199,7 @@ npm run test:similarity  # 仅议题同一性判据（保留入口）
 
 | 内容 | 位置 |
 | --- | --- |
-| 应用本地库（问题/会话索引/配置/审计） | `%APPDATA%\wechat-cs-desktop\cs.db`（SQLite，WAL） |
+| 应用本地库（问题/会话索引/配置/审计） | `%APPDATA%\wechat-cs-desktop\cs.db`（SQLite，WAL）。审计表（IM 审计 / 飞书发送 / 发送日志）按 `db.retentionDays` 保留，默认 90 天 |
 | 日志 | `%APPDATA%\wechat-cs-desktop\logs\app-YYYY-MM-DD.log`（默认保留 7 天，可配） |
 | 缓存分区 | 非系统盘优先：`<盘>:\wechat-cs-desktop\cache\{db,media,files,tmp,export,growth}`，可在设置里改 |
 | 解密后的微信明文库副本 | `<cache>\db`（源库路径 + 密钥相同则复用同名文件；可随时清理） |
@@ -227,6 +227,7 @@ npm run test:similarity  # 仅议题同一性判据（保留入口）
 | `send.agentEnabled` / `send.approve` | — | AI 参与发送 / 需人工审批 |
 | `cache.path` | 空=默认 | 缓存目录 |
 | `logs.keepDays` / `logs.ringMax` | 7 / 1500 | 日志保留天数 / 内存环形条数 |
+| `db.retentionDays` | 90 | 本地库审计表保留天数（0 = 不清理），设置 → 日志里可改 |
 
 ---
 

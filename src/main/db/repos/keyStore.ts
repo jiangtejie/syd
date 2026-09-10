@@ -51,15 +51,12 @@ export function upsertKey(profile: KeyProfile): void {
 
 export function getKey(wxid: string): KeyProfile | null {
   const row = getDb().prepare(`SELECT * FROM key_store WHERE wxid = ?`).get(wxid) as
-    | KeyRow
-    | undefined
+    KeyRow | undefined
   return row ? rowToProfile(row) : null
 }
 
 export function getKeys(): KeyProfile[] {
-  const rows = getDb()
-    .prepare(`SELECT * FROM key_store ORDER BY updated_at DESC`)
-    .all() as KeyRow[]
+  const rows = getDb().prepare(`SELECT * FROM key_store ORDER BY updated_at DESC`).all() as KeyRow[]
   return rows.map(rowToProfile)
 }
 

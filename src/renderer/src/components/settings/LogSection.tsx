@@ -38,6 +38,7 @@ export function LogSection(): React.JSX.Element {
   const [hourOnly, setHourOnly] = useState(false)
   const [keepDays, setKeepDays] = useState(7)
   const [ringMax, setRingMax] = useState(1500)
+  const [dbKeepDays, setDbKeepDays] = useState(90)
   const [loading, setLoading] = useState(false)
   const qRef = useRef('')
   const lastTsRef = useRef<number | undefined>(undefined)
@@ -49,6 +50,8 @@ export function LogSection(): React.JSX.Element {
       const m = Number(cfg['logs.ringMax'])
       if (Number.isFinite(d) && d >= 1 && d <= 30) setKeepDays(Math.floor(d))
       if (Number.isFinite(m) && m >= 100 && m <= 5000) setRingMax(Math.floor(m))
+      const db = Number(cfg['db.retentionDays'])
+      if (Number.isFinite(db) && db >= 0 && db <= 3650) setDbKeepDays(Math.floor(db))
       setAuto(cfg['logs.autoRefresh'] === '1')
     })
   }, [])
@@ -202,11 +205,15 @@ export function LogSection(): React.JSX.Element {
   const savePolicy = async (): Promise<void> => {
     const d = Math.min(Math.max(Math.floor(keepDays) || 7, 1), 30)
     const m = Math.min(Math.max(Math.floor(ringMax) || 1500, 100), 5000)
+    // 0 = 不清理本地库审计表（im_audit / feishu_send_log / send_log）
+    const db = Math.min(Math.max(Math.floor(dbKeepDays) || 0, 0), 3650)
     setKeepDays(d)
     setRingMax(m)
+    setDbKeepDays(db)
     await Promise.all([
       configApi?.set('logs.keepDays', String(d)),
-      configApi?.set('logs.ringMax', String(m))
+      configApi?.set('logs.ringMax', String(m)),
+      configApi?.set('db.retentionDays', String(db))
     ])
     const r = await logApi?.applyConfig().catch(() => null)
     toast.success(r?.ok ? '日志策略已应用' : (r?.error ?? '策略应用失败'))
@@ -307,10 +314,23 @@ export function LogSection(): React.JSX.Element {
           value={ringMax}
           onChange={(e) => setRingMax(Number(e.target.value))}
         />
+        库审计保留天数
+        <input
+          className="st-input lg-num"
+          type="number"
+          min={0}
+          max={3650}
+          step={30}
+          value={dbKeepDays}
+          onChange={(e) => setDbKeepDays(Number(e.target.value))}
+          title="本地库的审计表（IM 审计 / 飞书发送 / 发送日志）保留天数；0 = 不清理"
+        />
         <button type="button" className="st-btn ghost sm" onClick={() => void savePolicy()}>
           应用策略
         </button>
-        <span className="lg-meta">按日文件保留天数与内存尾部条数,即时生效无需重启</span>
+        <span className="lg-meta">
+          文件保留天数 / 内存尾部条数 / 库审计保留天数（0=不清理）· 即时生效无需重启
+        </span>
       </div>
 
       <div className="lg-meta">

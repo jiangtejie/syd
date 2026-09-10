@@ -16,10 +16,11 @@ import { pathToFileURL } from 'url'
 import { existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { getDb, closeDb } from './db/database'
+import { getDb, closeDb, getLastMigrateResult } from './db/database'
 import { getGrowthMediaDir, getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
 import { migrateStoredSecrets } from './services/secrets'
 import { listTables } from './db/schema'
+import { startDbHousekeeping, stopDbHousekeeping } from './db/housekeeping'
 import { getConfigBoolean } from './db/repos/config'
 import { registerKeyStoreHandlers } from './ipc/keyStoreHandlers'
 import { registerWechatHandlers } from './ipc/wechatHandlers'
@@ -336,9 +337,20 @@ if (!app.requestSingleInstanceLock()) {
     // 必须与 electron-builder appId 一致，否则 Windows 通知标题显示错误
     electronApp.setAppUserModelId('com.wechatcs.desktop')
 
-    // 初始化本地库
+    // 初始化本地库（幂等 DDL + 老库补列 + 一次性数据迁移，见 db/schema.ts）
     const tables = listTables(getDb())
     appLog.info(`db ready, tables: ${tables.join(', ')}`)
+    const mig = getLastMigrateResult()
+    if (mig) {
+      if (mig.applied.length > 0) {
+        appLog.info(`db 数据迁移 v${mig.from} → v${mig.to}: ${mig.applied.join(', ')}`)
+      } else if (mig.from !== mig.to) {
+        appLog.info(`db 版本对齐 v${mig.from} → v${mig.to}`)
+      }
+      if (mig.columnsAdded.length > 0) {
+        appLog.debug(`db 补列 ${mig.columnsAdded.length} 个: ${mig.columnsAdded.join(', ')}`)
+      }
+    }
 
     // 缓存目录规范化：迁移历史 wx-plain → db（幂等，启动时执行一次）
     migrateLegacyCacheLayout()
@@ -383,6 +395,8 @@ if (!app.requestSingleInstanceLock()) {
 
     // 渠道接收文件:启动即清一轮 + 每 6h 定时清理(防数据膨胀)
     startFileHousekeeping()
+    // 审计表保留期清理(im_audit / feishu_send_log / send_log)
+    startDbHousekeeping()
 
     // 数据上报·定时任务:恢复启用的任务调度
     startReportScheduler()
@@ -424,5 +438,6 @@ app.on('before-quit', () => {
   stopIssueScheduler()
   stopAllIm()
   stopFileHousekeeping() // 此前漏调:6 小时定时清理器从不清理
+  stopDbHousekeeping()
   stopSending()
 })

@@ -249,11 +249,21 @@ src/
 
 ## 11. 本地数据模型（cs.db）
 
-只存「索引、状态、配置、审计」，消息本体在微信库。表由 `db/schema.ts` 创建，新列走 `ensureColumn` 增量迁移。
+只存「索引、状态、配置、审计」，消息本体在微信库。
+
+schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
+
+1. **幂等形状 DDL**（`schema/base.ts` + `schema/growth.ts`）：每次启动对齐表与索引，新装库由此建成；
+2. **幂等补列**（`schema/columns.ts`）：`CREATE TABLE IF NOT EXISTS` 不会给既有表加列，缺列则 `ALTER`；
+3. **一次性数据迁移**（`schema/migrations.ts`）：改形状 / 搬数据 / 清旧表，按 `PRAGMA user_version` 门控只跑一次。
+   编号从 3 起（历史版本把 user_version 写成 2 却从未读过，老库停在 2，新迁移必须大于它）。
+   基座 DDL 与每条数据迁移各自包事务：失败即回滚并抛给启动流程，不会留下「迁移到一半」的库。
 
 | 表 | 状态 | 用途 |
 | --- | --- | --- |
-| `app_config` | 在用 | 全局 KV 配置（见 §13） |
+| `app_config` | 在用 | 全局 KV 配置（见 §13）。**只放配置，不放状态**：分析水位/节流戳曾以 `issue.wm:*` 之类的 JSON 串塞在这里，已迁至下面两张状态表 |
+| `issue_group_state` | 在用 | 每账号每群一行：增量水位（msg_time + sort_seq）+ 自动分析节流戳 + 覆盖度 |
+| `issue_account_state` | 在用 | 每账号一行：最近一次全量重析结果与失败标记 |
 | `key_store` | 在用 | 微信密钥（safeStorage 密文）+ 来源 + 状态 |
 | `send_log` | 在用 | 发送审计（结果/闭环校验/失败原因） |
 | `issue_feedback` / `issue_feedback_msg` | 在用 | 群问题议题与证据（状态/跟进/指派/复发/归档来源） |
@@ -264,8 +274,12 @@ src/
 | `feishu_send_log` | 在用 | 飞书通知审计（目标/内容/结果/幂等） |
 | `report_job` / `report_run` / `report_cursor` | 在用 | 定时上报任务、运行历史、增量游标 |
 | `growth_*` | 在用 | 营销：门店/品牌档案、内容与素材、任务、舆情评论与提及、二创与产出 |
-| `customer` / `session` / `tier_rule` / `knowledge_item` / `reply_decision` | 预留（仅建表） | 客户库、门控/转人工、条件规则、知识库、决策状态机 |
-| `skill_package` / `agent_memory` / `ai_custom_tool` / `ai_mcp_server` | 预留（仅建表） | 早期能力包/记忆/自定义工具/MCP 方案，已下线或未接入 |
+| `customer` / `session` / `tier_rule` / `knowledge_item` / `reply_decision` | 预留（**不再建表**） | 客户库、门控/转人工、条件规则、知识库、决策状态机。DDL 留在 `schema/reserved.ts`，接入时再搬进 `base.ts` —— 此前每次新建库都建出这 5 张空表，导致「库里有的表 ≠ 代码在用的表」 |
+| `phrase_book` / `skill_package` / `agent_memory` / `ai_custom_tool` / `ai_mcp_server` | 已下线 | 老库残留，由数据迁移一次性删除（`schema/reserved.ts` 的 `LEGACY_TABLES`） |
+
+审计类表（`im_audit` / `feishu_send_log` / `send_log`）按 `created_at` 保留 `db.retentionDays` 天（默认 90，0=不清理），
+由 `db/housekeeping.ts` 启动即清一轮 + 每 6h 一次；三张表都补了 `created_at` 索引（此前零索引）。
+证据表另加唯一索引 `(issue_id, seq)`，防止重复追加导致 `msgCount` 虚高。
 
 ---
 
@@ -322,10 +336,13 @@ src/
 npm run typecheck     # tsc --noEmit（主进程 + 渲染端）
 npm run lint          # ESLint（Prettier 规则内含）
 npm run test:feedback # 跟进判定「回复归属」+ 议题同一性判据 回归自检（真实数据标定）
+npm run test:schema   # schema 迁移自检：合成老库上跑三条数据迁移 + 幂等性（不碰真实库）
 npm run build         # typecheck + electron-vite 三端构建
 ```
 
 - **纯函数优先**：判据、归属、指标聚合都做成无 IO 的纯函数（`issueSimilarity` / `replyAttribution` / `shared/monitorMetrics`），既能两端复用，也能用真实样本做回归断言。
+- **schema 三层分离**（见 §11）：幂等形状 DDL / 幂等补列 / 按 `user_version` 门控的一次性迁移，各自包事务 —— 事故教训是老库 `user_version` 早被写成 2 却不读版本号，新迁移差点被整段跳过（第一次在真实库副本上演练才发现）。
+- **状态进状态表，配置进 app_config**：水位、节流戳这类会随群增长的运行态不放 KV（`app_config` 里塞状态会带来「不可查询 + 用空值当删除 + 群删了键还在」三重问题）。
 - **阈值留证据**：判据阈值、窗口、上限写成模块级常量并注明标定依据；调参先看自检与线上样本。
 - **事故驱动的加固**（都已沉淀为代码约束）：桥接口唯一真源（防类型漂移）、渲染端降级 + 版本提示（防主进程/渲染错位）、确认框「单回调」契约（`ConfirmDialog` 只回传一次用户选择，宿主 `onResolve` 负责 close —— 防「确认」被先到的 `onClose` 结算成「取消」，那会让所有确认类按钮点了没反应；合并重复的页内确认条是同一事故的兜底）、`skipEnrich` + 批量 enrich（防逐页开库）。
 
@@ -333,7 +350,10 @@ npm run build         # typecheck + electron-vite 三端构建
 
 ## 16. 待完善与已知边界
 
-- **预留表未接入**：`customer`（客户档案，当前客户页由会话+问题派生）、`session`（门控/转人工）、`tier_rule`、`knowledge_item`、`reply_decision`，以及已下线的 `skill_package`/`agent_memory`/`ai_custom_tool`/`ai_mcp_server`。
+- **预留表未接入**：`customer`（客户档案，当前客户页由会话+问题派生）、`session`（门控/转人工）、`tier_rule`、`knowledge_item`、`reply_decision` —— DDL 在 `schema/reserved.ts`，**不再建表**，接入功能时搬回 `base.ts`。
+- **密钥存储两种策略**：微信 DB 密钥走 `key_store` + safeStorage，图片解密密钥（`img:<wxid>:aesKey/xorKey`）仍是 `app_config` 明文，敏感度不同但应统一。
+- **growth 域无外键/级联**：父子表（素材/拆解/产出/发布结果）目前靠应用层保证，删除路径需自行清理。
+- **约束偏松**：核心表 `NOT NULL` 覆盖率低（靠代码纪律保证），布尔/枚举列无 `CHECK`；`AUTOINCREMENT` 用法不统一（growth 域与审计表用，核心表不用）。
 - **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入。
 - **语音转写**：本地不做 ASR，语音以 `[语音]` 占位参与分析；需要转写走飞书妙记。
 - **HEVC 原图**：纯 HEVC 依赖外部 ffmpeg（设置里配路径）。

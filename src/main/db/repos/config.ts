@@ -3,8 +3,7 @@ import { getDb } from '../database'
 /** app_config 通用 KV 读写（门控阈值 / 频控 / 时段窗口 / 自动总开关） */
 export function getConfig(key: string): string | null {
   const row = getDb().prepare(`SELECT value FROM app_config WHERE key = ?`).get(key) as
-    | { value: string }
-    | undefined
+    { value: string } | undefined
   return row ? row.value : null
 }
 

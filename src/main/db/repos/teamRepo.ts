@@ -45,11 +45,7 @@ export function invalidateTeamCache(): void {
   cache = null
 }
 
-export function saveTeamMember(
-  accountWxid: string,
-  username: string,
-  label = ''
-): TeamMemberInfo {
+export function saveTeamMember(accountWxid: string, username: string, label = ''): TeamMemberInfo {
   const u = (username || '').trim()
   if (!u || !accountWxid) throw new Error('缺少账号或联系人标识')
   const l = (label || '').trim()
