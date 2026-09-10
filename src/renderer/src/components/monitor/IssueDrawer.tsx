@@ -1,4 +1,5 @@
 import { IssueActions } from './IssueBits'
+import { TeamMarkButton } from '../TeamMarkButton'
 import { statusChip } from '../../lib/monitorChips'
 import { ageText, fmtTimeShort } from '../../../../shared/monitorMetrics'
 import type {
@@ -18,6 +19,9 @@ export function IssueDrawer({
   detailLoading,
   members,
   ownerName,
+  wxid,
+  teamUsernames,
+  onMarkTeam,
   onClose,
   onAssign,
   onSetStatus,
@@ -29,6 +33,11 @@ export function IssueDrawer({
   detailLoading: boolean
   members: TeamMemberInfo[]
   ownerName: (username?: string) => string
+  /** 当前微信账号（标记团队客服要用） */
+  wxid: string
+  /** 已标记的团队客服 username（用于判断是否还要显示「标记同事」） */
+  teamUsernames: string[]
+  onMarkTeam?: () => void
   onClose: () => void
   onAssign: (id: number, username: string) => void
   onSetStatus: (id: number, status: FeedbackIssueStatus) => void
@@ -131,6 +140,15 @@ export function IssueDrawer({
                           ? `团队 · ${m.senderName}`
                           : m.senderName}
                     </b>
+                    {!m.isSend && !m.senderIsTeam && (
+                      <TeamMarkButton
+                        wxid={wxid}
+                        username={m.senderUsername}
+                        displayName={m.senderName}
+                        marked={!!m.senderUsername && teamUsernames.includes(m.senderUsername)}
+                        onMarked={onMarkTeam}
+                      />
+                    )}
                     <time>{fmtTimeShort(m.time)}</time>
                     {i === 0 && <em className="mon-tl-mark">首现</em>}
                     {i === detail.related.length - 1 && detail.related.length > 1 && (

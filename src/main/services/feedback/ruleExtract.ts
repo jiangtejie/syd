@@ -3,14 +3,8 @@
  */
 import type { NewIssue } from '../../db/repos/issueRepo'
 import type { ChatMessage, FeedbackIssueSeverity, FeedbackIssueType } from '../../../shared/types'
-import {
-  hasStaffReplyAfter,
-  isRuleText,
-  isTeamMsg,
-  msgToSummaryMsg,
-  msgToText,
-  senderLabel
-} from './shared'
+import { attributeStaffReplies, replyForAnchor } from './replyAttribution'
+import { isRuleText, isTeamMsg, msgToSummaryMsg, msgToText, senderLabel } from './shared'
 
 /** 本地兜底规则：命中即归类，文本仅在客户消息上匹配 */
 export const RULE_KEYWORDS: Array<{ type: FeedbackIssueType; keywords: string[] }> = [
@@ -96,6 +90,8 @@ export function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] 
     m: ChatMessage
     type: string
   }
+  // 归属表：每条我方/团队消息归属给最近一条客户消息的发送人（与 reconcile 同一套判定）
+  const replies = attributeStaffReplies(msgs, team)
   const hits: RuleHit[] = []
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i]
@@ -128,8 +124,9 @@ export function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] 
     const first = c[0].m
     const label = senderLabel(first, team)
     const text0 = msgToText(first)
-    // 议题内任一句后有客服/团队介入（至下一位客户开口前）→ 跟进中
-    const replied = c.some((h) => hasStaffReplyAfter(msgs, h.i, team))
+    // 议题内我方/团队有过归属回复 → 跟进中（客户连发多条后再回复也算）
+    const firstSender = first.isSend ? undefined : (first.senderUsername ?? undefined)
+    const replied = replyForAnchor(replies, firstSender, first.createTime) !== null
     const evidMsgs = c.map((h) => h.m).slice(-RULE_EVIDENCE_CAP)
     const n = c.length
     const title =
@@ -181,7 +178,7 @@ export function ruleExtract(msgs: ChatMessage[], team: Set<string>): NewIssue[] 
   if (
     tail &&
     !clusterAnchorTimes.has(tail.createTime) &&
-    !hasStaffReplyAfter(msgs, tailIdx, team)
+    replyForAnchor(replies, tail.senderUsername ?? undefined, tail.createTime) === null
   ) {
     issues.push({
       key: `unreplied:${tail.createTime}`,

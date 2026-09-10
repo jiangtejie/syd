@@ -6,7 +6,13 @@ import { getConfigNumber } from '../../db/repos/config'
 import { listOpenIssuesByGroup, setIssueFollowUp, setIssueStatus } from '../../db/repos/issueRepo'
 import { getTeamUsernamesCached } from '../../db/repos/teamRepo'
 import type { ChatMessage } from '../../../shared/types'
-import { INCR_TAIL_MS, readGroupMessages, staffReplyAt } from './shared'
+import {
+  attributeStaffReplies,
+  lastCustomerMessageAt,
+  replyForAnchor,
+  type StaffReply
+} from './replyAttribution'
+import { INCR_TAIL_MS, readGroupMessages } from './shared'
 
 /** 自动闭环回溯上限：锚点早于该时限的问题不再回溯读取，直接视为超期 */
 export const AUTO_CLOSE_MAX_AGE_MS = 14 * 24 * 3600_000
@@ -29,37 +35,25 @@ export interface ReconcileResult {
 }
 
 /**
- * 议题级「客户静默」判定：客服最后一条回复之后，**本议题的客户**再没说过话，且已静默超阈值。
- * 返回可收尾的时刻（客服最后一条相关消息时间），null = 不可收尾。
- * - 只认本议题客户的发言：群里其他人聊别的不会阻止收尾（否则活跃群永远收不了尾）；
- * - 客户最后发言在我方之后（客户追问没人应）→ 不可收尾，那是「待处理」不是「已闭环」；
- * - 锚点缺发送人身份时退化为保守口径（任何客户发言都算）。
+ * 议题级「客户静默」判定：本议题客户的最后一条回复之后，该客户再没说过话，且已静默超阈值。
+ * 返回可收尾的时刻（该客户最后一条被我方回复的时间），null = 不可收尾。
+ * - 只认「归属到本议题客户」的回复：群里其他人聊别的既不阻止收尾，也不算这条议题的跟进；
+ * - 客户最后发言晚于该回复（客户追问没人应）→ 不可收尾，那是「待处理」不是「已闭环」；
+ * - 锚点缺发送人身份（例如模型把一条系统/我方消息当最早证据）→ 不做静默收尾，留给人工。
  */
 export function silentCloseAt(
+  replies: Map<string, StaffReply>,
   msgs: ChatMessage[],
-  anchorIdx: number,
-  anchorSender: string | undefined,
-  team: Set<string>,
+  anchor: { at: number; sender?: string },
   silentMs: number,
   now: number
 ): number | null {
-  if (silentMs <= 0) return null
-  let lastStaffIdx = -1
-  let lastStaffAt = -1
-  let lastCustIdx = -1
-  for (let j = anchorIdx + 1; j < msgs.length; j++) {
-    const m = msgs[j]
-    if (m.isSend || (!!m.senderUsername && team.has(m.senderUsername))) {
-      lastStaffIdx = j
-      lastStaffAt = m.createTime
-      continue
-    }
-    if (!m.senderUsername) continue
-    if (!anchorSender || m.senderUsername === anchorSender) lastCustIdx = j
-  }
-  if (lastStaffIdx < 0) return null
-  if (lastCustIdx > lastStaffIdx) return null
-  return now - lastStaffAt >= silentMs ? lastStaffAt : null
+  if (silentMs <= 0 || !anchor.sender) return null
+  const reply = replyForAnchor(replies, anchor.sender, anchor.at)
+  if (!reply) return null
+  const lastCustAt = lastCustomerMessageAt(msgs, anchor.at, anchor.sender)
+  if (lastCustAt > reply.at) return null
+  return now - reply.at >= silentMs ? reply.at : null
 }
 
 /**
@@ -70,8 +64,11 @@ export function silentCloseAt(
  * 而 LLM 提取的问题也没有任何自动收尾通道（只能人工点）。这里用消息流事实兜住。
  *
  * - 锚点定位：读取窗口内第一个 createTime ≥ occurAt-2s 的消息；锚点早于读取窗口 → 本轮不判定；
- * - 回合内出现我方/团队消息（下一条客户消息之前）→ followUp=1 并记录回复时刻；
- * - 回合内无我方消息 → followUp=0（客户在等回复）；
+ * - 回复判定用**归属**而非回合（见 replyAttribution）：每条我方/团队消息归属给最近一条客户消息的发送人，
+ *   只认「本议题客户名下、且不早于锚点」的回复 → followUp=1 并记录回复时刻与回复人；
+ *   客户连发多条（补图/追问/@客服）后再回复也能正确识别（旧回合规则会漏掉，实测 issue 82）；
+ * - 锚点本身就是我方消息（模型把客服回复当最早证据）→ 这条议题已在处理中，直接 followUp=1；
+ * - 无归属回复 → followUp=0（客户在等回复）；
  * - 静默收尾：已回复 + 本议题客户静默超 monitor.autoCloseHours(默认 72h，0=关闭) → done(auto)；
  * - 锚点早于回溯上限（14 天）仍无法判定 → stalled(auto)（不打扰，也不谎报已回复）。
  * LLM 只负责语义闭环（客户确认/已解决/无需处理）。
@@ -88,6 +85,8 @@ export function reconcileOpenIssues(
   const windowStart = msgs[0].createTime
   const now = Date.now()
   const silentMs = getConfigNumber('monitor.autoCloseHours', AUTO_CLOSE_SILENT_HOURS) * 3600_000
+  // 全窗口一次扫描出「客户 → 最后一条被回复」的归属表（同群多议题共用，避免逐条重复扫）
+  const replies = attributeStaffReplies(msgs, team)
   for (const p of pending) {
     // 锚点早于读取窗口：本轮无从判定（既不谎报已回复，也不误清跟进中）
     if (p.occurAt < windowStart - ANCHOR_TOLERANCE_MS) {
@@ -106,7 +105,20 @@ export function reconcileOpenIssues(
       }
     }
     if (anchorIdx < 0) continue
-    const reply = staffReplyAt(msgs, anchorIdx, team)
+    const anchorMsg = msgs[anchorIdx]
+    const anchorIsStaff =
+      anchorMsg.isSend || (!!anchorMsg.senderUsername && team.has(anchorMsg.senderUsername))
+    const anchorSender = anchorIsStaff ? undefined : (anchorMsg.senderUsername ?? undefined)
+    // 锚点本身就是我方/团队消息（模型把客服回复当成了最早证据）→ 这条议题已经在被处理
+    if (anchorIsStaff) {
+      if (!p.followUp || p.followUpAt !== anchorMsg.createTime) {
+        setIssueFollowUp(p.id, true, anchorMsg.createTime)
+        out.changed++
+      }
+      out.following++
+      continue
+    }
+    const reply = replyForAnchor(replies, anchorSender, anchorMsg.createTime)
     if (reply === null) {
       if (p.followUp || p.followUpAt !== undefined || p.lastReplyBy !== undefined) {
         setIssueFollowUp(p.id, false)
@@ -114,18 +126,22 @@ export function reconcileOpenIssues(
       }
       continue
     }
-    const replyAt = reply.at
-    // 静默收尾：本议题客户在客服回复后再无声音且超过阈值 → 自然结束（auto 标记，可重新打开复核）
-    const anchorMsg = msgs[anchorIdx]
-    const anchorSender = anchorMsg.isSend ? undefined : (anchorMsg.senderUsername ?? undefined)
-    if (silentCloseAt(msgs, anchorIdx, anchorSender, team, silentMs, now) !== null) {
+    // 静默收尾：本议题客户在该回复后再无声音且超过阈值 → 自然结束（auto 标记，可重新打开复核）
+    const closeAt = silentCloseAt(
+      replies,
+      msgs,
+      { at: anchorMsg.createTime, sender: anchorSender },
+      silentMs,
+      now
+    )
+    if (closeAt !== null) {
       setIssueStatus(p.id, 'done', true)
       out.closed++
       out.changed++
       continue
     }
-    if (!p.followUp || p.followUpAt !== replyAt || p.lastReplyBy !== reply.by) {
-      setIssueFollowUp(p.id, true, replyAt, reply.by)
+    if (!p.followUp || p.followUpAt !== reply.at || p.lastReplyBy !== reply.by) {
+      setIssueFollowUp(p.id, true, reply.at, reply.by)
       out.changed++
     }
     out.following++
@@ -150,7 +166,8 @@ export function reconcileGroupFollowups(wxid: string, groupUsername: string): Re
     readStart = Math.min(readStart, Math.max(p.occurAt - 1, oldestAllowed))
   }
   readStart = Math.max(readStart, oldestAllowed)
-  const { msgs } = readGroupMessages(wxid, groupUsername, readStart)
+  // 规则判定只用 senderUsername/isSend/时间，用不到昵称头像 → 跳过 enrich
+  const { msgs } = readGroupMessages(wxid, groupUsername, readStart, undefined, { enrich: false })
   if (msgs.length === 0) return empty
   return reconcileOpenIssues(wxid, groupUsername, msgs, getTeamUsernamesCached(wxid))
 }

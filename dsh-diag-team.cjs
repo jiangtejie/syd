@@ -1,0 +1,8 @@
+const Database = require('better-sqlite3-multiple-ciphers')
+const path = require('path')
+const db = new Database(path.join(process.env.APPDATA || '', 'wechat-cs-desktop', 'cs.db'), { readonly: true, fileMustExist: true })
+const team = db.prepare('SELECT account_wxid, username, label FROM team_member').all()
+const st = db.prepare("SELECT status, COUNT(*) n, SUM(follow_up) fu, SUM(CASE WHEN last_reply_by IS NOT NULL THEN 1 ELSE 0 END) lrb FROM issue_feedback GROUP BY status").all()
+const open = db.prepare("SELECT id, group_name, type, title, occur_at, follow_up, follow_up_at, last_reply_by, method, customers FROM issue_feedback WHERE status='open' ORDER BY occur_at DESC LIMIT 12").all()
+db.close()
+console.log(JSON.stringify({ teamMarked: team, byStatus: st, recentOpen: open }, null, 1))

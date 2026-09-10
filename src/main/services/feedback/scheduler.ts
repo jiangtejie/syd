@@ -35,8 +35,12 @@ const issueLog = createLogger('issue')
 const SWEEP_MS = 60_000
 /** 冷启动补扫窗口（自然日）：与工作台默认窗口一致，新群首扫不做全量 7 天 */
 const BOOTSTRAP_DAYS = 2
-/** 收尾巡检周期（按 tick 计数，60s × 10 = 10 分钟；静默收尾以小时计，无需更密） */
-const SETTLE_EVERY_TICKS = 10
+/**
+ * 收尾巡检周期（按 tick 计数）：60s × 2 = 每 2 分钟。
+ * 跟进状态要「有人回复就尽快变」，而增量提取那条路有 2 分钟节流、且无新消息时直接跳过，
+ * 收尾巡检是零 LLM 的纯读+判定（只跑有 open 问题的群），所以把它加密到 2 分钟兜住时效。
+ */
+const SETTLE_EVERY_TICKS = 2
 const EVENT_MIN_GAP_MS = 15_000
 const LLM_PACE_MS = 600
 const CACHE_TTL_MS = 5 * 60_000

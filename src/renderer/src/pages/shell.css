@@ -422,3 +422,21 @@
 .confirm-primary.is-danger:hover {
   background: var(--danger-hover);
 }
+
+/* 鈹€鈹€ 銆屾爣璁板悓浜嬨€嶅氨鍦板叆鍙ｏ紙璇佹嵁鏃堕棿绾块噷锛?鈹€鈹€ */
+.tm-mark {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px dashed var(--brand);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--brand);
+  font-size: 10px;
+  line-height: 1.6;
+  cursor: pointer;
+  flex: none;
+}
+
+.tm-mark:hover {
+  background: rgba(7, 193, 96, 0.1);
+}

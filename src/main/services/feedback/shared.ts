@@ -100,35 +100,6 @@ export function isRuleText(m: ChatMessage): boolean {
   return m.localType === 1
 }
 
-/**
- * 会话语义「已跟进」判定：消息 idx 之后、下一条客户（非我方/非团队）消息之前，
- * 是否存在我方或团队客服消息。不再使用固定 30 分钟窗（隔夜/迟回复不误报）。
- * 返回该回复的时间（跟进超时计时起点）与**回复人**（团队客服 username；我本人回复时为 undefined），
- * null = 本回合无我方回复。回复人可用于未指派时给出默认跟进人建议。
- */
-export function staffReplyAt(
-  msgs: ChatMessage[],
-  idx: number,
-  team: Set<string>
-): { at: number; by?: string } | null {
-  for (let j = idx + 1; j < msgs.length; j++) {
-    const x = msgs[j]
-    if (x.isSend) return { at: x.createTime }
-    if (x.senderUsername && team.has(x.senderUsername)) {
-      return { at: x.createTime, by: x.senderUsername }
-    }
-    // 系统消息等非客户对象不影响回合判定；遇到下一条客户消息仍未回复 → 视为未跟进
-    if (!x.senderUsername) continue
-    return null
-  }
-  return null
-}
-
-/** 会话语义「已跟进」布尔版（规则聚类用） */
-export function hasStaffReplyAfter(msgs: ChatMessage[], idx: number, team: Set<string>): boolean {
-  return staffReplyAt(msgs, idx, team) !== null
-}
-
 /** 消息身份（时间+本地序号）：同一毫秒的多条消息不会被时间戳去重误合并 */
 export function msgIdentity(m: ChatMessage): string {
   return `${m.createTime}:${m.localId}`
@@ -235,7 +206,11 @@ export function readGroupMessages(
   wxid: string,
   groupUsername: string,
   windowStartMs: number,
-  stopSeq?: number
+  stopSeq?: number,
+  opts: {
+    /** 只做规则判定（跟进/收尾）时用不到昵称头像 → 跳过联系库 enrich，省一次开库 */
+    enrich?: boolean
+  } = {}
 ): ReadResult {
   const all: ChatMessage[] = []
   let cursor: Parameters<typeof wxService.getMessages>[3] = undefined
@@ -257,7 +232,9 @@ export function readGroupMessages(
   // 限容：超限时保留最新（序号升序 => 截尾部）
   const truncated = all.length > MAX_GROUP_MSGS
   const msgs = truncated ? all.slice(all.length - MAX_GROUP_MSGS) : all
-  // 统一补发送人昵称/团队标记：一次开联系人库，替代「每页 enrich 一次」
+  // 统一补发送人昵称/团队标记：一次开联系人库，替代「每页 enrich 一次」；
+  // 只做规则判定的调用方可以直接跳过（判定只看 senderUsername/isSend/时间）
+  if (opts.enrich === false) return { msgs, truncated }
   return { msgs: wxService.enrichMessages(wxid, groupUsername, msgs), truncated }
 }
 

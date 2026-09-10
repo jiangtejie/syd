@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { confirmAsk } from '../../stores/confirmDialog'
 import { useTeamNames } from '../../lib/teamNames'
+import { TeamMarkButton } from '../TeamMarkButton'
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
@@ -135,13 +136,19 @@ function IssueTimeline({
   issue,
   onLocate,
   members,
-  nameOf
+  nameOf,
+  wxid,
+  teamUsernames,
+  onMarkTeam
 }: {
   detail: FeedbackIssueDetail | null
   issue: FeedbackIssue
   onLocate: (ts: number) => void
   members: TeamMemberInfo[]
   nameOf: (u?: string) => string
+  wxid: string
+  teamUsernames: string[]
+  onMarkTeam: () => void
 }): React.JSX.Element {
   const msgs = detail?.related ?? []
   const cur = detail ?? issue
@@ -167,6 +174,15 @@ function IssueTimeline({
                       ? `团队 · ${m.senderName}`
                       : m.senderName}
                 </b>
+                {!m.isSend && !m.senderIsTeam && (
+                  <TeamMarkButton
+                    wxid={wxid}
+                    username={m.senderUsername}
+                    displayName={m.senderName}
+                    marked={!!m.senderUsername && teamUsernames.includes(m.senderUsername)}
+                    onMarked={onMarkTeam}
+                  />
+                )}
                 <time>{fmtTime(m.time)}</time>
                 {i === 0 && <em className="gip-tag-mark">首现</em>}
                 {i === msgs.length - 1 && msgs.length > 1 && <em className="gip-tag-mark">最新</em>}
@@ -219,7 +235,9 @@ function GroupIssuesPanel(): React.JSX.Element {
   const activeSessionId = useWorkbenchStore((s) => s.activeSessionId)
   const wxid = useWorkbenchStore((s) => s.wxid)
   const assignIssue = useWorkbenchStore((s) => s.assignGroupIssue)
-  const { members, nameOf } = useTeamNames(wxid)
+  const [teamReloadKey, setTeamReloadKey] = useState(0)
+  const { members, nameOf } = useTeamNames(wxid, teamReloadKey)
+  const teamUsernames = useMemo(() => members.map((m) => m.username), [members])
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [collapsed, setCollapsed] = useState<{ history: boolean; ignored: boolean }>({
     history: true,
@@ -410,6 +428,9 @@ function GroupIssuesPanel(): React.JSX.Element {
                     onLocate={locate}
                     members={members}
                     nameOf={nameOf}
+                    wxid={wxid ?? ''}
+                    teamUsernames={teamUsernames}
+                    onMarkTeam={() => setTeamReloadKey((k) => k + 1)}
                   />
                 )}
               </div>

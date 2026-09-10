@@ -93,7 +93,9 @@ function MonitorPage(): React.JSX.Element {
   const [dupPlan, setDupPlan] = useState<DuplicatePlanView | null>(null)
   const [archiveAsk, setArchiveAsk] = useState(false)
   // 跟进人：团队成员 + 展示名解析（与聊天右侧面板共用同一个 hook，口径一致）
-  const { members, nameOf: ownerName } = useTeamNames(connected ? wxid : null)
+  const [teamReloadKey, setTeamReloadKey] = useState(0)
+  const { members, nameOf: ownerName } = useTeamNames(connected ? wxid : null, teamReloadKey)
+  const teamUsernames = useMemo(() => members.map((m) => m.username), [members])
   const [ownerFilter, setOwnerFilter] = useState('')
   const [sevFilter, setSevFilter] = useState<'all' | FeedbackIssueSeverity>('all')
 
@@ -939,6 +941,9 @@ function MonitorPage(): React.JSX.Element {
               detailLoading={detailLoading}
               members={members}
               ownerName={ownerName}
+              wxid={wxid ?? ''}
+              teamUsernames={teamUsernames}
+              onMarkTeam={() => setTeamReloadKey((k) => k + 1)}
               onClose={() => {
                 setActive(null)
                 setDetail(null)
