@@ -3,7 +3,6 @@ import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
 import EChart from '../components/EChart'
-import type { EChartsOption } from 'echarts'
 import {
   computeMonitorData,
   fmtTimeShort,
@@ -11,6 +10,16 @@ import {
   type MonitorData
 } from '../../../shared/monitorMetrics'
 import { useTeamNames } from '../lib/teamNames'
+import { PlanBanner, type DuplicatePlanView } from '../components/monitor/PlanBanner'
+import { KpiCard } from '../components/monitor/IssueBits'
+import { statusChip } from '../lib/monitorChips'
+import { IssueDrawer } from '../components/monitor/IssueDrawer'
+import {
+  buildAgeOption,
+  buildGroupOption,
+  buildTrendOption,
+  buildTypeOption
+} from './monitorCharts'
 import type {
   FeedbackIssue,
   FeedbackIssueDetail,
@@ -35,96 +44,6 @@ const RANGE_OPTIONS = [7, 14, 30]
 const ROW_LIMIT = 1000
 /** 问题列表每页条数选项（默认 15） */
 const PAGE_SIZES = [15, 30, 50, 100]
-
-const STATUS_CHIP: Record<FeedbackIssueStatus, { label: string; cls: string }> = {
-  open: { label: '待处理', cls: 'is-open' },
-  done: { label: '已解决', cls: 'is-done' },
-  stalled: { label: '已搁置', cls: 'is-stalled' },
-  archived: { label: '已归档', cls: 'is-archived' }
-}
-
-function statusChip(it: FeedbackIssue): { label: string; cls: string } {
-  // 疑似桶优先展示（不占正式口径文案）
-  if (it.needConfirm && it.status === 'open') {
-    return { label: '疑似', cls: 'is-doubt' }
-  }
-  if (it.status === 'open') {
-    if (it.followUp) {
-      return {
-        label: it.followUpOverdue ? '跟进超时' : '跟进中',
-        cls: it.followUpOverdue ? 'is-overdue' : 'is-follow'
-      }
-    }
-    return { label: '待处理', cls: 'is-open' }
-  }
-  if (it.status === 'done' && it.autoDone) {
-    return { label: '自动解决', cls: 'is-auto' }
-  }
-  return STATUS_CHIP[it.status]
-}
-
-const BRAND = '#07c160'
-const PALETTE = ['#fa5151', '#f5a623', '#07c160', '#3c82f6', '#8e5cf0', '#00b8a9', '#c0c4cc']
-
-function KpiCard({
-  label,
-  value,
-  hint,
-  tone
-}: {
-  label: string
-  value: string | number
-  hint?: string
-  tone?: 'danger' | 'warn' | 'ok'
-}): React.JSX.Element {
-  return (
-    <div className={`mon-kpi${tone ? ` tone-${tone}` : ''}`}>
-      <div className="mon-kpi-label">{label}</div>
-      <div className="mon-kpi-value">{value}</div>
-      {hint && <div className="mon-kpi-hint">{hint}</div>}
-    </div>
-  )
-}
-
-/** 单条问题状态处置按钮组 */
-function IssueActions({
-  issue,
-  onSet
-}: {
-  issue: FeedbackIssue | FeedbackIssueDetail
-  onSet: (status: FeedbackIssueStatus) => void
-}): React.JSX.Element {
-  const st = issue.status
-  return (
-    <div className="mon-actions">
-      {(st === 'open' || st === 'stalled') && (
-        <button type="button" className="mon-btn primary" onClick={() => onSet('done')}>
-          ✓ 标记已解决
-        </button>
-      )}
-      {st === 'open' && (
-        <>
-          <button type="button" className="mon-btn" onClick={() => onSet('stalled')}>
-            暂搁置
-          </button>
-          <button
-            type="button"
-            className="mon-btn"
-            onClick={() => onSet('archived')}
-            title="误报/无需处理,归档后不再提醒"
-          >
-            不是问题
-          </button>
-        </>
-      )}
-      {st !== 'open' && (
-        <button type="button" className="mon-btn" onClick={() => onSet('open')}>
-          ↺ 重新打开
-        </button>
-      )}
-    </div>
-  )
-}
 
 function MonitorPage(): React.JSX.Element {
   const wxid = useWorkbenchStore((s) => s.wxid)
@@ -169,30 +88,8 @@ function MonitorPage(): React.JSX.Element {
     total: number
     current?: string
   } | null>(null)
-  /**
-   * 维护类操作的**页内**方案/确认：
-   * 不再走全局确认弹窗 —— 弹窗什么时候没渲染出来，用户看到的就是「点了没反应」；
-   * 方案直接铺在工具栏下方（确认按钮就在手边），看得见、点得到、可取消。
-   */
-  const [dupPlan, setDupPlan] = useState<{
-    clusters: number
-    merged: number
-    plan: Array<{
-      keepId: number
-      keepTitle: string
-      dropIds: number[]
-      dropTitles: string[]
-      groupName: string
-      reasons: string[]
-      strong?: boolean
-      skippedAuto?: boolean
-    }>
-  } | null>(null)
+  const [dupPlan, setDupPlan] = useState<DuplicatePlanView | null>(null)
   const [archiveAsk, setArchiveAsk] = useState(false)
-  const bannerRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (dupPlan || archiveAsk) bannerRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [dupPlan, archiveAsk])
   // 跟进人：团队成员 + 展示名解析（与聊天右侧面板共用同一个 hook，口径一致）
   const { members, nameOf: ownerName } = useTeamNames(connected ? wxid : null)
   const [ownerFilter, setOwnerFilter] = useState('')
@@ -604,126 +501,10 @@ function MonitorPage(): React.JSX.Element {
     toast.success('已清空全部问题记录')
   }
   // 图表配置
-  const trendOption = useMemo<EChartsOption>(() => {
-    return {
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['新增', '解决'], top: 0, right: 0, textStyle: { fontSize: 11 } },
-      grid: { left: 8, right: 8, top: 26, bottom: 0, containLabel: true },
-      xAxis: {
-        type: 'category',
-        data: metrics.trend.map((t) => t.day),
-        axisLabel: { fontSize: 10 }
-      },
-      yAxis: { type: 'value', minInterval: 1, axisLabel: { fontSize: 10 } },
-      series: [
-        {
-          name: '新增',
-          type: 'bar',
-          data: metrics.trend.map((t) => t.created),
-          itemStyle: { color: '#fa8a8a' },
-          barMaxWidth: 14
-        },
-        {
-          name: '解决',
-          type: 'line',
-          data: metrics.trend.map((t) => t.resolved),
-          itemStyle: { color: BRAND },
-          lineStyle: { width: 2 }
-        }
-      ]
-    }
-  }, [metrics])
-
-  const typeOption = useMemo<EChartsOption>(() => {
-    const total = metrics.typeOpen.reduce((n, x) => n + x.value, 0)
-    return {
-      tooltip: { trigger: 'item', formatter: '{b}: {c}（{d}%）' },
-      legend: { bottom: 0, textStyle: { fontSize: 10 } },
-      series: [
-        {
-          type: 'pie',
-          radius: ['42%', '66%'],
-          center: ['50%', '44%'],
-          avoidLabelOverlap: true,
-          itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 1 },
-          label: { show: false },
-          data: metrics.typeOpen.map((x, i) => ({
-            name: x.name,
-            value: x.value,
-            itemStyle: { color: PALETTE[i % PALETTE.length] }
-          }))
-        }
-      ],
-      graphic: [
-        {
-          type: 'text',
-          left: 'center',
-          top: '34%',
-          style: {
-            text: String(total),
-            fontSize: 20,
-            fontWeight: 700,
-            fill: '#1f2329',
-            textAlign: 'center'
-          },
-          z: 10
-        },
-        {
-          type: 'text',
-          left: 'center',
-          top: '52%',
-          style: { text: '待处理', fontSize: 10, fill: '#999', textAlign: 'center' },
-          z: 10
-        }
-      ]
-    }
-  }, [metrics])
-
-  const groupOption = useMemo<EChartsOption>(() => {
-    const rows = [...metrics.groupTop].reverse()
-    return {
-      tooltip: { trigger: 'item' },
-      grid: { left: 8, right: 30, top: 4, bottom: 0, containLabel: true },
-      xAxis: { type: 'value', minInterval: 1, axisLabel: { fontSize: 10 } },
-      yAxis: {
-        type: 'category',
-        data: rows.map((g) => (g.name.length > 14 ? g.name.slice(0, 14) + '…' : g.name)),
-        axisLabel: { fontSize: 10 }
-      },
-      series: [
-        {
-          type: 'bar',
-          data: rows.map((g, i) => ({
-            value: g.value,
-            itemStyle: { color: i === rows.length - 1 ? BRAND : '#7fd8ad' }
-          })),
-          barMaxWidth: 12
-        }
-      ]
-    }
-  }, [metrics])
-
-  const ageOption = useMemo<EChartsOption>(() => {
-    const colors = ['#3c82f6', '#f5a623', '#f08a24', '#fa5151']
-    return {
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      grid: { left: 8, right: 8, top: 20, bottom: 0, containLabel: true },
-      xAxis: {
-        type: 'category',
-        data: metrics.age.map((a) => a.label),
-        axisLabel: { fontSize: 10 }
-      },
-      yAxis: { type: 'value', minInterval: 1, axisLabel: { fontSize: 10 } },
-      series: [
-        {
-          type: 'bar',
-          data: metrics.age.map((a, i) => ({ value: a.value, itemStyle: { color: colors[i] } })),
-          barMaxWidth: 34,
-          label: { show: true, position: 'top', fontSize: 10 }
-        }
-      ]
-    }
-  }, [metrics])
+  const trendOption = useMemo(() => buildTrendOption(metrics), [metrics])
+  const typeOption = useMemo(() => buildTypeOption(metrics), [metrics])
+  const groupOption = useMemo(() => buildGroupOption(metrics), [metrics])
+  const ageOption = useMemo(() => buildAgeOption(metrics), [metrics])
 
   const pageTotal = Math.max(1, Math.ceil(filtered.length / pageSize))
   const curPage = Math.min(page, pageTotal)
@@ -840,98 +621,15 @@ function MonitorPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* 维护操作方案/确认（页内展示，不依赖全局弹窗；确认按钮就在手边） */}
-      <div ref={bannerRef}>
-        {dupPlan && (
-          <div className="mon-card mon-plan">
-            <div className="mon-plan-head">
-              <b>合并重复议题</b>
-              <span className="mon-plan-sub">
-                发现 <b>{dupPlan.clusters}</b> 组重复、共 <b>{dupPlan.merged}</b> 条冗余记录（
-                {dupPlan.plan.reduce((s, x) => s + x.dropIds.length + 1, 0)} 条 → {dupPlan.clusters}{' '}
-                条）
-              </span>
-              <span className="mon-plan-spacer" />
-              <button
-                type="button"
-                className="mon-btn danger"
-                disabled={anaBusy}
-                onClick={() => void executeMergeDuplicates()}
-              >
-                {anaBusy ? '合并中…' : `执行合并(${dupPlan.merged})`}
-              </button>
-              <button
-                type="button"
-                className="mon-btn ghost"
-                disabled={anaBusy}
-                onClick={() => setDupPlan(null)}
-              >
-                取消
-              </button>
-            </div>
-            <div className="mon-plan-list">
-              {dupPlan.plan.map((it) => (
-                <div key={it.keepId} className="mon-plan-item">
-                  <span className="mon-plan-keep" title={it.keepTitle}>
-                    保留 · {it.keepTitle}
-                  </span>
-                  <span className="mon-plan-drop">
-                    ← 合并 {it.dropIds.length} 条
-                    {it.dropTitles.length > 0
-                      ? `：${it.dropTitles
-                          .slice(0, 2)
-                          .map((x) => x.slice(0, 14))
-                          .join(' / ')}${it.dropTitles.length > 2 ? ' 等' : ''}`
-                      : ''}
-                  </span>
-                  {it.strong && (
-                    <span
-                      className="mon-plan-why"
-                      title="高置信：开启「自动合并重复议题」后由后台自动处理"
-                    >
-                      高置信
-                    </span>
-                  )}
-                  {it.reasons.length > 0 && (
-                    <span className="mon-plan-why" title={it.reasons.join('；')}>
-                      {it.reasons[0]}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="mon-plan-note">
-              每组保留最早的一条：合并证据、取最高严重度、沿用指派跟进人；其余归档为「重复」——
-              不计入闭环率与趋势、不作为「不是问题」的反例样本，需要时可重新打开。
-              {dupPlan.plan.some((x) => x.strong)
-                ? ` 其中 ${dupPlan.plan.filter((x) => x.strong).length} 组为高置信，开启「设置 → 自动合并重复议题」后这类会由后台直接处理。`
-                : ''}
-            </div>
-          </div>
-        )}
-        {archiveAsk && (
-          <div className="mon-card mon-plan">
-            <div className="mon-plan-head">
-              <b>归档历史记录</b>
-              <span className="mon-plan-sub">
-                把 90 天前「已解决 / 已搁置」的记录标为已归档：不再出现在待办、盯办与徽标里，
-                累计闭环率与趋势照旧统计它们，可在「已归档」筛选查看。
-              </span>
-              <span className="mon-plan-spacer" />
-              <button
-                type="button"
-                className="mon-btn primary"
-                onClick={() => void executeArchiveStale()}
-              >
-                确认归档
-              </button>
-              <button type="button" className="mon-btn ghost" onClick={() => setArchiveAsk(false)}>
-                取消
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <PlanBanner
+        dupPlan={dupPlan}
+        archiveAsk={archiveAsk}
+        busy={anaBusy}
+        onExecuteMerge={() => void executeMergeDuplicates()}
+        onCancelMerge={() => setDupPlan(null)}
+        onExecuteArchive={() => void executeArchiveStale()}
+        onCancelArchive={() => setArchiveAsk(false)}
+      />
 
       {!connected ? (
         <div className="mon-empty">
@@ -1198,157 +896,21 @@ function MonitorPage(): React.JSX.Element {
               )}
             </div>
 
-            {/* 追踪抽屉 */}
-            {active && (
-              <div className="mon-card mon-drawer">
-                <div className="mon-drawer-head">
-                  <span className={`mon-st ${statusChip(active).cls}`}>
-                    {statusChip(active).label}
-                  </span>
-                  <span className="mon-row-type">{active.type}</span>
-                  <button
-                    type="button"
-                    className="mon-x"
-                    onClick={() => {
-                      setActive(null)
-                      setDetail(null)
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="mon-drawer-title">{active.title}</div>
-                <div className="mon-drawer-meta">
-                  {active.groupName || active.groupUsername} · 首现 {fmtTimeShort(active.occurAt)}
-                  {active.status === 'open' && <> · 已积压 {ageText(active.occurAt)}</>}
-                </div>
-                {active.summary && <div className="mon-drawer-summary">{active.summary}</div>}
-
-                {(active.severity && active.severity !== '一般') ||
-                (active.reopenCount ?? 0) > 0 ? (
-                  <div className="mon-drawer-flags">
-                    {active.severity && active.severity !== '一般' && (
-                      <em
-                        className={`mon-sev is-${active.severity === '紧急' ? 'urgent' : 'high'}`}
-                      >
-                        {active.severity}优先级
-                      </em>
-                    )}
-                    {(active.reopenCount ?? 0) > 0 && (
-                      <em className="mon-reopen">
-                        本议题第 {(active.reopenCount ?? 0) + 1} 次出现（含此前{' '}
-                        {active.reopenCount ?? 0} 次已闭环记录）
-                      </em>
-                    )}
-                  </div>
-                ) : null}
-
-                <div className="mon-drawer-owner">
-                  <span className="mon-drawer-owner-label">跟进人</span>
-                  <select
-                    className="mon-select mon-owner-select-wide"
-                    value={active.assignee ?? ''}
-                    onChange={(e) => void applyAssignee(active.id, e.target.value)}
-                    title="指派/更换跟进人（团队成员，空 = 取消指派）"
-                  >
-                    <option value="">未指派</option>
-                    {members.map((m) => (
-                      <option key={m.username} value={m.username}>
-                        {ownerName(m.username)}
-                      </option>
-                    ))}
-                  </select>
-                  {active.assignee ? (
-                    <span className="mon-drawer-owner-state">
-                      由 <b>{ownerName(active.assignee)}</b> 跟进
-                    </span>
-                  ) : active.lastReplyBy ? (
-                    <button
-                      type="button"
-                      className="mon-btn ghost"
-                      title={`${ownerName(active.lastReplyBy)} 回复过这条问题：点击指派为跟进人`}
-                      onClick={() => void applyAssignee(active.id, active.lastReplyBy ?? '')}
-                    >
-                      指派给 {ownerName(active.lastReplyBy)}
-                    </button>
-                  ) : members.length === 0 ? (
-                    <span className="mon-drawer-owner-hint">
-                      暂无团队成员：对话页右键消息「标记为团队客服」后即可指派
-                    </span>
-                  ) : (
-                    <span className="mon-drawer-owner-hint">指派后列表可按人筛选跟进</span>
-                  )}
-                </div>
-
-                <div className="mon-drawer-scroll">
-                  {detailLoading ? (
-                    <div className="mon-drawer-empty">加载证据中…</div>
-                  ) : !detail ? (
-                    <div className="mon-drawer-empty">无证据详情</div>
-                  ) : (
-                    <div className="mon-drawer-tl">
-                      {detail.related.map((m, i) => (
-                        <div
-                          key={i}
-                          className={`mon-tl-item${m.isSend || m.senderIsTeam ? ' is-my' : ''}`}
-                        >
-                          <span className="mon-tl-dot" />
-                          <div className="mon-tl-body">
-                            <div className="mon-tl-head">
-                              <b>
-                                {m.isSend
-                                  ? `我方 · ${m.senderName}`
-                                  : m.senderIsTeam
-                                    ? `团队 · ${m.senderName}`
-                                    : m.senderName}
-                              </b>
-                              <time>{fmtTimeShort(m.time)}</time>
-                              {i === 0 && <em className="mon-tl-mark">首现</em>}
-                              {i === detail.related.length - 1 && detail.related.length > 1 && (
-                                <em className="mon-tl-mark">最新</em>
-                              )}
-                            </div>
-                            <div className="mon-tl-text">{m.text || '[非文本消息]'}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mon-drawer-foot">
-                  {active.needConfirm && active.status === 'open' && (
-                    <button
-                      type="button"
-                      className="mon-btn primary"
-                      onClick={() => void applyConfirmDoubt(active.id)}
-                      title="核实为真实问题，移出疑似桶并计入待办"
-                    >
-                      ✓ 核实为真问题
-                    </button>
-                  )}
-                  <IssueActions
-                    issue={detail ?? active}
-                    onSet={(s) => void applyStatus(active.id, s)}
-                  />
-                  <button
-                    type="button"
-                    className="mon-btn ghost"
-                    onClick={() => {
-                      if (wxid) {
-                        void locateIssueAt(active.groupUsername, active.occurAt)
-                      }
-                    }}
-                    title="跳到该群聊天并滚动到问题首次出现的时间附近"
-                  >
-                    ◎ 在聊天中定位
-                  </button>
-                </div>
-                {active.autoDone && active.status === 'done' && (
-                  <div className="mon-drawer-note">系统判定已闭环自动关闭,可重新打开复核</div>
-                )}
-              </div>
-            )}
+            <IssueDrawer
+              active={active}
+              detail={detail}
+              detailLoading={detailLoading}
+              members={members}
+              ownerName={ownerName}
+              onClose={() => {
+                setActive(null)
+                setDetail(null)
+              }}
+              onAssign={(id, username) => void applyAssignee(id, username)}
+              onSetStatus={(id, s) => void applyStatus(id, s)}
+              onConfirmDoubt={(id) => void applyConfirmDoubt(id)}
+              onLocate={(sessionUsername, at) => void locateIssueAt(sessionUsername, at)}
+            />
           </div>
 
           {/* 图表区 */}
