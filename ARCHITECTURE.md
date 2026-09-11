@@ -101,7 +101,10 @@ src/
 - `services/wechat/crypto/sqlcipher.ts`（纯函数）：**页结构** 页 4096、reserve=80（IV 16B + HMAC-SHA512 64B）；页 1 前 16B 为 salt，加密区 `file[16:4016]`，解密后补写 `SQLite format 3\0`；页 N 加密区 `page[0:4016]`，IV 在 `page[4016:4032]`，HMAC 在 `[4032:4096)`。
 - **密钥派生**：`AES key = PBKDF2-HMAC-SHA512(encKey, salt, iter=256000, dklen=32)`，逐页 AES-256-CBC（无 padding）；`verifyPage1` 先验页 1 的 HMAC，密钥不对立即失败（不再白解一整库）。
 - `services/wechat/crypto/wal.ts`（纯函数）：解析 WAL 帧（32B 头 + N×(24B 帧头 + 4096B 页)）。**语义修正**：只有当「WAL 头 salt == 第一帧 salt」时才认为这是**当前日志**（可合并），此时才逐帧校验校验和、只应用到最后一个 commit 帧、按 `nTruncate` 截断；否则说明帧属于旧周期、主库已是最新，**一帧都不合并**。早期按「取头部 salt 连续段」的实现会把旧周期的页盖到新主库上，属于会读出错数据的静默错误 —— 真实数据上 20/20 个微信 WAL 都落在这个分支。
-- `services/wechat/decrypt.ts`（IO）：`verifyWxDbKey` → 流式分页解密（`BATCH_PAGES=128`，不再整库进内存）→ 合并 WAL → 合并后跑一次 `PRAGMA quick_check`，失败即丢弃合并结果回落主库。
+- `services/wechat/decrypt.ts`（IO）编排：`verifyWxDbKey` → 流式分页解密（`BATCH_PAGES=128`，不再整库进内存）→ **逐页 HMAC 校验**（`wechat.decrypt.verifyPages`，默认开）→ 合并 WAL → 合并后跑一次 `PRAGMA quick_check`（失败即丢弃合并结果回落主库）→ 写 `.part` 再 `rename` **原子落盘**。
+- **为什么必须逐页校验**：AES-256-CBC 无 padding、页间独立，微信边写我们边读时，撕裂页会「正常解密」成垃圾数据，而副本的 mtime 比源库新 → 会被当成新鲜缓存长期使用（读出错数据的静默故障）。逐页 HMAC 是唯一能精确发现的判据（实测真实库 552/552 页匹配该布局：覆盖「加密区 + IV」+ 小端页号），失败即重解一次；仍失败则明确报「第 N 页校验失败」，**不落盘、不留坏副本**。
+- **源库仍在写入时的闭环**：解密前后比对源库签名（主库 + WAL 的 size/mtime），变化就重解一次；仍变化则带 `staleSource` 标记返回（副本是某一时刻的一致快照）。源库本身已是明文库时（用户指向已解密副本）**直接只读打开源文件**，不需要密钥也不需要副本。
+- **副本自愈**：明文副本打不开（半截写/坏页/新鲜度误判）→ 丢弃副本重解一次，避免「坏副本 + 判定新鲜」把某个库永久卡死。
 - **明文副本**：落 `<cache>/db/<name>_<hash>.db`（以「源库路径 + key」的 md5 命名复用；历史目录 `wx-plain` 启动自动并入），只读打开、用完即关；写入前后有 `prunePlainDbCache` 按 `wechat.plainCacheMaxMB=3072` / `plainCacheMaxFiles=20` 收敛（防「解密副本把磁盘吃满」）。
 
 缓存分区由 `paths.ts` 统一管理（**禁止硬编码子目录**）：
@@ -356,6 +359,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 营销 | `growth.enabled/provider/providerApiKey`、`growth.image.*`、`growth.search.*` |
 | 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
 | 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
+| 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.decrypt.legacy`（回退旧内存整块路径）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |
 
 ---
 
@@ -455,6 +459,10 @@ npm run build         # typecheck + electron-vite 三端构建
 - **ct-media 不支持 Range**：协议用 `net.fetch(file://)` 直出整文件，没有 Range 响应头 —— 图片/短视频/几秒语音播放没问题，长音频拖动进度条可能不灵。
 - **库密钥自动获取：接口已就绪，组件未内置**：`keyScan.ts` 的组件协议 + 页 1 校验 + 落库链路已跑通（有探针验证），但「读微信进程内存取 key」那部分依赖第三方 DLL（koffi + `wechat_key_tool.dll`），授权未确认，**不随本仓分发**：没有组件时按钮会明确提示「未安装 + 手动导入」。图片密钥不依赖任何组件，已可本地推导（§4.2）。
 - **HEVC 原图**：纯 HEVC 依赖外部 ffmpeg（设置里配路径）。
+- **明文副本的「新鲜度」仍是启发式**：靠 mtime + size 比较（含 `-wal`），没有把「解密时的源签名」存成 sidecar。极端情形（用保留 mtime 的方式还原/替换源库、时钟回拨）可能被误判为新鲜。已覆盖的替代判据是逐页 HMAC（解密时）与打开失败自愈（打开时）。
+- **副本能打开但内部页被外部改坏**：只在「打开失败」时自愈；若副本仍能打开、只是某些页坏了，要等该页被查询才会暴露（微信库是只读副本，正常路径不会发生；逐页校验已挡住产生坏副本的主因——撕裂读）。
+- **voice 缓存淘汰只在写入时触发**：`pruneVoiceCache` 挂在写新 WAV 之后，长期只读不写的账号不会触发；上限由 `wechat.voiceCacheMaxMB/Files` 控制。
+- **可选组件的 require 缓存**：`keyScan` 组件是运行时 `require`，替换组件文件后需要重启应用才生效。
 - **LLM 闭环依据**：自动闭环目前不落「依据行号」，不可审计（LLM 只输出状态）。
 - **明细分页**：监控明细为主进程限量回传 + 归档收敛，未做服务端游标分页。
 - **企微群**：后台候选群过滤掉 `isWeCom` 会话，这类群目前只在手动打开/全量重析时分析。

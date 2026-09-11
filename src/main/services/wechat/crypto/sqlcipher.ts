@@ -44,19 +44,38 @@ export function deriveMacKey(encryptionKey: Buffer, salt: Buffer): Buffer {
 }
 
 /**
+ * 计算某页的 HMAC：覆盖「加密区 + IV」（页 1 从 16 起，其余从 0 起，到 4032），末尾追加小端页号。
+ * 实测校准：真实 message_0.db 552/552 页全部匹配该布局（"只算加密区不含 IV""页号大端"都全不匹配）。
+ */
+export function pageHmac(page: Buffer, macKey: Buffer, pageNumber: number): Buffer {
+  const start = pageNumber === 1 ? SALT_SIZE : 0
+  const hmac = createHmac('sha512', macKey)
+  hmac.update(page.subarray(start, HMAC_OFFSET))
+  const pageNo = Buffer.alloc(4)
+  pageNo.writeUInt32LE(pageNumber >>> 0, 0)
+  hmac.update(pageNo)
+  return hmac.digest()
+}
+
+/** 整页完整性校验（逐页调用即可在解密过程中发现「读到撕裂页/库正在被写入」） */
+export function verifyPage(page: Buffer, macKey: Buffer, pageNumber: number): boolean {
+  if (page.length < PAGE_SIZE) return false
+  return pageHmac(page, macKey, pageNumber).equals(page.subarray(HMAC_OFFSET, PAGE_SIZE))
+}
+
+/** 由文件 salt 一次性算出 MAC key（同一库所有页共用；页 1 的 salt 即文件 salt） */
+export function deriveFileMacKey(password: Buffer, salt: Buffer): Buffer {
+  return deriveMacKey(deriveEncryptionKey(password, salt), salt)
+}
+
+/**
  * 校验第一页的 HMAC —— 只读一页就能判断「密钥对不对」，不必解密整库。
  * 密钥错误时返回 false（此前要等整库解密完、打开明文库失败才知道）。
  */
 export function verifyPage1(page: Buffer, password: Buffer): boolean {
   if (page.length < PAGE_SIZE) return false
   const salt = page.subarray(0, SALT_SIZE)
-  const macKey = deriveMacKey(deriveEncryptionKey(password, salt), salt)
-  const hmac = createHmac('sha512', macKey)
-  hmac.update(page.subarray(SALT_SIZE, HMAC_OFFSET))
-  const pageNo = Buffer.alloc(4)
-  pageNo.writeUInt32LE(1, 0)
-  hmac.update(pageNo)
-  return hmac.digest().equals(page.subarray(HMAC_OFFSET, PAGE_SIZE))
+  return verifyPage(page, deriveFileMacKey(password, salt), 1)
 }
 
 /** 解密单页（页 1 会补回 SQLite 标准头；尾部保留区原样保留 0 值） */

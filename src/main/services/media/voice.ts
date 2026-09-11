@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { getConfigNumber } from '../../db/repos/config'
 import { openWxDbFile } from '../wechat/decrypt'
 import { locateWeChatDbs } from '../wechat/dbLocator'
 import { toVoiceMediaUrl } from './mediaProtocol'
@@ -48,6 +49,59 @@ export function wrapPcmToWav(pcm: Buffer, sampleRate = SILK_SAMPLE_RATE, channel
   header.write('data', 36)
   header.writeUInt32LE(pcm.length, 40)
   return Buffer.concat([header, pcm])
+}
+
+/** 语音缓存上限（默认 256MB / 500 个文件）：不设上限的话，聊得越久磁盘越满 */
+const DEFAULT_VOICE_CACHE_MB = 256
+const DEFAULT_VOICE_CACHE_FILES = 500
+
+/** WAV 时长（毫秒）：PCM 16bit 单声道 → 数据字节数 / 2 / 采样率 */
+export function wavDurationMs(wav: Buffer, sampleRate = SILK_SAMPLE_RATE): number {
+  const dataBytes = Math.max(0, wav.length - 44)
+  return Math.round((dataBytes / 2 / sampleRate) * 1000)
+}
+
+/**
+ * 语音缓存淘汰：超上限按最旧删除。
+ * 删除失败（文件正被 <audio> 占用）忽略，下轮再试。
+ */
+export function pruneVoiceCache(wxid: string): { removed: number; freedBytes: number } {
+  const maxBytes =
+    Math.max(0, getConfigNumber('wechat.voiceCacheMaxMB', DEFAULT_VOICE_CACHE_MB)) * 1024 * 1024
+  const maxFiles = Math.max(
+    1,
+    getConfigNumber('wechat.voiceCacheMaxFiles', DEFAULT_VOICE_CACHE_FILES)
+  )
+  let removed = 0
+  let freedBytes = 0
+  try {
+    const dir = join(getMediaCacheDir(wxid), 'voices')
+    const entries = readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.wav'))
+      .map((e) => {
+        const full = join(dir, e.name)
+        const st = statSync(full)
+        return { full, size: st.size, mtimeMs: st.mtimeMs }
+      })
+      .sort((a, b) => a.mtimeMs - b.mtimeMs)
+    let total = entries.reduce((sum, e) => sum + e.size, 0)
+    let count = entries.length
+    for (const e of entries) {
+      if (total <= maxBytes && count <= maxFiles) break
+      try {
+        unlinkSync(e.full)
+        total -= e.size
+        count -= 1
+        removed += 1
+        freedBytes += e.size
+      } catch {
+        /* 被占用：下轮再试 */
+      }
+    }
+  } catch {
+    /* 目录不存在等：无需处理 */
+  }
+  return { removed, freedBytes }
 }
 
 /** 定位账号的 media_*.db（语音数据在这些库里） */
@@ -187,8 +241,9 @@ export async function getVoiceWav(opts: {
   if (!decoded.ok) return { ok: false, error: decoded.error }
   try {
     writeFileSync(cacheFile, decoded.wav)
+    pruneVoiceCache(wxid)
   } catch (e) {
     return { ok: false, error: `写入语音缓存失败: ${e instanceof Error ? e.message : String(e)}` }
   }
-  return { ok: true, url: toVoiceMediaUrl(wxid, cacheName) }
+  return { ok: true, url: toVoiceMediaUrl(wxid, cacheName), durationMs: wavDurationMs(decoded.wav) }
 }

@@ -6,6 +6,7 @@ import {
   openSync,
   readdirSync,
   readSync,
+  renameSync,
   statSync,
   unlinkSync,
   writeSync
@@ -14,18 +15,23 @@ import { basename, isAbsolute, join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { getConfigBoolean, getConfigNumber } from '../../db/repos/config'
 import { getPlainDbDir } from '../paths'
+import { createLogger } from '../logging'
 import {
   decryptPage,
   deriveEncryptionKey,
+  deriveFileMacKey,
   ENC_SIZE,
   hasSqliteHeader,
   KEY_HEX_RE,
   normalizeKey,
   PAGE_SIZE,
   SALT_SIZE,
+  verifyPage,
   verifyPage1
 } from './crypto/sqlcipher'
 import { mergeWalIntoPlainFile, type WalSummary } from './crypto/wal'
+
+const decryptLog = createLogger('wechat-decrypt')
 
 /**
  * 微信 4.x（xwechat）加密库解密层（门面）。
@@ -47,6 +53,12 @@ const BATCH_PAGES = 128
 /** 明文副本缓存上限（超出按最旧淘汰）：默认 3GB / 20 个文件 */
 const DEFAULT_CACHE_MAX_MB = 3072
 const DEFAULT_CACHE_MAX_FILES = 20
+/**
+ * 解密期源库发生变化 / 读到撕裂页时，最多再重解 N 次。
+ * 为什么要有这个：微信边写我们边读时，AES-CBC 无 padding、单页不校验也能「解出东西」，
+ * 坏页会静默写进副本并被当成新鲜缓存长期使用。逐页 HMAC 能精确发现，重解一次即可拿到一致快照。
+ */
+const MAX_SOURCE_RETRY = 1
 
 export interface DecryptResult {
   ok: boolean
@@ -55,6 +67,12 @@ export interface DecryptResult {
   wal?: WalSummary
   /** 是否命中了新鲜副本（未真正解密） */
   cached?: boolean
+  /** 解出的页数（诊断/日志用） */
+  pages?: number
+  /** 解密期间源库仍在变化（已尽力重解，副本是「某一时刻」的一致快照） */
+  staleSource?: boolean
+  /** 源库本身已是明文库（未做解密，直接只读打开源文件） */
+  plaintext?: boolean
 }
 
 export interface KeyCheckResult {
@@ -106,12 +124,18 @@ export function verifyWxDbKey(filePath: string, hexKey: string): KeyCheckResult 
   }
 }
 
-/** 流式批量解密主库到 outPath（内存占用与库大小无关） */
+/**
+ * 流式批量解密主库到 outPath（内存占用与库大小无关）。
+ * verifyPages=true 时逐页校验 HMAC：这是**唯一**能精确发现「读到撕裂页」的手段
+ * （页间无 padding、解密不会报错，坏页会安静地变成垃圾数据）。
+ */
 function decryptMainDbStreaming(
   filePath: string,
   outPath: string,
-  encryptionKey: Buffer
-): { ok: true; pages: number } | { ok: false; error: string } {
+  encryptionKey: Buffer,
+  macKey: Buffer,
+  verifyPages: boolean
+): { ok: true; pages: number } | { ok: false; error: string; torn?: boolean } {
   let inFd: number | null = null
   let outFd: number | null = null
   try {
@@ -126,7 +150,14 @@ function decryptMainDbStreaming(
     let batch: Buffer[] = []
     for (let p = 1; p <= pages; p += 1) {
       if (readInto(inFd, page, (p - 1) * PAGE_SIZE) < PAGE_SIZE) {
-        return { ok: false, error: `读取第 ${p} 页不完整（微信可能正在写入该库）` }
+        return { ok: false, error: `读取第 ${p} 页不完整（微信可能正在写入该库）`, torn: true }
+      }
+      if (verifyPages && !verifyPage(page, macKey, p)) {
+        return {
+          ok: false,
+          error: `第 ${p}/${pages} 页 HMAC 校验失败（读到的不是完整页，微信可能正在写入该库）`,
+          torn: true
+        }
       }
       batch.push(decryptPage(page, encryptionKey, p))
       if (batch.length >= BATCH_PAGES) {
@@ -180,9 +211,67 @@ function readFileSyncSafe(filePath: string): Buffer {
   }
 }
 
+/** 解密一次（写 tmp → WAL 合并 → 结构自检），失败返回原因；torn=true 表示读到了撕裂页 */
+function decryptOnce(
+  filePath: string,
+  tmpPath: string,
+  encryptionKey: Buffer,
+  macKey: Buffer,
+  legacy: boolean,
+  verifyPages: boolean
+): { ok: true; pages: number; wal: WalSummary } | { ok: false; error: string; torn?: boolean } {
+  const writeMain = ():
+    { ok: true; pages: number } | { ok: false; error: string; torn?: boolean } => {
+    if (legacy) {
+      const buf = decryptMainDbToBufferLegacy(filePath, encryptionKey)
+      if (!buf.ok) return { ok: false, error: buf.error }
+      let outFd: number | null = null
+      try {
+        outFd = openSync(tmpPath, 'w')
+        writeSync(outFd, buf.buffer)
+      } catch (e) {
+        return { ok: false, error: `写入明文库失败: ${e instanceof Error ? e.message : String(e)}` }
+      } finally {
+        if (outFd !== null) closeSync(outFd)
+      }
+      return { ok: true, pages: buf.buffer.length / PAGE_SIZE }
+    }
+    return decryptMainDbStreaming(filePath, tmpPath, encryptionKey, macKey, verifyPages)
+  }
+
+  const written = writeMain()
+  if (!written.ok) return written
+
+  // WAL 合并（微信上通常是 no-op：checkpoint 后当前日志为空）
+  let wal = mergeWalIntoPlainFile(`${filePath}-wal`, tmpPath, encryptionKey)
+
+  if (!isPlainFileUsable(tmpPath)) {
+    return { ok: false, error: '解密产物不是有效的 SQLite 库（密钥或库文件可能异常）' }
+  }
+
+  // 真合并过就做一次结构自检：不通过则丢弃合并结果（回落主库解密），避免坏页留在副本里
+  if (wal.merged) {
+    const check = quickCheckPlainDb(tmpPath)
+    if (!check.ok) {
+      const redone = writeMain()
+      wal = {
+        ...wal,
+        appliedFrames: 0,
+        merged: false,
+        warning: `WAL 合并结果未通过 quick_check（${check.error ?? '未知'}），已丢弃合并结果`
+      }
+      if (!redone.ok) return redone
+    }
+  }
+  return { ok: true, pages: written.pages, wal }
+}
+
 /**
  * 解密微信库（主库 + WAL 合并）到 outPath。
- * 任何一步失败都返回明确原因；WAL 合并失败只降级为「不合并」并附 warning。
+ *
+ * 编排：密钥校验 → 分段解密（逐页 HMAC，默认开）→ WAL 合并 → 结构自检 → **原子落盘** → 缓存治理。
+ * 源库在解密期间仍在写入时最多重解 MAX_SOURCE_RETRY 次（先按撕裂页判据，再按签名变化判据）；
+ * 仍不稳定就带着 staleSource 标记返回 —— 副本本身是一致的某一时刻快照，比读坏页安全得多。
  */
 export function decryptWxDbFile(filePath: string, hexKey: string, outPath: string): DecryptResult {
   const pathError = assertDbFileExists(filePath)
@@ -194,7 +283,7 @@ export function decryptWxDbFile(filePath: string, hexKey: string, outPath: strin
   const check = verifyWxDbKey(filePath, hexKey)
   if (!check.ok) return { ok: false, error: check.error }
 
-  // 2) 派生 AES key（salt 取文件首 16 字节）
+  // 2) 派生 AES / MAC key（salt 取文件首 16 字节）
   let salt: Buffer
   try {
     const fd = openSync(filePath, 'r')
@@ -209,56 +298,62 @@ export function decryptWxDbFile(filePath: string, hexKey: string, outPath: strin
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
   const encryptionKey = deriveEncryptionKey(key, salt)
-
+  const macKey = deriveFileMacKey(key, salt)
   const legacy = getConfigBoolean('wechat.decrypt.legacy', false)
-  let pages = 0
-  if (legacy) {
-    const buf = decryptMainDbToBufferLegacy(filePath, encryptionKey)
-    if (!buf.ok) return { ok: false, error: buf.error }
-    let outFd: number | null = null
-    try {
-      outFd = openSync(outPath, 'w')
-      writeSync(outFd, buf.buffer)
-    } catch (e) {
-      if (outFd !== null) closeSync(outFd)
-      return { ok: false, error: `写入明文库失败: ${e instanceof Error ? e.message : String(e)}` }
-    }
-    if (outFd !== null) closeSync(outFd)
-    pages = buf.buffer.length / PAGE_SIZE
-  } else {
-    const streamed = decryptMainDbStreaming(filePath, outPath, encryptionKey)
-    if (!streamed.ok) return { ok: false, error: streamed.error }
-    pages = streamed.pages
-  }
+  const verifyPages = getConfigBoolean('wechat.decrypt.verifyPages', true)
 
-  // 3) WAL 合并（微信上通常是 no-op：checkpoint 后当前日志为空）
-  let wal = mergeWalIntoPlainFile(`${filePath}-wal`, outPath, encryptionKey)
+  const tmpPath = `${outPath}.part`
+  const name = basename(filePath)
+  let staleSource = false
 
-  // 4) 明文副本自检 + 缓存治理
-  if (!isPlainFileUsable(outPath)) {
-    return { ok: false, error: '解密产物不是有效的 SQLite 库（密钥或库文件可能异常）' }
-  }
+  for (let attempt = 0; attempt <= MAX_SOURCE_RETRY; attempt += 1) {
+    const started = Date.now()
+    const sigBefore = sourceSignature(filePath)
+    const once = decryptOnce(filePath, tmpPath, encryptionKey, macKey, legacy, verifyPages)
 
-  // 5) 真合并过就做一次结构自检：不通过则丢弃合并结果（回落主库解密），避免坏页留在副本里
-  if (wal.merged) {
-    const check = quickCheckPlainDb(outPath)
-    if (!check.ok) {
-      const redone = legacy
-        ? decryptMainDbToBufferLegacy(filePath, encryptionKey)
-        : decryptMainDbStreaming(filePath, outPath, encryptionKey)
-      wal = {
-        ...wal,
-        appliedFrames: 0,
-        merged: false,
-        warning: `WAL 合并结果未通过 quick_check（${check.error ?? '未知'}），已丢弃合并结果`
+    if (!once.ok) {
+      safeUnlink(tmpPath)
+      if (once.torn && attempt < MAX_SOURCE_RETRY) {
+        decryptLog.info(`${name}: 解密期间读到撕裂页，重解（${once.error}）`)
+        continue
       }
-      if (!redone.ok) return { ok: false, error: redone.error }
+      decryptLog.warn(`${name}: 解密失败 — ${once.error}`)
+      return { ok: false, error: once.error }
     }
+
+    const sigAfter = sourceSignature(filePath)
+    const changed = !!sigBefore && !!sigAfter && sigBefore !== sigAfter
+    if (changed && attempt < MAX_SOURCE_RETRY) {
+      decryptLog.info(`${name}: 解密期间源库仍在写入，重解一次`)
+      continue
+    }
+    staleSource = changed
+
+    try {
+      renameSync(tmpPath, outPath) // 原子替换：读者要么看到旧副本，要么看到新副本，不会看到半截文件
+    } catch (e) {
+      safeUnlink(tmpPath)
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, error: `明文副本落盘失败: ${msg}` }
+    }
+
+    decryptLog.debug(
+      `${name} → ${basename(outPath)}：${once.pages} 页，${Date.now() - started}ms` +
+        `，WAL 合并=${once.wal.merged}${staleSource ? '，源库仍在变化（副本为该时刻一致快照）' : ''}`
+    )
+    prunePlainDbCache(outPath)
+    return { ok: true, wal: once.wal, pages: once.pages, staleSource }
   }
 
-  prunePlainDbCache(outPath)
-  void pages
-  return { ok: true, wal }
+  return { ok: false, error: '源库持续被写入，解密未能取得一致快照，请稍后重试' }
+}
+
+function safeUnlink(p: string): void {
+  try {
+    unlinkSync(p)
+  } catch {
+    /* 不存在或被占用：忽略 */
+  }
 }
 
 /** 用 SQLite 自身的完整性检查兜底（只在真正合并过 WAL 时跑一次） */
@@ -344,6 +439,16 @@ export function prunePlainDbCache(keepPath?: string): { removed: number; freedBy
   let freedBytes = 0
   try {
     const dir = getPlainDbDir()
+    // 顺手清掉上次崩溃留下的半截文件（解密已改为写 .part 再原子改名）
+    for (const leftover of readdirSync(dir)) {
+      if (!leftover.toLowerCase().endsWith('.part')) continue
+      const full = join(dir, leftover)
+      try {
+        if (Date.now() - statSync(full).mtimeMs > 60 * 60 * 1000) unlinkSync(full)
+      } catch {
+        /* 被占用：下轮再试 */
+      }
+    }
     const entries = readdirSync(dir, { withFileTypes: true })
       .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.db'))
       .map((e) => {
@@ -383,30 +488,72 @@ function getPlainDbPath(filePath: string, hexKey: string): string {
   return join(getPlainDbDir(), name)
 }
 
-/** 打开微信加密库：明文副本新鲜则直接打开，否则解密（含 WAL 合并）后打开 */
-export function openWxDbFile(
-  filePath: string,
-  hexKey: string
-): { db?: Database.Database; error?: string } {
-  const pathError = assertDbFileExists(filePath)
-  if (pathError) return { error: pathError }
-  if (!KEY_HEX_RE.test((hexKey || '').trim())) {
-    return { error: '密钥格式无效（应为 64 位十六进制）' }
-  }
-
-  const tmpPath = getPlainDbPath(filePath, hexKey)
-  if (!isPlainCacheFresh(filePath, tmpPath)) {
-    const decrypted = decryptWxDbFile(filePath, hexKey, tmpPath)
-    if (!decrypted.ok) return { error: decrypted.error }
-  }
-
+/** 源库是否本身就是明文库（页 1 前 16 字节是标准 SQLite 头） */
+function isPlainSource(filePath: string): boolean {
   try {
-    const db = new Database(tmpPath, { readonly: true })
+    const fd = openSync(filePath, 'r')
+    try {
+      const head = Buffer.alloc(16)
+      if (readInto(fd, head, 0) < 16) return false
+      return hasSqliteHeader(head)
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    return false
+  }
+}
+
+/** 只读打开并做一次最小可用性探测（避免把「能打开但读不了」的库交出去） */
+function openReadonly(path: string): { db?: Database.Database; error?: string } {
+  try {
+    const db = new Database(path, { readonly: true })
     db.prepare('SELECT count(*) AS n FROM sqlite_master').get()
     return { db }
   } catch (e) {
     return { error: `明文库打开失败: ${e instanceof Error ? e.message : String(e)}` }
   }
+}
+
+/**
+ * 打开微信库：明文副本新鲜则直接打开，否则解密（含 WAL 合并）后打开。
+ *
+ * 两条兜底路径都是「闭环」的一部分：
+ * - 源库已是明文（用户指向已解密副本、或旧版本库）→ 直接用源文件，不需要密钥也不需要副本；
+ * - 副本打不开（半截写/坏页/新鲜度误判）→ 丢弃副本重解一次，避免坏副本被长期当成新鲜缓存。
+ */
+export function openWxDbFile(
+  filePath: string,
+  hexKey: string
+): { db?: Database.Database; error?: string; plaintext?: boolean } {
+  const pathError = assertDbFileExists(filePath)
+  if (pathError) return { error: pathError }
+
+  if (isPlainSource(filePath)) {
+    const direct = openReadonly(filePath)
+    return direct.db ? { db: direct.db, plaintext: true } : direct
+  }
+
+  if (!KEY_HEX_RE.test((hexKey || '').trim())) {
+    return { error: '密钥格式无效（应为 64 位十六进制）' }
+  }
+
+  const plainPath = getPlainDbPath(filePath, hexKey)
+  if (!isPlainCacheFresh(filePath, plainPath)) {
+    const decrypted = decryptWxDbFile(filePath, hexKey, plainPath)
+    if (!decrypted.ok) return { error: decrypted.error }
+  }
+
+  const first = openReadonly(plainPath)
+  if (first.db) return first
+
+  decryptLog.warn(`明文副本不可用，丢弃后重解: ${basename(plainPath)} — ${first.error}`)
+  safeUnlink(plainPath)
+  const redone = decryptWxDbFile(filePath, hexKey, plainPath)
+  if (!redone.ok) return { error: `${first.error}；重解后仍失败: ${redone.error}` }
+  const second = openReadonly(plainPath)
+  if (second.db) return second
+  return { error: `${first.error}；重解后仍打不开: ${second.error}` }
 }
 
 /** 供诊断/自检：当前源库签名（源库或 WAL 变化即变化） */

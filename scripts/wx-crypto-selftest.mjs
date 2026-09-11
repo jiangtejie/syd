@@ -44,12 +44,14 @@ const { applyWalToPlainFile, parseWalFrames } = require(walBundle)
 const {
   decryptPage,
   deriveEncryptionKey,
+  deriveFileMacKey,
   deriveMacKey,
   ENC_SIZE,
   KDF_ITERATIONS,
   PAGE_SIZE,
   SALT_SIZE,
   SQLITE_HEADER,
+  verifyPage,
   verifyPage1
 } = require(sqlcipherBundle)
 
@@ -77,7 +79,8 @@ function encryptPage(plainPage, encKey, macKey, pageNumber) {
   }
   iv.copy(page, ENC_SIZE)
   const hmac = createHmac('sha512', macKey)
-  hmac.update(page.subarray(SALT_SIZE, PAGE_SIZE - 64))
+  // 与真实库一致：HMAC 覆盖「加密区 + IV」，页 1 跳过 salt（[16,4032)），其余从 0 起（[0,4032)）
+  hmac.update(page.subarray(pageNumber === 1 ? SALT_SIZE : 0, PAGE_SIZE - 64))
   const pageNo = Buffer.alloc(4)
   pageNo.writeUInt32LE(pageNumber, 0)
   hmac.update(pageNo)
@@ -127,6 +130,24 @@ try {
     if (!plain.equals(db.plainPages[i])) roundTrip = false
   }
   log(roundTrip, '三页解密结果与原文逐字节一致（含页 1 补回 SQLite 头）')
+
+  // 逐页 HMAC：解密期的「撕裂页」检测靠它（AES-CBC 无 padding，坏页不会报错，只会安静变成垃圾）
+  const fileMacKey = deriveFileMacKey(PASSWORD, db.salt)
+  let allPagesOk = true
+  for (let i = 0; i < db.plainPages.length; i += 1) {
+    const enc = Buffer.from(db.file.subarray(i * PAGE_SIZE, (i + 1) * PAGE_SIZE))
+    if (!verifyPage(enc, fileMacKey, i + 1)) allPagesOk = false
+  }
+  log(allPagesOk, '三页逐页 HMAC 全部通过（含非首页：覆盖加密区 + IV）')
+
+  const torn = Buffer.from(db.file.subarray(2 * PAGE_SIZE, 3 * PAGE_SIZE))
+  torn[7] ^= 0x40 // 模拟「读到半旧半新的一页」
+  log(!verifyPage(torn, fileMacKey, 3), '撕裂页被逐页校验抓出（第 3 页）')
+  const goodPage3 = Buffer.from(db.file.subarray(2 * PAGE_SIZE, 3 * PAGE_SIZE))
+  log(
+    !verifyPage(goodPage3, fileMacKey, 2),
+    '页号参与 HMAC：把第 3 页当第 2 页校验必须失败'
+  )
   const page1Plain = decryptPage(db.file.subarray(0, PAGE_SIZE), db.encKey, 1)
   log(page1Plain.subarray(0, 16).equals(SQLITE_HEADER), '页 1 解密后带标准 SQLite 头')
   log(
