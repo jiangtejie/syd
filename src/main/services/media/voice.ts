@@ -31,35 +31,13 @@ export interface VoiceWavResult {
   durationMs?: number
 }
 
-/** 44 字节 WAV 头 + PCM */
-export function wrapPcmToWav(pcm: Buffer, sampleRate = SILK_SAMPLE_RATE, channels = 1): Buffer {
-  const header = Buffer.alloc(44)
-  const byteRate = sampleRate * channels * 2
-  header.write('RIFF', 0)
-  header.writeUInt32LE(36 + pcm.length, 4)
-  header.write('WAVE', 8)
-  header.write('fmt ', 12)
-  header.writeUInt32LE(16, 16)
-  header.writeUInt16LE(1, 20) // PCM
-  header.writeUInt16LE(channels, 22)
-  header.writeUInt32LE(sampleRate, 24)
-  header.writeUInt32LE(byteRate, 28)
-  header.writeUInt16LE(channels * 2, 32)
-  header.writeUInt16LE(16, 34)
-  header.write('data', 36)
-  header.writeUInt32LE(pcm.length, 40)
-  return Buffer.concat([header, pcm])
-}
+/** 44 字节 WAV 头 + PCM（实现已收进 audio.ts，这里转出保持既有引用） */
+import { wavDurationMs, wrapPcmToWav } from './audio'
+export { wavDurationMs, wrapPcmToWav }
 
 /** 语音缓存上限（默认 256MB / 500 个文件）：不设上限的话，聊得越久磁盘越满 */
 const DEFAULT_VOICE_CACHE_MB = 256
 const DEFAULT_VOICE_CACHE_FILES = 500
-
-/** WAV 时长（毫秒）：PCM 16bit 单声道 → 数据字节数 / 2 / 采样率 */
-export function wavDurationMs(wav: Buffer, sampleRate = SILK_SAMPLE_RATE): number {
-  const dataBytes = Math.max(0, wav.length - 44)
-  return Math.round((dataBytes / 2 / sampleRate) * 1000)
-}
 
 /**
  * 语音缓存淘汰：超上限按最旧删除。

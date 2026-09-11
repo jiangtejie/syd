@@ -275,6 +275,16 @@ src/
 - **图片**：`mediaService` + `datDecrypt` —— 定位 `msg/attach` 下 `<md5>.dat`；V1/V2（15B 头 + AES-128-ECB + XOR）、V3（整文件 XOR）；解密后处理 wxgf（HEVC 容器）：优先内嵌 JPEG/PNG，纯 HEVC 交外部 ffmpeg 转首帧；结果写 `media/<wxid>/`，经自定义 `ct-media://` 协议暴露（含路径与文件名强校验）。
 - **语音**：`media/voice.ts` —— 微信 4.x 把语音 SILK 放在 `db_storage/message/media_*.db` 的 `VoiceInfo` 表（`svr_id / local_id / create_time / voice_data`）。按「消息行自己的 serverId」优先、`local_id + create_time`（按量级自动选秒/毫秒窗口）兜底定位，`silk-wasm` 解码成 PCM → 包 44 字节 WAV 头（24kHz 单声道）→ 落 `media/<wxid>/voices/<id>.wav`。渲染端只在用户点播放时才要音频（IPC `cs:media:voiceWav`），不在打开会话时批量解码。
   ct-media 协议因此多了**三段布局** `/<wxid>/voices/<id>.wav`（图片/视频仍是两段 `/<wxid>/<md5>_<kind>.<ext>`）；解析规则抽到纯函数 `media/mediaProtocol.ts` 并有自检 —— 早期把 `voices/x.wav` 整体 `encodeURIComponent`，`/` 变 `%2F` 导致整条路径只剩两段被判 403，渲染端只看到「播放失败」；现在这类 URL 由自检直接拦下。
+- **语音转写（本地、离线，`media/asr.ts` + 纯逻辑 `media/asrPure.ts`）**：
+  whisper.cpp 是**外部可执行文件 + 本地模型**（与 ffmpeg 同一套思路，不内置，避免安装包膨胀与授权/更新问题）。
+  微信语音是 24kHz，whisper 只吃 16kHz —— 直接把 24kHz 当 16kHz 喂会变调，所以用 `media/audio.ts` 的
+  「汉明窗 sinc 低通 + 线性插值」重采样（自检断言：通带 1kHz 音高不变、10.5kHz 超过目标奈奎斯特被压到 0.3%）。
+  转写结果落 `voices/<serverId>.txt` **旁挂缓存**：WAV 会被容量策略淘汰，文本很小且更值钱，淘汰只清 `.wav`。
+  稳健性：单进程串行（不把闲置机 CPU 打满）、超时 120s、失败只影响这一条、临时文件必清；
+  配置键 `asr.whisperPath / asr.modelPath / asr.language / asr.threads / asr.timeoutMs`，没配就不转写并给出去哪配。
+- **转写文本如何进入分析与数字员工**：消息读取层在 enrich 后调用 `decorateVoiceTranscripts`，
+  把已缓存的转写并进 `parsedContent`（`[语音] N″ 文本`）。这样**界面、议题分析、数字员工读到的是同一份内容**，
+  不需要各自去读文件；批量同步路径（`skipEnrich`）不做这次文件探测，避免拖慢上报。
 - **表情/视频**：表情解析、视频缓存到 media 分区。
 - **缓存容量治理**（`media/mediaCache.ts` + 纯策略 `media/mediaCachePolicy.ts`）：
   媒体目录里混着三类文件，**只有可再生的那类可以删** —— 解密产物（`<md5>_orig|thumb|hd|video|emoji.<ext>`）
@@ -372,6 +382,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
 | 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
 | 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.decrypt.legacy`（回退旧内存整块路径）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |
+| 语音转写 | `asr.whisperPath`、`asr.modelPath`、`asr.language`（默认 zh）、`asr.threads`（0=whisper 默认）、`asr.timeoutMs`（120000） |
 | 媒体缓存保留 | `wechat.mediaCacheAutoClean`（默认开）、`wechat.mediaCacheKeepDays`（180）、`wechat.mediaCacheMaxMB`（8192）、`wechat.mediaCacheMaxFiles`（50000）、`wechat.report.archiveMigrated`（迁移完成标记）、`wechat.report.pathRepairCursor`（归档路径修复游标） |
 
 ---
@@ -468,7 +479,7 @@ npm run build         # typecheck + electron-vite 三端构建
 - **growth 域无外键/级联**：父子表（素材/拆解/产出/发布结果）目前靠应用层保证，删除路径需自行清理。
 - **约束偏松**：核心表 `NOT NULL` 覆盖率低（靠代码纪律保证），布尔/枚举列无 `CHECK`；`AUTOINCREMENT` 用法不统一（growth 域与审计表用，核心表不用）。
 - **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入（图片密钥可从本机模板推导，见 §4.2）。
-- **语音**：已能解码播放（`VoiceInfo` → SILK → WAV，见 §10），但**不做本地 ASR**：语音仍以 `[语音] N″` 占位参与议题分析与数字员工决策；需要转写走飞书妙记。
+- **语音**：能解码播放（`VoiceInfo` → SILK → WAV），也能**本地转写**（whisper.cpp，见 §10）—— 但转写是**按需触发**（点气泡上的「转写」），不做批量回填；未转写的语音在分析与数字员工里仍是 `[语音] N″` 占位。
 - **ct-media 不支持 Range**：协议用 `net.fetch(file://)` 直出整文件，没有 Range 响应头 —— 图片/短视频/几秒语音播放没问题，长音频拖动进度条可能不灵。
 - **库密钥自动获取：接口已就绪，组件未内置**：`keyScan.ts` 的组件协议 + 页 1 校验 + 落库链路已跑通（有探针验证），但「读微信进程内存取 key」那部分依赖第三方 DLL（koffi + `wechat_key_tool.dll`），授权未确认，**不随本仓分发**：没有组件时按钮会明确提示「未安装 + 手动导入」。图片密钥不依赖任何组件，已可本地推导（§4.2）。
 - **HEVC 原图**：纯 HEVC 依赖外部 ffmpeg（设置里配路径）。

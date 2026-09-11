@@ -517,6 +517,34 @@
   color: var(--text-2);
 }
 
+.wb-msg-voice-asr {
+  padding: 2px 10px;
+  border: 1px dashed rgba(0, 0, 0, 0.2);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.wb-msg-voice-asr:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.wb-msg-voice-asr:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.wb-msg-voice-text {
+  flex-basis: 100%;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.92;
+}
+
 .wb-msg-voice-err {
   flex-basis: 100%;
   font-size: 11px;

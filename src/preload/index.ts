@@ -263,7 +263,21 @@ const api: PreloadApi = {
         wxid: string,
         opts?: { serverId?: string; localId?: number; createTime?: number }
       ): Promise<{ ok: boolean; url?: string; durationMs?: number; error?: string }> =>
-        ipcRenderer.invoke('cs:media:voiceWav', wxid, opts)
+        ipcRenderer.invoke('cs:media:voiceWav', wxid, opts),
+      voiceTranscript: (
+        wxid: string,
+        opts?: { serverId?: string; localId?: number; createTime?: number; force?: boolean }
+      ): Promise<{ ok: boolean; text?: string; cached?: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:media:voiceTranscript', wxid, opts),
+      asrStatus: (): Promise<{
+        ok: boolean
+        available?: boolean
+        whisperPath?: string
+        modelPath?: string
+        language?: string
+        reason?: string
+        error?: string
+      }> => ipcRenderer.invoke('cs:media:asrStatus')
     },
     issue: {
       list: (wxid: string): Promise<Result<{ issues?: FeedbackIssue[] }>> =>

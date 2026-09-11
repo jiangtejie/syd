@@ -4,6 +4,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type Database from 'better-sqlite3-multiple-ciphers'
 import { createLogger } from '../logging'
+import { decorateVoiceTranscripts } from '../media/asr'
 import { openWxDbFile } from './wxDb'
 import { findFileCached, locateWeChatDbs } from './dbLocator'
 import {
@@ -816,7 +817,12 @@ export function listMessages(
     const page = pageItems.map((it) => it.msg).reverse()
     // enrich 发送人昵称/头像/群昵称/企微名/转账双方名（群消息关键）;
     // skipEnrich 时留给调用方按会话批量 enrich 一次
-    if (!skipEnrich) enrichMessagesWithSenders(page, ctx, sessionId)
+    if (!skipEnrich) {
+      enrichMessagesWithSenders(page, ctx, sessionId)
+      // 已转写过的语音：把文本并进 parsedContent —— 界面、议题分析、数字员工读到的是同一份内容
+      // （批量同步走 skipEnrich，不做这次文件探测，避免拖慢上报）
+      decorateVoiceTranscripts(page, ctx.wxid)
+    }
     return { ok: true, messages: page, hasMore, nextCursor }
   } catch (e: any) {
     return { ok: false, error: `读取消息失败: ${e?.message || String(e)}` }

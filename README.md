@@ -268,7 +268,7 @@ npm run build:linux       # 打包 Linux
 ```bash
 npm run typecheck        # tsc --noEmit（主进程 + 渲染端）
 npm run lint             # ESLint
-npm run test:all         # 十套自检串跑（schema 迁移 / 库解密 / ct-media 路径 / 媒体缓存淘汰 / 话术判定 / 飞书映射 / 日报文案 / 发送闸门 / 跟进判定 / 议题同一性），全部离线
+npm run test:all         # 十一套自检串跑（schema 迁移 / 库解密 / ct-media 路径 / 媒体缓存淘汰 / 语音转写 / 话术判定 / 飞书映射 / 日报文案 / 发送闸门 / 跟进判定 / 议题同一性），全部离线
 npm run test:feedback    # 仅跟进判定（回复归属）+ 议题同一性判据 + 文本降噪
 npm run test:matcher     # 仅数字员工话术判定（真实群原话当夹具）
 npm run test:lark        # 仅飞书同步字段映射（状态往返/跟进人匹配/冲突比对）
@@ -278,6 +278,7 @@ npm run test:schema      # 仅 schema 迁移（合成老库上跑三条迁移 + 
 npm run test:crypto      # 仅微信库解密（合成 SQLCipher 页 / WAL 帧：密钥校验、篡改拒绝、WAL 周期语义）
 npm run test:media-proto # 仅 ct-media 路径解析（图片两段 / 语音三段 / 非法命名与穿越）
 npm run test:media-cache # 仅媒体缓存淘汰策略（哪些能删、归档永不删、年龄与容量双约束）
+npm run test:asr         # 仅语音转写纯逻辑（24k→16k 重采样、命令拼装、转写文本清理）
 ```
 
 ---
@@ -385,7 +386,7 @@ KPI/趋势按全量统计，明细为控制传输量只回传最近 1000 条。�
 
 **已知限制**
 
-- 语音**能解码播放**（SILK → WAV），但不做本地转写：议题分析与数字员工决策里语音仍是 `[语音] N″` 占位；需要转写可走飞书妙记。
+- 语音**能解码播放**（SILK → WAV），也能**本地转写**（自备 whisper.cpp 可执行文件 + 模型，全程离线）：气泡上点「转写」，`npm run test:asr` 可验证重采样与参数拼装；转写按需触发、不做历史批量回填，未转写的语音在分析与数字员工里仍是 `[语音] N″` 占位。
 - 无 AI 通道时退化为规则提取，召回率明显下降（面板会标注「规则」）。
 - 单群单次扫描 800 条、全量重析活跃群前 30，超出都有显式提示。
 - 边界议题仍需人工复核：疑似桶（规则弱命中）与去重预览是刻意保留的人工关口。

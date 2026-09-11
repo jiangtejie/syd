@@ -172,9 +172,44 @@ function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
   const [stage, setStage] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
+  // 已转写内容：查询层会把缓存的转写并进 parsedContent（形如 [语音] 8″ 文本），这里也支持现转
+  const [text, setText] = useState<string | null>(transcriptOf(message.parsedContent))
+  const [asr, setAsr] = useState<'idle' | 'running' | 'failed'>('idle')
+  const [asrError, setAsrError] = useState('')
   const seconds = message.voiceDuration
     ? Math.max(1, Math.round(message.voiceDuration / 1000))
     : undefined
+
+  const transcribe = (): void => {
+    if (asr === 'running') return
+    const wxid = useWorkbenchStore.getState().wxid
+    if (!wxid) {
+      setAsr('failed')
+      setAsrError('未选择账号')
+      return
+    }
+    setAsr('running')
+    setAsrError('')
+    window.api?.cs?.media
+      ?.voiceTranscript(wxid, {
+        serverId: message.serverId,
+        localId: message.localId,
+        createTime: message.createTime
+      })
+      .then((r) => {
+        if (r?.ok && r.text) {
+          setText(r.text)
+          setAsr('idle')
+        } else {
+          setAsr('failed')
+          setAsrError(r?.error || '转写失败')
+        }
+      })
+      .catch((e: unknown) => {
+        setAsr('failed')
+        setAsrError(e instanceof Error ? e.message : String(e))
+      })
+  }
 
   const load = (): void => {
     if (stage === 'loading' || stage === 'ready') return
@@ -206,11 +241,33 @@ function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
       })
   }
 
+  const transcriptNode = (
+    <>
+      {text ? (
+        <span className="wb-msg-voice-text" title="本地 whisper 转写（离线）">
+          {text}
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="wb-msg-voice-asr"
+          onClick={transcribe}
+          disabled={asr === 'running'}
+          title="用本地 whisper.cpp 转写这条语音（需在设置里配好可执行文件与模型）"
+        >
+          {asr === 'running' ? '转写中…' : '转写'}
+        </button>
+      )}
+      {asr === 'failed' && asrError && <span className="wb-msg-voice-err">{asrError}</span>}
+    </>
+  )
+
   if (stage === 'ready' && url) {
     return (
       <div className="wb-msg-voice">
         <audio className="wb-msg-voice-audio" src={url} controls autoPlay />
         {seconds !== undefined && <span className="wb-msg-voice-dur">{seconds}″</span>}
+        {transcriptNode}
       </div>
     )
   }
@@ -228,8 +285,16 @@ function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
       </button>
       {seconds !== undefined && <span className="wb-msg-voice-dur">{seconds}″</span>}
       {stage === 'failed' && error && <span className="wb-msg-voice-err">{error}</span>}
+      {transcriptNode}
     </div>
   )
+}
+
+/** 从 parsedContent 里取出「已转写的语音内容」（没有则返回 null） */
+function transcriptOf(parsedContent: string | undefined): string | null {
+  if (!parsedContent) return null
+  const m = /^\[语音\](?:\s*\d+″)?\s*(.+)$/.exec(parsedContent.trim())
+  return m?.[1]?.trim() || null
 }
 
 function Avatar({
@@ -396,8 +461,12 @@ const MessageBubble = memo(function MessageBubble({
 
   // 语音消息附时长（如 [语音] 8″），无内容时兜底类型占位
   let bubbleText = message.parsedContent
-  if (message.localType === 34 && message.voiceDuration) {
-    bubbleText = `[语音] ${Math.max(1, Math.round(message.voiceDuration / 1000))}″`
+  if (message.localType === 34) {
+    // 语音气泡由 VoiceBubble 渲染（播放 + 转写），这里只在没有转写文本时给占位
+    bubbleText = transcriptOf(message.parsedContent) ?? ''
+    if (!bubbleText && message.voiceDuration) {
+      bubbleText = `[语音] ${Math.max(1, Math.round(message.voiceDuration / 1000))}″`
+    }
   }
   if (!bubbleText) bubbleText = '[消息]'
 

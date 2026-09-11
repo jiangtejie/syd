@@ -296,6 +296,24 @@ export interface CsApi {
       wxid: string,
       opts?: { serverId?: string; localId?: number; createTime?: number }
     ) => Promise<{ ok: boolean; url?: string; durationMs?: number; error?: string }>
+    /**
+     * 本地语音转写（whisper.cpp 外部可执行文件 + 本地模型，离线）：
+     * ok=false 时 error 直接说明缺什么（没配 whisper / 模型不存在 / 没听清）。
+     */
+    voiceTranscript: (
+      wxid: string,
+      opts?: { serverId?: string; localId?: number; createTime?: number; force?: boolean }
+    ) => Promise<{ ok: boolean; text?: string; cached?: boolean; error?: string }>
+    /** 转写能力状态（配置是否齐全） */
+    asrStatus: () => Promise<{
+      ok: boolean
+      available?: boolean
+      whisperPath?: string
+      modelPath?: string
+      language?: string
+      reason?: string
+      error?: string
+    }>
   }
   issue: {
     list: (wxid: string) => Promise<Result<{ issues?: FeedbackIssue[] }>>
