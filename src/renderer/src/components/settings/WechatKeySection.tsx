@@ -242,11 +242,13 @@ function WechatKeySection(): React.JSX.Element {
       setScanAttempts(r?.attempts ?? [])
       if (r?.ok) {
         const label =
-          r.provider === 'externalTool'
-            ? '外部工具'
-            : r.provider === 'localArtifacts'
-              ? '本地文件'
-              : '可选组件'
+          r.provider === 'nativeDll'
+            ? '原生组件（内存扫描）'
+            : r.provider === 'externalTool'
+              ? '外部工具'
+              : r.provider === 'localArtifacts'
+                ? '本地文件'
+                : '可选组件'
         toast.success(
           `密钥已自动获取并导入（来源：${label}）` +
             (r.valid === false ? '；测试未通过，请检查数据目录' : '')

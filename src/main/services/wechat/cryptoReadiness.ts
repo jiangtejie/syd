@@ -15,6 +15,7 @@ import { deriveImageKeys } from '../media/imageKeys'
 import { asrStatus } from '../media/asr'
 import { mediaCachePolicy, mediaCacheStats } from '../media/mediaCache'
 import { scanWeChatKey } from './keyScan'
+import { nativeKeyScanStatus } from './nativeKeyScan'
 import { createLogger } from '../logging'
 
 const log = createLogger('crypto-center')
@@ -29,7 +30,7 @@ const log = createLogger('crypto-center')
  */
 
 export interface ReadinessStep {
-  id: 'account' | 'key' | 'dbs' | 'images' | 'voice' | 'asr' | 'cache'
+  id: 'account' | 'key' | 'native' | 'dbs' | 'images' | 'voice' | 'asr' | 'cache'
   label: string
   status: 'ok' | 'warn' | 'fail' | 'skip'
   detail: string
@@ -54,6 +55,16 @@ export interface AccountReadiness {
   images: { xorKey: boolean; aesKey: boolean }
   voice: { mediaDbs: number; cachedWav: number }
   asr: { available: boolean; reason?: string }
+  /** 随包分发的原生取 key 组件状态（自研 DLL） */
+  native: {
+    dir: string
+    dllPath: string
+    dllFound: boolean
+    koffiAvailable: boolean
+    loaded: boolean
+    lastMs: number | null
+    lastError: string | null
+  }
   cache: {
     policy: { autoClean: boolean; keepDays: number; maxMB: number; maxFiles: number }
     files: number
@@ -216,6 +227,28 @@ export function accountReadiness(wxid: string): AccountReadiness {
           detail: `缺少 ${missing.join(', ')}（不影响已存在的库，但功能会受限）`
         }
   )
+  const native = nativeKeyScanStatus()
+  steps.push(
+    native.dllFound && native.koffiAvailable
+      ? {
+          id: 'native',
+          label: '原生取 key 组件',
+          status: native.loaded && !native.lastError ? 'ok' : 'warn',
+          detail: native.loaded
+            ? native.lastError
+              ? `已加载；上次调用：${native.lastError}`
+              : `已加载（上次耗时 ${native.lastMs ?? '?'}ms）`
+            : `已随包分发（${native.dir}），尚未调用`
+        }
+      : {
+          id: 'native',
+          label: '原生取 key 组件',
+          status: 'warn',
+          detail: native.dllFound
+            ? 'koffi 不可用（原生 FFI 未安装或被裁剪）'
+            : `未找到 wechat_key_tool.dll（${native.dllPath}）`
+        }
+  )
   steps.push(
     xorKey || aesKey
       ? {
@@ -279,6 +312,15 @@ export function accountReadiness(wxid: string): AccountReadiness {
     images: { xorKey: !!xorKey, aesKey: !!aesKey },
     voice: { mediaDbs, cachedWav },
     asr: { available: asr.available, reason: asr.reason },
+    native: {
+      dir: native.dir,
+      dllPath: native.dllPath,
+      dllFound: native.dllFound,
+      koffiAvailable: native.koffiAvailable,
+      loaded: native.loaded,
+      lastMs: native.lastMs,
+      lastError: native.lastError
+    },
     cache: { policy, files: cache.files, bytes: cache.bytes, archiveBytes: cache.archiveBytes },
     steps
   }

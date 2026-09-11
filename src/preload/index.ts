@@ -101,9 +101,9 @@ const api: PreloadApi = {
         ok: boolean
         installed?: boolean
         valid?: boolean
-        provider?: 'component' | 'externalTool' | 'localArtifacts'
+        provider?: 'nativeDll' | 'component' | 'externalTool' | 'localArtifacts'
         attempts: Array<{
-          id: 'component' | 'externalTool' | 'localArtifacts'
+          id: 'nativeDll' | 'component' | 'externalTool' | 'localArtifacts'
           label: string
           status: 'ok' | 'candidates' | 'empty' | 'skipped' | 'error'
           detail: string

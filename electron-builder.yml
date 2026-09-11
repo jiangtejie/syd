@@ -14,7 +14,12 @@ extraResources:
   # 注入脚本放到 app.asar 旁 resources/ps(运行时代码按 process.resourcesPath/ps 读取)
   - from: resources/ps
     to: ps
+  # 原生取 key 组件（作者自研 DLL）：放 app.asar 外，主进程按 process.resourcesPath/wechat-key-tool 加载
+  - from: resources/wechat-key-tool
+    to: wechat-key-tool
 asarUnpack:
+  # koffi 是原生 FFI：.node 不能留在 asar 里
+  - node_modules/koffi/**
   # AI SDK(ESM,主进程 external 加载):从真实路径加载避免 asar 内 ESM 限制
   - node_modules/ai/**
   - node_modules/@ai-sdk/**

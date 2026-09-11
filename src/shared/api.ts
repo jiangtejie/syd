@@ -101,6 +101,16 @@ export interface AccountReadiness {
   images: { xorKey: boolean; aesKey: boolean }
   voice: { mediaDbs: number; cachedWav: number }
   asr: { available: boolean; reason?: string }
+  /** 随包分发的原生取 key 组件（自研 DLL）状态 */
+  native: {
+    dir: string
+    dllPath: string
+    dllFound: boolean
+    koffiAvailable: boolean
+    loaded: boolean
+    lastMs: number | null
+    lastError: string | null
+  }
   cache: {
     policy: { autoClean: boolean; keepDays: number; maxMB: number; maxFiles: number }
     files: number
@@ -192,10 +202,10 @@ export interface CsApi {
       installed?: boolean
       valid?: boolean
       /** 命中的来源 */
-      provider?: 'component' | 'externalTool' | 'localArtifacts'
+      provider?: 'nativeDll' | 'component' | 'externalTool' | 'localArtifacts'
       /** 每个来源的结果（界面照实展示，说明卡在哪一步） */
       attempts: Array<{
-        id: 'component' | 'externalTool' | 'localArtifacts'
+        id: 'nativeDll' | 'component' | 'externalTool' | 'localArtifacts'
         label: string
         status: 'ok' | 'candidates' | 'empty' | 'skipped' | 'error'
         detail: string

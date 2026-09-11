@@ -120,7 +120,17 @@ src/
 - 落库：`safeStorage.encryptString` 加密后存 `key_store`；**明文 key 只在主进程内存**。
 - 状态机 `pending → valid / invalid`：`testKey` 以「试开真实库」验证并回写错误原因。
 
-**库密钥自动获取（三来源 + 统一校验，`wechat/keyScan.ts` + 纯逻辑 `keyScanPure.ts`）**：
+**库密钥自动获取（内置原生组件 + 三来源兜底，`wechat/keyScan.ts` + `wechat/nativeKeyScan.ts`）**：
+
+0. `nativeDll`（**随包分发**）：作者自研的 `wechat_key_tool.dll`（内存扫描 + Ed25519 挑战-应答）。
+   调用约定：`wkt_challenge(uint8_t*, size_t)` → 32B nonce；用 XOR-0x5a 混淆的 PKCS8 私钥签名；
+   `wkt_scan_account_auth(sig, len)` → JSON 字符串（`db_key/wxid/name/number/phone/seed`）；`wkt_free(void*)`；
+   另有 `wkt_scan_image_key_auth(sig, len, data, len)` 用于图片 AES key。
+   加载方式：koffi（**锁定 2.9.0**：包内自带各平台预编译，安装脚本被 npm `allow-scripts` 拦截或离线构建时也能用；
+   3.x 需要跑安装脚本、包内没有预编译）；打包用 `extraResources` 把 DLL 放到 `<resources>/wechat-key-tool`，
+   koffi 的 `.node` 走 `asarUnpack`。失败路径全部降级：DLL 不存在 / koffi 不可用 / 加载失败 / 返回空，
+   都只记一条 attempt 原因，然后继续往下试其它来源。
+
 微信 4.x 的库密钥只在微信进程内存里，读内存需要原生组件（社区实现是 koffi + 自研 DLL + Ed25519 握手），
 授权不明且随微信版本漂移 —— 本仓**不分发**这类组件，也不内置内存扫描，改为提供三条稳健来源：
 
@@ -130,7 +140,16 @@ src/
 3. `localArtifacts`：在搜索路径（默认 userData + 微信数据根 + 账号目录，可配）里找**已经被别的工具导出过**的密钥（txt/json/ini/log…，深度≤4、单文件≤2MB、≤400 个文件）。
 
 **唯一安全边界**：任何来源的候选都必须过 `verifyWxDbKey`（页 1 HMAC）才 `importKey(..., 'registry')` 落 safeStorage，随后 `testKey` 试开真实库；
-每个候选要跑一次 256000 轮 PBKDF2，所以候选提取有硬上限（单次 20 个）。三个来源的结果都会照实回传（界面逐条显示「卡在哪一步」），
+每个候选要跑一次 256000 轮 PBKDF2，所以候选提取有硬上限（单次 20 个）。各来源（含内置组件）的结果都照实回传（界面逐条显示「卡在哪一步」）。
+**本机实测（2026-09-11，微信 4.1.13.12，进程以管理员身份运行）**：
+- DLL 可加载、挑战返回 32B、签名 64B；**认证是通的** —— 正确签名调用耗时 ~120ms 并消耗掉该次 challenge，
+  全零签名与重放同一签名都是 **0ms 返回空**（瞬时拒绝），说明「找到钥匙孔了，但屋里没找到东西」；
+- `wkt_scan_account_auth` 与 `wkt_scan_image_key_auth` 都返回空 → **当前取不到库密钥**；
+- 用作者自己的 CLI（`wdecode scan`，同一 DLL、同一机器）复现同样失败，**不是本仓集成的问题**；
+- 旁证：这台机器**没有 `kvcomm` 目录**（该目录是 `wx_key.dll` 读取统计缓存的来源），
+  且所有 `Weixin.exe` 的 `MainWindowHandle` 为 0（无主窗口，疑似托盘/后台态）——可能是 DLL 扫描命中的前提条件；
+- 因此当前默认落到其它来源；**DLL 一旦适配该版本，本仓无需改代码即可生效**（体检里能看到逐条结果）。
+
 全部失败时明确提示「最稳妥的办法仍是手动导入」。组件文件**换掉即生效**（加载前清 require 缓存，不必重启）。
 
 > 为什么不做内存扫描：页 1 校验对每个候选都要一次 PBKDF2-SHA512(256000)，全内存逐字节扫描在算力上不可行；
@@ -521,7 +540,8 @@ npm run build         # typecheck + electron-vite 三端构建
 - **ct-media 不支持 Range**：协议用 `net.fetch(file://)` 直出整文件，没有 Range 响应头 —— 图片/短视频/几秒语音播放没问题，长音频拖动进度条可能不灵。
 - **库密钥自动获取：三来源可用，但“内存扫描”不做**：组件 / 外部工具 / 本地文件三条来源都已落地并逐条验证（含错误候选被页 1 HMAC 拒绝、命令不存在、工具输出无密钥、组件抛异常、`.cmd` 包装器）。真正的“从微信进程内存里读出 key”仍需第三方原生组件（授权不明），本仓不分发也不内置；页 1 校验每候选一次 PBKDF2(256000) 的现实成本也让盲扫内存不可行（§4.2）。
 - **`localArtifacts` 的命中率取决于机器上有没有别的工具导出过 key**：它不猜、不破解，只在配置的路径里找现成的 64 位十六进制并验证。
-- **「自己扫微信进程内存取 key」实测不可行**（2026-09-11 在本机用真实密钥做的对照实验）：
+- **内置的是作者自研组件；「自己写一套盲扫」实测不可行**（2026-09-11 在本机用真实密钥做的对照实验，
+  结论仍然成立，只是现在有官方 DLL 可用）：
   1) 用 PowerShell P/Invoke 转储 Weixin.exe 私有内存 **297MB**；
   2) 针对已知密钥实测 **派生 AES key 完全不在内存里**（0 次命中）——说明 DB 空闲时 SQLCipher 连接已关闭、派生 key 被释放；
      而**原始 32 字节密钥在内存里有 6 处**，且邻近都是重复的配置/数据块（URL 域名列表一类通用内容），没有可稳定锚定的结构；
