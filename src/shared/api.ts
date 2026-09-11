@@ -245,12 +245,29 @@ export interface CsApi {
     }>
     remove: (ids: number[]) => Promise<{ ok: boolean; removed?: number; error?: string }>
     reveal: (id: number) => Promise<{ ok: boolean; error?: string }>
-    prune: (force?: boolean) => Promise<{ ok: boolean; removed?: number; error?: string }>
+    /** 清理：渠道过期/孤儿文件 + 媒体展示缓存 + 语音缓存 */
+    prune: (force?: boolean) => Promise<{
+      ok: boolean
+      removed?: number
+      media?: { removed: number; freedMB: number }
+      error?: string
+    }>
     policy: () => Promise<{
       ok: boolean
       autoClean?: boolean
       keepDays?: number
       maxMB?: number
+      /** 媒体侧现状与策略（展示缓存参与淘汰，archive 是用户数据、单独显示） */
+      media?: {
+        autoClean: boolean
+        keepDays: number
+        maxMB: number
+        maxFiles: number
+        files: number
+        bytes: number
+        archiveFiles: number
+        archiveBytes: number
+      }
       error?: string
     }>
   }

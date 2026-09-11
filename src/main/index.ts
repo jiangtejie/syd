@@ -52,6 +52,8 @@ import { startReportScheduler, stopReportScheduler } from './services/report/sch
 import { startGrowthScheduler, stopGrowthScheduler } from './services/growth/scheduler'
 import { createLogger } from './services/logging'
 import { startFileHousekeeping, stopFileHousekeeping } from './services/im/channelFiles'
+import { startMediaHousekeeping, stopMediaHousekeeping } from './services/media/mediaCache'
+import { migrateArchiveLayout } from './services/report/mediaArchive'
 
 const appLog = createLogger('app')
 import { stopAllWatches, setOnDbChangedNotify } from './services/wechat/watchService'
@@ -395,6 +397,14 @@ if (!app.requestSingleInstanceLock()) {
 
     // 渠道接收文件:启动即清一轮 + 每 6h 定时清理(防数据膨胀)
     startFileHousekeeping()
+    // 媒体展示缓存 + 语音缓存:同一节奏的容量治理(归档目录不参与,见 media/mediaCache.ts)
+    startMediaHousekeeping()
+    // 历史归档目录迁移(散落在 media 根的归档 → archive/;非破坏、配置门控、幂等)
+    try {
+      migrateArchiveLayout()
+    } catch (err) {
+      appLog.warn(`归档目录迁移失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
     // 审计表保留期清理(im_audit / feishu_send_log / send_log)
     startDbHousekeeping()
 
@@ -439,6 +449,7 @@ app.on('before-quit', () => {
   stopBaseSyncScheduler()
   stopAllIm()
   stopFileHousekeeping() // 此前漏调:6 小时定时清理器从不清理
+  stopMediaHousekeeping()
   stopDbHousekeeping()
   stopSending()
 })

@@ -118,6 +118,20 @@ export function getMediaCacheDir(wxid: string): string {
   return join(getCachePath(), 'media', wxid)
 }
 
+/**
+ * 上报媒体的归档目录：<cache>/media/<wxid>/archive。
+ * 与「可再生的展示缓存」分开，是因为 PG 的 media_path 指着归档文件 —— 缓存可以按策略淘汰，归档不能。
+ * 注意：ct-media 协议按段解析且子目录白名单里没有 archive，归档不会被协议暴露出去（见 mediaProtocol）。
+ */
+export function getMediaArchiveDir(wxid: string): string {
+  return join(getCachePath(), 'media', wxid, 'archive')
+}
+
+/** 语音解码产物目录：<cache>/media/<wxid>/voices（淘汰策略见 media/voice.ts） */
+export function getVoiceCacheDir(wxid: string): string {
+  return join(getCachePath(), 'media', wxid, 'voices')
+}
+
 /** 渠道接收文件根目录：<cache>/files */
 export function getFilesRootDir(): string {
   return getCacheSubPath('files')

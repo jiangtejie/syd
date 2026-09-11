@@ -268,7 +268,7 @@ npm run build:linux       # 打包 Linux
 ```bash
 npm run typecheck        # tsc --noEmit（主进程 + 渲染端）
 npm run lint             # ESLint
-npm run test:all         # 九套自检串跑（schema 迁移 / 库解密 / ct-media 路径 / 话术判定 / 飞书映射 / 日报文案 / 发送闸门 / 跟进判定 / 议题同一性），全部离线
+npm run test:all         # 十套自检串跑（schema 迁移 / 库解密 / ct-media 路径 / 媒体缓存淘汰 / 话术判定 / 飞书映射 / 日报文案 / 发送闸门 / 跟进判定 / 议题同一性），全部离线
 npm run test:feedback    # 仅跟进判定（回复归属）+ 议题同一性判据 + 文本降噪
 npm run test:matcher     # 仅数字员工话术判定（真实群原话当夹具）
 npm run test:lark        # 仅飞书同步字段映射（状态往返/跟进人匹配/冲突比对）
@@ -277,6 +277,7 @@ npm run test:send        # 仅发送前目标校验与文本比对（重名/前�
 npm run test:schema      # 仅 schema 迁移（合成老库上跑三条迁移 + 幂等性）
 npm run test:crypto      # 仅微信库解密（合成 SQLCipher 页 / WAL 帧：密钥校验、篡改拒绝、WAL 周期语义）
 npm run test:media-proto # 仅 ct-media 路径解析（图片两段 / 语音三段 / 非法命名与穿越）
+npm run test:media-cache # 仅媒体缓存淘汰策略（哪些能删、归档永不删、年龄与容量双约束）
 ```
 
 ---
@@ -299,7 +300,8 @@ npm run test:media-proto # 仅 ct-media 路径解析（图片两段 / 语音三�
 | 日志 | `%APPDATA%\wechat-cs-desktop\logs\app-YYYY-MM-DD.log`（默认保留 7 天，可配） |
 | 缓存分区 | 非系统盘优先：`<盘>:\wechat-cs-desktop\cache\{db,media,files,tmp,export,growth}`，可在设置里改 |
 | 解密后的微信明文库副本 | `<cache>\db`（源库路径 + 密钥相同则复用同名文件；按 `plainCacheMaxMB/Files` 自动收敛，可随时清理） |
-| 媒体解密产物 | `<cache>\media\<wxid>\`（图片/视频）与 `\voices\`（语音 WAV），经 `ct-media://` 协议只读暴露 |
+| 媒体解密产物 | `<cache>\media\<wxid>\`（图片/视频）与 `\voices\`（语音 WAV），经 `ct-media://` 协议只读暴露；按 `wechat.mediaCacheKeepDays`（默认 180 天）/ `MaxMB`（默认 8GB）自动回收 |
+| 上报媒体归档 | `<cache>\media\<wxid>\archive\`（数据上报的 `media_path` 指向这里；**不参与**缓存淘汰，只显示占用） |
 | 微信密钥 | `cs.db` 中 `safeStorage` 密文；不落明文、不出本机 |
 
 对外数据流只有两条，且都由你显式配置：**AI 通道**（聊天片段用于提炼/建议）与**数据上报**（你自己的 PostgreSQL）。除此之外应用不发起任何外部请求，也没有账号体系与遥测。

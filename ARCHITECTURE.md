@@ -276,6 +276,18 @@ src/
 - **语音**：`media/voice.ts` —— 微信 4.x 把语音 SILK 放在 `db_storage/message/media_*.db` 的 `VoiceInfo` 表（`svr_id / local_id / create_time / voice_data`）。按「消息行自己的 serverId」优先、`local_id + create_time`（按量级自动选秒/毫秒窗口）兜底定位，`silk-wasm` 解码成 PCM → 包 44 字节 WAV 头（24kHz 单声道）→ 落 `media/<wxid>/voices/<id>.wav`。渲染端只在用户点播放时才要音频（IPC `cs:media:voiceWav`），不在打开会话时批量解码。
   ct-media 协议因此多了**三段布局** `/<wxid>/voices/<id>.wav`（图片/视频仍是两段 `/<wxid>/<md5>_<kind>.<ext>`）；解析规则抽到纯函数 `media/mediaProtocol.ts` 并有自检 —— 早期把 `voices/x.wav` 整体 `encodeURIComponent`，`/` 变 `%2F` 导致整条路径只剩两段被判 403，渲染端只看到「播放失败」；现在这类 URL 由自检直接拦下。
 - **表情/视频**：表情解析、视频缓存到 media 分区。
+- **缓存容量治理**（`media/mediaCache.ts` + 纯策略 `media/mediaCachePolicy.ts`）：
+  媒体目录里混着三类文件，**只有可再生的那类可以删** —— 解密产物（`<md5>_orig|thumb|hd|video|emoji.<ext>`）
+  与早期遗留命名（`<md5>.<ext>`，现在已无人读取）按「年龄软上限（默认 180 天）+ 容量硬上限（默认 8GB / 5 万文件）」
+  淘汰；上报归档与不认识的命名一律不动。**容量上限只算可回收部分**，否则归档一大就会把缓存全删光
+  （这条语义有自检钉死）。展示缓存与归档都由 6 小时一轮的后台治理处理（`startMediaHousekeeping`），
+  也挂在「文件管理 → 清理过期/孤儿」这个入口上。
+- **上报归档独立成目录**：`<cache>/media/<账号>/archive/`。以前归档与展示缓存是**同一个文件**，
+  一次缓存清理就会让用户 PG 里的 `media_path` 指向空气；现在归档只复制不淘汰，`media_path`
+  写 `media/<账号>/archive/<文件>`（由绝对路径反推，不再拼 basename）。历史散落在 media 根的归档
+  由一次性迁移复制进 `archive/`（非破坏：只复制不删除，配置门控 + 幂等）；旧 PG 行在那之后由
+  **路径修复**兜底（`repairMediaPaths`：旧路径已不在、archive 下有同名文件 → 改写 `media_path`，
+  游标按 `create_time` 升序单调推进，避免每轮重扫历史）。
 - **渠道文件**：`im/channelFiles` 统一归档 + 限额策略 + 管理面板。
 
 ---
@@ -360,6 +372,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
 | 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
 | 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.decrypt.legacy`（回退旧内存整块路径）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |
+| 媒体缓存保留 | `wechat.mediaCacheAutoClean`（默认开）、`wechat.mediaCacheKeepDays`（180）、`wechat.mediaCacheMaxMB`（8192）、`wechat.mediaCacheMaxFiles`（50000）、`wechat.report.archiveMigrated`（迁移完成标记）、`wechat.report.pathRepairCursor`（归档路径修复游标） |
 
 ---
 
@@ -461,7 +474,10 @@ npm run build         # typecheck + electron-vite 三端构建
 - **HEVC 原图**：纯 HEVC 依赖外部 ffmpeg（设置里配路径）。
 - **明文副本的「新鲜度」仍是启发式**：靠 mtime + size 比较（含 `-wal`），没有把「解密时的源签名」存成 sidecar。极端情形（用保留 mtime 的方式还原/替换源库、时钟回拨）可能被误判为新鲜。已覆盖的替代判据是逐页 HMAC（解密时）与打开失败自愈（打开时）。
 - **副本能打开但内部页被外部改坏**：只在「打开失败」时自愈；若副本仍能打开、只是某些页坏了，要等该页被查询才会暴露（微信库是只读副本，正常路径不会发生；逐页校验已挡住产生坏副本的主因——撕裂读）。
-- **voice 缓存淘汰只在写入时触发**：`pruneVoiceCache` 挂在写新 WAV 之后，长期只读不写的账号不会触发；上限由 `wechat.voiceCacheMaxMB/Files` 控制。
+- **voice 缓存淘汰两处触发**：写新 WAV 之后（`pruneVoiceCache`）+ 6 小时一轮的后台治理（`pruneAllVoiceCaches`）；上限由 `wechat.voiceCacheMaxMB/Files` 控制。
+- **归档目录本身没有上限**：`archive/` 是用户数据（PG 的 media_path 指着它），只报告大小、不自动清理（文件管理面板会显示「上报归档 N 个 / X MB（不清理）」）。要回收得用户自己处理。
+- **旧 PG 行的兜底是「按需修复」而不是「一次性改写」**：`repairMediaPaths` 只在「旧路径文件已不在 + archive 有同名文件」时改写，单轮 300 行、游标升序推进。若某个旧文件既被回收、归档里又没有同名文件，只能报「仍缺」并留给用户重新补全（`backfillMissingMedia` 不会覆盖非空 media_path）。
+- **媒体缓存的「年龄」用的是文件 mtime**：如果文件被复制/还原导致 mtime 变化，年龄判定会跟着变（只影响淘汰时机，不影响数据安全）。
 - **可选组件的 require 缓存**：`keyScan` 组件是运行时 `require`，替换组件文件后需要重启应用才生效。
 - **LLM 闭环依据**：自动闭环目前不落「依据行号」，不可审计（LLM 只输出状态）。
 - **明细分页**：监控明细为主进程限量回传 + 归档收敛，未做服务端游标分页。

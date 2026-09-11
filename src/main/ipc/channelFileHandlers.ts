@@ -4,6 +4,12 @@ import * as repo from '../db/repos/imFileRepo'
 import * as files from '../services/im/channelFiles'
 import { createLogger } from '../services/logging'
 import { fail } from './_util'
+import {
+  mediaCachePolicy,
+  mediaCacheStats,
+  pruneAllVoiceCaches,
+  pruneMediaCache
+} from '../services/media/mediaCache'
 
 /** 渠道接收文件管理 IPC(工作台侧栏「收到的文件」) */
 
@@ -48,14 +54,23 @@ export function registerChannelFileHandlers(): void {
     }
   })
 
-  /** 清理过期(force=手动时忽略自动清理开关) */
+  /** 清理过期(force=手动时忽略自动清理开关);顺带清媒体展示缓存 + 语音缓存 */
   ipcMain.handle('cs:files:prune', (_e, force?: boolean) => {
     try {
       const r1 = files.pruneExpired(force === true)
       const r2 = files.gcOrphans()
+      const r3 = pruneMediaCache(force === true)
+      const r4 = pruneAllVoiceCaches()
       const totals = repo.fileTotals()
-      fileLog.info(`手动清理:过期 ${r1.removed} 个,孤儿 ${r2.removed} 个`)
-      return { ok: true as const, removed: r1.removed + r2.removed, totals }
+      fileLog.info(
+        `手动清理:过期 ${r1.removed} 个,孤儿 ${r2.removed} 个,媒体缓存 ${r3.removed} 个,语音 ${r4.removed} 个`
+      )
+      return {
+        ok: true as const,
+        removed: r1.removed + r2.removed + r3.removed + r4.removed,
+        totals,
+        media: { removed: r3.removed, freedMB: Math.round(r3.freedBytes / 1024 / 1024) }
+      }
     } catch (err) {
       return fail(err)
     }
@@ -64,7 +79,9 @@ export function registerChannelFileHandlers(): void {
   ipcMain.handle('cs:files:policy', () => {
     try {
       const p = files.filePolicy()
-      return { ok: true as const, ...p }
+      // 媒体侧现状:展示缓存大小/文件数 + 归档大小(归档不参与淘汰,单独显示让用户心里有数)
+      const media = { ...mediaCachePolicy(), ...mediaCacheStats() }
+      return { ok: true as const, ...p, media }
     } catch (err) {
       return fail(err)
     }

@@ -51,6 +51,14 @@ export function ChannelFileTray(): React.JSX.Element {
   const [maxMB, setMaxMB] = useState(50)
   /** 当前选中账号的保留覆盖(空=跟随全局;仅账号筛选时可见) */
   const [acctKeepDays, setAcctKeepDays] = useState('')
+  /** 媒体侧现状（展示缓存 + 上报归档）：与渠道文件共用清理入口，策略独立 */
+  const [media, setMedia] = useState<{
+    keepDays: number
+    files: number
+    bytes: number
+    archiveFiles: number
+    archiveBytes: number
+  } | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
     const res = await filesApi
@@ -71,6 +79,15 @@ export function ChannelFileTray(): React.JSX.Element {
       if (typeof p.autoClean === 'boolean') setAutoClean(p.autoClean)
       if (typeof p.keepDays === 'number') setKeepDays(p.keepDays)
       if (typeof p.maxMB === 'number') setMaxMB(p.maxMB)
+      if (p.media) {
+        setMedia({
+          keepDays: p.media.keepDays,
+          files: p.media.files,
+          bytes: p.media.bytes,
+          archiveFiles: p.media.archiveFiles,
+          archiveBytes: p.media.archiveBytes
+        })
+      }
     }
   }, [])
 
@@ -245,6 +262,19 @@ export function ChannelFileTray(): React.JSX.Element {
                 清理过期/孤儿
               </button>
             </div>
+
+            {/* 媒体缓存（图片/视频/表情解密产物 + 语音）：与渠道文件同一清理入口，策略独立 */}
+            {media && (
+              <div
+                className="st-hint"
+                title="清理按钮会一并回收；上报归档（archive/）属于你自己的数据，不参与淘汰"
+              >
+                媒体缓存 {media.files} 个 · {fmtSize(media.bytes)} · 保留 {media.keepDays} 天
+                {media.archiveFiles > 0
+                  ? ` · 上报归档 ${media.archiveFiles} 个 · ${fmtSize(media.archiveBytes)}（不清理）`
+                  : ''}
+              </div>
+            )}
 
             <div className="wb-files-list">
               {items === null && <div className="st-hint">加载中…</div>}

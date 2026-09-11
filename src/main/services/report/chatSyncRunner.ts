@@ -19,7 +19,13 @@ import {
   type PgMessageRow,
   type PgSessionRow
 } from './pgWriter'
-import { archiveMediaJobs, backfillMissingMedia, mediaJobOf, type MediaJob } from './mediaArchive'
+import {
+  archiveMediaJobs,
+  backfillMissingMedia,
+  mediaJobOf,
+  repairMediaPaths,
+  type MediaJob
+} from './mediaArchive'
 
 /** 媒体归档/补全单轮预算(防首轮海量解密拖长单轮) */
 const MEDIA_BUDGET = 200
@@ -473,9 +479,17 @@ export async function runChatSyncJob(
         MEDIA_BUDGET,
         (sessionId, limit, before) => listMessages(base, sessionId, limit, before)
       )
+      // 归档路径修复：旧的扁平归档文件被缓存策略回收后，把 media_path 改指到 archive/ 里的同名文件
+      const repair = await repairMediaPaths(
+        client,
+        { schema: archOpts.schema, accountWxid: cfg.accountWxid },
+        300
+      )
       const sum = mediaArch.done + mediaArch.failed + mediaArch.skippedNoSource + backfill.done
-      if (sum > 0) {
-        mediaNote = ` · 媒体归档 ${mediaArch.done + backfill.done} 份(缺源 ${mediaArch.skippedNoSource + backfill.skippedNoSource}、失败 ${mediaArch.failed + backfill.failed})`
+      if (sum > 0 || repair.repaired > 0) {
+        mediaNote =
+          ` · 媒体归档 ${mediaArch.done + backfill.done} 份(缺源 ${mediaArch.skippedNoSource + backfill.skippedNoSource}、失败 ${mediaArch.failed + backfill.failed})` +
+          (repair.repaired > 0 ? ` · 路径修复 ${repair.repaired}` : '')
       }
     }
     const interrupted = signal?.aborted === true
