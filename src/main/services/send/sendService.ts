@@ -3,6 +3,7 @@ import { sendToChat, sendFileToChat, injectEnabled } from '../wechat/injector'
 import * as wxService from '../wechat/wxService'
 import { insertSendLog, countTodaySent } from '../../db/repos/sendLog'
 import { getConfigNumber, getConfigBoolean, setConfig } from '../../db/repos/config'
+import { pickUniqueTarget, textMatchesSent, type GuardSession } from './guard'
 import { createLogger } from '../logging'
 
 const sendLog = createLogger('send')
@@ -39,11 +40,59 @@ interface SendJob {
 
 /** 连续校验失败熔断阈值 */
 const FAIL_THRESHOLD = 2
+/** 队列上限：人工 + AI 工具 + 值班通道都可能入队，堆太多只会雪崩 */
+const MAX_QUEUE = 20
+/**
+ * 「注入成功但库里没匹配到文本」时，是否还看会话里有没有新发出的消息：
+ * 有 → 判为已发送（未逐字校验）；没有 → 才算真失败并计入熔断。
+ * 这样避免「微信截断/换行差异」把正常发送误判成失败、进而误熔断。
+ */
+const VERIFY_NEW_MSG_WINDOW_MS = 120_000
 
 const queue: SendJob[] = []
 let draining = false
 let halted = false
 let failStreak = 0
+/** 熔断状态是否已从配置读回（模块加载时数据库可能还没就绪，用惰性读数） */
+let hydrated = false
+
+/** 熔断是持久状态：重启后必须还在（以前只写不读，重启就自动复活继续发） */
+function hydrateOnce(): void {
+  if (hydrated) return
+  hydrated = true
+  try {
+    if (getConfigBoolean('send.halted', false)) {
+      halted = true
+      sendLog.warn('读取到上次的熔断状态：发送保持拦截，确认无误后到「设置 → 发送」复位')
+    }
+  } catch {
+    /* 数据库尚未就绪：下一次调用再试 */
+    hydrated = false
+  }
+}
+
+/** 会话列表短缓存：一轮批量发送不必每个任务都读一次库 */
+let sessionsCache: { wxid: string; at: number; list: GuardSession[] } | null = null
+const SESSIONS_TTL_MS = 30_000
+
+function guardSessions(wxid: string): GuardSession[] {
+  if (
+    sessionsCache &&
+    sessionsCache.wxid === wxid &&
+    Date.now() - sessionsCache.at < SESSIONS_TTL_MS
+  ) {
+    return sessionsCache.list
+  }
+  const res = wxService.getSessions(wxid)
+  const list: GuardSession[] = res.ok
+    ? (res.sessions ?? []).map((s) => ({
+        username: s.username,
+        displayName: s.displayName || s.nickname || s.remark || s.username
+      }))
+    : []
+  sessionsCache = { wxid, at: Date.now(), list }
+  return list
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
@@ -59,26 +108,37 @@ function dailyLimit(): number {
   return getConfigNumber('send.dailyLimit', 200)
 }
 
-/** 闭环校验：发完查微信库确认发出的消息存在（发对会话由 targetName 搜索保证） */
+/**
+ * 闭环校验：发完查微信库确认消息真的落地。
+ *
+ * 两种"没匹配到"要分开看，否则会误熔断：
+ * - 会话里**没有**新发出的消息 → 真失败（计入熔断）；
+ * - 有新的我方消息、只是文本没逐字匹配（微信截断/换行/表情差异）→ 判为已发送（未逐字校验），不计熔断。
+ */
 async function verifySend(
   wxid: string,
   sessionId: string,
-  text: string
-): Promise<{ verified: boolean; verifiable: boolean; reason?: string }> {
+  text: string,
+  sinceMs: number
+): Promise<{ verified: boolean; verifiable: boolean; sawOutgoing?: boolean; reason?: string }> {
   try {
-    const res = await wxService.getMessages(wxid, sessionId, 20)
+    const res = await wxService.getMessages(wxid, sessionId, 30)
     if (!res.ok || !res.messages) {
       return { verified: false, verifiable: false, reason: res.error || '微信库不可读' }
     }
-    const recent = res.messages.filter((m) => m.isSend).slice(-5)
-    const hit = recent.some((m) => {
-      const c = m.parsedContent || m.rawContent
-      return c.length > 0 && (c.includes(text) || text.includes(c))
-    })
+    const mine = res.messages.filter((m) => m.isSend)
+    const hit = mine
+      .slice(-5)
+      .some((m) => textMatchesSent(m.parsedContent || m.rawContent || '', text))
+    if (hit) return { verified: true, verifiable: true }
+    const sawOutgoing = mine.some((m) => m.createTime >= sinceMs - VERIFY_NEW_MSG_WINDOW_MS)
     return {
-      verified: hit,
+      verified: false,
       verifiable: true,
-      reason: hit ? undefined : '未在最近消息中匹配到发送内容'
+      sawOutgoing,
+      reason: sawOutgoing
+        ? '会话里有新发出的消息，但文本未逐字匹配'
+        : '未在会话最近消息中发现新发出的内容'
     }
   } catch (e) {
     return {
@@ -120,8 +180,33 @@ async function verifyFileSend(
   }
 }
 
+/**
+ * 注入失败里哪些可以安全重试：
+ * 只重试「还没进入粘贴正文」的错误（焦点被抢 / 剪贴板占用 / 窗口没找到）——
+ * 这类重试不会造成重复发送；而「注入返回成功但校验失败」绝不能重试（可能已经发出去了）。
+ */
+function isRetryableInjectError(error: string | undefined): boolean {
+  if (!error) return false
+  return /焦点被抢|剪贴板|未检测到微信窗口|未在限时内响应|超时|focus stolen|clipboard busy|window not found|timed? ?out/i.test(
+    error
+  )
+}
+
+/** 带一次安全重试的注入 */
+async function injectWithRetry<T extends { ok: boolean; error?: string }>(
+  run: () => Promise<T>,
+  label: string
+): Promise<T> {
+  const first = await run()
+  if (first.ok || !isRetryableInjectError(first.error)) return first
+  sendLog.warn(`注入失败将重试一次（${label}）: ${first.error}`)
+  await sleep(1500)
+  return run()
+}
+
 async function drain(): Promise<void> {
   if (draining) return
+  hydrateOnce()
   draining = true
   while (queue.length > 0) {
     const job = queue.shift()!
@@ -159,13 +244,30 @@ async function drain(): Promise<void> {
       continue
     }
 
+    // 目标唯一性预检：搜索框回车会打开第一个结果，重名/前缀撞车时必须拒绝（否则发错群收不回）
+    const decision = pickUniqueTarget(guardSessions(job.wxid), job.sessionId, job.targetName)
+    if (!decision.ok) {
+      sendLog.warn(`发送已拦截（目标不唯一）: ${decision.error ?? ''}`)
+      job.resolve({
+        ok: false,
+        status: 'rejected',
+        error: decision.error,
+        verified: false,
+        at
+      })
+      continue
+    }
+
     // 拟人化延迟
     await sleep(humanDelay())
 
     let result: SendResult
     if (job.file) {
       // 图片/文件发送:注入后等待微信落库,再做“种类级”弱校验(文件无正文可比,不参与熔断)
-      const inject = await sendFileToChat(job.targetName, job.file.path, job.file.kind)
+      const inject = await injectWithRetry(
+        () => sendFileToChat(decision.name, job.file!.path, job.file!.kind),
+        'file'
+      )
       if (!inject.ok) {
         result = {
           ok: false,
@@ -186,7 +288,7 @@ async function drain(): Promise<void> {
         }
       }
     } else {
-      const inject = await sendToChat(job.targetName, job.text)
+      const inject = await injectWithRetry(() => sendToChat(decision.name, job.text), 'text')
       if (!inject.ok) {
         result = {
           ok: false,
@@ -196,13 +298,17 @@ async function drain(): Promise<void> {
           at: Date.now()
         }
       } else {
-        // 注入成功 → 闭环校验
-        const v = await verifySend(job.wxid, job.sessionId, job.text)
+        // 注入成功 → 闭环校验（文本未逐字匹配但会话里确有新发出消息 → 视为已发送，不熔断）
+        const v = await verifySend(job.wxid, job.sessionId, job.text, at)
         if (v.verified) {
           failStreak = 0
           result = { ok: true, status: 'sent', verified: true, at: Date.now() }
+        } else if (v.verifiable && v.sawOutgoing) {
+          failStreak = 0
+          sendLog.info(`发送未逐字校验（${v.reason ?? ''}）target=${decision.name.slice(0, 24)}`)
+          result = { ok: true, status: 'sent', verified: false, at: Date.now() }
         } else if (v.verifiable) {
-          // 明确没找到 → 发错/未发出，熔断计数
+          // 会话里没有新发出的消息 → 真失败，熔断计数
           failStreak += 1
           if (failStreak >= FAIL_THRESHOLD) {
             halted = true
@@ -255,9 +361,21 @@ async function drain(): Promise<void> {
   draining = false
 }
 
-/** 入队发送（人工/确认/自动统一走此链路） */
+/** 入队发送（人工/确认/自动统一走此链路）；队列有上限，满了直接拒绝而不是无限堆积 */
 export function enqueueSend(job: Omit<SendJob, 'resolve'>): Promise<SendResult> {
   return new Promise<SendResult>((resolve) => {
+    hydrateOnce()
+    if (queue.length >= MAX_QUEUE) {
+      sendLog.warn(`发送队列已满（${MAX_QUEUE}），拒绝入队 source=${job.source}`)
+      resolve({
+        ok: false,
+        status: 'rejected',
+        error: `发送队列已满（${MAX_QUEUE} 条排队中），请稍后再试`,
+        verified: false,
+        at: Date.now()
+      })
+      return
+    }
     queue.push({ ...job, resolve })
     void drain()
   })
@@ -269,6 +387,7 @@ export function enqueueSendFile(job: Omit<SendJob, 'resolve' | 'text'>): Promise
 }
 
 export function isHalted(): boolean {
+  hydrateOnce()
   return halted
 }
 
@@ -280,6 +399,7 @@ export function resetCircuit(): void {
 }
 
 export function getSendStatus(): SendStatusInfo {
+  hydrateOnce()
   return {
     halted,
     queued: queue.length,

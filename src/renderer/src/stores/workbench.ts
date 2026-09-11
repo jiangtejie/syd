@@ -159,6 +159,24 @@ const issueApi = window.api?.cs?.issue
 let detailReqSeq = 0
 
 /**
+ * 发送超时兜底（毫秒）：主进程侧有串行队列 + 注入脚本自身 30s 超时，
+ * 正常远小于这个值。这里只防「IPC 没回来」导致发送按钮永久卡在「发送中…」
+ * （sending 是全局布尔，卡住会让所有会话都发不出）。超时**不自动重试**——
+ * 消息可能已经发出去了，重试就是重复发送。
+ */
+const SEND_TIMEOUT_MS = 60_000
+const SEND_TIMEOUT = Symbol('send-timeout')
+
+async function withSendTimeout<T>(p: Promise<T>): Promise<T | typeof SEND_TIMEOUT> {
+  return Promise.race([
+    p,
+    new Promise<typeof SEND_TIMEOUT>((resolve) =>
+      window.setTimeout(() => resolve(SEND_TIMEOUT), SEND_TIMEOUT_MS)
+    )
+  ])
+}
+
+/**
  * 会话列表浅比较：内容一致时复用旧数组引用。
  * sessions 被 App/TitleBar/SessionList/看板/客户页订阅，换引用会让它们全部重渲染。
  */
@@ -745,7 +763,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   sendText: async (text: string, source?: string) => {
     const { wxid, activeSessionId, sessions } = get()
     if (!wxid || !activeSessionId || !text.trim()) return
-    const session = sessions.find((s) => s.username === activeSessionId)
+    // 快照发送时的会话：发送期间用户可能切群，回显/结果都不能写到别的会话上
+    const sentFor = activeSessionId
+    const session = sessions.find((s) => s.username === sentFor)
     const targetName =
       session?.displayName || session?.nickname || session?.remark || activeSessionId
     set({ sending: true })
@@ -756,18 +776,33 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         error?: string
       }
       if (replyApi) {
-        res = await replyApi.sendText({
-          wxid,
-          sessionId: activeSessionId,
-          targetName,
-          text: text.trim(),
-          source
-        })
+        const raced = await withSendTimeout(
+          replyApi.sendText({
+            wxid,
+            sessionId: sentFor,
+            targetName,
+            text: text.trim(),
+            source
+          })
+        )
+        if (raced === SEND_TIMEOUT) {
+          toast.error('发送结果未知：请到会话里确认是否已发出（不会自动重发）')
+          set({ sending: false })
+          return
+        }
+        res = raced
       } else {
         res = { ok: false, error: '发送通道未就绪' }
       }
       const result = res.ok && res.result ? res.result : null
+      const stillHere = get().activeSessionId === sentFor
       if (res.ok && res.result?.status === 'sent') {
+        if (!stillHere) {
+          // 已切到别的会话：不回显（否则这条气泡会出现在错误的会话里），只提示
+          toast.success('已发送（你已切到其它会话，故未在此处回显）')
+          set({ sending: false })
+          return
+        }
         // 本地追加已发送消息（真实库模式下稍后由监控推送对齐）
         const msg: ChatMessage = {
           localId: Date.now(),
@@ -786,22 +821,27 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         // 稍后拉取真实消息列表,以微信库中的正式气泡替换本地乐观行
         window.setTimeout(() => {
           const st = get()
-          if (st.source === 'wx' && st.activeSessionId === activeSessionId && !st.sending) {
+          if (st.source === 'wx' && st.activeSessionId === sentFor && !st.sending) {
             void st.refreshCurrentMessages()
           }
         }, 1600)
       } else {
         toast.error(res.error || result?.error || '发送失败')
       }
-      set({
-        sending: false,
-        sendResult: {
-          ok: res.ok,
-          error: res.error || result?.error,
-          status: result?.status,
-          verified: result?.verified
-        }
-      })
+      // 结果面板只属于发送时那个会话：切了会话就只复位 sending，别污染新会话的提示
+      set(
+        stillHere
+          ? {
+              sending: false,
+              sendResult: {
+                ok: res.ok,
+                error: res.error || result?.error,
+                status: result?.status,
+                verified: result?.verified
+              }
+            }
+          : { sending: false }
+      )
     } catch (e) {
       console.error('[workbench] send failed', e)
       toast.error('发送失败')
@@ -813,21 +853,39 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   sendFile: async (path: string, kind: 'image' | 'file') => {
     const { wxid, activeSessionId, sessions, sending } = get()
     if (!wxid || !activeSessionId || !path.trim() || sending) return
-    const session = sessions.find((s) => s.username === activeSessionId)
-    const targetName =
-      session?.displayName || session?.nickname || session?.remark || activeSessionId
+    const sentFor = activeSessionId
+    const session = sessions.find((s) => s.username === sentFor)
+    const targetName = session?.displayName || session?.nickname || session?.remark || sentFor
     set({ sending: true })
     try {
-      const res = replyApi
-        ? await replyApi.sendFile({
+      let res:
+        | Awaited<ReturnType<NonNullable<typeof replyApi>['sendFile']>>
+        | {
+            ok: boolean
+            result?: { status: string; verified?: boolean; error?: string }
+            error?: string
+          }
+      if (replyApi) {
+        const raced = await withSendTimeout(
+          replyApi.sendFile({
             wxid,
-            sessionId: activeSessionId,
+            sessionId: sentFor,
             targetName,
             path: path.trim(),
             kind,
             source: 'manual'
           })
-        : { ok: false, error: '发送通道未就绪' }
+        )
+        if (raced === SEND_TIMEOUT) {
+          toast.error('发送结果未知：请到会话里确认文件是否已发出（不会自动重发）')
+          set({ sending: false })
+          return
+        }
+        res = raced
+      } else {
+        res = { ok: false, error: '发送通道未就绪' }
+      }
+      const stillHere = get().activeSessionId === sentFor
       const result = res.ok && res.result ? res.result : null
       const name = path.split(/[\\/]/).pop() ?? ''
       if (res.ok && res.result?.status === 'sent') {
@@ -837,22 +895,26 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         // 1.6s 后拉取真实消息(微信库落盘稍慢),让文件/图片正式气泡上屏
         window.setTimeout(() => {
           const st = get()
-          if (st.source === 'wx' && st.activeSessionId === activeSessionId && !st.sending) {
+          if (st.source === 'wx' && st.activeSessionId === sentFor && !st.sending) {
             void st.refreshCurrentMessages()
           }
         }, 1600)
       } else {
         toast.error(res.error || result?.error || `发送失败:${name}`)
       }
-      set({
-        sending: false,
-        sendResult: {
-          ok: res.ok,
-          error: res.error || result?.error,
-          status: result?.status,
-          verified: result?.verified
-        }
-      })
+      set(
+        stillHere
+          ? {
+              sending: false,
+              sendResult: {
+                ok: res.ok,
+                error: res.error || result?.error,
+                status: result?.status,
+                verified: result?.verified
+              }
+            }
+          : { sending: false }
+      )
     } catch (e) {
       console.error('[workbench] sendFile failed', e)
       toast.error('文件发送失败')

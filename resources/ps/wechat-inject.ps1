@@ -93,6 +93,23 @@ function Send-KeySeq([string]$seq) {
   }
 }
 
+# all candidate WeChat windows (multi-instance detection: sending to the wrong window is unrecoverable)
+function Get-WeChatWindows {
+  $out = @()
+  $procs = Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like '*wechat*' -or $_.ProcessName -like '*weixin*') }
+  foreach ($p in $procs) {
+    if ($p.MainWindowTitle -like "*$weChatTitle*" -or $p.ProcessName -like 'weixin*') {
+      $out += @{ hwnd = $p.MainWindowHandle; title = $p.MainWindowTitle; pid = $p.Id }
+    }
+  }
+  if ($out.Count -gt 0) { return $out }
+  $all = Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -like "*$weChatTitle*" }
+  foreach ($p in $all) { $out += @{ hwnd = $p.MainWindowHandle; title = $p.MainWindowTitle; pid = $p.Id } }
+  return $out
+}
+
 function Find-WeChatWindow {
   $procs = Get-Process -ErrorAction SilentlyContinue |
     Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like '*wechat*' -or $_.ProcessName -like '*weixin*') }
@@ -146,40 +163,56 @@ try {
       $out = @{ ok = $true; title = $win.title }
     } elseif ($Action -eq 'send') {
       # full injection flow
+      if ((Get-WeChatWindows).Count -gt 1) {
+        $out = @{ ok = $false; error = 'Multiple WeChat windows found, close extra ones' }
+      } else {
       Focus-WeChatWindow $hwnd | Out-Null
       Start-Sleep -Milliseconds 150
       # open search -> clear -> paste session name -> enter
       Send-KeySeq 'ctrl+f'
       Start-Sleep -Milliseconds 400
       Send-KeySeq 'ctrl+a,delete'
-      [System.Windows.Forms.Clipboard]::SetText($Target)
+      if (-not (Invoke-ClipboardWithRetry { [System.Windows.Forms.Clipboard]::SetText($Target) })) {
+        $out = @{ ok = $false; error = 'Clipboard busy (target)' }
+      }
       Send-KeySeq 'ctrl+v'
       Start-Sleep -Milliseconds 800
       Send-KeySeq 'enter'
       Start-Sleep -Milliseconds 900
       # ensure WeChat still foreground before pasting body and sending
-      if ([Win32]::GetForegroundWindow() -ne $hwnd) {
+      if (-not $out.ok) {
+        # clipboard for target name failed: stop before typing anything
+      } elseif ([Win32]::GetForegroundWindow() -ne $hwnd) {
         $out = @{ ok = $false; error = 'Focus stolen, send cancelled' }
+      } elseif (-not (Invoke-ClipboardWithRetry { [System.Windows.Forms.Clipboard]::SetText($Text) })) {
+        $out = @{ ok = $false; error = 'Clipboard busy (text)' }
       } else {
-        [System.Windows.Forms.Clipboard]::SetText($Text)
         Send-KeySeq 'ctrl+v'
         Start-Sleep -Milliseconds 400
         Send-KeySeq 'enter'
         $out = @{ ok = $true; title = $win.title; sent = $true }
       }
+      }
       } elseif ($Action -eq 'sendfile') {
       # send one file/image: search session -> put file into clipboard -> paste -> enter
+      if ((Get-WeChatWindows).Count -gt 1) {
+        $out = @{ ok = $false; error = 'Multiple WeChat windows found, close extra ones' }
+      } else {
       Focus-WeChatWindow $hwnd | Out-Null
       Start-Sleep -Milliseconds 150
       Send-KeySeq 'ctrl+f'
       Start-Sleep -Milliseconds 400
       Send-KeySeq 'ctrl+a,delete'
-      [System.Windows.Forms.Clipboard]::SetText($Target)
+      if (-not (Invoke-ClipboardWithRetry { [System.Windows.Forms.Clipboard]::SetText($Target) })) {
+        $out = @{ ok = $false; error = 'Clipboard busy (target)' }
+      }
       Send-KeySeq 'ctrl+v'
       Start-Sleep -Milliseconds 800
       Send-KeySeq 'enter'
       Start-Sleep -Milliseconds 900
-      if ([Win32]::GetForegroundWindow() -ne $hwnd) {
+      if (-not $out.ok) {
+        # clipboard for target name failed: stop before touching the file
+      } elseif ([Win32]::GetForegroundWindow() -ne $hwnd) {
         $out = @{ ok = $false; error = 'Focus stolen, send cancelled' }
       } elseif (-not (Test-Path -LiteralPath $Path)) {
         $out = @{ ok = $false; error = 'File not found: ' + $Path }
@@ -204,6 +237,7 @@ try {
           Send-KeySeq 'enter'
           $out = @{ ok = $true; title = $win.title; sent = $true; asImage = $pasteAsImage }
         }
+      }
       }
     } else {
       $out.error = "Unknown action: $Action"

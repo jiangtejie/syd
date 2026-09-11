@@ -52,6 +52,9 @@ export function humanizeInjectError(raw: string | undefined): string | undefined
   if (/clipboard busy/i.test(raw)) {
     return '系统剪贴板正被占用,请稍等几秒重试'
   }
+  if (/multiple wechat windows/i.test(raw)) {
+    return '检测到多个微信窗口:为避免发错人,请只保留要用的那个微信窗口后重试'
+  }
   if (/file not found/i.test(raw)) {
     return '待发送的文件不存在或已被移动,请重新选择'
   }
