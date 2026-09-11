@@ -5,6 +5,7 @@ import type {
   ChatMsgItem,
   ChatSessionItem,
   FeedbackAnalysisState,
+  LarkBaseStatus,
   FeedbackIssue,
   FeedbackIssueDetail,
   ImAuditEntry,
@@ -693,7 +694,46 @@ const api: PreloadApi = {
         error?: string
       }> => ipcRenderer.invoke('cs:lark:status'),
       test: (url: string): Promise<{ ok: boolean; text?: string; error?: string }> =>
-        ipcRenderer.invoke('cs:lark:test', url)
+        ipcRenderer.invoke('cs:lark:test', url),
+      // ── 议题 → 多维表格（Base）同步 ──
+      baseStatus: (): Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }> =>
+        ipcRenderer.invoke('cs:lark:baseStatus'),
+      baseVerify: (
+        link: string
+      ): Promise<{
+        ok: boolean
+        error?: string
+        notes?: string[]
+        appToken?: string
+        issuesTableId?: string
+        repliesTableId?: string
+        status?: LarkBaseStatus
+      }> => ipcRenderer.invoke('cs:lark:baseVerify', link),
+      baseSync: (
+        wxid: string,
+        force?: boolean
+      ): Promise<{
+        ok: boolean
+        result?: {
+          ok: boolean
+          error?: string
+          scanned: number
+          created: number
+          updated: number
+          skipped: number
+          failed: number
+          at: number
+        }
+        status?: LarkBaseStatus
+        error?: string
+      }> => ipcRenderer.invoke('cs:lark:baseSync', wxid, force),
+      baseConfig: (patch: {
+        enabled?: boolean
+        rawEvidence?: boolean
+      }): Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }> =>
+        ipcRenderer.invoke('cs:lark:baseConfig', patch),
+      baseClear: (): Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }> =>
+        ipcRenderer.invoke('cs:lark:baseClear')
     },
     app: {
       /** 菜单/托盘等触发的页面导航（如 Ctrl+, 打开设置） */

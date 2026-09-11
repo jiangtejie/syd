@@ -2,12 +2,16 @@ import { ipcMain } from 'electron'
 import * as wxService from '../services/wechat/wxService'
 import { startWatch } from '../services/wechat/watchService'
 import { ensure as ensureIssueScheduler } from '../services/feedback/scheduler'
+import { startBaseSyncScheduler } from '../services/lark/baseSyncScheduler'
 import type { MessageCursor } from '../../shared/types'
 
 export function registerWechatHandlers(): void {
   ipcMain.handle('cs:wx:connect', (_e, wxid: string) => {
     const r = wxService.connect(wxid)
-    if (r.ok) ensureIssueScheduler(wxid)
+    if (r.ok) {
+      ensureIssueScheduler(wxid)
+      startBaseSyncScheduler(wxid)
+    }
     return r
   })
 
@@ -40,7 +44,10 @@ export function registerWechatHandlers(): void {
 
   ipcMain.handle('cs:wx:startWatch', (_e, wxid: string) => {
     const r = startWatch(wxid)
-    if (r.ok) ensureIssueScheduler(wxid)
+    if (r.ok) {
+      ensureIssueScheduler(wxid)
+      startBaseSyncScheduler(wxid)
+    }
     return r
   })
 

@@ -832,6 +832,19 @@ export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }
   return issues
 }
 
+/**
+ * 增量列出「自某时刻以来有变更」的问题（外部同步用：飞书多维表格按 updated_at 拉变更）。
+ * 顺序固定按 id 升序：外部系统的写入顺序稳定，便于排查。
+ */
+export function listIssuesChangedSince(wxid: string, sinceMs: number): FeedbackIssue[] {
+  const rows = getDb()
+    .prepare('SELECT * FROM issue_feedback WHERE wxid = ? AND updated_at > ? ORDER BY id ASC')
+    .all(wxid, sinceMs) as IssueRow[]
+  const issues = rows.map((r) => rowToIssue(r))
+  decorateIssues(issues)
+  return issues
+}
+
 /** 按群列出问题（工作台「群问题」视图；open 优先，其次发生时间倒序） */
 export function listIssuesByGroup(wxid: string, groupUsername: string): FeedbackIssue[] {
   const rows = getDb()

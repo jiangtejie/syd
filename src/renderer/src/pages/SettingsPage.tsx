@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { SendStatusInfo } from '../../../shared/types'
+import type { LarkBaseStatus, SendStatusInfo } from '../../../shared/types'
+import { useWorkbenchStore } from '../stores/workbench'
 import WechatKeySection from '../components/settings/WechatKeySection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
 import { agentFormDirty } from '../components/settings/agentDirty'
@@ -208,6 +209,12 @@ function SettingsPage(): React.JSX.Element {
   } | null>(null)
   const [larkTesting, setLarkTesting] = useState(false)
   const [larkTestRes, setLarkTestRes] = useState<{ ok: boolean; text: string } | null>(null)
+  /** 议题 → 多维表格同步（Base） */
+  const [baseStatus, setBaseStatus] = useState<LarkBaseStatus | null>(null)
+  const [baseLink, setBaseLink] = useState('')
+  const [baseBusy, setBaseBusy] = useState('')
+  const [baseNotes, setBaseNotes] = useState<{ ok: boolean; lines: string[] } | null>(null)
+  const wxid = useWorkbenchStore((s) => s.wxid)
   /** 飞书凭证状态刷新计数(保存配置后 +1 重新读取) */
   const [larkReload, setLarkReload] = useState(0)
   useEffect(() => {
@@ -223,6 +230,22 @@ function SettingsPage(): React.JSX.Element {
           accountName: res.accountName,
           defaultUrl: res.defaultUrl ?? ''
         })
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [larkReload])
+
+  // 议题同步状态（含已保存的链接、上次同步结果）
+  useEffect(() => {
+    let alive = true
+    void window.api?.cs?.lark
+      ?.baseStatus()
+      .then((res) => {
+        if (!alive || !res?.ok || !res.status) return
+        setBaseStatus(res.status)
+        setBaseLink((cur) => cur || res.status?.link || '')
       })
       .catch(() => undefined)
     return () => {
@@ -436,6 +459,68 @@ function SettingsPage(): React.JSX.Element {
     } finally {
       setLarkTesting(false)
     }
+  }
+
+  /** 验证多维表格链接：读权限 + 写权限 + 自动建表建字段（一次说清） */
+  const verifyBase = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseVerify) return
+    const link = baseLink.trim()
+    if (!link) {
+      setBaseNotes({ ok: false, lines: ['请先粘贴多维表格链接（…/base/xxxx）'] })
+      return
+    }
+    setBaseBusy('verify')
+    setBaseNotes(null)
+    try {
+      const res = await api.baseVerify(link)
+      if (res.status) setBaseStatus(res.status)
+      setBaseNotes({
+        ok: !!res.ok,
+        lines: [...(res.notes ?? []), ...(res.ok ? [] : [res.error ?? '验证失败'])]
+      })
+    } finally {
+      setBaseBusy('')
+    }
+  }
+
+  /** 立即同步一批议题到多维表格 */
+  const syncBaseNow = async (force: boolean): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseSync) return
+    if (!wxid) {
+      setBaseNotes({ ok: false, lines: ['还没连接微信账号：同步需要账号作用域'] })
+      return
+    }
+    setBaseBusy('sync')
+    setBaseNotes(null)
+    try {
+      const res = await api.baseSync(wxid, force)
+      if (res.status) setBaseStatus(res.status)
+      const r = res.result
+      setBaseNotes({
+        ok: !!res.ok,
+        lines: r
+          ? [
+              `扫描 ${r.scanned} · 新增 ${r.created} · 更新 ${r.updated} · 跳过 ${r.skipped}${r.failed ? ` · 失败 ${r.failed}` : ''}`,
+              ...(r.error ? [r.error] : [])
+            ]
+          : [res.error ?? '同步失败']
+      })
+    } finally {
+      setBaseBusy('')
+    }
+  }
+
+  const patchBaseConfig = async (patch: {
+    enabled?: boolean
+    rawEvidence?: boolean
+  }): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseConfig) return
+    const res = await api.baseConfig(patch)
+    if (res.status) setBaseStatus(res.status)
+    if (!res.ok) setBaseNotes({ ok: false, lines: [res.error ?? '保存失败'] })
   }
 
   /** 切换设置 Tab 并记忆选择（下次进入直接定位） */
@@ -974,6 +1059,76 @@ function SettingsPage(): React.JSX.Element {
               权限前提: 开放平台「权限管理」开通多维表格只读(bitable:app:readonly)与云文档只读
               (docx:document:readonly)并发布版本; 再把应用加为目标文档的协作者(分享 → 添加协作者 →
               选本应用), 否则接口会返回 403 / 权限类错误码。
+            </div>
+          </SettingsCard>
+
+          <SettingsCard
+            title="议题同步到多维表格(飞书 Base)"
+            desc="把群问题（议题）单向推到飞书多维表格，同事在手机/电脑上就能看到与处理。先「验证并建表」（会自动创建「议题」「数字员工回复」两张表与字段），再打开同步开关。默认只推标题/摘要，不推聊天原文。"
+          >
+            <div className="st-hint">
+              {baseStatus === null
+                ? '读取同步状态中…'
+                : `${baseStatus.hint}${baseStatus.mappedIssues > 0 ? ` · 已映射 ${baseStatus.mappedIssues} 条议题` : ''}`}
+            </div>
+            <FieldRow label="多维表格链接">
+              <input
+                className="st-input"
+                value={baseLink}
+                onChange={(e) => setBaseLink(e.target.value)}
+                placeholder="https://xxx.feishu.cn/base/<app_token>?table=<table_id>"
+              />
+            </FieldRow>
+            <div className="st-actions">
+              <button
+                type="button"
+                className="st-btn"
+                disabled={baseBusy !== ''}
+                onClick={() => void verifyBase()}
+              >
+                {baseBusy === 'verify' ? '验证中…' : '验证并建表'}
+              </button>
+              <button
+                type="button"
+                className="st-btn ghost"
+                disabled={baseBusy !== '' || !baseStatus?.configured}
+                onClick={() => void syncBaseNow(false)}
+              >
+                {baseBusy === 'sync' ? '同步中…' : '立即同步'}
+              </button>
+              <button
+                type="button"
+                className="st-btn ghost"
+                disabled={baseBusy !== '' || !baseStatus?.configured}
+                onClick={() => void syncBaseNow(true)}
+                title="忽略上次同步时间，把所有议题核对一遍"
+              >
+                全量核对
+              </button>
+            </div>
+            <SwitchRow
+              label="定时同步（每 2 分钟）"
+              desc="打开后自动把有变更的议题推到多维表格；关闭则只能手动同步"
+              checked={!!baseStatus?.enabled}
+              onChange={(v) => void patchBaseConfig({ enabled: v })}
+            />
+            <SwitchRow
+              label="推送聊天原文"
+              desc="默认关闭：只推标题与摘要。打开后会把证据原文一并写入多维表格（注意敏感信息外发）"
+              checked={!!baseStatus?.rawEvidence}
+              onChange={(v) => void patchBaseConfig({ rawEvidence: v })}
+            />
+            {baseNotes && (
+              <div className="st-ai-test">
+                <span className={baseNotes.ok ? 'st-ok' : 'st-bad'}>
+                  {(baseNotes.ok ? '✓ ' : '✗ ') + baseNotes.lines.join('；')}
+                </span>
+              </div>
+            )}
+            <div className="st-hint">
+              权限前提：开放平台给应用开通多维表格**读写**(bitable:app)并发布版本，再把应用加为该
+              Base 的协作者（打开表格 → 分享 → 添加协作者 → 选本应用 →
+              「可编辑」）。只读权限能读表但写不进去， 「验证并建表」会明确告诉你是哪种情况。
             </div>
           </SettingsCard>
         </div>

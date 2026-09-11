@@ -1,6 +1,15 @@
 import { ipcMain } from 'electron'
 import { larkConfigStatus } from '../services/lark/client'
 import { testLarkAccess } from '../services/lark/api'
+import {
+  baseSyncHint,
+  baseSyncStatus,
+  setRawEvidence,
+  setSyncEnabled,
+  syncIssuesOut,
+  verifyBaseLink
+} from '../services/lark/baseSync'
+import { getConfig, setConfig } from '../db/repos/config'
 
 /**
  * 飞书云文档 IPC(cs:lark:*):设置页的状态展示与连通性测试。
@@ -24,6 +33,68 @@ export function registerLarkHandlers(): void {
       return r.ok ? { ok: true as const, text: r.text } : { ok: false as const, error: r.text }
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '测试失败' }
+    }
+  })
+
+  // ── 议题 → 多维表格（Base）同步 ──
+  const snapshot = (): Record<string, unknown> => ({
+    ...baseSyncStatus(),
+    hint: baseSyncHint(),
+    link: (getConfig('lark.baseToken') ?? '').trim()
+  })
+
+  ipcMain.handle('cs:lark:baseStatus', () => {
+    try {
+      return { ok: true as const, status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '读取同步状态失败' }
+    }
+  })
+
+  /** 粘贴链接 → 验证读写 + 自动建表建字段（成功后落配置） */
+  ipcMain.handle('cs:lark:baseVerify', async (_e, link: string) => {
+    const target = typeof link === 'string' ? link.trim() : ''
+    if (!target) return { ok: false as const, error: '请先粘贴多维表格链接' }
+    try {
+      const r = await verifyBaseLink(target)
+      return { ...r, status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '验证失败' }
+    }
+  })
+
+  ipcMain.handle('cs:lark:baseSync', async (_e, wxid: string, force?: boolean) => {
+    if (!wxid) return { ok: false as const, error: '缺少账号' }
+    try {
+      const r = await syncIssuesOut(wxid, { force: force === true })
+      return { ok: r.ok, result: r, status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '同步失败' }
+    }
+  })
+
+  ipcMain.handle(
+    'cs:lark:baseConfig',
+    (_e, patch: { enabled?: boolean; rawEvidence?: boolean } = {}) => {
+      try {
+        if (typeof patch.enabled === 'boolean') setSyncEnabled(patch.enabled)
+        if (typeof patch.rawEvidence === 'boolean') setRawEvidence(patch.rawEvidence)
+        return { ok: true as const, status: snapshot() }
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : '保存失败' }
+      }
+    }
+  )
+
+  ipcMain.handle('cs:lark:baseClear', () => {
+    try {
+      setConfig('lark.baseToken', '')
+      setConfig('lark.baseTableIssues', '')
+      setConfig('lark.baseTableReplies', '')
+      setConfig('lark.sync.enabled', '0')
+      return { ok: true as const, status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '清除失败' }
     }
   })
 }

@@ -28,9 +28,22 @@ export interface LarkCredential {
 /** 本模块只声明用到的 SDK 方法, 避免引入 SDK 的巨型类型 */
 export interface LarkApi {
   bitable: {
-    appTable: { list: (payload: unknown) => Promise<unknown> }
-    appTableField: { list: (payload: unknown) => Promise<unknown> }
-    appTableRecord: { list: (payload: unknown) => Promise<unknown> }
+    appTable: {
+      list: (payload: unknown) => Promise<unknown>
+      create: (payload: unknown) => Promise<unknown>
+    }
+    appTableField: {
+      list: (payload: unknown) => Promise<unknown>
+      create: (payload: unknown) => Promise<unknown>
+    }
+    appTableRecord: {
+      list: (payload: unknown) => Promise<unknown>
+      create: (payload: unknown) => Promise<unknown>
+      update: (payload: unknown) => Promise<unknown>
+      delete: (payload: unknown) => Promise<unknown>
+      batchCreate: (payload: unknown) => Promise<unknown>
+      batchUpdate: (payload: unknown) => Promise<unknown>
+    }
   }
   docx: { document: { rawContent: (payload: unknown) => Promise<unknown> } }
   wiki: { space: { getNode: (payload: unknown) => Promise<unknown> } }
@@ -135,9 +148,9 @@ export function larkErrorHint(code: number | undefined): string {
       return ' —— 应用未被授权访问该文档: 请在飞书里打开该文档 → 分享 → 添加协作者, 把本应用加为「可阅读」;'
     case 99991672:
       return (
-        ' —— 应用缺少接口权限: 请在开放平台「权限管理」按提示开通所需权限(多维表格 bitable:app:readonly / ' +
-        '云文档 docx:document:readonly / 通讯录 contact:user.id:readonly), 发布版本后重试;' +
-        '接口返回的 msg 里通常带一键授权链接;'
+        ' —— 应用缺少接口权限: 请在开放平台「权限管理」按提示开通所需权限(读: bitable:app:readonly / ' +
+        '云文档 docx:document:readonly / 通讯录 contact:user.id:readonly; **写入议题同步还需要 bitable:app**), ' +
+        '发布版本后重试; 接口返回的 msg 里通常带一键授权链接;'
       )
     case 99991661:
       return ' —— 应用凭证无效或应用已停用: 请检查 App ID / App Secret, 并确认应用版本已发布;'

@@ -1,4 +1,5 @@
 import type { MonitorData } from './monitorMetrics'
+import type { LarkBaseStatus } from './types'
 import type {
   FeedbackAnalysisState,
   FeedbackIssue,
@@ -463,17 +464,31 @@ export interface CsApi {
     status: (wxid: string) => Promise<Result<{ status?: DutyStatus; stats?: DutyStats }>>
     /** 话术库 */
     scripts: (wxid: string) => Promise<Result<{ scripts?: DutyScript[] }>>
-    scriptSave: (wxid: string, input: DutyScriptInput) => Promise<Result<{ id?: number; scripts?: DutyScript[] }>>
-    scriptRemove: (wxid: string, id: number) => Promise<Result<{ removed?: boolean; scripts?: DutyScript[] }>>
-    scriptToggle: (wxid: string, id: number, enabled: boolean) => Promise<Result<{ scripts?: DutyScript[] }>>
+    scriptSave: (
+      wxid: string,
+      input: DutyScriptInput
+    ) => Promise<Result<{ id?: number; scripts?: DutyScript[] }>>
+    scriptRemove: (
+      wxid: string,
+      id: number
+    ) => Promise<Result<{ removed?: boolean; scripts?: DutyScript[] }>>
+    scriptToggle: (
+      wxid: string,
+      id: number,
+      enabled: boolean
+    ) => Promise<Result<{ scripts?: DutyScript[] }>>
     scriptImport: (
       wxid: string,
       rows: DutyScriptInput[]
-    ) => Promise<Result<{ inserted?: number; updated?: number; skipped?: number; scripts?: DutyScript[] }>>
+    ) => Promise<
+      Result<{ inserted?: number; updated?: number; skipped?: number; scripts?: DutyScript[] }>
+    >
     /** 导入推荐话术模板（只承诺动作、不承诺事实；按 intent 幂等） */
     seedStarters: (
       wxid: string
-    ) => Promise<Result<{ inserted?: number; updated?: number; skipped?: number; scripts?: DutyScript[] }>>
+    ) => Promise<
+      Result<{ inserted?: number; updated?: number; skipped?: number; scripts?: DutyScript[] }>
+    >
     /** 群级开关（客户页批量管理）：键=群 username */
     groups: (wxid: string) => Promise<Result<{ switches?: Record<string, DutyGroupSwitch> }>>
     groupsSet: (
@@ -507,7 +522,10 @@ export interface CsApi {
       }>
     >
     /** 历史回放预演：不写库不发送，只报告「会对哪些消息回什么」 */
-    preview: (wxid: string, opts?: { days?: number; limitGroups?: number }) => Promise<Result<DutyPreview>>
+    preview: (
+      wxid: string,
+      opts?: { days?: number; limitGroups?: number }
+    ) => Promise<Result<DutyPreview>>
   }
 
   feishuNotify: {
@@ -588,6 +606,40 @@ export interface CsApi {
       }>
     >
     test: (url: string) => Promise<Result<{ text?: string }>>
+    /** 议题 → 多维表格（Base）同步：状态 / 验证建表 / 立即同步 / 开关 */
+    baseStatus: () => Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }>
+    baseVerify: (link: string) => Promise<{
+      ok: boolean
+      error?: string
+      notes?: string[]
+      appToken?: string
+      issuesTableId?: string
+      repliesTableId?: string
+      status?: LarkBaseStatus
+    }>
+    baseSync: (
+      wxid: string,
+      force?: boolean
+    ) => Promise<{
+      ok: boolean
+      result?: {
+        ok: boolean
+        error?: string
+        scanned: number
+        created: number
+        updated: number
+        skipped: number
+        failed: number
+        at: number
+      }
+      status?: LarkBaseStatus
+      error?: string
+    }>
+    baseConfig: (patch: {
+      enabled?: boolean
+      rawEvidence?: boolean
+    }) => Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }>
+    baseClear: () => Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }>
   }
   app: {
     onNavigate: (callback: (page: string) => void) => () => void

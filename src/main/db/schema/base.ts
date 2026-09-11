@@ -215,6 +215,18 @@ export const CORE_TABLES: string[] = [
     PRIMARY KEY (account_wxid, group_username)
   )`,
 
+  // 飞书多维表格同步映射：Base 没有唯一键，靠这张表把「本地行 ↔ Base record_id」钉住（幂等 upsert 的根）
+  `CREATE TABLE IF NOT EXISTS lark_sync_map (
+    kind TEXT NOT NULL,
+    local_id INTEGER NOT NULL,
+    app_token TEXT NOT NULL,
+    table_id TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    content_hash TEXT NOT NULL DEFAULT '',
+    synced_at INTEGER NOT NULL,
+    PRIMARY KEY (kind, local_id)
+  )`,
+
   // 智能体（客服人设）：名称/描述/风格/自定义提示词，供回复建议 LLM 动态使用
   `CREATE TABLE IF NOT EXISTS ai_agent (
     id TEXT PRIMARY KEY,

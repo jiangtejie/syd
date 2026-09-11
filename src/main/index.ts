@@ -21,6 +21,7 @@ import { getGrowthMediaDir, getMediaRootDir, migrateLegacyCacheLayout } from './
 import { migrateStoredSecrets } from './services/secrets'
 import { listTables } from './db/schema'
 import { startDbHousekeeping, stopDbHousekeeping } from './db/housekeeping'
+import { stopBaseSyncScheduler } from './services/lark/baseSyncScheduler'
 import { getConfigBoolean } from './db/repos/config'
 import { registerKeyStoreHandlers } from './ipc/keyStoreHandlers'
 import { registerWechatHandlers } from './ipc/wechatHandlers'
@@ -438,6 +439,7 @@ app.on('before-quit', () => {
   closeDb()
   stopAllWatches()
   stopIssueScheduler()
+  stopBaseSyncScheduler()
   stopAllIm()
   stopFileHousekeeping() // 此前漏调:6 小时定时清理器从不清理
   stopDbHousekeeping()

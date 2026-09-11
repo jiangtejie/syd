@@ -837,3 +837,28 @@ export interface DutyPreview {
   intents: Array<{ intent: string; n: number }>
   totals: { groups: number; msgs: number; decisions: number; handoff: number; nonText: number }
 }
+
+/** 议题 → 飞书多维表格同步状态（设置页展示用） */
+export interface LarkBaseStatus {
+  configured: boolean
+  link?: string
+  appToken?: string
+  issuesTableId?: string
+  repliesTableId?: string
+  enabled: boolean
+  rawEvidence: boolean
+  lastAt: number
+  mappedIssues: number
+  mappedReplies: number
+  hint: string
+  lastResult: {
+    ok: boolean
+    error?: string
+    scanned: number
+    created: number
+    updated: number
+    skipped: number
+    failed: number
+    at: number
+  } | null
+}
