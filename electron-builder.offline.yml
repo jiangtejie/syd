@@ -1,0 +1,5 @@
+# 内网/无外网打包：用本地已解压的 Electron 代替从 GitHub 下载。
+# 用法：npm run build:win:offline（等价于 --config electron-builder.offline.yml）
+extends: ./electron-builder.yml
+# node_modules/electron/dist 就是当前 electron 版本已解压的 win32-x64 运行时
+electronDist: node_modules/electron/dist

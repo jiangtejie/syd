@@ -189,22 +189,37 @@ npm start            # 预览构建产物
 
 > 改到 **preload 或主进程**时，热更新只换界面、不换桥 —— 界面会出现「⚠ 维护功能未加载」或按钮点了没反应，**完全退出应用重启**即可。
 
-### 构建
+### 构建与打包
 
 ```bash
-npm run build        # 类型检查 + 三端构建（产物在 out/）
-npm run build:win    # 打包 Windows 安装包
-npm run build:mac    # 打包 macOS
-npm run build:linux  # 打包 Linux
+npm run build             # 类型检查 + 三端构建（产物在 out/）
+npm run build:win         # 打包 Windows 安装包（需要能访问 GitHub 下载 Electron/NSIS）
+npm run build:win:offline # 内网/无外网时用本地 Electron 打包（等价于 --config electron-builder.offline.yml）
+npm run build:mac         # 打包 macOS
+npm run build:linux       # 打包 Linux
 ```
+
+产物：`dist\wechat-cs-desktop-1.0.0-setup.exe`（约 120 MB，NSIS **按用户安装**，装到 `%LOCALAPPDATA%\Programs`，不需要管理员）。
+安装包**未做代码签名**，Windows SmartScreen 会提示「未知发布者」→ 点「更多信息 → 仍要运行」。
+
+**目标机器（客户/门店电脑）需要什么**：Windows 10/11 x64 + **微信桌面版并登录要托管的那个账号**；不需要 Node、不需要本仓库。
+首次启动会自建 `%APPDATA%\wechat-cs-desktop\cs.db`（含建表与迁移），日志在同一目录 `logs\`。
+
+**打包常见坑**：
+
+- 内网/被墙环境：`npm run build:win` 会卡在下载 Electron 或 NSIS 上（TLS 断连/超时），改用 `build:win:offline`；
+- 原生模块：`better-sqlite3-multiple-ciphers` 是 N-API 预编译（`prebuilds/win32-x64.node`），打包时由 electron-builder 自动解包到 `app.asar.unpacked`，跨 Node/Electron ABI 都可用；
+- 冒烟自检：`dist\win-unpacked\wechat-cs-desktop.exe --user-data-dir=<空目录>` 可以模拟「干净机器首次启动」（不影响正式数据）。
 
 ### 质量门禁
 
 ```bash
 npm run typecheck        # tsc --noEmit（主进程 + 渲染端）
 npm run lint             # ESLint
-npm run test:feedback    # 跟进判定（回复归属）+ 议题同一性判据回归自检（真实数据标定）
-npm run test:similarity  # 仅议题同一性判据（保留入口）
+npm run test:all         # schema 迁移 + 话术判定 + 跟进判定/降噪（四套自检，全部离线）
+npm run test:feedback    # 仅跟进判定（回复归属）+ 议题同一性判据 + 文本降噪
+npm run test:matcher     # 仅数字员工话术判定（真实群原话当夹具）
+npm run test:schema      # 仅 schema 迁移（合成老库上跑三条迁移 + 幂等性）
 ```
 
 ---
