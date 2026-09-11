@@ -81,21 +81,15 @@ export function registerWechatHandlers(): void {
     const info = getKeyStatus(wxid)
     const scanned = await scanWeChatKey({ wxid, dbPath: info.dbPath ?? '' })
     if (!scanned.ok || !scanned.key) {
-      return {
-        ok: false as const,
-        installed: scanned.installed ?? false,
-        error: scanned.error,
-        attempts: scanned.attempts
-      }
+      return { ok: false as const, error: scanned.error, attempts: scanned.attempts }
     }
     const saved = importKey(wxid, scanned.key, 'registry', info.dbPath ?? '')
     if (!saved.success) {
-      return { ok: false as const, installed: true, error: saved.error, attempts: scanned.attempts }
+      return { ok: false as const, error: saved.error, attempts: scanned.attempts }
     }
     const tested = testKey(wxid)
     return {
       ok: true as const,
-      installed: true,
       provider: scanned.provider,
       valid: tested.success,
       error: tested.success ? undefined : tested.error,

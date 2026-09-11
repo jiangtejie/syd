@@ -67,7 +67,6 @@ function WechatKeySection(): React.JSX.Element {
   // 密钥自动获取的三个来源：外部工具命令 + 本地搜索路径（可选组件走固定目录，无需配置）
   const [keyToolCmd, setKeyToolCmd] = useState('')
   const [keyToolArgs, setKeyToolArgs] = useState('')
-  const [keySearchPaths, setKeySearchPaths] = useState('')
   const [scanAttempts, setScanAttempts] = useState<
     Array<{ label: string; status: string; detail: string }>
   >([])
@@ -95,7 +94,6 @@ function WechatKeySection(): React.JSX.Element {
     setAsrLang(cfg?.['asr.language'] ?? 'zh')
     setKeyToolCmd(cfg?.['wechat.keyTool.command'] ?? '')
     setKeyToolArgs(cfg?.['wechat.keyTool.args'] ?? '')
-    setKeySearchPaths(cfg?.['wechat.keySearchPaths'] ?? '')
   }, [])
 
   // wxid 输入后自动查询密钥状态（600ms 防抖）
@@ -235,20 +233,12 @@ function WechatKeySection(): React.JSX.Element {
       // 先把配置落库再扫描：改了外部工具/搜索路径要即时生效
       await Promise.all([
         configApi?.set('wechat.keyTool.command', keyToolCmd.trim()),
-        configApi?.set('wechat.keyTool.args', keyToolArgs.trim()),
-        configApi?.set('wechat.keySearchPaths', keySearchPaths.trim())
+        configApi?.set('wechat.keyTool.args', keyToolArgs.trim())
       ])
       const r = await wxApi?.scanDbKey?.(wxid.trim())
       setScanAttempts(r?.attempts ?? [])
       if (r?.ok) {
-        const label =
-          r.provider === 'nativeDll'
-            ? '原生组件（内存扫描）'
-            : r.provider === 'externalTool'
-              ? '外部工具'
-              : r.provider === 'localArtifacts'
-                ? '本地文件'
-                : '可选组件'
+        const label = r.provider === 'nativeDll' ? '原生组件（内存扫描）' : '外部工具'
         toast.success(
           `密钥已自动获取并导入（来源：${label}）` +
             (r.valid === false ? '；测试未通过，请检查数据目录' : '')
@@ -428,15 +418,6 @@ function WechatKeySection(): React.JSX.Element {
           value={keyToolArgs}
           onChange={(e) => setKeyToolArgs(e.target.value)}
           placeholder="支持 {{wxid}} / {{dbPath}} / {{dbStorage}}，如 --wxid {{wxid}}"
-        />
-      </label>
-      <label className="st-row">
-        <span className="st-label">密钥搜索路径</span>
-        <input
-          className="st-input"
-          value={keySearchPaths}
-          onChange={(e) => setKeySearchPaths(e.target.value)}
-          placeholder="留空=应用数据目录 + 微信数据根；多个路径用 ; 分隔"
         />
       </label>
       {scanAttempts.length > 0 && (

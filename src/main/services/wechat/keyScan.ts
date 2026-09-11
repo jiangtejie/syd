@@ -1,58 +1,36 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { extname, join } from 'node:path'
 import { execFile } from 'node:child_process'
-import { app } from 'electron'
+import { existsSync } from 'node:fs'
+import { getConfig, getConfigNumber } from '../../db/repos/config'
 import { verifyWxDbKey } from './decrypt'
 import { locateWeChatDbs } from './dbLocator'
-import { getConfig, getConfigNumber } from '../../db/repos/config'
-import { nativeKeyScanStatus, nativeScanAccount } from './nativeKeyScan'
 import { createLogger } from '../logging'
+import { nativeKeyScanStatus, nativeScanAccount } from './nativeKeyScan'
 import {
   buildCmdLine,
   expandPlaceholders,
   extractKeyCandidates,
   needsCmdShim,
-  parsePathList,
   splitArgs
 } from './keyScanPure'
 
 const keyLog = createLogger('wx-key-scan')
 
 /**
- * 微信库密钥的「自动获取」——多来源 + 统一校验 + 明确降级。
+ * 微信库密钥的「自动获取」——两个来源 + 统一校验 + 明确降级。
  *
- * 现实约束：微信 4.x 的库密钥只存在于微信进程内存里，读内存需要原生组件（koffi + 自研 DLL + Ed25519 握手）。
- * 本项目作者自研的 `wechat_key_tool.dll` **随包分发**（见 nativeKeyScan.ts），作为第一顺位来源；
- * 另有三条「用户自备 / 本机发现」的来源兜底。**任何候选都必须先过 `verifyWxDbKey`（页 1 HMAC）才落库**：
+ * 1. nativeDll   —— 随包分发的原生组件（作者自研 `wechat_key_tool.dll`）：内存扫描 + Ed25519 挑战-应答，
+ *                   能扫到就直接拿到 key（最省事的一步）；
+ * 2. externalTool —— 兜底：用户自备的命令行工具（自写脚本 / 已授权 CLI），约定「把 64 位十六进制打到
+ *                   stdout 或 stderr」，支持 {{wxid}}/{{dbPath}}/{{dbStorage}} 占位符，`.cmd/.bat` 自动经
+ *                   cmd.exe 包装；此外设置页还支持直接**粘贴**密钥（走 onboard）。
  *
- * 0. nativeDll   —— 随包分发的原生组件（内存扫描，最省事）；
- * 1. component    —— 用户自备的已授权组件（<userData>/components/key-scan/index.cjs 导出 scan(ctx)）；
- * 2. externalTool —— 用户自备的命令行工具（如自写脚本 / 已授权的取 key CLI），约定「把 64 位十六进制打到
- *                    stdout 或 stderr」，支持 {{wxid}}/{{dbPath}}/{{dbStorage}} 占位符；
- * 3. localArtifacts —— 在指定搜索路径里找**已经被别的工具导出过**的密钥（txt/json/ini/log…），
- *                    这一步经常能直接命中，例如之前用别的工具导出的 key 文件。
+ * **唯一安全边界**：两个来源的返回都只当作不可信文本，必须先过 `verifyWxDbKey`（页 1 HMAC）才落库。
  *
- * 为什么校验必须在我们这边：候选来源都不可信，页 1 HMAC 是唯一能确认「这个 key 真能开这个库」的判据。
+ * 曾经的第三条/第四条来源（自备组件协议、扫本机文件找密钥、第三方工具预设）已按审核结论移除：
+ * 前两条与「原生 DLL / 粘贴 / 外部工具」重叠且是多余的可执行面与可疑行为，第三方工具的参数只能靠猜。
  */
 
-/** 组件目录：<userData>/components/key-scan */
-export function keyScanComponentDir(): string {
-  return join(app.getPath('userData'), 'components', 'key-scan')
-}
-
-export interface KeyScanContext {
-  wxid: string
-  dbPath: string
-  dbStoragePath: string | null
-  /** 校验候选：页 1 HMAC 通过才认（各来源都不需要懂我们的加密细节） */
-  verify: (candidateHex: string) => boolean
-}
-
-export interface KeyScanComponent {
-  scan: (ctx: KeyScanContext) => Promise<string | null> | string | null
-}
-
-export type KeyScanProviderId = 'nativeDll' | 'component' | 'externalTool' | 'localArtifacts'
+export type KeyScanProviderId = 'nativeDll' | 'externalTool'
 
 export interface KeyScanAttempt {
   id: KeyScanProviderId
@@ -67,25 +45,15 @@ export interface KeyScanResult {
   /** 通过校验的 64 位十六进制密钥（调用方负责落库） */
   key?: string
   provider?: KeyScanProviderId
-  installed?: boolean
   error?: string
   attempts: KeyScanAttempt[]
-}
-
-/** 组件是否已安装（存在入口文件即视为已安装） */
-export function isKeyScanComponentInstalled(): boolean {
-  const entry = join(keyScanComponentDir(), 'index.cjs')
-  try {
-    return existsSync(entry) && statSync(entry).isFile()
-  } catch {
-    return false
-  }
 }
 
 interface ProviderCtx {
   wxid: string
   dbPath: string
   dbStoragePath: string | null
+  /** 校验候选：页 1 HMAC 通过才认 */
   verify: (candidateHex: string) => boolean
   /** 依次校验候选，返回第一个通过的 */
   firstValid: (candidates: string[]) => string | null
@@ -93,7 +61,7 @@ interface ProviderCtx {
 
 type Provider = (ctx: ProviderCtx) => Promise<KeyScanAttempt>
 
-/** 0) 随包分发的原生组件（自研 DLL）：能扫到就直接拿到 key，扫不到就往下走 */
+/** 1) 随包分发的原生组件（自研 DLL）：扫不到就往下走 */
 const nativeDllProvider: Provider = async (ctx) => {
   const label = '原生组件'
   const status = nativeKeyScanStatus()
@@ -150,57 +118,6 @@ const nativeDllProvider: Provider = async (ctx) => {
   }
 }
 
-/** 1) 可选组件 */
-const componentProvider: Provider = async (ctx) => {
-  const label = '可选组件'
-  if (!isKeyScanComponentInstalled()) {
-    return {
-      id: 'component',
-      label,
-      status: 'skipped',
-      detail: `未安装（可放到 ${keyScanComponentDir()}\\index.cjs，导出 scan(ctx)）`
-    }
-  }
-  try {
-    const entry = join(keyScanComponentDir(), 'index.cjs')
-    // 先清 require 缓存：换掉组件文件后不必重启应用即可生效
-    try {
-      delete require.cache[require.resolve(entry)]
-    } catch {
-      /* 之前没加载过则无需清理 */
-    }
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- 组件是运行时可选加载的
-    const mod = require(entry) as Partial<KeyScanComponent> & { default?: KeyScanComponent }
-    const scan = mod.scan ?? mod.default?.scan
-    if (typeof scan !== 'function') {
-      return { id: 'component', label, status: 'error', detail: '组件入口没有导出 scan(ctx) 函数' }
-    }
-    const candidate = await scan({
-      wxid: ctx.wxid,
-      dbPath: ctx.dbPath,
-      dbStoragePath: ctx.dbStoragePath,
-      verify: ctx.verify
-    })
-    const list = extractKeyCandidates(typeof candidate === 'string' ? candidate : '')
-    if (list.length === 0) {
-      return { id: 'component', label, status: 'empty', detail: '组件没给出有效密钥' }
-    }
-    const hit = ctx.firstValid(list)
-    return hit
-      ? { id: 'component', label, status: 'ok', detail: '组件返回的密钥已通过页 1 校验' }
-      : {
-          id: 'component',
-          label,
-          status: 'candidates',
-          detail: '组件给出的密钥没通过页 1 校验，已丢弃'
-        }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    keyLog.warn(`组件执行失败: ${msg}`)
-    return { id: 'component', label, status: 'error', detail: `组件执行失败: ${msg}` }
-  }
-}
-
 /** 2) 外部工具（用户自备 CLI）：stdout/stderr 里找 64 位十六进制 */
 const externalToolProvider: Provider = async (ctx) => {
   const label = '外部工具'
@@ -210,7 +127,7 @@ const externalToolProvider: Provider = async (ctx) => {
       id: 'externalTool',
       label,
       status: 'skipped',
-      detail: '未配置（设置里可填一个已授权的取 key 命令）'
+      detail: '未配置（设置里可填一个取 key 命令）'
     }
   }
   if (!existsSync(command)) {
@@ -269,127 +186,10 @@ const externalToolProvider: Provider = async (ctx) => {
   }
 }
 
-/** 可扫描的文本类文件扩展名（避免把图片/视频读进来） */
-const TEXT_EXT = new Set([
-  '.txt',
-  '.json',
-  '.ini',
-  '.cfg',
-  '.conf',
-  '.log',
-  '.md',
-  '.csv',
-  '.key',
-  '.dat',
-  '.yaml',
-  '.yml'
-])
-/** 单文件大小上限与目录深度上限（防止扫到大文件/深层目录） */
-const MAX_FILE_BYTES = 2 * 1024 * 1024
-const MAX_DEPTH = 4
-const MAX_FILES = 400
-
-/** 收集搜索路径下的候选文件（有界：深度/文件数/大小都设上限） */
-function collectFiles(roots: string[]): string[] {
-  const out: string[] = []
-  const walk = (dir: string, depth: number): void => {
-    if (out.length >= MAX_FILES || depth > MAX_DEPTH) return
-    let entries: import('node:fs').Dirent[] = []
-    try {
-      entries = readdirSync(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const e of entries) {
-      if (out.length >= MAX_FILES) return
-      const full = join(dir, e.name)
-      if (e.isDirectory()) {
-        walk(full, depth + 1)
-        continue
-      }
-      if (!e.isFile()) continue
-      if (!TEXT_EXT.has(extname(e.name).toLowerCase())) continue
-      try {
-        if (statSync(full).size > MAX_FILE_BYTES) continue
-      } catch {
-        continue
-      }
-      out.push(full)
-    }
-  }
-  for (const r of roots) {
-    try {
-      if (existsSync(r)) walk(r, 0)
-    } catch {
-      /* 单个路径失败不影响其它 */
-    }
-  }
-  return out
-}
-
-/** 3) 本地已导出的密钥文件（别的工具 dump 出来的 key 常在这里） */
-const localArtifactsProvider: Provider = async (ctx) => {
-  const label = '本地文件'
-  const configured = parsePathList(getConfig('wechat.keySearchPaths') ?? '')
-  const roots = configured.length > 0 ? configured : defaultSearchPaths(ctx)
-  const files = collectFiles(roots)
-  if (files.length === 0) {
-    return {
-      id: 'localArtifacts',
-      label,
-      status: 'empty',
-      detail: `在 ${roots.length} 个路径下没找到可扫描的文本文件`
-    }
-  }
-  const candidates: string[] = []
-  for (const f of files) {
-    try {
-      const text = readFileSync(f, 'utf8')
-      for (const c of extractKeyCandidates(text, 5)) {
-        if (!candidates.includes(c)) candidates.push(c)
-        if (candidates.length >= 20) break
-      }
-    } catch {
-      /* 编码/权限问题：跳过 */
-    }
-    if (candidates.length >= 20) break
-  }
-  if (candidates.length === 0) {
-    return {
-      id: 'localArtifacts',
-      label,
-      status: 'empty',
-      detail: `扫了 ${files.length} 个文件，没有 64 位十六进制密钥`
-    }
-  }
-  const hit = ctx.firstValid(candidates)
-  return hit
-    ? { id: 'localArtifacts', label, status: 'ok', detail: `在本地文件里找到并通过校验` }
-    : {
-        id: 'localArtifacts',
-        label,
-        status: 'candidates',
-        detail: `扫了 ${files.length} 个文件、${candidates.length} 个候选，都没通过页 1 校验`
-      }
-}
-
-/** 默认搜索路径：应用数据目录 + 微信数据根 + 账号目录（都是「可能被工具写过 key」的地方） */
-function defaultSearchPaths(ctx: ProviderCtx): string[] {
-  const paths = [app.getPath('userData')]
-  if (ctx.dbPath) paths.push(ctx.dbPath)
-  if (ctx.dbStoragePath) paths.push(ctx.dbStoragePath)
-  return paths
-}
-
-const PROVIDERS: Provider[] = [
-  nativeDllProvider,
-  componentProvider,
-  externalToolProvider,
-  localArtifactsProvider
-]
+const PROVIDERS: Provider[] = [nativeDllProvider, externalToolProvider]
 
 /**
- * 依次尝试各来源，返回第一个**通过页 1 校验**的密钥，并带上每个来源的结果（界面照实展示）。
+ * 依次尝试两个来源，返回第一个**通过页 1 校验**的密钥，并带上每个来源的结果（界面照实展示）。
  * 任何异常都收敛成 attempt 明细，不抛给 IPC。
  */
 export async function scanWeChatKey(opts: {
@@ -408,7 +208,6 @@ export async function scanWeChatKey(opts: {
     return {
       ok: false,
       error: '没定位到微信库文件，先填对「微信数据根目录」再试',
-      installed: isKeyScanComponentInstalled(),
       attempts
     }
   }
@@ -440,7 +239,7 @@ export async function scanWeChatKey(opts: {
       attempt = await provider(ctx)
     } catch (err) {
       attempt = {
-        id: id ?? 'component',
+        id: id ?? 'externalTool',
         label: '未知来源',
         status: 'error',
         detail: err instanceof Error ? err.message : String(err)
@@ -449,24 +248,15 @@ export async function scanWeChatKey(opts: {
     attempts.push(attempt)
     if (attempt.status === 'ok') {
       const hit = [...verified][0]
-      return {
-        ok: true,
-        key: hit,
-        provider: attempt.id,
-        installed: isKeyScanComponentInstalled(),
-        attempts
-      }
+      keyLog.info(`密钥自动获取成功（来源 ${attempt.id}）`)
+      return { ok: true, key: hit, provider: attempt.id, attempts }
     }
   }
 
-  const hints = attempts
-    .filter((a) => a.status !== 'ok')
-    .map((a) => `${a.label}: ${a.detail}`)
-    .join('；')
+  const hints = attempts.map((a) => `${a.label}: ${a.detail}`).join('；')
   return {
     ok: false,
-    installed: isKeyScanComponentInstalled(),
-    error: `各来源都没拿到可用密钥 —— ${hints}。最稳妥的办法仍是手动导入 64 位十六进制密钥。`,
+    error: `各来源都没拿到可用密钥 —— ${hints}。也可以在设置里直接粘贴 64 位十六进制密钥。`,
     attempts
   }
 }
@@ -474,8 +264,6 @@ export async function scanWeChatKey(opts: {
 /** 从 provider 函数反查 id（避免每个函数都重复声明） */
 function providerIdOf(provider: Provider): KeyScanProviderId | null {
   if (provider === nativeDllProvider) return 'nativeDll'
-  if (provider === componentProvider) return 'component'
   if (provider === externalToolProvider) return 'externalTool'
-  if (provider === localArtifactsProvider) return 'localArtifacts'
   return null
 }

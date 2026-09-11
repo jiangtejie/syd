@@ -9,10 +9,9 @@ import {
   onboardAccount,
   warmupAccount
 } from '../services/wechat/cryptoReadiness'
-import { detectKeyTools, listKeyToolPresets, runKeyTool } from '../services/wechat/keyTools'
 
 /**
- * 「解密一体化」IPC：体检 / 账号发现 / 一键接入 / 预热解密 / 取 key 工具。
+ * 「解密一体化」IPC：体检 / 账号发现 / 一键接入 / 预热解密。
  *
  * 这些能力此前散在设置页各处（密钥、图片密钥、连接、监控），运营闲置机器时要逐个试；
  * 这里收成一组可编排的接口，界面上一键跑完并给出逐项结果。
@@ -25,33 +24,6 @@ export function registerCryptoHandlers(): void {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }
   })
-
-  /** 检测本机已有的取 key 工具（本仓不分发，只帮用户找） */
-  ipcMain.handle('cs:crypto:keyTools', () => {
-    try {
-      const { tools, dirs } = detectKeyTools()
-      return { ok: true as const, tools, scannedDirs: dirs, presets: listKeyToolPresets() }
-    } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
-    }
-  })
-
-  /** 一键使用某个取 key 工具：按预设模板依次试，命中即校验落库 */
-  ipcMain.handle(
-    'cs:crypto:keyToolRun',
-    async (_e, opts: { wxid: string; command?: string; presetId?: string }) => {
-      if (!opts?.wxid) return { ok: false as const, error: '缺少账号', attempts: [] }
-      try {
-        return await runKeyTool(opts)
-      } catch (err) {
-        return {
-          ok: false as const,
-          attempts: [],
-          error: err instanceof Error ? err.message : String(err)
-        }
-      }
-    }
-  )
 
   ipcMain.handle('cs:crypto:readiness', (_e, wxid: string) => {
     if (!wxid || typeof wxid !== 'string') return { ok: false as const, error: '缺少账号' }

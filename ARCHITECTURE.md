@@ -120,7 +120,7 @@ src/
 - 落库：`safeStorage.encryptString` 加密后存 `key_store`；**明文 key 只在主进程内存**。
 - 状态机 `pending → valid / invalid`：`testKey` 以「试开真实库」验证并回写错误原因。
 
-**库密钥自动获取（内置原生组件 + 三来源兜底，`wechat/keyScan.ts` + `wechat/nativeKeyScan.ts`）**：
+**库密钥自动获取（内置原生组件 + 外部工具兜底，`wechat/keyScan.ts` + `wechat/nativeKeyScan.ts`）**：
 
 0. `nativeDll`（**随包分发**）：作者自研的 `wechat_key_tool.dll`（内存扫描 + Ed25519 挑战-应答）。
    调用约定：`wkt_challenge(uint8_t*, size_t)` → 32B nonce；用 XOR-0x5a 混淆的 PKCS8 私钥签名；
@@ -134,10 +134,14 @@ src/
 微信 4.x 的库密钥只在微信进程内存里，读内存需要原生组件（社区实现是 koffi + 自研 DLL + Ed25519 握手），
 授权不明且随微信版本漂移 —— 本仓**不分发**这类组件，也不内置内存扫描，改为提供三条稳健来源：
 
-1. `component`：用户自备的已授权组件（`<userData>/components/key-scan/index.cjs` 导出 `scan(ctx)`，ctx 给 `wxid / dbPath / dbStoragePath / verify`）；
-2. `externalTool`：用户自备的命令行工具（把 64 位十六进制打到 stdout/stderr 即可，支持 `{{wxid}}/{{dbPath}}/{{dbStorage}}` 占位符、可配超时；
+1. `externalTool`（兜底）：用户自备的命令行工具（把 64 位十六进制打到 stdout/stderr 即可，支持 `{{wxid}}/{{dbPath}}/{{dbStorage}}` 占位符、可配超时；
    **`.cmd/.bat` 会自动经 `cmd.exe /d /s /c` 执行并按 Windows 规则转义参数** —— 实测 `execFile` 直接跑 `.cmd` 会 `spawn EINVAL`，而很多 CLI 装出来就是 `.cmd`）；
-3. `localArtifacts`：在搜索路径（默认 userData + 微信数据根 + 账号目录，可配）里找**已经被别的工具导出过**的密钥（txt/json/ini/log…，深度≤4、单文件≤2MB、≤400 个文件）。
+   此外设置页支持直接**粘贴**密钥（`onboardAccount` 的 `keyHex`，同样先过页 1 校验）。
+
+> 审核后移除的三条来源（2026-09-11）：**自备组件协议**（与内置 DLL 重复，且是 `require(<userData>/**/*.cjs)` 的多余执行面）、
+> **扫本机文件找密钥**（与粘贴/外部工具重叠，真机只在人为植入文件后命中，且「满盘找密钥」本身可疑）、
+> **第三方工具预设**（chatlog/PyWxDump/wx_key/SharpWxDump 的检测与参数模板：参数只能靠猜、真机 47 个目录 0 命中；
+> 需要接某工具时用 `externalTool` 手填命令与参数即可）。
 
 **唯一安全边界**：任何来源的候选都必须过 `verifyWxDbKey`（页 1 HMAC）才 `importKey(..., 'registry')` 落 safeStorage，随后 `testKey` 试开真实库；
 每个候选要跑一次 256000 轮 PBKDF2，所以候选提取有硬上限（单次 20 个）。各来源（含内置组件）的结果都照实回传（界面逐条显示「卡在哪一步」）。
@@ -167,14 +171,8 @@ src/
 - `discoverAccounts()`：扫 `Documents\xwechat_files\*`（含 WeChat Files 兼容位），返回 **`accountId`（目录名）+ `wxid`（去后缀）**
   两个标识 —— 本应用历史上就用目录名当账号 id 存密钥（如 `wxid_xxx_7e0b`），只用派生 wxid 查会「明明有密钥却说没有」；两者与 `dir` 一起参与匹配；
 - `accountReadiness(wxid)`：7 步体检（账号目录 / 密钥 / 主要库 / 图片密钥 / 语音 / 转写 / 缓存），每步给 ok·warn·fail·skip 与原因；
-- `onboardAccount({wxid?, dbPath?, keyHex?})`：定位账号 → 密钥（**粘贴优先**，必须过页 1 HMAC 才落库，否则走三来源）→ 推导图片密钥并写配置 → 预热解密 → 回体检；成功后由 IPC 层 `wxService.connect` 拉起监控与调度器；
+- `onboardAccount({wxid?, dbPath?, keyHex?})`：定位账号 → 密钥（**粘贴优先**，必须过页 1 HMAC 才落库，否则走「内置原生组件 → 外部工具」）→ 推导图片密钥并写配置 → 预热解密 → 回体检；成功后由 IPC 层 `wxService.connect` 拉起监控与调度器；
 - `warmupAccount(wxid)`：先解主要库（session / message_0 / message_fts），让「首次打开会话、首次分析」不再承担解密开销。
-- **取 key 工具（检测 + 一键使用，`keyTools.ts` + 纯逻辑 `keyToolPresets.ts`）**：本仓**不分发**这些工具，
-  只帮用户找到机器上已有的——扫 PATH / 下载 / 桌面 / 文档 / 程序目录 / `<userData>/tools`（外加 `wechat.keyTool.searchDirs`），
-  按可执行名匹配预设（chatlog / PyWxDump / wx_key / SharpWxDump），**扩展名认 `.exe`、`.cmd`、`.bat` 与无扩展**
-  （Python/Node 类工具在 Windows 上常是 `.cmd` 包装器，实测只认 `.exe` 会一个都找不到）。
-  每个预设带**多个参数模板**（如 chatlog `key`、`--debug key`；PyWxDump `wx_key`/`key`/`info`）按顺序试 ——
-  模板试错成本只是一条命令，而**能否采用一律由页 1 HMAC 决定**，所以「试」永远不会污染密钥库。
 
 真机验证（本机）：体检 7/7 ok（message_0.db 554 页、图片 XOR+AES 齐、media_*.db 1 个 + 已缓存 WAV 9 条、whisper 就绪、媒体缓存 490 文件/28MB、归档 27MB）；
 一键接入 7/7 步成功（预热 session 219ms/36 页、message_0 228ms/554 页）；**粘贴错误密钥 → 页 1 HMAC 拒绝且不动已存密钥**；不带参数也能自动发现账号跑通。
@@ -412,6 +410,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | `ai` `agent` | 生成候选、智能体 CRUD | AI 建议 |
 | `wb` | `listChats/searchChats/messages/create/stop/retry/approve/workspace/skills/trustTool/…` | AI 工作台 |
 | `crypto` | `discover/readiness/warmup/onboard` | **解密一体化**：账号发现、体检、预热解密、一键接入 |
+| `wx` | `scanDbKey` | 密钥自动获取（内置原生组件 → 外部工具，逐条返回结果） |
 | `media` | `decryptImage/decryptVideo/resolveEmoji/testImageDecrypt/voiceWav/voiceTranscript/asrStatus` | 媒体解密与本地语音转写 |
 | `files` | `policy/prune/remove/reveal` | 渠道文件管理 |
 | `im` | `list/save/remove/toggle/clawQrPoll` | 外部 IM 渠道 |
@@ -437,8 +436,8 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 营销 | `growth.enabled/provider/providerApiKey`、`growth.image.*`、`growth.search.*` |
 | 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
 | 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
-| 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.decrypt.legacy`（回退旧内存整块路径）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |
-| 密钥获取 | `wechat.keyTool.command`、`wechat.keyTool.args`、`wechat.keyTool.timeoutMs`（30000）、`wechat.keySearchPaths` |
+| 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |
+| 密钥获取 | `wechat.keyTool.command`、`wechat.keyTool.args`、`wechat.keyTool.timeoutMs`（30000） |
 | 语音转写 | `asr.whisperPath`、`asr.modelPath`、`asr.language`（默认 zh）、`asr.threads`（0=whisper 默认）、`asr.timeoutMs`（120000） |
 | 媒体缓存保留 | `wechat.mediaCacheAutoClean`（默认开）、`wechat.mediaCacheKeepDays`（180）、`wechat.mediaCacheMaxMB`（8192）、`wechat.mediaCacheMaxFiles`（50000）、`wechat.report.archiveMigrated`（迁移完成标记）、`wechat.report.pathRepairCursor`（归档路径修复游标） |
 
@@ -538,8 +537,8 @@ npm run build         # typecheck + electron-vite 三端构建
 - **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入（图片密钥可从本机模板推导，见 §4.2）。
 - **语音**：能解码播放（`VoiceInfo` → SILK → WAV），也能**本地转写**（whisper.cpp，见 §10）—— 但转写是**按需触发**（点气泡上的「转写」），不做批量回填；未转写的语音在分析与数字员工里仍是 `[语音] N″` 占位。
 - **ct-media 不支持 Range**：协议用 `net.fetch(file://)` 直出整文件，没有 Range 响应头 —— 图片/短视频/几秒语音播放没问题，长音频拖动进度条可能不灵。
-- **库密钥自动获取：三来源可用，但“内存扫描”不做**：组件 / 外部工具 / 本地文件三条来源都已落地并逐条验证（含错误候选被页 1 HMAC 拒绝、命令不存在、工具输出无密钥、组件抛异常、`.cmd` 包装器）。真正的“从微信进程内存里读出 key”仍需第三方原生组件（授权不明），本仓不分发也不内置；页 1 校验每候选一次 PBKDF2(256000) 的现实成本也让盲扫内存不可行（§4.2）。
-- **`localArtifacts` 的命中率取决于机器上有没有别的工具导出过 key**：它不猜、不破解，只在配置的路径里找现成的 64 位十六进制并验证。
+- **库密钥自动获取：内置原生组件 + 外部工具兜底 + 粘贴**（自备组件协议、扫本机文件、第三方工具预设三条已在审核后移除，理由见 §4.2）。
+- **原生组件当前在微信 4.1.13.12 上返回空**：认证是通的、但扫不到（§4.2 有对照实验），所以实际仍可能落到「粘贴」；DLL 适配后本仓无需改代码。
 - **内置的是作者自研组件；「自己写一套盲扫」实测不可行**（2026-09-11 在本机用真实密钥做的对照实验，
   结论仍然成立，只是现在有官方 DLL 可用）：
   1) 用 PowerShell P/Invoke 转储 Weixin.exe 私有内存 **297MB**；

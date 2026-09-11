@@ -87,14 +87,6 @@ export function expandPlaceholders(
     .replace(/\{\{\s*dbPath\s*\}\}/gi, vars.dbPath)
 }
 
-/** 搜索路径列表（分号/换行/竖线分隔） */
-export function parsePathList(input: string): string[] {
-  return (input || '')
-    .split(/[;\n|]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
 /**
  * 该命令是否是 Windows 的 .cmd/.bat 包装器 —— Node 的 execFile **无法直接执行**它们
  * （必须经 cmd.exe 解释），实测 node.cmd / npx.cmd 这类会直接 spawn EINVAL。

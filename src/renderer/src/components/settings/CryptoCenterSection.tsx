@@ -25,16 +25,6 @@ function CryptoCenterSection(): React.JSX.Element {
   const [readiness, setReadiness] = useState<AccountReadiness | null>(null)
   const [warmup, setWarmup] = useState<WarmupReport | null>(null)
   const [keyInput, setKeyInput] = useState('')
-  /** 本机检测到的取 key 工具（本仓不分发，只帮用户找 + 一键试） */
-  const [tools, setTools] = useState<Array<{
-    id: string
-    name: string
-    path: string
-    presetId: string | null
-    note: string
-  }> | null>(null)
-  const [scanning, setScanning] = useState(false)
-  const [toolLog, setToolLog] = useState<string[]>([])
 
   const check = useCallback(async (): Promise<void> => {
     if (!wxid) return
@@ -72,52 +62,6 @@ function CryptoCenterSection(): React.JSX.Element {
         const failed = r.report?.steps.find((s) => s.status === 'fail')
         toast.error(failed ? `${failed.label}：${failed.detail}` : r.error || '一键接入未完成')
       }
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  /** 检测本机已有的取 key 工具 */
-  const detectTools = async (): Promise<void> => {
-    setScanning(true)
-    setToolLog([])
-    try {
-      const r = await cryptoApi?.keyTools?.().catch(() => null)
-      if (r?.ok) {
-        setTools(r.tools ?? [])
-        if ((r.tools ?? []).length === 0) {
-          toast.error('没检测到取 key 工具（可把工具放到下载/桌面/文档，或设置 PATH）')
-        }
-      } else toast.error(r?.error || '检测失败')
-    } finally {
-      setScanning(false)
-    }
-  }
-
-  /** 一键使用某个工具：按预设模板依次试，命中即校验落库 */
-  // 名字不要以 use 开头：会被 ESLint 当成 React Hook
-  const applyTool = async (tool: {
-    name: string
-    path: string
-    presetId: string | null
-  }): Promise<void> => {
-    if (!wxid) return toast.error('请先在「微信数据与密钥」里选择账号')
-    setBusy('onboard')
-    setToolLog([])
-    try {
-      const r = await cryptoApi
-        ?.keyToolRun?.({ wxid, command: tool.path, presetId: tool.presetId ?? undefined })
-        .catch(() => null)
-      const lines = (r?.attempts ?? []).map(
-        (a) =>
-          `${a.status === 'ok' ? '✅' : a.status === 'empty' ? '➖' : '⚠️'} ${tool.name} ${a.args.join(' ') || '(无参数)'}：${a.detail}`
-      )
-      setToolLog(lines)
-      if (r?.ok) {
-        toast.success(`${tool.name} 取到密钥并通过页 1 校验，已导入`)
-        setKeyInput('')
-        await check()
-      } else toast.error(r?.error || '没取到可用密钥')
     } finally {
       setBusy(null)
     }
@@ -192,47 +136,6 @@ function CryptoCenterSection(): React.JSX.Element {
           placeholder="已有 64 位十六进制密钥时粘这里，一键接入会先校验再用；留空则自动获取"
         />
       </label>
-
-      {/* 取 key 工具：本仓不分发工具，只负责「找到 + 一键试 + 校验落库」 */}
-      <div className="st-actions">
-        <button
-          type="button"
-          className="st-btn ghost"
-          disabled={scanning || busy !== null}
-          onClick={() => void detectTools()}
-        >
-          {scanning ? '检测中…' : '检测取 key 工具'}
-        </button>
-        <span className="st-hint">
-          自动在本机 PATH / 下载 / 桌面 / 文档 / 程序目录里找 chatlog、PyWxDump、wx_key 等工具；
-          本应用不分发这些工具，取到的候选**必须通过真实库页 1 校验**才会导入
-        </span>
-      </div>
-      {tools && tools.length > 0 && (
-        <div className="st-hint">
-          {tools.map((t) => (
-            <div key={t.id}>
-              🔧 {t.name}：{t.path}
-              <button
-                type="button"
-                className="st-btn ghost sm"
-                disabled={busy !== null || !wxid}
-                onClick={() => void applyTool(t)}
-                style={{ marginLeft: 8 }}
-              >
-                一键使用
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      {toolLog.length > 0 && (
-        <div className="st-hint">
-          {toolLog.map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
-        </div>
-      )}
 
       {steps.length > 0 && (
         <div className="st-hint">

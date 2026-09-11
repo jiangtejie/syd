@@ -99,11 +99,10 @@ const api: PreloadApi = {
         wxid: string
       ): Promise<{
         ok: boolean
-        installed?: boolean
         valid?: boolean
-        provider?: 'nativeDll' | 'component' | 'externalTool' | 'localArtifacts'
+        provider?: 'nativeDll' | 'externalTool'
         attempts: Array<{
-          id: 'nativeDll' | 'component' | 'externalTool' | 'localArtifacts'
+          id: 'nativeDll' | 'externalTool'
           label: string
           status: 'ok' | 'candidates' | 'empty' | 'skipped' | 'error'
           detail: string
@@ -223,37 +222,6 @@ const api: PreloadApi = {
         accounts?: Array<{ accountId: string; wxid: string; dir: string }>
         error?: string
       }> => ipcRenderer.invoke('cs:crypto:discover'),
-      keyTools: (): Promise<{
-        ok: boolean
-        tools?: Array<{
-          id: string
-          name: string
-          path: string
-          presetId: string | null
-          note: string
-          active: boolean
-        }>
-        scannedDirs?: number
-        presets?: Array<{ id: string; name: string; note: string; templates: string[] }>
-        error?: string
-      }> => ipcRenderer.invoke('cs:crypto:keyTools'),
-      keyToolRun: (opts: {
-        wxid: string
-        command?: string
-        presetId?: string
-      }): Promise<{
-        ok: boolean
-        key?: string
-        attempts: Array<{
-          command: string
-          args: string[]
-          status: 'ok' | 'candidates' | 'empty' | 'error'
-          detail: string
-        }>
-        imported?: boolean
-        provider?: string
-        error?: string
-      }> => ipcRenderer.invoke('cs:crypto:keyToolRun', opts),
       readiness: (
         wxid: string
       ): Promise<{ ok: boolean; report?: AccountReadiness; error?: string }> =>

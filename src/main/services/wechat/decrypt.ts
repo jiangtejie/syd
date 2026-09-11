@@ -2,7 +2,6 @@ import Database from 'better-sqlite3-multiple-ciphers'
 import {
   closeSync,
   existsSync,
-  fstatSync,
   openSync,
   readdirSync,
   readSync,
@@ -45,7 +44,7 @@ const decryptLog = createLogger('wechat-decrypt')
  * 3. **WAL 带校验和合并**（只应用到最后一个 commit 帧 + 按 nTruncate 截断 + 含页 1）——
  *    旧实现不校验、只取第一周期、跳过页 1，读到撕裂帧会把坏页写进副本。
  *
- * 回退开关：`wechat.decrypt.legacy=1` 走旧的内存整块路径（出问题时可一键降级）。
+
  */
 
 /** 单批解密页数：512KB/次写入，兼顾大库内存与写盘次数 */
@@ -176,68 +175,17 @@ function decryptMainDbStreaming(
   }
 }
 
-/** 旧路径（内存整块）：仅供 `wechat.decrypt.legacy=1` 回退使用 */
-function decryptMainDbToBufferLegacy(
-  filePath: string,
-  encryptionKey: Buffer
-): { ok: true; buffer: Buffer } | { ok: false; error: string } {
-  try {
-    const raw = readFileSyncSafe(filePath)
-    if (raw.length < PAGE_SIZE || raw.length % PAGE_SIZE !== 0) {
-      return { ok: false, error: `文件大小 ${raw.length} 非 4096 页对齐，可能不是微信 4.x 加密库` }
-    }
-    const out = Buffer.alloc(raw.length)
-    const pageCount = raw.length / PAGE_SIZE
-    for (let p = 1; p <= pageCount; p += 1) {
-      const base = (p - 1) * PAGE_SIZE
-      const page = raw.subarray(base, base + PAGE_SIZE)
-      decryptPage(page, encryptionKey, p).copy(out, base)
-    }
-    return { ok: true, buffer: out }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
-  }
-}
-
-function readFileSyncSafe(filePath: string): Buffer {
-  const fd = openSync(filePath, 'r')
-  try {
-    const size = fstatSync(fd).size
-    const buf = Buffer.alloc(size)
-    readInto(fd, buf, 0)
-    return buf
-  } finally {
-    closeSync(fd)
-  }
-}
-
 /** 解密一次（写 tmp → WAL 合并 → 结构自检），失败返回原因；torn=true 表示读到了撕裂页 */
 function decryptOnce(
   filePath: string,
   tmpPath: string,
   encryptionKey: Buffer,
   macKey: Buffer,
-  legacy: boolean,
   verifyPages: boolean
 ): { ok: true; pages: number; wal: WalSummary } | { ok: false; error: string; torn?: boolean } {
   const writeMain = ():
-    { ok: true; pages: number } | { ok: false; error: string; torn?: boolean } => {
-    if (legacy) {
-      const buf = decryptMainDbToBufferLegacy(filePath, encryptionKey)
-      if (!buf.ok) return { ok: false, error: buf.error }
-      let outFd: number | null = null
-      try {
-        outFd = openSync(tmpPath, 'w')
-        writeSync(outFd, buf.buffer)
-      } catch (e) {
-        return { ok: false, error: `写入明文库失败: ${e instanceof Error ? e.message : String(e)}` }
-      } finally {
-        if (outFd !== null) closeSync(outFd)
-      }
-      return { ok: true, pages: buf.buffer.length / PAGE_SIZE }
-    }
-    return decryptMainDbStreaming(filePath, tmpPath, encryptionKey, macKey, verifyPages)
-  }
+    { ok: true; pages: number } | { ok: false; error: string; torn?: boolean } =>
+    decryptMainDbStreaming(filePath, tmpPath, encryptionKey, macKey, verifyPages)
 
   const written = writeMain()
   if (!written.ok) return written
@@ -299,7 +247,6 @@ export function decryptWxDbFile(filePath: string, hexKey: string, outPath: strin
   }
   const encryptionKey = deriveEncryptionKey(key, salt)
   const macKey = deriveFileMacKey(key, salt)
-  const legacy = getConfigBoolean('wechat.decrypt.legacy', false)
   const verifyPages = getConfigBoolean('wechat.decrypt.verifyPages', true)
 
   const tmpPath = `${outPath}.part`
@@ -309,7 +256,7 @@ export function decryptWxDbFile(filePath: string, hexKey: string, outPath: strin
   for (let attempt = 0; attempt <= MAX_SOURCE_RETRY; attempt += 1) {
     const started = Date.now()
     const sigBefore = sourceSignature(filePath)
-    const once = decryptOnce(filePath, tmpPath, encryptionKey, macKey, legacy, verifyPages)
+    const once = decryptOnce(filePath, tmpPath, encryptionKey, macKey, verifyPages)
 
     if (!once.ok) {
       safeUnlink(tmpPath)
