@@ -479,7 +479,7 @@ export function prunePlainDbCache(keepPath?: string): { removed: number; freedBy
 }
 
 /** 生成稳定的明文库缓存路径（同一源库 + key 复用同一文件，重复打开会覆盖刷新） */
-function getPlainDbPath(filePath: string, hexKey: string): string {
+export function getPlainDbPath(filePath: string, hexKey: string): string {
   const hash = createHash('md5')
     .update(filePath.toLowerCase() + '|' + hexKey)
     .digest('hex')

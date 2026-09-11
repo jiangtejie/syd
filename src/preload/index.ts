@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { PreloadApi, Result } from '../shared/api'
+import type {
+  AccountReadiness,
+  OnboardReport,
+  PreloadApi,
+  Result,
+  WarmupReport
+} from '../shared/api'
 import type {
   ChatMsgItem,
   ChatSessionItem,
@@ -210,6 +216,31 @@ const api: PreloadApi = {
         ringMax?: number
         error?: string
       }> => ipcRenderer.invoke('cs:logs:applyConfig')
+    },
+    crypto: {
+      discover: (): Promise<{
+        ok: boolean
+        accounts?: Array<{ wxid: string; dir: string }>
+        error?: string
+      }> => ipcRenderer.invoke('cs:crypto:discover'),
+      readiness: (
+        wxid: string
+      ): Promise<{ ok: boolean; report?: AccountReadiness; error?: string }> =>
+        ipcRenderer.invoke('cs:crypto:readiness', wxid),
+      warmup: (wxid: string): Promise<{ ok: boolean; report?: WarmupReport; error?: string }> =>
+        ipcRenderer.invoke('cs:crypto:warmup', wxid),
+      onboard: (opts?: {
+        wxid?: string
+        dbPath?: string
+        keyHex?: string
+        connect?: boolean
+      }): Promise<{
+        ok: boolean
+        report?: OnboardReport
+        connected?: { ok: boolean; error?: string } | null
+        dbPath?: string | null
+        error?: string
+      }> => ipcRenderer.invoke('cs:crypto:onboard', opts)
     },
     files: {
       list: (opts?: {

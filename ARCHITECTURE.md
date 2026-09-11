@@ -138,7 +138,23 @@ src/
 
 **图片密钥（另一套密钥）**：图片 .dat 的 V2 用 aes-128-ecb、V3 用整文件 XOR，与库密钥无关，历史上只能手填。`media/imageKeys.ts` 现在能从本机自动推导：扫 `*_t.dat` 缩略图模板（深度 ≤8、最多 64 个）反解 XOR 低字节（自校验 `y == x ^ 0xd9` + 多模板投票），再用 V2 模板密文做一次 AES 试探（解密后必须像图片）确认 AES key。入口 `cs:wx:deriveImageKeys`，设置页「自动推导图片密钥」一键回填；推导失败仍可手填。
 
-### 4.3 消息读取（`queries.ts` / `content.ts`）
+### 4.3 解密一体化（体检 / 一键接入 / 预热）
+
+`services/wechat/cryptoReadiness.ts` + IPC `cs:crypto:*` + 设置页「解密一体化」卡片。
+
+为什么单独做一层：密钥、库解密、图片密钥、语音、转写、缓存单看都能用，但运营一台闲置机器时需要的是
+「现在能不能用、不能用卡在哪一步、一键跑通」，而不是在设置页里逐项试。这层只做**编排与状态汇总**：
+
+- `discoverAccounts()`：扫 `Documents\xwechat_files\*`（含 WeChat Files 兼容位），返回 **`accountId`（目录名）+ `wxid`（去后缀）**
+  两个标识 —— 本应用历史上就用目录名当账号 id 存密钥（如 `wxid_xxx_7e0b`），只用派生 wxid 查会「明明有密钥却说没有」；两者与 `dir` 一起参与匹配；
+- `accountReadiness(wxid)`：7 步体检（账号目录 / 密钥 / 主要库 / 图片密钥 / 语音 / 转写 / 缓存），每步给 ok·warn·fail·skip 与原因；
+- `onboardAccount({wxid?, dbPath?, keyHex?})`：定位账号 → 密钥（**粘贴优先**，必须过页 1 HMAC 才落库，否则走三来源）→ 推导图片密钥并写配置 → 预热解密 → 回体检；成功后由 IPC 层 `wxService.connect` 拉起监控与调度器；
+- `warmupAccount(wxid)`：先解主要库（session / message_0 / message_fts），让「首次打开会话、首次分析」不再承担解密开销。
+
+真机验证（本机）：体检 7/7 ok（message_0.db 554 页、图片 XOR+AES 齐、media_*.db 1 个 + 已缓存 WAV 9 条、whisper 就绪、媒体缓存 490 文件/28MB、归档 27MB）；
+一键接入 7/7 步成功（预热 session 219ms/36 页、message_0 228ms/554 页）；**粘贴错误密钥 → 页 1 HMAC 拒绝且不动已存密钥**；不带参数也能自动发现账号跑通。
+
+### 4.4 消息读取（`queries.ts` / `content.ts`）
 
 - 会话列表读 `session.db`（兼容多表名），按 `sort_timestamp` 倒序，过滤系统号；enrich 补备注/昵称/头像/置顶/折叠。
 - 消息读取：会话 id 经 md5 得表名 `msg_<hash>`，跨多个消息库合并去重，按 `(sort_seq, create_time, local_id)` keyset 分页。
@@ -147,7 +163,7 @@ src/
 - 发送人判定：Msg 表无 `is_send`，用 `real_sender_id` 对照 `Name2Id` 里「我的 rowid」。
 - 内容解析：zstd 解压（magic `0xFD2FB528`）、XML/HTML 实体、按 `localType` 映射摘要（文本/图片/语音/名片/视频/表情/位置/文件/系统），提取图片 md5、语音时长、文件名大小。
 
-### 4.4 库变更监控（`monitor.ts` + `watchService.ts`）
+### 4.5 库变更监控（`monitor.ts` + `watchService.ts`）
 
 `fs.watch` 监听库目录 + 2s 轮询比对 mtime/size 兜底 → 500ms debounce → 广播 `cs:wx:dbChanged`（含 `sessionChanged`）并触发主进程提醒；按 wxid 管理生命周期，幂等。
 
@@ -370,7 +386,8 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | `reply` | `overview/stats/getSendStatus/resetCircuit/stopAll` | 发送质量与熔断 |
 | `ai` `agent` | 生成候选、智能体 CRUD | AI 建议 |
 | `wb` | `listChats/searchChats/messages/create/stop/retry/approve/workspace/skills/trustTool/…` | AI 工作台 |
-| `media` | `decryptImage/decryptVideo/resolveEmoji/testImageDecrypt/voiceWav` | 媒体解密（`voiceWav`：语音 SILK → WAV） |
+| `crypto` | `discover/readiness/warmup/onboard` | **解密一体化**：账号发现、体检、预热解密、一键接入 |
+| `media` | `decryptImage/decryptVideo/resolveEmoji/testImageDecrypt/voiceWav/voiceTranscript/asrStatus` | 媒体解密与本地语音转写 |
 | `files` | `policy/prune/remove/reveal` | 渠道文件管理 |
 | `im` | `list/save/remove/toggle/clawQrPoll` | 外部 IM 渠道 |
 | `feishu` `lark` | `notify/audit/contact/status/test` | 飞书通知与云文档 |
@@ -498,6 +515,13 @@ npm run build         # typecheck + electron-vite 三端构建
 - **ct-media 不支持 Range**：协议用 `net.fetch(file://)` 直出整文件，没有 Range 响应头 —— 图片/短视频/几秒语音播放没问题，长音频拖动进度条可能不灵。
 - **库密钥自动获取：三来源可用，但“内存扫描”不做**：组件 / 外部工具 / 本地文件三条来源都已落地并逐条验证（含错误候选被页 1 HMAC 拒绝、命令不存在、工具输出无密钥、组件抛异常、`.cmd` 包装器）。真正的“从微信进程内存里读出 key”仍需第三方原生组件（授权不明），本仓不分发也不内置；页 1 校验每候选一次 PBKDF2(256000) 的现实成本也让盲扫内存不可行（§4.2）。
 - **`localArtifacts` 的命中率取决于机器上有没有别的工具导出过 key**：它不猜、不破解，只在配置的路径里找现成的 64 位十六进制并验证。
+- **「自己扫微信进程内存取 key」实测不可行**（2026-09-11 在本机用真实密钥做的对照实验）：
+  1) 用 PowerShell P/Invoke 转储 Weixin.exe 私有内存 **297MB**；
+  2) 针对已知密钥实测 **派生 AES key 完全不在内存里**（0 次命中）——说明 DB 空闲时 SQLCipher 连接已关闭、派生 key 被释放；
+     而**原始 32 字节密钥在内存里有 6 处**，且邻近都是重复的配置/数据块（URL 域名列表一类通用内容），没有可稳定锚定的结构；
+  3) 页 1 校验对每个候选都要一次 `PBKDF2-SHA512(256000)`，实测 **70ms/次** —— 盲扫需要百万级候选，等于几百小时。
+  结论：要「读出内存里的 key」必须有微信内部结构的专有知识（第三方 DLL 做的正是这件事），本仓无法稳健复现；
+  因此提供 `externalTool` 把这类工具的输出接进来，由我们负责**页 1 校验与落库**。
 - **HEVC 原图**：纯 HEVC 依赖外部 ffmpeg（设置里配路径）。
 - **明文副本的「新鲜度」仍是启发式**：靠 mtime + size 比较（含 `-wal`），没有把「解密时的源签名」存成 sidecar。极端情形（用保留 mtime 的方式还原/替换源库、时钟回拨）可能被误判为新鲜。已覆盖的替代判据是逐页 HMAC（解密时）与打开失败自愈（打开时）。
 - **副本能打开但内部页被外部改坏**：只在「打开失败」时自愈；若副本仍能打开、只是某些页坏了，要等该页被查询才会暴露（微信库是只读副本，正常路径不会发生；逐页校验已挡住产生坏副本的主因——撕裂读）。

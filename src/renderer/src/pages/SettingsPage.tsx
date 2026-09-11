@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { LarkBaseStatus, SendStatusInfo } from '../../../shared/types'
 import { useWorkbenchStore } from '../stores/workbench'
 import WechatKeySection from '../components/settings/WechatKeySection'
+import CryptoCenterSection from '../components/settings/CryptoCenterSection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
 import { agentFormDirty } from '../components/settings/agentDirty'
 import WorkbenchApprovalSection from '../components/settings/WorkbenchApprovalSection'
@@ -738,6 +739,7 @@ function SettingsPage(): React.JSX.Element {
       {tab === 'wechat' && (
         <div className="st-tab-panel">
           <WechatKeySection />
+        <CryptoCenterSection />
         </div>
       )}
 

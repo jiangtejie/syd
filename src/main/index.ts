@@ -32,6 +32,7 @@ import { registerConfigHandlers } from './ipc/configHandlers'
 import { registerDialogHandlers } from './ipc/dialogHandlers'
 import { registerAppHandlers } from './ipc/appHandlers'
 import { registerMediaHandlers } from './ipc/mediaHandlers'
+import { registerCryptoHandlers } from './ipc/cryptoHandlers'
 import { registerIssueHandlers } from './ipc/issueHandlers'
 import { registerAgentHandlers } from './ipc/agentHandlers'
 import { registerDutyHandlers } from './ipc/dutyHandlers'
@@ -373,6 +374,7 @@ if (!app.requestSingleInstanceLock()) {
     registerDialogHandlers()
     registerAppHandlers()
     registerMediaHandlers()
+    registerCryptoHandlers()
     registerIssueHandlers()
     registerAgentHandlers()
     registerDutyHandlers()

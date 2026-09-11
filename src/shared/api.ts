@@ -84,6 +84,52 @@ export type AiReplyResult = {
  * 不会再出现类型漂移(历史上就漏同步过 mergeDuplicates/archiveStale)。
  */
 /** 桥接口整体(目前只有 cs 一个命名空间；以后新增命名空间在此登记) */
+export interface ReadinessStepView {
+  id: string
+  label: string
+  status: 'ok' | 'warn' | 'fail' | 'skip'
+  detail: string
+}
+
+export interface AccountReadiness {
+  ok: boolean
+  wxid: string
+  accountDir: string
+  dbStoragePath: string | null
+  key: { has: boolean; status: string | null; source: string | null; lastTestOk: boolean | null }
+  dbs: Array<{ name: string; exists: boolean; cached: boolean; pages: number | null }>
+  images: { xorKey: boolean; aesKey: boolean }
+  voice: { mediaDbs: number; cachedWav: number }
+  asr: { available: boolean; reason?: string }
+  cache: {
+    policy: { autoClean: boolean; keepDays: number; maxMB: number; maxFiles: number }
+    files: number
+    bytes: number
+    archiveBytes: number
+  }
+  steps: ReadinessStepView[]
+}
+
+export interface WarmupReport {
+  ok: boolean
+  items: Array<{
+    name: string
+    ok: boolean
+    ms: number
+    pages?: number
+    walMerged?: boolean
+    cached?: boolean
+    error?: string
+  }>
+}
+
+export interface OnboardReport {
+  ok: boolean
+  wxid: string
+  accountDir: string
+  steps: ReadinessStepView[]
+}
+
 export interface PreloadApi {
   cs: CsApi
 }
@@ -280,6 +326,31 @@ export interface CsApi {
         archiveFiles: number
         archiveBytes: number
       }
+      error?: string
+    }>
+  }
+  /**
+   * 解密一体化：体检（现在能不能用、卡在哪一步）/ 账号发现 / 一键接入 / 预热解密。
+   * 类型取自主进程的 cryptoReadiness（这里是桥的窄类型，渲染端只读展示）。
+   */
+  crypto: {
+    discover: () => Promise<{
+      ok: boolean
+      accounts?: Array<{ wxid: string; dir: string }>
+      error?: string
+    }>
+    readiness: (wxid: string) => Promise<{ ok: boolean; report?: AccountReadiness; error?: string }>
+    warmup: (wxid: string) => Promise<{ ok: boolean; report?: WarmupReport; error?: string }>
+    onboard: (opts?: {
+      wxid?: string
+      dbPath?: string
+      keyHex?: string
+      connect?: boolean
+    }) => Promise<{
+      ok: boolean
+      report?: OnboardReport
+      connected?: { ok: boolean; error?: string } | null
+      dbPath?: string | null
       error?: string
     }>
   }
