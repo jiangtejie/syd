@@ -150,6 +150,12 @@ src/
 - `accountReadiness(wxid)`：7 步体检（账号目录 / 密钥 / 主要库 / 图片密钥 / 语音 / 转写 / 缓存），每步给 ok·warn·fail·skip 与原因；
 - `onboardAccount({wxid?, dbPath?, keyHex?})`：定位账号 → 密钥（**粘贴优先**，必须过页 1 HMAC 才落库，否则走三来源）→ 推导图片密钥并写配置 → 预热解密 → 回体检；成功后由 IPC 层 `wxService.connect` 拉起监控与调度器；
 - `warmupAccount(wxid)`：先解主要库（session / message_0 / message_fts），让「首次打开会话、首次分析」不再承担解密开销。
+- **取 key 工具（检测 + 一键使用，`keyTools.ts` + 纯逻辑 `keyToolPresets.ts`）**：本仓**不分发**这些工具，
+  只帮用户找到机器上已有的——扫 PATH / 下载 / 桌面 / 文档 / 程序目录 / `<userData>/tools`（外加 `wechat.keyTool.searchDirs`），
+  按可执行名匹配预设（chatlog / PyWxDump / wx_key / SharpWxDump），**扩展名认 `.exe`、`.cmd`、`.bat` 与无扩展**
+  （Python/Node 类工具在 Windows 上常是 `.cmd` 包装器，实测只认 `.exe` 会一个都找不到）。
+  每个预设带**多个参数模板**（如 chatlog `key`、`--debug key`；PyWxDump `wx_key`/`key`/`info`）按顺序试 ——
+  模板试错成本只是一条命令，而**能否采用一律由页 1 HMAC 决定**，所以「试」永远不会污染密钥库。
 
 真机验证（本机）：体检 7/7 ok（message_0.db 554 页、图片 XOR+AES 齐、media_*.db 1 个 + 已缓存 WAV 9 条、whisper 就绪、媒体缓存 490 文件/28MB、归档 27MB）；
 一键接入 7/7 步成功（预热 session 219ms/36 页、message_0 228ms/554 页）；**粘贴错误密钥 → 页 1 HMAC 拒绝且不动已存密钥**；不带参数也能自动发现账号跑通。

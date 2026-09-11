@@ -17,12 +17,20 @@ const require = createRequire(import.meta.url)
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const bundleDir = mkdtempSync(join(tmpdir(), 'dsh-keyscan-'))
 const bundle = join(bundleDir, 'keyScanPure.cjs')
+const presetBundle = join(bundleDir, 'keyToolPresets.cjs')
 buildSync({
   entryPoints: [join(root, 'src/main/services/wechat/keyScanPure.ts')],
   bundle: true,
   platform: 'node',
   format: 'cjs',
   outfile: bundle
+})
+buildSync({
+  entryPoints: [join(root, 'src/main/services/wechat/keyToolPresets.ts')],
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  outfile: presetBundle
 })
 const {
   extractKeyCandidates,
@@ -34,6 +42,7 @@ const {
   buildCmdLine,
   MAX_KEY_CANDIDATES
 } = require(bundle)
+const { matchPreset, KEY_TOOL_PRESETS, looksLikeKeyTool } = require(presetBundle)
 
 let failed = 0
 const log = (ok, name, detail) => {
@@ -123,6 +132,37 @@ const KEY2 = '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0'
     line
   )
   log(!line.includes('undefined') && !line.includes('null'), '拼接不会漏出 undefined/null')
+}
+
+// 5) 取 key 工具预设匹配（实测踩坑：Python/Node 类工具装出来是 .cmd，不能只认 .exe）
+{
+  log(matchPreset('chatlog.exe')?.id === 'chatlog', 'chatlog.exe 命中预设')
+  log(matchPreset('chatlog.cmd')?.id === 'chatlog', '.cmd 包装器同样命中（实测踩过的坑）')
+  log(matchPreset('ChatLog.BAT')?.id === 'chatlog', '大写 + .bat 命中')
+  log(matchPreset('wxdump.exe')?.id === 'pywxdump', 'wxdump.exe 命中 PyWxDump')
+  log(matchPreset('wx_key.exe')?.id === 'wxkey', 'wx_key.exe 命中 wx_key')
+  log(
+    matchPreset('C:\\tools\\chatlog.exe')?.id === 'chatlog',
+    '传完整路径也能匹配（只取文件名）'
+  )
+  log(matchPreset('notepad.exe') === null, '无关程序不命中')
+  log(matchPreset('chatlog.py') === null, '.py 不命中（我们只能跑可执行/包装器）')
+  log(matchPreset('') === null, '空文件名不命中')
+  log(!looksLikeKeyTool('explorer.exe'), '自动发现不会把系统程序当工具')
+
+  log(
+    KEY_TOOL_PRESETS.every((p) => p.stems.length > 0 && p.argTemplates.length > 0),
+    '每个预设都有文件名与至少一个参数模板'
+  )
+  const chatlog = KEY_TOOL_PRESETS.find((p) => p.id === 'chatlog')
+  log(
+    JSON.stringify(chatlog.argTemplates[0]) === JSON.stringify(['key']),
+    'chatlog 首个模板是官方文档里的 chatlog key'
+  )
+  log(
+    KEY_TOOL_PRESETS.every((p) => p.note.includes('不分发') || p.note.includes('本仓')),
+    '每个预设都标注了「本仓不分发」'
+  )
 }
 
 void KEY2

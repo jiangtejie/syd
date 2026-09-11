@@ -336,7 +336,36 @@ export interface CsApi {
   crypto: {
     discover: () => Promise<{
       ok: boolean
-      accounts?: Array<{ wxid: string; dir: string }>
+      accounts?: Array<{ accountId: string; wxid: string; dir: string }>
+      error?: string
+    }>
+    /** 检测本机已有的取 key 工具（本仓不分发，只帮用户找） */
+    keyTools: () => Promise<{
+      ok: boolean
+      tools?: Array<{
+        id: string
+        name: string
+        path: string
+        presetId: string | null
+        note: string
+        active: boolean
+      }>
+      scannedDirs?: number
+      presets?: Array<{ id: string; name: string; note: string; templates: string[] }>
+      error?: string
+    }>
+    /** 一键使用某个取 key 工具：按预设模板依次试，命中即校验落库 */
+    keyToolRun: (opts: { wxid: string; command?: string; presetId?: string }) => Promise<{
+      ok: boolean
+      key?: string
+      attempts: Array<{
+        command: string
+        args: string[]
+        status: 'ok' | 'candidates' | 'empty' | 'error'
+        detail: string
+      }>
+      imported?: boolean
+      provider?: string
       error?: string
     }>
     readiness: (wxid: string) => Promise<{ ok: boolean; report?: AccountReadiness; error?: string }>
