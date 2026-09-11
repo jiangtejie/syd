@@ -41,7 +41,10 @@ export class WeChatDbMonitor {
   private stamps = new Map<string, FileStamp>()
   private stopped = false
 
-  constructor(dbStoragePath: string, private opts: DbMonitorOptions = {}) {
+  constructor(
+    dbStoragePath: string,
+    private opts: DbMonitorOptions = {}
+  ) {
     this.dbStoragePath = dbStoragePath.replace(/[\\/]+$/, '')
     this.sessionDbPath = findSessionDbFile(this.dbStoragePath)
     this.msgDbPaths = findMsgDbFiles(this.dbStoragePath)
@@ -147,7 +150,10 @@ export class WeChatDbMonitor {
       const changedFiles = [...this.pendingChanges]
       this.pendingChanges.clear()
       const sessionChanged = changedFiles.some(
-        (f) => this.sessionDbPath && f.replace(/\\/g, '/').toLowerCase() === this.sessionDbPath!.replace(/\\/g, '/').toLowerCase()
+        (f) =>
+          this.sessionDbPath &&
+          f.replace(/\\/g, '/').toLowerCase() ===
+            this.sessionDbPath!.replace(/\\/g, '/').toLowerCase()
       )
       onChange({ changedFiles, sessionChanged })
     }, DEBOUNCE_MS)

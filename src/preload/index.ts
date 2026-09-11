@@ -5,6 +5,7 @@ import type {
   ChatMsgItem,
   ChatSessionItem,
   FeedbackAnalysisState,
+  DeriveImageKeysResult,
   LarkBaseStatus,
   LarkDigestConfig,
   LarkPullResult,
@@ -85,6 +86,9 @@ const api: PreloadApi = {
         rangeDays?: number
       ): Promise<{ ok: boolean; stats?: OpsStats; error?: string }> =>
         ipcRenderer.invoke('cs:wx:opsStats', wxid, rangeDays),
+      /** 图片密钥本地推导 + AES 校验（不依赖原生组件） */
+      deriveImageKeys: (wxid: string, knownAesKey?: string): Promise<DeriveImageKeysResult> =>
+        ipcRenderer.invoke('cs:wx:deriveImageKeys', wxid, knownAesKey),
       onDbChanged: (callback: (payload: DbChangedPayload) => void) => {
         const listener = (_e: Electron.IpcRendererEvent, payload: DbChangedPayload): void =>
           callback(payload)

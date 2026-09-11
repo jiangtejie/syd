@@ -895,3 +895,19 @@ export interface LarkDigestConfig {
   /** 接收目标数（复用飞书通知的目标） */
   targets: number
 }
+
+/** 图片密钥本地推导结果（设置页「自动推导」） */
+export interface DeriveImageKeysResult {
+  ok: boolean
+  error?: string
+  /** 推导出的 XOR 密钥（0-255） */
+  xorKey?: number
+  /** XOR 是否通过 y === xorKey ^ 0xd9 自校验 */
+  xorVerified?: boolean
+  /** 投票一致度（多少份模板支持这个值） */
+  xorVotes?: number
+  templateCount?: number
+  /** 传入的 AES 密钥是否被模板探测段验证通过 */
+  aesVerified?: boolean
+  aesProbeFile?: string
+}

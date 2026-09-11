@@ -1,4 +1,5 @@
 import type { MonitorData } from './monitorMetrics'
+import type { DeriveImageKeysResult } from './types'
 import type { LarkBaseStatus, LarkDigestConfig, LarkPullResult, LarkSyncOut } from './types'
 import type {
   FeedbackAnalysisState,
@@ -133,6 +134,8 @@ export interface CsApi {
       wxid: string,
       rangeDays?: number
     ) => Promise<{ ok: boolean; stats?: OpsStats; error?: string }>
+    /** 图片密钥本地推导 + AES 校验（读账号目录下的 *_t.dat 模板，不依赖原生组件） */
+    deriveImageKeys: (wxid: string, knownAesKey?: string) => Promise<DeriveImageKeysResult>
     onDbChanged: (callback: (payload: DbChangedPayload) => void) => () => void
   }
   ai: {

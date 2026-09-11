@@ -17,7 +17,8 @@
     "test:lark": "node --experimental-strip-types scripts/lark-sync-selftest.mjs",
     "test:digest": "node --experimental-strip-types scripts/digest-selftest.mjs",
     "test:send": "node --experimental-strip-types scripts/send-guard-selftest.mjs",
-    "test:all": "npm run test:schema && npm run test:matcher && npm run test:lark && npm run test:digest && npm run test:send && npm run test:feedback",
+    "test:crypto": "node scripts/wx-crypto-selftest.mjs",
+    "test:all": "npm run test:schema && npm run test:crypto && npm run test:matcher && npm run test:lark && npm run test:digest && npm run test:send && npm run test:feedback",
     "test:feedback": "node --experimental-strip-types scripts/reply-attribution-selftest.mjs && node --experimental-strip-types scripts/text-filters-selftest.mjs && node --experimental-strip-types scripts/issue-similarity-selftest.mjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
@@ -43,6 +44,7 @@
     "qrcode": "^1.5.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "silk-wasm": "^3.7.1",
     "zod": "^4.5.4",
     "zustand": "^5.0.15"
   },

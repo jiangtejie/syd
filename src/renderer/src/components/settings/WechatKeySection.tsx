@@ -173,6 +173,35 @@ function WechatKeySection(): React.JSX.Element {
     }
   }
 
+  /**
+   * 从账号目录的 *_t.dat 模板**本地推导**图片 XOR 密钥，并用模板探测段校验 AES。
+   * 不依赖任何原生组件（不读内存、不调 DLL）；推导成功直接填进输入框，用户只需点保存。
+   */
+  const deriveImgKeys = async (): Promise<void> => {
+    if (!wxid.trim()) return toast.error('请先填写当前微信账号 wxid')
+    if (!keyReady) return toast.error('请先导入数据库密钥（用于定位账号目录）')
+    setBusy('img')
+    try {
+      const r = await wxApi?.deriveImageKeys?.(wxid.trim(), aesKey.trim() || undefined)
+      if (!r?.ok) {
+        toast.error(r?.error || '推导失败')
+        return
+      }
+      if (typeof r.xorKey === 'number') {
+        setXorKey(`0x${r.xorKey.toString(16).toUpperCase()}`)
+      }
+      const parts = [
+        `XOR 已推导 0x${(r.xorKey ?? 0).toString(16).toUpperCase()}`,
+        `模板 ${r.templateCount ?? 0} 份/一致 ${r.xorVotes ?? 0} 份`
+      ]
+      if (r.aesVerified === true) parts.push('AES 校验通过')
+      else if (r.aesVerified === false) parts.push(`AES 未通过校验：${r.error ?? '与模板不匹配'}`)
+      toast.success(parts.join(' · '))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   /** 测试图片密钥：先保存当前输入，再从 attach 取一张图真实解密 */
   const testImageKey = async (): Promise<void> => {
     if (!wxid.trim()) return toast.error('请先填写当前微信账号 wxid')
@@ -332,6 +361,15 @@ function WechatKeySection(): React.JSX.Element {
         />
       </label>
       <div className="st-actions">
+        <button
+          type="button"
+          className="st-btn ghost"
+          disabled={busy !== null || !keyReady}
+          onClick={() => void deriveImgKeys()}
+          title="读账号目录下的 *_t.dat 模板：本地推导 XOR 密钥，并用模板探测段校验 AES（不读内存、不需要额外组件）"
+        >
+          {busy === 'img' ? '处理中…' : '自动推导图片密钥'}
+        </button>
         <button
           type="button"
           className="st-btn"

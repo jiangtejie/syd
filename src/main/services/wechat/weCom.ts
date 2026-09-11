@@ -44,9 +44,7 @@ function readProtoVarint(data: Buffer, start: number): { value: number; next: nu
 }
 
 /** 提取 extra_buffer 前两个 protobuf 字符串字段：app_id 与 wording_id（移植 extractWeComWordingRef） */
-export function extractWeComWordingRef(
-  raw: unknown
-): { appId?: string; wordingId: string } | null {
+export function extractWeComWordingRef(raw: unknown): { appId?: string; wordingId: string } | null {
   const data = decodeExtraBuffer(raw)
   if (!data || data.length === 0) return null
 
@@ -108,8 +106,7 @@ export function queryOpenimWording(
          WHERE wording_id = ? AND wording <> ''
          ORDER BY CASE WHEN lang_id = 1 THEN 0 ELSE 1 END, update_time DESC LIMIT 1`
     const row = db.prepare(sql).get(ref.appId ? [ref.appId, ref.wordingId] : [ref.wordingId]) as
-      | { wording?: string }
-      | undefined
+      { wording?: string } | undefined
     const wording = typeof row?.wording === 'string' ? row.wording.trim() : ''
     return wording || undefined
   } catch {

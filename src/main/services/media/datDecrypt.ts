@@ -78,11 +78,7 @@ export function stripTrailingNulBytes(data: Buffer): Buffer {
 }
 
 /** V1/V2 带 15 字节头的 dat：AES-128-ECB 段 + 明文段 + XOR 段 */
-export function decryptAesXor(
-  data: Buffer,
-  xorKey: number | null,
-  aesKey: Buffer | null
-): Buffer {
+export function decryptAesXor(data: Buffer, xorKey: number | null, aesKey: Buffer | null): Buffer {
   if (data.length < 0x0f) throw new Error('文件太小，无法解析')
   const payload = data.subarray(0x0f)
   const aesSize = bytesToInt32(data.subarray(6, 10))
@@ -242,7 +238,11 @@ function findJpegEnd(jpg: Buffer): number {
 }
 
 /** 读文件并解密（便捷入口，供 service 层使用） */
-export function decryptDatFile(filePath: string, xorKey: number | null, aesKey: Buffer | null): DecryptDatResult {
+export function decryptDatFile(
+  filePath: string,
+  xorKey: number | null,
+  aesKey: Buffer | null
+): DecryptDatResult {
   const data = readFileSync(filePath)
   return decryptDatBytes(data, xorKey, aesKey)
 }
@@ -327,9 +327,7 @@ export function extractHevcNaluStreams(buffer: Buffer): Buffer[] {
   }
   if (current.length > 0) groups.push(current)
   return groups
-    .map((g) =>
-      Buffer.concat(g.map((u) => Buffer.concat([Buffer.from([0, 0, 0, 1]), u])))
-    )
+    .map((g) => Buffer.concat(g.map((u) => Buffer.concat([Buffer.from([0, 0, 0, 1]), u]))))
     .filter((s) => s.length >= 100)
 }
 
@@ -357,7 +355,22 @@ export function convertHevcToJpeg(hevcData: Buffer, ffmpegPath: string): Promise
     try {
       proc = spawn(
         ffmpegPath,
-        ['-hide_banner', '-loglevel', 'error', '-f', 'hevc', '-i', 'pipe:0', '-vframes', '1', '-q:v', '3', '-f', 'mjpeg', 'pipe:1'],
+        [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-f',
+          'hevc',
+          '-i',
+          'pipe:0',
+          '-vframes',
+          '1',
+          '-q:v',
+          '3',
+          '-f',
+          'mjpeg',
+          'pipe:1'
+        ],
         { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }
       )
     } catch {

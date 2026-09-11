@@ -3,6 +3,8 @@ import * as wxService from '../services/wechat/wxService'
 import { startWatch } from '../services/wechat/watchService'
 import { ensure as ensureIssueScheduler } from '../services/feedback/scheduler'
 import { startBaseSyncScheduler } from '../services/lark/baseSyncScheduler'
+import { getKeyStatus } from '../services/keyStoreService'
+import { deriveImageKeys } from '../services/media/imageKeys'
 import type { MessageCursor } from '../../shared/types'
 
 export function registerWechatHandlers(): void {
@@ -49,6 +51,24 @@ export function registerWechatHandlers(): void {
       startBaseSyncScheduler(wxid)
     }
     return r
+  })
+
+  /**
+   * 图片密钥：从账号目录的 *_t.dat 模板本地推导 XOR，并用模板探测段校验 AES。
+   * 不需要任何原生依赖（不读内存、不调 DLL）；失败信息直接给「为什么推不出来」。
+   */
+  ipcMain.handle('cs:wx:deriveImageKeys', (_e, wxid: string, knownAesKey?: string) => {
+    if (!wxid) return { ok: false as const, error: '缺少账号' }
+    const info = getKeyStatus(wxid)
+    const accountDir = info.dbPath ?? ''
+    if (!accountDir) {
+      return { ok: false as const, error: '还没导入微信密钥/数据目录，无法定位账号目录' }
+    }
+    try {
+      return deriveImageKeys(accountDir, knownAesKey)
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '推导失败' }
+    }
   })
 
   ipcMain.handle('cs:wx:opsStats', (_e, wxid: string, rangeDays?: number) =>
