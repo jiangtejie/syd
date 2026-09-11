@@ -157,6 +157,16 @@ export function listReplies(
   return rows.map(toReply)
 }
 
+/** 增量列出「自某时刻以来有变更」的决策记录（外部同步用：推送到飞书多维表格） */
+export function listRepliesChangedSince(wxid: string, sinceMs: number, limit = 300): AgentReply[] {
+  const rows = getDb()
+    .prepare(
+      'SELECT * FROM agent_reply WHERE account_wxid = ? AND updated_at > ? ORDER BY id ASC LIMIT ?'
+    )
+    .all(wxid, sinceMs, limit) as ReplyRow[]
+  return rows.map(toReply)
+}
+
 export function setReplyStatus(
   id: number,
   status: ReplyStatus,

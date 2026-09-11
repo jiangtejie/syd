@@ -41,6 +41,8 @@ interface IssueRow {
   resolved_at?: number | null
   archived_from?: string | null
   last_reply_by?: string | null
+  /** 处理备注：同事在飞书多维表格里写的结论（回写进本地，供看板展示） */
+  note?: string | null
   created_at: number
   updated_at: number
 }
@@ -143,6 +145,7 @@ function rowToIssue(r: IssueRow): FeedbackIssue {
     followUp: r.follow_up === 1,
     followUpAt: r.follow_up_at ?? undefined,
     lastReplyBy: r.last_reply_by ?? undefined,
+    note: (r.note ?? '') || undefined,
     resolvedAt: r.resolved_at ?? undefined,
     archivedFrom: (r.archived_from as FeedbackIssue['archivedFrom']) ?? undefined,
     createdAt: r.created_at,
@@ -402,6 +405,17 @@ export function setIssueAssignee(id: number, assignee: string | null): boolean {
   return info.changes > 0
 }
 
+/**
+ * 写处理备注（来源：同事在飞书多维表格里填的结论）。
+ * 与 setIssueAssignee 一样**不动 updated_at**：这是外部同步进来的信息，
+ * 不该被当成「本地刚处理过」，否则会污染冲突判定与「今日解决」口径。
+ */
+export function setIssueNote(id: number, note: string | null): boolean {
+  const text = (note ?? '').trim() || null
+  const info = getDb().prepare('UPDATE issue_feedback SET note = ? WHERE id = ?').run(text, id)
+  return info.changes > 0
+}
+
 /** 按稳定 key 查已有行（供 resolved 判定：存在 open 时自动闭环，不存在则不新建） */
 export function findIssueByKey(
   key: string
@@ -516,6 +530,8 @@ export interface ManualFieldSnapshot {
   key: string
   assignee: string | null
   needConfirm: number
+  /** 处理备注（同事在表格里写的结论）：重算会删 open 行，必须一起快照回来 */
+  note: string | null
 }
 
 /** 重算前快照 open 行的人工字段（指派跟进人 / 疑似已确认），重算后按 key 回填 */
@@ -525,18 +541,20 @@ export function snapshotOpenManualFields(
 ): ManualFieldSnapshot[] {
   const rows = getDb()
     .prepare(
-      `SELECT key, assignee, need_confirm FROM issue_feedback
+      `SELECT key, assignee, need_confirm, note FROM issue_feedback
        WHERE wxid = ? AND group_username = ? AND status = 'open'`
     )
     .all(wxid, groupUsername) as Array<{
     key: string
     assignee: string | null
     need_confirm: number | null
+    note: string | null
   }>
   return rows.map((r) => ({
     key: r.key,
     assignee: r.assignee ?? null,
-    needConfirm: r.need_confirm ?? 0
+    needConfirm: r.need_confirm ?? 0,
+    note: r.note ?? null
   }))
 }
 
@@ -548,12 +566,13 @@ export function restoreManualFields(rows: ManualFieldSnapshot[]): number {
   if (rows.length === 0) return 0
   const db = getDb()
   const stmt = db.prepare(
-    `UPDATE issue_feedback SET assignee = COALESCE(assignee, ?), need_confirm = ?
+    `UPDATE issue_feedback SET assignee = COALESCE(assignee, ?), need_confirm = ?,
+       note = COALESCE(note, ?)
      WHERE key = ? AND status = 'open'`
   )
   let n = 0
   const run = db.transaction(() => {
-    for (const r of rows) n += stmt.run(r.assignee, r.needConfirm, r.key).changes
+    for (const r of rows) n += stmt.run(r.assignee, r.needConfirm, r.note, r.key).changes
   })
   run()
   return n

@@ -509,6 +509,11 @@ function SettingsPage(): React.JSX.Element {
                     `拉取：应用到本地 ${pulled.applied} 条${pulled.skippedLocalWin ? ` · 冲突保留本地 ${pulled.skippedLocalWin}` : ''}${pulled.unmatched ? ` · 认不出 ${pulled.unmatched}` : ''}`
                   ]
                 : []),
+              ...(res.replies
+                ? [
+                    `影子记录：新增 ${res.replies.created} · 更新 ${res.replies.updated} · 跳过 ${res.replies.skipped}`
+                  ]
+                : []),
               ...(r.error ? [r.error] : []),
               ...(pulled && !pulled.ok && pulled.error ? [pulled.error] : [])
             ]

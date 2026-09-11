@@ -12,6 +12,8 @@ import {
   diffCollab,
   hashOf,
   issueToFields,
+  replyToFields,
+  riskText,
   statusFromText,
   statusText
 } from '../src/main/services/lark/baseMapping.ts'
@@ -89,7 +91,7 @@ log(collabOf({ 跟进人: { name: '陈西西' } }).assignee === '陈西西', '�
 log(collabOf(undefined).status === '' && collabOf(undefined).assignee === '', '缺失字段 → 空串')
 
 console.log('\n[6] 冲突比对（判断是不是同事改的）')
-const last = { status: '待处理', assignee: '' }
+const last = { status: '待处理', assignee: '', note: '' }
 log(!diffCollab({ status: '待处理', assignee: '' }, last).statusChanged, '没变 → 不算改动')
 log(diffCollab({ status: '已解决', assignee: '' }, last).statusChanged, '状态变了 → 是同事改的')
 log(diffCollab({ status: '待处理', assignee: '陈西西' }, last).assigneeChanged, '跟进人从空到有 → 是同事改的')
@@ -98,7 +100,36 @@ log(
   '跟进人被清空 → 也算改动'
 )
 log(!diffCollab({ status: '', assignee: '' }, last).statusChanged, '空状态不触发改动（避免误清本地状态）')
-log(diffCollab({ status: '已解决', assignee: '' }, null).statusChanged, '首次拉取（无历史值）→ 视为改动')
+log(diffCollab({ status: '已解决', assignee: '', note: '' }, null).statusChanged, '首次拉取（无历史值）→ 视为改动')
+log(diffCollab({ status: '', assignee: '', note: '已联系客户' }, last).noteChanged, '处理备注从空到有 → 是同事改的')
+log(!diffCollab({ status: '待处理', assignee: '', note: '已联系客户' }, { status: '待处理', assignee: '', note: '已联系客户' }).any, '三列都没变 → any=false（不写不拉）')
+log(collabOf({ 处理备注: '已安排补发' }).note === '已安排补发', '读回处理备注')
+
+console.log('\n[6.1] 数字员工回复 → Base 字段')
+const reply = {
+  id: 7,
+  groupName: '保利星荟店对接群',
+  groupUsername: '123@chatroom',
+  triggerText: 'X'.repeat(400),
+  decision: 'script',
+  intent: '到货时间',
+  replyText: '我帮您查到货进度',
+  riskLevel: 'A',
+  status: 'shadow',
+  feedback: 'good',
+  triggerTime: 1789000000000,
+  createdAt: 1789000000000
+}
+const rf = replyToFields(reply)
+log(rf['回复ID'] === '7', '回复ID 是字符串')
+log(rf['判定'] === '命中话术', '决策来源 → 中文文案')
+log(rf['风险'] === 'A 可自动', '风险等级 → 文案')
+log(rf['状态'] === '影子（待看）', 'shadow → 影子（待看）')
+log(rf['人工反馈'] === '答得对', '本地反馈 → 文案')
+log(String(rf['触发消息']).length === 120, '触发消息默认截断 120 字', String(String(rf['触发消息']).length))
+log(String(replyToFields(reply, 500)['触发消息']).length === 400, '打开「推送原文」后放宽到 500（原文 400 字不截）')
+log(replyToFields({ ...reply, status: 'rejected' })['状态'] === '已驳回', '已驳回状态映射')
+log(riskText('C') === 'C 禁自动' && riskText(undefined) === 'A 可自动', 'riskText 边界')
 
 console.log('\n[7] 内容 hash（决定要不要写）')
 const h1 = hashOf({ a: 1, b: 'x' })

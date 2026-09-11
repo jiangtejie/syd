@@ -67,6 +67,13 @@ export function IssueDrawer({
         {active.status === 'open' && <> · 已积压 {ageText(active.occurAt)}</>}
       </div>
       {active.summary && <div className="mon-drawer-summary">{active.summary}</div>}
+      {/* 处理备注：同事在飞书多维表格里填的结论（回写进本地，只读展示） */}
+      {active.note && (
+        <div className="mon-drawer-note">
+          <b>处理备注</b>
+          <span>{active.note}</span>
+        </div>
+      )}
 
       {(active.severity && active.severity !== '一般') || (active.reopenCount ?? 0) > 0 ? (
         <div className="mon-drawer-flags">

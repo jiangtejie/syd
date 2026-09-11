@@ -157,6 +157,13 @@ function IssueTimeline({
   return (
     <div className="gip-detail">
       {cur.summary && <div className="gip-summary">{cur.summary}</div>}
+      {/* 处理备注来自飞书多维表格（同事在手机上填的结论），本地只读展示 */}
+      {cur.note && (
+        <div className="gip-note" title="同事在飞书多维表格里填写的处理备注">
+          <b>处理备注</b>
+          <span>{cur.note}</span>
+        </div>
+      )}
       <div className="gip-tl-caption">
         问题过程 · {msgs.length} 条消息
         <span className="gip-method">{cur.method === 'llm' ? 'AI 提炼' : '规则匹配'}</span>

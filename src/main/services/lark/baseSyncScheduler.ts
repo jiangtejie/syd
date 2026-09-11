@@ -1,5 +1,11 @@
 import { getConfigBoolean } from '../../db/repos/config'
-import { pullIssuesBack, syncIssuesOut, type PullResult, type SyncOutResult } from './baseSync'
+import {
+  pullIssuesBack,
+  syncIssuesOut,
+  syncRepliesOut,
+  type PullResult,
+  type SyncOutResult
+} from './baseSync'
 import { createLogger } from '../logging'
 
 const syncLog = createLogger('lark')
@@ -37,6 +43,11 @@ async function tick(): Promise<void> {
     if (!r.ok && r.error) syncLog.warn(`议题同步失败: ${r.error}`)
     else if (r.created + r.updated > 0) {
       syncLog.info(`议题同步: 新增 ${r.created} · 更新 ${r.updated} · 跳过 ${r.skipped}`)
+    }
+    // 影子记录同轮推送（量小、变化慢；失败不影响议题同步）
+    const rep = await syncRepliesOut(wxid)
+    if (rep.created + rep.updated > 0) {
+      syncLog.info(`影子记录同步: 新增 ${rep.created} · 更新 ${rep.updated}`)
     }
   } catch (e) {
     syncLog.warn(`议题同步异常: ${e instanceof Error ? e.message : String(e)}`)

@@ -19,6 +19,7 @@ export interface LarkSyncRef {
   contentHash: string
   remoteStatus: string
   remoteAssignee: string
+  remoteNote: string
   pushedAt?: number
   pulledAt?: number
 }
@@ -30,6 +31,7 @@ interface RefRow {
   content_hash: string
   remote_status: string | null
   remote_assignee: string | null
+  remote_note: string | null
   pushed_at: number | null
   pulled_at: number | null
 }
@@ -42,6 +44,7 @@ function toRef(r: RefRow): LarkSyncRef {
     contentHash: r.content_hash,
     remoteStatus: r.remote_status ?? '',
     remoteAssignee: r.remote_assignee ?? '',
+    remoteNote: r.remote_note ?? '',
     pushedAt: r.pushed_at ?? undefined,
     pulledAt: r.pulled_at ?? undefined
   }
@@ -69,18 +72,19 @@ export function saveSyncRef(
   tableId: string,
   recordId: string,
   contentHash: string,
-  remote?: { status: string; assignee: string; pushed?: boolean; pulled?: boolean }
+  remote?: { status: string; assignee: string; note?: string; pushed?: boolean; pulled?: boolean }
 ): void {
   const now = Date.now()
   getDb()
     .prepare(
       'INSERT INTO lark_sync_map' +
-        ' (kind, local_id, app_token, table_id, record_id, content_hash, remote_status, remote_assignee, pushed_at, pulled_at, synced_at)' +
-        ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)' +
+        ' (kind, local_id, app_token, table_id, record_id, content_hash, remote_status, remote_assignee, remote_note, pushed_at, pulled_at, synced_at)' +
+        ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)' +
         ' ON CONFLICT(kind, local_id) DO UPDATE SET app_token = excluded.app_token,' +
         ' table_id = excluded.table_id, record_id = excluded.record_id,' +
         ' content_hash = excluded.content_hash,' +
         ' remote_status = excluded.remote_status, remote_assignee = excluded.remote_assignee,' +
+        ' remote_note = excluded.remote_note,' +
         ' pushed_at = COALESCE(excluded.pushed_at, lark_sync_map.pushed_at),' +
         ' pulled_at = COALESCE(excluded.pulled_at, lark_sync_map.pulled_at),' +
         ' synced_at = excluded.synced_at'
@@ -94,6 +98,7 @@ export function saveSyncRef(
       contentHash,
       remote?.status ?? '',
       remote?.assignee ?? '',
+      remote?.note ?? '',
       remote?.pushed ? now : null,
       remote?.pulled ? now : null,
       now
@@ -104,16 +109,16 @@ export function saveSyncRef(
 export function saveRemoteCollab(
   kind: LarkSyncKind,
   localId: number,
-  remote: { status: string; assignee: string },
+  remote: { status: string; assignee: string; note: string },
   contentHash?: string
 ): void {
   const now = Date.now()
   getDb()
     .prepare(
-      'UPDATE lark_sync_map SET remote_status = ?, remote_assignee = ?, pulled_at = ?,' +
+      'UPDATE lark_sync_map SET remote_status = ?, remote_assignee = ?, remote_note = ?, pulled_at = ?,' +
         ' content_hash = COALESCE(?, content_hash), synced_at = ? WHERE kind = ? AND local_id = ?'
     )
-    .run(remote.status, remote.assignee, now, contentHash ?? null, now, kind, localId)
+    .run(remote.status, remote.assignee, remote.note, now, contentHash ?? null, now, kind, localId)
 }
 
 export function dropSyncRef(kind: LarkSyncKind, localId: number): void {

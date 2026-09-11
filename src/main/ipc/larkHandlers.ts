@@ -8,6 +8,7 @@ import {
   setRawEvidence,
   setSyncEnabled,
   syncIssuesOut,
+  syncRepliesOut,
   verifyBaseLink
 } from '../services/lark/baseSync'
 import { getConfig, setConfig } from '../db/repos/config'
@@ -70,7 +71,9 @@ export function registerLarkHandlers(): void {
     try {
       const pulled = pull ? await pullIssuesBack(wxid) : null
       const r = await syncIssuesOut(wxid, { force: force === true })
-      return { ok: r.ok, result: r, pulled, status: snapshot() }
+      // 影子记录（数字员工回复）一并推：手机上就能审话术
+      const replies = await syncRepliesOut(wxid, { force: force === true })
+      return { ok: r.ok, result: r, pulled, replies, status: snapshot() }
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '同步失败' }
     }

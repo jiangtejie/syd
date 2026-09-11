@@ -80,6 +80,12 @@ export const COLUMN_MIGRATIONS: ColumnMigration[] = [
   },
   {
     table: 'issue_feedback',
+    column: 'note',
+    ddl: 'TEXT',
+    note: '处理备注：同事在飞书多维表格里写的结论（回写进本地供看板展示，不参与跟进判定）'
+  },
+  {
+    table: 'issue_feedback',
     column: 'last_reply_by',
     ddl: 'TEXT',
     note: '最后回复该议题的团队客服 username；NULL = 我本人回复或无人回复'
@@ -143,6 +149,12 @@ export const COLUMN_MIGRATIONS: ColumnMigration[] = [
     column: 'remote_assignee',
     ddl: "TEXT NOT NULL DEFAULT ''",
     note: '上次同步时 Base 上的「跟进人」值'
+  },
+  {
+    table: 'lark_sync_map',
+    column: 'remote_note',
+    ddl: "TEXT NOT NULL DEFAULT ''",
+    note: '上次同步时 Base 上的「处理备注」值'
   },
   {
     table: 'lark_sync_map',

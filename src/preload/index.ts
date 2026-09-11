@@ -719,6 +719,7 @@ const api: PreloadApi = {
         ok: boolean
         result?: LarkSyncOut
         pulled?: LarkPullResult | null
+        replies?: LarkSyncOut
         status?: LarkBaseStatus
         error?: string
       }> => ipcRenderer.invoke('cs:lark:baseSync', wxid, force, pull),

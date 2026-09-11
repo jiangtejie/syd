@@ -1,6 +1,7 @@
 import { getConfig, getConfigBoolean, setConfig } from '../../db/repos/config'
 import {
   countSyncRefs,
+  dropSyncRef,
   getSyncRef,
   listSyncRefs,
   saveRemoteCollab,
@@ -10,8 +11,10 @@ import {
   getIssueById,
   listIssuesChangedSince,
   setIssueAssignee,
+  setIssueNote,
   setIssueStatus
 } from '../../db/repos/issueRepo'
+import { listRepliesChangedSince } from '../../db/repos/agentReplyRepo'
 import { listTeamMembers } from '../../db/repos/teamRepo'
 import { larkCall, larkErrorHint } from './client'
 import {
@@ -20,6 +23,7 @@ import {
   diffCollab,
   hashOf,
   issueToFields,
+  replyToFields,
   statusFromText
 } from './baseMapping'
 import { parseLarkRef } from './url'
@@ -52,6 +56,8 @@ const CFG_RAW_EVIDENCE = 'lark.sync.rawEvidence'
 const CFG_LAST_AT = 'lark.sync.lastAt'
 const CFG_LAST_RESULT = 'lark.sync.lastResult'
 const CFG_LAST_PULL = 'lark.sync.lastPull'
+const CFG_LAST_REPLIES_AT = 'lark.sync.repliesAt'
+const CFG_LAST_REPLIES = 'lark.sync.lastReplies'
 
 /** 单批写入条数（Base 批量接口上限 500，这里留余量并给群之间留节奏） */
 const BATCH_SIZE = 100
@@ -318,6 +324,16 @@ function readLastResult(): SyncOutResult | null {
   }
 }
 
+function readLastReplies(): SyncOutResult | null {
+  const raw = getConfig(CFG_LAST_REPLIES)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as SyncOutResult
+  } catch {
+    return null
+  }
+}
+
 function readLastPull(): PullResult | null {
   const raw = getConfig(CFG_LAST_PULL)
   if (!raw) return null
@@ -340,6 +356,8 @@ export interface BaseSyncStatus {
   mappedReplies: number
   lastResult: SyncOutResult | null
   lastPull: PullResult | null
+  /** 数字员工回复（影子记录）最近一次推送结果 */
+  lastReplies: SyncOutResult | null
 }
 
 export function baseSyncStatus(): BaseSyncStatus {
@@ -354,7 +372,8 @@ export function baseSyncStatus(): BaseSyncStatus {
     mappedIssues: countSyncRefs('issue'),
     mappedReplies: countSyncRefs('reply'),
     lastResult: readLastResult(),
-    lastPull: readLastPull()
+    lastPull: readLastPull(),
+    lastReplies: readLastReplies()
   }
 }
 
@@ -532,7 +551,7 @@ async function listIssueRecords(appToken: string, tableId: string): Promise<Remo
         path: { app_token: appToken, table_id: tableId },
         params: {
           page_size: 200,
-          field_names: JSON.stringify(['议题ID', '状态', '跟进人']),
+          field_names: JSON.stringify(['议题ID', '状态', '跟进人', '处理备注']),
           ...(pageToken ? { page_token: pageToken } : {})
         }
       })
@@ -593,8 +612,12 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
       continue
     }
     const remote = collabOf(rec.fields)
-    const diff = diffCollab(remote, { status: ref.remoteStatus, assignee: ref.remoteAssignee })
-    if (!diff.statusChanged && !diff.assigneeChanged) continue
+    const diff = diffCollab(remote, {
+      status: ref.remoteStatus,
+      assignee: ref.remoteAssignee,
+      note: ref.remoteNote
+    })
+    if (!diff.any) continue
 
     const local = getIssueById(localId)
     if (!local) {
@@ -622,6 +645,10 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
       const next = assigneeFromText(remote.assignee, members)
       if (next !== (local.assignee ?? null)) setIssueAssignee(localId, next)
     }
+    if (diff.noteChanged) {
+      const nextNote = remote.note.slice(0, 500)
+      if (nextNote !== (local.note ?? '')) setIssueNote(localId, nextNote || null)
+    }
     if (okApply) out.applied++
     else out.unmatched++
     saveRemoteCollab('issue', localId, remote)
@@ -629,6 +656,127 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
   }
 
   setConfig(CFG_LAST_PULL, JSON.stringify(out))
+  return out
+}
+
+// ── 数字员工回复（影子记录）→ Base ──
+
+/**
+ * 把影子/待审回复推到「数字员工回复」表：手机上就能审话术（答得对/答错了/不该回）。
+ * 与议题同步同样的幂等策略（映射表 + 内容 hash 跳过），触发消息默认截断 120 字。
+ */
+export async function syncRepliesOut(
+  wxid: string,
+  opts: { force?: boolean } = {}
+): Promise<SyncOutResult> {
+  const at = Date.now()
+  const empty: SyncOutResult = {
+    ok: false,
+    scanned: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    at
+  }
+  const appToken = baseConfiguredLink()
+  if (!appToken) return { ...empty, error: '未配置多维表格链接' }
+  let tableId = (getConfig(CFG_TABLE_REPLIES) ?? '').trim()
+  if (!tableId) {
+    const verified = await verifyBaseLink(appToken)
+    if (!verified.ok) return { ...empty, error: verified.error ?? '建表失败' }
+    tableId = verified.repliesTableId ?? ''
+  }
+  if (!tableId) return { ...empty, error: '未解析出回复表 id，请重新点「验证并建表」' }
+
+  const since = opts.force ? 0 : Number(getConfig(CFG_LAST_REPLIES_AT) ?? 0) || 0
+  const rows = listRepliesChangedSince(wxid, since)
+  const out: SyncOutResult = {
+    ok: true,
+    scanned: rows.length,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    at
+  }
+  const triggerChars = getConfigBoolean(CFG_RAW_EVIDENCE, false) ? 500 : 120
+
+  let pending: Array<{ id: number; fields: Record<string, unknown>; hash: string }> = []
+  const flush = async (): Promise<void> => {
+    if (pending.length === 0) return
+    const batch = pending
+    pending = []
+    const r = await larkCall<{ records?: Array<{ record_id?: string }> }>((api) =>
+      api.bitable.appTableRecord.batchCreate({
+        path: { app_token: appToken, table_id: tableId },
+        data: { records: batch.map((b) => ({ fields: b.fields })) }
+      })
+    )
+    if (!r.ok) {
+      out.failed += batch.length
+      syncLog.warn(`批量新增回复失败 ${batch.length} 条: ${r.error}`)
+      return
+    }
+    const records = r.data.records ?? []
+    batch.forEach((b, idx) => {
+      const recordId = records[idx]?.record_id
+      if (!recordId) {
+        out.failed++
+        return
+      }
+      saveSyncRef('reply', b.id, appToken, tableId, recordId, b.hash, {
+        status: '',
+        assignee: '',
+        pushed: true
+      })
+      out.created++
+    })
+    await sleep(BATCH_GAP_MS)
+  }
+
+  for (const row of rows) {
+    const fields = replyToFields(row, triggerChars)
+    const hash = hashOf(fields)
+    const ref = getSyncRef('reply', row.id)
+    if (!ref) {
+      pending.push({ id: row.id, fields, hash })
+      if (pending.length >= BATCH_SIZE) await flush()
+      continue
+    }
+    if (ref.contentHash === hash && ref.tableId === tableId) {
+      out.skipped++
+      continue
+    }
+    const r = await larkCall((api) =>
+      api.bitable.appTableRecord.update({
+        path: { app_token: appToken, table_id: tableId, record_id: ref.recordId },
+        data: { fields }
+      })
+    )
+    if (!r.ok) {
+      if (/not.?found|record.?id|1254/i.test(r.error)) {
+        dropSyncRef('reply', row.id)
+        pending.push({ id: row.id, fields, hash })
+        continue
+      }
+      out.failed++
+      syncLog.warn(`更新回复 #${row.id} 失败: ${r.error}`)
+      continue
+    }
+    saveSyncRef('reply', row.id, appToken, tableId, ref.recordId, hash, {
+      status: '',
+      assignee: '',
+      pushed: true
+    })
+    out.updated++
+    await sleep(BATCH_GAP_MS)
+  }
+  await flush()
+
+  setConfig(CFG_LAST_REPLIES_AT, String(at))
+  setConfig(CFG_LAST_REPLIES, JSON.stringify(out))
+  if (out.failed > 0) out.ok = false
   return out
 }
 
@@ -644,7 +792,9 @@ export function baseSyncHint(): string {
   const pullText = p
     ? ` · 拉回同事改动 ${p.applied}${p.skippedLocalWin ? `（${p.skippedLocalWin} 条本地更新更晚，保留本地）` : ''}`
     : ''
-  return `最近同步 ${when}：新增 ${r.created} · 更新 ${r.updated} · 跳过 ${r.skipped}${r.failed ? ` · 失败 ${r.failed}` : ''}${r.error ? ` · ${r.error}` : ''}${pullText}`
+  const rep = st.lastReplies
+  const repText = rep ? ` · 影子记录 ${rep.created + rep.updated} 条` : ''
+  return `最近同步 ${when}：新增 ${r.created} · 更新 ${r.updated} · 跳过 ${r.skipped}${r.failed ? ` · 失败 ${r.failed}` : ''}${r.error ? ` · ${r.error}` : ''}${pullText}${repText}`
 }
 
 export { larkErrorHint }

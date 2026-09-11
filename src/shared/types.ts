@@ -369,6 +369,8 @@ export interface FeedbackIssue {
   lastReplyBy?: string
   /** 跟进超时：followUp 且客服最后回复距今超 12 小时仍未闭环（仅 open 行动态计算） */
   followUpOverdue?: boolean
+  /** 处理备注：同事在飞书多维表格里写的结论（Base → 本地，只读展示，不参与跟进判定） */
+  note?: string
   /** 严重度（提取写入；规则情绪词可升级） */
   severity?: FeedbackIssueSeverity
   /** 疑似待人工确认（规则弱命中；不计入正式待办口径与徽标） */
@@ -853,6 +855,8 @@ export interface LarkBaseStatus {
   hint: string
   lastPull: LarkPullResult | null
   lastResult: LarkSyncOut | null
+  /** 数字员工影子记录最近一次推送结果 */
+  lastReplies: LarkSyncOut | null
 }
 
 /** 一次「议题 → Base」同步的结果 */

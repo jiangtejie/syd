@@ -76,10 +76,11 @@ export function hashOf(fields: Record<string, unknown>): string {
   return createHash('sha1').update(JSON.stringify(fields)).digest('hex').slice(0, 16)
 }
 
-/** Base 记录里我们关心（可回写）的三列 */
+/** Base 记录里我们关心（可回写）的列：状态 / 跟进人 / 处理备注 */
 export interface RemoteCollab {
   status: string
   assignee: string
+  note: string
 }
 
 export function collabOf(fields: Record<string, unknown> | undefined): RemoteCollab {
@@ -99,22 +100,95 @@ export function collabOf(fields: Record<string, unknown> | undefined): RemoteCol
     }
     return ''
   }
-  return { status: text(f['状态']), assignee: text(f['跟进人']) }
+  return {
+    status: text(f['状态']),
+    assignee: text(f['跟进人']),
+    note: text(f['处理备注'])
+  }
 }
 
 export interface CollabDiff {
   statusChanged: boolean
   assigneeChanged: boolean
+  noteChanged: boolean
+  /** 是否有任何一列被同事改过 */
+  any: boolean
 }
 
-/** 与「上次同步时 Base 上的值」比对：变了说明是同事在表格里改的 */
+/**
+ * 与「上次同步时 Base 上的值」比对：变了说明是同事在表格里改的。
+ * 「状态」为空时不视为改动 —— 同事把单选清掉不该把本地状态也清掉。
+ */
 export function diffCollab(
   remote: RemoteCollab,
-  lastKnown: { status: string; assignee: string } | null
+  lastKnown: { status: string; assignee: string; note: string } | null
 ): CollabDiff {
-  const prev = lastKnown ?? { status: '', assignee: '' }
+  const prev = lastKnown ?? { status: '', assignee: '', note: '' }
+  const statusChanged = !!remote.status && remote.status !== prev.status
+  const assigneeChanged = remote.assignee !== prev.assignee
+  const noteChanged = remote.note !== prev.note
   return {
-    statusChanged: !!remote.status && remote.status !== prev.status,
-    assigneeChanged: remote.assignee !== prev.assignee
+    statusChanged,
+    assigneeChanged,
+    noteChanged,
+    any: statusChanged || assigneeChanged || noteChanged
+  }
+}
+
+// ── 数字员工回复（影子记录）→ Base ──
+
+/** 决策来源 → Base 单选文案 */
+export const DECISION_TEXT: Record<string, string> = {
+  script: '命中话术',
+  llm: 'LLM 兜底',
+  handoff: '转人工'
+}
+
+/** 人工反馈（本地）→ Base 单选文案 */
+export const FEEDBACK_TEXT: Record<string, string> = {
+  good: '答得对',
+  bad: '答错了',
+  'no-reply': '不该回'
+}
+
+/** 风险等级 → Base 单选文案 */
+export function riskText(level: string | undefined): string {
+  if (level === 'B') return 'B 需确认'
+  if (level === 'C') return 'C 禁自动'
+  return 'A 可自动'
+}
+
+export interface ReplyLike {
+  id: number
+  groupName: string
+  groupUsername: string
+  triggerText: string
+  decision: string
+  intent: string
+  replyText: string
+  riskLevel: string
+  status: string
+  feedback: string
+  triggerTime?: number
+  createdAt: number
+}
+
+/**
+ * 影子/待审回复 → Base 字段。
+ * 触发消息按 `triggerChars` 截断：审核「回得对不对」需要看到客户原话，但不必全量外发 ——
+ * 默认 120 字；设置里打开「推送聊天原文」后放宽到 500。
+ */
+export function replyToFields(r: ReplyLike, triggerChars = 120): Record<string, unknown> {
+  return {
+    回复ID: String(r.id),
+    客户群: r.groupName || r.groupUsername,
+    触发消息: (r.triggerText ?? '').slice(0, triggerChars),
+    判定: DECISION_TEXT[r.decision] ?? r.decision,
+    意图: r.intent || '',
+    拟回复: (r.replyText ?? '').slice(0, 900),
+    风险: riskText(r.riskLevel),
+    状态: r.status === 'sent' ? '已发送' : r.status === 'rejected' ? '已驳回' : '影子（待看）',
+    人工反馈: FEEDBACK_TEXT[r.feedback] ?? '',
+    时间: r.triggerTime ?? r.createdAt
   }
 }

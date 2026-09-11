@@ -2192,3 +2192,26 @@
   font-size: 11px;
   color: var(--text-3);
 }
+
+
+/* 处理备注（来自飞书多维表格：同事在手机上填的结论，本地只读展示） */
+.gip-note {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-left: 2px solid var(--brand);
+  background: var(--bg-hover);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+
+.gip-note b {
+  flex: none;
+  color: var(--brand);
+  font-weight: 600;
+}
+

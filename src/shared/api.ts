@@ -625,6 +625,7 @@ export interface CsApi {
       ok: boolean
       result?: LarkSyncOut
       pulled?: LarkPullResult | null
+      replies?: LarkSyncOut
       status?: LarkBaseStatus
       error?: string
     }>
