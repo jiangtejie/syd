@@ -14,8 +14,6 @@ import { getCachePath } from '../paths'
 import { deriveImageKeys } from '../media/imageKeys'
 import { asrStatus } from '../media/asr'
 import { mediaCachePolicy, mediaCacheStats } from '../media/mediaCache'
-import { scanWeChatKey } from './keyScan'
-import { nativeKeyScanStatus, nativeScanEnvironment } from './nativeKeyScan'
 import { createLogger } from '../logging'
 
 const log = createLogger('crypto-center')
@@ -30,7 +28,7 @@ const log = createLogger('crypto-center')
  */
 
 export interface ReadinessStep {
-  id: 'account' | 'key' | 'native' | 'dbs' | 'images' | 'voice' | 'asr' | 'cache'
+  id: 'account' | 'key' | 'dbs' | 'images' | 'voice' | 'asr' | 'cache'
   label: string
   status: 'ok' | 'warn' | 'fail' | 'skip'
   detail: string
@@ -55,16 +53,6 @@ export interface AccountReadiness {
   images: { xorKey: boolean; aesKey: boolean }
   voice: { mediaDbs: number; cachedWav: number }
   asr: { available: boolean; reason?: string }
-  /** 随包分发的原生取 key 组件状态（自研 DLL） */
-  native: {
-    dir: string
-    dllPath: string
-    dllFound: boolean
-    koffiAvailable: boolean
-    loaded: boolean
-    lastMs: number | null
-    lastError: string | null
-  }
   cache: {
     policy: { autoClean: boolean; keepDays: number; maxMB: number; maxFiles: number }
     files: number
@@ -208,7 +196,7 @@ export function accountReadiness(wxid: string): AccountReadiness {
           status: info.hasKey ? 'warn' : 'fail',
           detail: info.hasKey
             ? `状态 ${info.status ?? '未知'}，建议点「测试解密」`
-            : '未导入（可手填 / 自动获取）'
+            : '未导入（在设置里粘贴 64 位十六进制密钥）'
         }
   )
   const missing = dbs.filter((d) => !d.exists).map((d) => d.name)
@@ -225,29 +213,6 @@ export function accountReadiness(wxid: string): AccountReadiness {
           label: '主要库可定位',
           status: 'warn',
           detail: `缺少 ${missing.join(', ')}（不影响已存在的库，但功能会受限）`
-        }
-  )
-  const native = nativeKeyScanStatus()
-  steps.push(
-    native.dllFound && native.koffiAvailable
-      ? {
-          id: 'native',
-          label: '原生取 key 组件',
-          status: native.loaded && !native.lastError ? 'ok' : 'warn',
-          detail:
-            (native.loaded
-              ? native.lastError
-                ? `已加载；上次调用：${native.lastError}`
-                : `已加载（上次耗时 ${native.lastMs ?? '?'}ms）`
-              : `已随包分发（${native.dir}），尚未调用`) + `；${nativeScanEnvironment().hint}`
-        }
-      : {
-          id: 'native',
-          label: '原生取 key 组件',
-          status: 'warn',
-          detail: native.dllFound
-            ? 'koffi 不可用（原生 FFI 未安装或被裁剪）'
-            : `未找到 wechat_key_tool.dll（${native.dllPath}）`
         }
   )
   steps.push(
@@ -313,15 +278,6 @@ export function accountReadiness(wxid: string): AccountReadiness {
     images: { xorKey: !!xorKey, aesKey: !!aesKey },
     voice: { mediaDbs, cachedWav },
     asr: { available: asr.available, reason: asr.reason },
-    native: {
-      dir: native.dir,
-      dllPath: native.dllPath,
-      dllFound: native.dllFound,
-      koffiAvailable: native.koffiAvailable,
-      loaded: native.loaded,
-      lastMs: native.lastMs,
-      lastError: native.lastError
-    },
     cache: { policy, files: cache.files, bytes: cache.bytes, archiveBytes: cache.archiveBytes },
     steps
   }
@@ -482,16 +438,20 @@ export async function onboardAccount(opts: {
       }
     }
   } else {
-    const scanned = await scanWeChatKey({ wxid, dbPath: accountDir })
-    if (scanned.ok && scanned.key) {
-      const saved = importKey(wxid, scanned.key, 'registry', accountDir)
-      if (saved.success) {
-        testKey(wxid)
+    // 自动取 key 已按用户决定下线：这里只在「已经导入过密钥」时放行，否则要求粘贴
+    const existing = getDecryptedKey(wxid)
+    if (existing) {
+      const check = anyDb
+        ? verifyWxDbKey(anyDb, existing)
+        : { ok: false, error: '没有可校验的库文件' }
+      if (check.ok) {
         keyOk = true
-        keyDetail = `自动获取成功（来源：${scanned.provider}）`
-      } else keyDetail = saved.error ?? '保存失败'
+        keyDetail = '使用已导入的密钥（页 1 校验通过）'
+      } else {
+        keyDetail = `已导入的密钥未通过校验：${check.error ?? '未知原因'}；请在设置里重新导入或粘贴新密钥`
+      }
     } else {
-      keyDetail = scanned.error ?? '自动获取失败'
+      keyDetail = '未导入密钥：请在上面的输入框粘贴 64 位十六进制密钥后重试（自动获取已停用）'
     }
   }
   steps.push({

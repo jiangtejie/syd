@@ -101,16 +101,6 @@ export interface AccountReadiness {
   images: { xorKey: boolean; aesKey: boolean }
   voice: { mediaDbs: number; cachedWav: number }
   asr: { available: boolean; reason?: string }
-  /** 随包分发的原生取 key 组件（自研 DLL）状态 */
-  native: {
-    dir: string
-    dllPath: string
-    dllFound: boolean
-    koffiAvailable: boolean
-    loaded: boolean
-    lastMs: number | null
-    lastError: string | null
-  }
   cache: {
     policy: { autoClean: boolean; keepDays: number; maxMB: number; maxFiles: number }
     files: number
@@ -192,25 +182,6 @@ export interface CsApi {
     ) => Promise<{ ok: boolean; stats?: OpsStats; error?: string }>
     /** 图片密钥本地推导 + AES 校验（读账号目录下的 *_t.dat 模板，不依赖原生组件） */
     deriveImageKeys: (wxid: string, knownAesKey?: string) => Promise<DeriveImageKeysResult>
-    /**
-     * 库密钥自动获取（可选组件）：
-     * - installed=false 表示组件没装（预期状态），渲染端应引导「手动导入」而不是报错；
-     * - ok=true 表示候选密钥已通过页 1 校验并落库。
-     */
-    scanDbKey: (wxid: string) => Promise<{
-      ok: boolean
-      valid?: boolean
-      /** 命中的来源 */
-      provider?: 'nativeDll' | 'externalTool'
-      /** 每个来源的结果（界面照实展示，说明卡在哪一步） */
-      attempts: Array<{
-        id: 'nativeDll' | 'externalTool'
-        label: string
-        status: 'ok' | 'candidates' | 'empty' | 'skipped' | 'error'
-        detail: string
-      }>
-      error?: string
-    }>
     onDbChanged: (callback: (payload: DbChangedPayload) => void) => () => void
   }
   ai: {

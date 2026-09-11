@@ -120,55 +120,30 @@ src/
 - 落库：`safeStorage.encryptString` 加密后存 `key_store`；**明文 key 只在主进程内存**。
 - 状态机 `pending → valid / invalid`：`testKey` 以「试开真实库」验证并回写错误原因。
 
-**库密钥自动获取（内置原生组件 + 外部工具兜底，`wechat/keyScan.ts` + `wechat/nativeKeyScan.ts`）**：
+**库密钥：手动导入为准（自动获取已下线）**：
 
-0. `nativeDll`（**随包分发**）：作者自研的 `wechat_key_tool.dll`（内存扫描 + Ed25519 挑战-应答）。
-   调用约定：`wkt_challenge(uint8_t*, size_t)` → 32B nonce；用 XOR-0x5a 混淆的 PKCS8 私钥签名；
-   `wkt_scan_account_auth(sig, len)` → JSON 字符串（`db_key/wxid/name/number/phone/seed`）；`wkt_free(void*)`；
-   另有 `wkt_scan_image_key_auth(sig, len, data, len)` 用于图片 AES key。
-   加载方式：koffi（**锁定 2.9.0**：包内自带各平台预编译，安装脚本被 npm `allow-scripts` 拦截或离线构建时也能用；
-   3.x 需要跑安装脚本、包内没有预编译）；打包用 `extraResources` 把 DLL 放到 `<resources>/wechat-key-tool`，
-   koffi 的 `.node` 走 `asarUnpack`。失败路径全部降级：DLL 不存在 / koffi 不可用 / 加载失败 / 返回空，
-   都只记一条 attempt 原因，然后继续往下试其它来源。
+当前唯一入口是设置页「微信数据与密钥」里的**手动导入**：粘贴 64 位十六进制 → `keyStoreService.importKey` 落 safeStorage →
+`testKey` 试开真实库（页 1 HMAC）→ 状态机 `pending → valid / invalid`；「一键接入」（§4.3）里的密钥输入框等价于「粘贴 + 校验 + 落库」一步到位。
 
-微信 4.x 的库密钥只在微信进程内存里，读内存需要原生组件（社区实现是 koffi + 自研 DLL + Ed25519 握手），
-授权不明且随微信版本漂移 —— 本仓**不分发**这类组件，也不内置内存扫描，改为提供三条稳健来源：
+> **自动获取整条链路已按用户决定下线（2026-09-11）**，相关代码与依赖全部移除：内置原生组件（`wechat_key_tool.dll` + koffi + 打包配置）、
+> 外部工具命令、自备组件协议、扫本机文件、第三方工具预设（chatlog/PyWxDump/wx_key/SharpWxDump 检测与参数模板）。
+> 原因是「内置 DLL 在本机取不到 key，而其余来源要么靠猜参数、要么与手动等价」，留着只是维护面。
 
-1. `externalTool`（兜底）：用户自备的命令行工具（把 64 位十六进制打到 stdout/stderr 即可，支持 `{{wxid}}/{{dbPath}}/{{dbStorage}}` 占位符、可配超时；
-   **`.cmd/.bat` 会自动经 `cmd.exe /d /s /c` 执行并按 Windows 规则转义参数** —— 实测 `execFile` 直接跑 `.cmd` 会 `spawn EINVAL`，而很多 CLI 装出来就是 `.cmd`）；
-   此外设置页支持直接**粘贴**密钥（`onboardAccount` 的 `keyHex`，同样先过页 1 校验）。
+**下线前的实测记录（供将来重启这项工作时参考，避免重复踩坑）**：
+- 运行环境：微信 4.x；本机同时存在 `C:\Program Files\Tencent\Weixin\{4.1.13.7, 4.1.13.12}` 两个版本目录，
+  `Weixin.exe` 资源版本 4.1.13.12，但**实际在跑的核心是 `weixin.dll` 4.1.13.7**（只有它被加载进主进程）——判版本要看已加载的 DLL；
+- 组件调用链本身是通的：`wkt_challenge` 返回 32B、Ed25519 签名 64B、**认证通过**（正确签名约 120ms 且消耗该次 challenge；
+  全零签名与重放都是 0ms 瞬时返回空）——但 `wkt_scan_account_auth` 与 `wkt_scan_image_key_auth` 都返回空；
+- 用组件作者自己的 CLI（同一 DLL、同一机器）复现同样失败，说明不是本仓集成问题；
+- 最可疑的机制（从组件二进制里读出的字符串）：它含 `weixin.dll` + `module not found`，用的是
+  `CreateToolhelp32Snapshot`/`Module32FirstW` + `ReadProcessMemory`，即**必须挑到那个加载了 `weixin.dll` 的进程**；
+  而本机 5 个 Weixin 进程里**只有 1 个**加载了它（pid 30064，685MB/184 模块，其余 34–159 模块都没有），
+  且组件 117ms 就返回空——更像在「模块查找」阶段退出，而非扫完几百 MB 内存；
+- 因此若将来重启：先让组件**遍历所有 Weixin 进程、选中 `weixin.dll` 已加载的那个**（或由宿主选好进程再把 pid 传进去），
+  并注意模块真实路径在版本子目录下（`...\Weixin\4.1.13.7\Weixin.dll`），不是 exe 同级。
 
-> 审核后移除的三条来源（2026-09-11）：**自备组件协议**（与内置 DLL 重复，且是 `require(<userData>/**/*.cjs)` 的多余执行面）、
-> **扫本机文件找密钥**（与粘贴/外部工具重叠，真机只在人为植入文件后命中，且「满盘找密钥」本身可疑）、
-> **第三方工具预设**（chatlog/PyWxDump/wx_key/SharpWxDump 的检测与参数模板：参数只能靠猜、真机 47 个目录 0 命中；
-> 需要接某工具时用 `externalTool` 手填命令与参数即可）。
-
-**唯一安全边界**：任何来源的候选都必须过 `verifyWxDbKey`（页 1 HMAC）才 `importKey(..., 'registry')` 落 safeStorage，随后 `testKey` 试开真实库；
-每个候选要跑一次 256000 轮 PBKDF2，所以候选提取有硬上限（单次 20 个）。各来源（含内置组件）的结果都照实回传（界面逐条显示「卡在哪一步」）。
-**本机实测（2026-09-11，进程以管理员身份运行）**：
-
-> **版本口径（重要，先前记录有误）**：本机同时存在两个版本目录
-> `C:\Program Files\Tencent\Weixin\{4.1.13.7, 4.1.13.12}`；`Weixin.exe` 的资源版本是 4.1.13.12（启动器/已下载的更新），
-> 但**实际在跑的核心是 4.1.13.7** —— 只有它被加载进了主进程：
-> `pid 30064 → weixin.dll 4.1.13.7 @ ...\Weixin\4.1.13.7\Weixin.dll`，而 4.1.13.12 的 DLL 在磁盘上但未加载（待重启生效）。
-> 所以「微信版本」应以**已加载的 `weixin.dll`** 为准 = **4.1.13.7**。
-- DLL 可加载、挑战返回 32B、签名 64B；**认证是通的** —— 正确签名调用耗时 ~120ms 并消耗掉该次 challenge，
-  全零签名与重放同一签名都是 **0ms 返回空**（瞬时拒绝），说明「找到钥匙孔了，但屋里没找到东西」；
-- `wkt_scan_account_auth` 与 `wkt_scan_image_key_auth` 都返回空 → **当前取不到库密钥**；
-- 用作者自己的 CLI（`wdecode scan`，同一 DLL、同一机器）复现同样失败，**不是本仓集成的问题**；
-- **最可疑的原因（已定位到具体机制）**：组件二进制里含 `weixin.dll` + `module not found` 字符串，用的是
-  `CreateToolhelp32Snapshot`/`Module32FirstW` + `ReadProcessMemory`，即**必须挑到那个加载了 `weixin.dll` 的进程**。
-  实测 5 个 Weixin 进程里**只有 1 个加载了它**（pid 30064，685MB、184 个模块；其余 4 个 34–159 个模块都没有），
-  且 117ms 就返回空 —— 更像在「模块查找」阶段就退出，而不是扫完整个内存（几百 MB 扫描不可能这么快）。
-  组件若按「第一个/父进程」取进程，或把模块路径按 exe 同级目录拼（真实路径在 `4.1.13.7\` 子目录下），都会命中这个坑。
-- 旁证：这台机器**没有 `kvcomm` 目录**（该目录是 `wx_key.dll` 读取统计缓存的来源），
-  且所有 `Weixin.exe` 的 `MainWindowHandle` 为 0（无主窗口，疑似托盘/后台态）；
-- 因此当前默认落到其它来源；**DLL 一旦适配该版本，本仓无需改代码即可生效**（体检里能看到逐条结果）。
-
-全部失败时明确提示「最稳妥的办法仍是手动导入」。组件文件**换掉即生效**（加载前清 require 缓存，不必重启）。
-
-> 为什么不做内存扫描：页 1 校验对每个候选都要一次 PBKDF2-SHA512(256000)，全内存逐字节扫描在算力上不可行；
-> 公开实现能跑得快靠的是与 DLL 配合的定位/握手，这既无法验证其正确性，也有授权问题。要接这类工具，走上面的 `externalTool` 即可。
+> 另一条历史结论仍然成立：**自己写一套「盲扫内存取 key」不可行** —— 页 1 校验对每个候选都要一次
+> `PBKDF2-SHA512(256000)`（实测 70ms/次），而派生 AES key 不在内存、原始密钥虽在但无可锚定结构（详见 §18）。
 
 **图片密钥（另一套密钥）**：图片 .dat 的 V2 用 aes-128-ecb、V3 用整文件 XOR，与库密钥无关，历史上只能手填。`media/imageKeys.ts` 现在能从本机自动推导：扫 `*_t.dat` 缩略图模板（深度 ≤8、最多 64 个）反解 XOR 低字节（自校验 `y == x ^ 0xd9` + 多模板投票），再用 V2 模板密文做一次 AES 试探（解密后必须像图片）确认 AES key。入口 `cs:wx:deriveImageKeys`，设置页「自动推导图片密钥」一键回填；推导失败仍可手填。
 
@@ -182,7 +157,7 @@ src/
 - `discoverAccounts()`：扫 `Documents\xwechat_files\*`（含 WeChat Files 兼容位），返回 **`accountId`（目录名）+ `wxid`（去后缀）**
   两个标识 —— 本应用历史上就用目录名当账号 id 存密钥（如 `wxid_xxx_7e0b`），只用派生 wxid 查会「明明有密钥却说没有」；两者与 `dir` 一起参与匹配；
 - `accountReadiness(wxid)`：7 步体检（账号目录 / 密钥 / 主要库 / 图片密钥 / 语音 / 转写 / 缓存），每步给 ok·warn·fail·skip 与原因；
-- `onboardAccount({wxid?, dbPath?, keyHex?})`：定位账号 → 密钥（**粘贴优先**，必须过页 1 HMAC 才落库，否则走「内置原生组件 → 外部工具」）→ 推导图片密钥并写配置 → 预热解密 → 回体检；成功后由 IPC 层 `wxService.connect` 拉起监控与调度器；
+- `onboardAccount({wxid?, dbPath?, keyHex?})`：定位账号 → 密钥（**粘贴并过页 1 HMAC 才落库**；不粘贴则使用已导入的密钥）→ 推导图片密钥并写配置 → 预热解密 → 回体检；成功后由 IPC 层 `wxService.connect` 拉起监控与调度器；
 - `warmupAccount(wxid)`：先解主要库（session / message_0 / message_fts），让「首次打开会话、首次分析」不再承担解密开销。
 
 真机验证（本机）：体检 7/7 ok（message_0.db 554 页、图片 XOR+AES 齐、media_*.db 1 个 + 已缓存 WAV 9 条、whisper 就绪、媒体缓存 490 文件/28MB、归档 27MB）；
@@ -421,7 +396,6 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | `ai` `agent` | 生成候选、智能体 CRUD | AI 建议 |
 | `wb` | `listChats/searchChats/messages/create/stop/retry/approve/workspace/skills/trustTool/…` | AI 工作台 |
 | `crypto` | `discover/readiness/warmup/onboard` | **解密一体化**：账号发现、体检、预热解密、一键接入 |
-| `wx` | `scanDbKey` | 密钥自动获取（内置原生组件 → 外部工具，逐条返回结果） |
 | `media` | `decryptImage/decryptVideo/resolveEmoji/testImageDecrypt/voiceWav/voiceTranscript/asrStatus` | 媒体解密与本地语音转写 |
 | `files` | `policy/prune/remove/reveal` | 渠道文件管理 |
 | `im` | `list/save/remove/toggle/clawQrPoll` | 外部 IM 渠道 |
@@ -448,7 +422,6 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
 | 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
 | 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |
-| 密钥获取 | `wechat.keyTool.command`、`wechat.keyTool.args`、`wechat.keyTool.timeoutMs`（30000） |
 | 语音转写 | `asr.whisperPath`、`asr.modelPath`、`asr.language`（默认 zh）、`asr.threads`（0=whisper 默认）、`asr.timeoutMs`（120000） |
 | 媒体缓存保留 | `wechat.mediaCacheAutoClean`（默认开）、`wechat.mediaCacheKeepDays`（180）、`wechat.mediaCacheMaxMB`（8192）、`wechat.mediaCacheMaxFiles`（50000）、`wechat.report.archiveMigrated`（迁移完成标记）、`wechat.report.pathRepairCursor`（归档路径修复游标） |
 
@@ -548,24 +521,4 @@ npm run build         # typecheck + electron-vite 三端构建
 - **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入（图片密钥可从本机模板推导，见 §4.2）。
 - **语音**：能解码播放（`VoiceInfo` → SILK → WAV），也能**本地转写**（whisper.cpp，见 §10）—— 但转写是**按需触发**（点气泡上的「转写」），不做批量回填；未转写的语音在分析与数字员工里仍是 `[语音] N″` 占位。
 - **ct-media 不支持 Range**：协议用 `net.fetch(file://)` 直出整文件，没有 Range 响应头 —— 图片/短视频/几秒语音播放没问题，长音频拖动进度条可能不灵。
-- **库密钥自动获取：内置原生组件 + 外部工具兜底 + 粘贴**（自备组件协议、扫本机文件、第三方工具预设三条已在审核后移除，理由见 §4.2）。
-- **原生组件当前取不到密钥**：认证是通的、但扫不到（§4.2 有对照实验与最可疑原因：`weixin.dll` 只在 5 个 Weixin 进程中的 1 个里加载），所以实际仍可能落到「粘贴 / 外部工具」；DLL 适配后本仓无需改代码（体检里那一步会从 warn 变 ok）。
-- **内置的是作者自研组件；「自己写一套盲扫」实测不可行**（2026-09-11 在本机用真实密钥做的对照实验，
-  结论仍然成立，只是现在有官方 DLL 可用）：
-  1) 用 PowerShell P/Invoke 转储 Weixin.exe 私有内存 **297MB**；
-  2) 针对已知密钥实测 **派生 AES key 完全不在内存里**（0 次命中）——说明 DB 空闲时 SQLCipher 连接已关闭、派生 key 被释放；
-     而**原始 32 字节密钥在内存里有 6 处**，且邻近都是重复的配置/数据块（URL 域名列表一类通用内容），没有可稳定锚定的结构；
-  3) 页 1 校验对每个候选都要一次 `PBKDF2-SHA512(256000)`，实测 **70ms/次** —— 盲扫需要百万级候选，等于几百小时。
-  结论：要「读出内存里的 key」必须有微信内部结构的专有知识（第三方 DLL 做的正是这件事），本仓无法稳健复现；
-  因此提供 `externalTool` 把这类工具的输出接进来，由我们负责**页 1 校验与落库**。
-- **HEVC 原图**：纯 HEVC 依赖外部 ffmpeg（设置里配路径）。
-- **明文副本的「新鲜度」仍是启发式**：靠 mtime + size 比较（含 `-wal`），没有把「解密时的源签名」存成 sidecar。极端情形（用保留 mtime 的方式还原/替换源库、时钟回拨）可能被误判为新鲜。已覆盖的替代判据是逐页 HMAC（解密时）与打开失败自愈（打开时）。
-- **副本能打开但内部页被外部改坏**：只在「打开失败」时自愈；若副本仍能打开、只是某些页坏了，要等该页被查询才会暴露（微信库是只读副本，正常路径不会发生；逐页校验已挡住产生坏副本的主因——撕裂读）。
-- **voice 缓存淘汰两处触发**：写新 WAV 之后（`pruneVoiceCache`）+ 6 小时一轮的后台治理（`pruneAllVoiceCaches`）；上限由 `wechat.voiceCacheMaxMB/Files` 控制。
-- **归档目录本身没有上限**：`archive/` 是用户数据（PG 的 media_path 指着它），只报告大小、不自动清理（文件管理面板会显示「上报归档 N 个 / X MB（不清理）」）。要回收得用户自己处理。
-- **旧 PG 行的兜底是「按需修复」而不是「一次性改写」**：`repairMediaPaths` 只在「旧路径文件已不在 + archive 有同名文件」时改写，单轮 300 行、游标升序推进。若某个旧文件既被回收、归档里又没有同名文件，只能报「仍缺」并留给用户重新补全（`backfillMissingMedia` 不会覆盖非空 media_path）。
-- **媒体缓存的「年龄」用的是文件 mtime**：如果文件被复制/还原导致 mtime 变化，年龄判定会跟着变（只影响淘汰时机，不影响数据安全）。
-- **可选组件的 require 缓存**：`keyScan` 组件是运行时 `require`，替换组件文件后需要重启应用才生效。
-- **LLM 闭环依据**：自动闭环目前不落「依据行号」，不可审计（LLM 只输出状态）。
-- **明细分页**：监控明细为主进程限量回传 + 归档收敛，未做服务端游标分页。
-- **企微群**：后台候选群过滤掉 `isWeCom` 会话，这类群目前只在手动打开/全量重析时分析。
+- **库密钥只支持手动导入/粘贴**：自动获取（内置 DLL / 外部工具 / 自备组件 / 扫本机文件 / 第三方工具预设）已按决定全部下线，原因与下线前的实测证据见 §4.2。

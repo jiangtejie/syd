@@ -64,17 +64,9 @@ function WechatKeySection(): React.JSX.Element {
   const [asrModel, setAsrModel] = useState('')
   const [asrLang, setAsrLang] = useState('zh')
   const [asrStatus, setAsrStatus] = useState<{ available: boolean; reason?: string } | null>(null)
-  // 密钥自动获取的三个来源：外部工具命令 + 本地搜索路径（可选组件走固定目录，无需配置）
-  const [keyToolCmd, setKeyToolCmd] = useState('')
-  const [keyToolArgs, setKeyToolArgs] = useState('')
-  const [scanAttempts, setScanAttempts] = useState<
-    Array<{ label: string; status: string; detail: string }>
-  >([])
   const [status, setStatus] = useState<KeyStatusInfo | null>(null)
   const [lastError, setLastError] = useState('')
-  const [busy, setBusy] = useState<'import' | 'test' | 'connect' | 'img' | 'scan' | 'asr' | null>(
-    null
-  )
+  const [busy, setBusy] = useState<'import' | 'test' | 'connect' | 'img' | 'asr' | null>(null)
 
   const loadStatus = useCallback(async (id: string) => {
     if (!id.trim() || !keyStoreApi) {
@@ -92,8 +84,6 @@ function WechatKeySection(): React.JSX.Element {
     setAsrWhisper(cfg?.['asr.whisperPath'] ?? '')
     setAsrModel(cfg?.['asr.modelPath'] ?? '')
     setAsrLang(cfg?.['asr.language'] ?? 'zh')
-    setKeyToolCmd(cfg?.['wechat.keyTool.command'] ?? '')
-    setKeyToolArgs(cfg?.['wechat.keyTool.args'] ?? '')
   }, [])
 
   // wxid 输入后自动查询密钥状态（600ms 防抖）
@@ -215,38 +205,6 @@ function WechatKeySection(): React.JSX.Element {
       if (r.aesVerified === true) parts.push('AES 校验通过')
       else if (r.aesVerified === false) parts.push(`AES 未通过校验：${r.error ?? '与模板不匹配'}`)
       toast.success(parts.join(' · '))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  /**
-   * 库密钥自动获取：走可选的「密钥扫描组件」（本应用不随包分发）。
-   * 组件没装是**预期状态**——这里不报错，而是把「怎么装 / 怎么退回手填」说清楚；
-   * 组件给出候选 key 也必须先过页 1 校验才会落库（校验在主进程）。
-   */
-  const scanDbKey = async (): Promise<void> => {
-    if (!wxid.trim()) return toast.error('请先填写当前微信账号 wxid')
-    setBusy('scan')
-    setScanAttempts([])
-    try {
-      // 先把配置落库再扫描：改了外部工具/搜索路径要即时生效
-      await Promise.all([
-        configApi?.set('wechat.keyTool.command', keyToolCmd.trim()),
-        configApi?.set('wechat.keyTool.args', keyToolArgs.trim())
-      ])
-      const r = await wxApi?.scanDbKey?.(wxid.trim())
-      setScanAttempts(r?.attempts ?? [])
-      if (r?.ok) {
-        const label = r.provider === 'nativeDll' ? '原生组件（内存扫描）' : '外部工具'
-        toast.success(
-          `密钥已自动获取并导入（来源：${label}）` +
-            (r.valid === false ? '；测试未通过，请检查数据目录' : '')
-        )
-        await loadStatus(wxid.trim())
-        return
-      }
-      toast.error(r?.error || '自动获取失败')
     } finally {
       setBusy(null)
     }
@@ -376,15 +334,6 @@ function WechatKeySection(): React.JSX.Element {
         <button
           type="button"
           className="st-btn ghost"
-          disabled={busy !== null}
-          onClick={() => void scanDbKey()}
-          title="依次尝试三个来源：可选组件 → 外部工具 → 本地文件；候选必须通过页 1 HMAC 校验才会导入"
-        >
-          {busy === 'scan' ? '尝试中…' : '自动获取密钥'}
-        </button>
-        <button
-          type="button"
-          className="st-btn ghost"
           disabled={busy !== null || !keyReady}
           onClick={() => void doTest()}
         >
@@ -399,37 +348,6 @@ function WechatKeySection(): React.JSX.Element {
           {busy === 'connect' ? '连接中…' : '连接并启动监控'}
         </button>
       </div>
-
-      {/* 密钥自动获取的三个来源：可选组件（固定目录）· 外部工具 · 本地已导出的密钥文件 */}
-      <div className="st-subtitle">密钥自动获取的来源（可选）</div>
-      <label className="st-row">
-        <span className="st-label">外部工具命令</span>
-        <input
-          className="st-input"
-          value={keyToolCmd}
-          onChange={(e) => setKeyToolCmd(e.target.value)}
-          placeholder="如 D:\tools\dump-key.exe（输出里含 64 位十六进制即可）"
-        />
-      </label>
-      <label className="st-row">
-        <span className="st-label">外部工具参数</span>
-        <input
-          className="st-input"
-          value={keyToolArgs}
-          onChange={(e) => setKeyToolArgs(e.target.value)}
-          placeholder="支持 {{wxid}} / {{dbPath}} / {{dbStorage}}，如 --wxid {{wxid}}"
-        />
-      </label>
-      {scanAttempts.length > 0 && (
-        <div className="st-hint">
-          {scanAttempts.map((a) => (
-            <div key={a.label}>
-              {a.status === 'ok' ? '✅' : a.status === 'skipped' ? '➖' : '⚠️'} {a.label}：
-              {a.detail}
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* 图片 .dat 解密密钥（M3：msg/attach 内 <md5>.dat 原图与缩略图） */}
       <div className="st-subtitle">图片解密（msg/attach 内 .dat 附件）</div>

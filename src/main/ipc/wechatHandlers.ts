@@ -3,8 +3,7 @@ import * as wxService from '../services/wechat/wxService'
 import { startWatch } from '../services/wechat/watchService'
 import { ensure as ensureIssueScheduler } from '../services/feedback/scheduler'
 import { startBaseSyncScheduler } from '../services/lark/baseSyncScheduler'
-import { getKeyStatus, importKey, testKey } from '../services/keyStoreService'
-import { scanWeChatKey } from '../services/wechat/keyScan'
+import { getKeyStatus } from '../services/keyStoreService'
 import { deriveImageKeys } from '../services/media/imageKeys'
 import type { MessageCursor } from '../../shared/types'
 
@@ -69,31 +68,6 @@ export function registerWechatHandlers(): void {
       return deriveImageKeys(accountDir, knownAesKey)
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '推导失败' }
-    }
-  })
-
-  /**
-   * 库密钥自动获取（多来源：可选组件 / 外部工具 / 本地文件）。
-   * 任何候选都必须先过页 1 校验才落库；每个来源的结果照实回传，界面能说清「到底卡在哪」。
-   */
-  ipcMain.handle('cs:wx:scanDbKey', async (_e, wxid: string) => {
-    if (!wxid) return { ok: false as const, error: '缺少账号', attempts: [] }
-    const info = getKeyStatus(wxid)
-    const scanned = await scanWeChatKey({ wxid, dbPath: info.dbPath ?? '' })
-    if (!scanned.ok || !scanned.key) {
-      return { ok: false as const, error: scanned.error, attempts: scanned.attempts }
-    }
-    const saved = importKey(wxid, scanned.key, 'registry', info.dbPath ?? '')
-    if (!saved.success) {
-      return { ok: false as const, error: saved.error, attempts: scanned.attempts }
-    }
-    const tested = testKey(wxid)
-    return {
-      ok: true as const,
-      provider: scanned.provider,
-      valid: tested.success,
-      error: tested.success ? undefined : tested.error,
-      attempts: scanned.attempts
     }
   })
 

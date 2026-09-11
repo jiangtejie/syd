@@ -89,7 +89,7 @@ function CryptoCenterSection(): React.JSX.Element {
   return (
     <SettingsCard
       title="解密一体化"
-      desc="一键接入：定位账号 → 取密钥 → 推导图片密钥 → 预热解密 → 连接并启动监控；也可随时体检与预热"
+      desc="一键接入：定位账号 → 校验并导入你粘贴的密钥 → 推导图片密钥 → 预热解密 → 连接并启动监控；也可随时体检与预热"
     >
       <div className="st-actions">
         <button
@@ -128,12 +128,12 @@ function CryptoCenterSection(): React.JSX.Element {
       </div>
 
       <label className="st-row">
-        <span className="st-label">密钥（可选，粘贴优先）</span>
+        <span className="st-label">密钥（64 位十六进制）</span>
         <input
           className="st-input"
           value={keyInput}
           onChange={(e) => setKeyInput(e.target.value)}
-          placeholder="已有 64 位十六进制密钥时粘这里，一键接入会先校验再用；留空则自动获取"
+          placeholder="从任何你信任的工具导出后粘这里；一键接入会先用真实库做页 1 校验，通过才落库"
         />
       </label>
 

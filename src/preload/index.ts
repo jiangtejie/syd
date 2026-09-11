@@ -95,20 +95,6 @@ const api: PreloadApi = {
       /** 图片密钥本地推导 + AES 校验（不依赖原生组件） */
       deriveImageKeys: (wxid: string, knownAesKey?: string): Promise<DeriveImageKeysResult> =>
         ipcRenderer.invoke('cs:wx:deriveImageKeys', wxid, knownAesKey),
-      scanDbKey: (
-        wxid: string
-      ): Promise<{
-        ok: boolean
-        valid?: boolean
-        provider?: 'nativeDll' | 'externalTool'
-        attempts: Array<{
-          id: 'nativeDll' | 'externalTool'
-          label: string
-          status: 'ok' | 'candidates' | 'empty' | 'skipped' | 'error'
-          detail: string
-        }>
-        error?: string
-      }> => ipcRenderer.invoke('cs:wx:scanDbKey', wxid),
       onDbChanged: (callback: (payload: DbChangedPayload) => void) => {
         const listener = (_e: Electron.IpcRendererEvent, payload: DbChangedPayload): void =>
           callback(payload)
