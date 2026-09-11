@@ -498,14 +498,48 @@ function SettingsPage(): React.JSX.Element {
       const res = await api.baseSync(wxid, force)
       if (res.status) setBaseStatus(res.status)
       const r = res.result
+      const pulled = res.pulled
       setBaseNotes({
         ok: !!res.ok,
         lines: r
           ? [
-              `扫描 ${r.scanned} · 新增 ${r.created} · 更新 ${r.updated} · 跳过 ${r.skipped}${r.failed ? ` · 失败 ${r.failed}` : ''}`,
-              ...(r.error ? [r.error] : [])
+              `推送：扫描 ${r.scanned} · 新增 ${r.created} · 更新 ${r.updated} · 跳过 ${r.skipped}${r.failed ? ` · 失败 ${r.failed}` : ''}`,
+              ...(pulled
+                ? [
+                    `拉取：应用到本地 ${pulled.applied} 条${pulled.skippedLocalWin ? ` · 冲突保留本地 ${pulled.skippedLocalWin}` : ''}${pulled.unmatched ? ` · 认不出 ${pulled.unmatched}` : ''}`
+                  ]
+                : []),
+              ...(r.error ? [r.error] : []),
+              ...(pulled && !pulled.ok && pulled.error ? [pulled.error] : [])
             ]
           : [res.error ?? '同步失败']
+      })
+    } finally {
+      setBaseBusy('')
+    }
+  }
+
+  /** 只拉取同事在表格里改的状态/跟进人（不推送本地变更） */
+  const pullBaseNow = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.basePull) return
+    if (!wxid) {
+      setBaseNotes({ ok: false, lines: ['还没连接微信账号'] })
+      return
+    }
+    setBaseBusy('pull')
+    setBaseNotes(null)
+    try {
+      const res = await api.basePull(wxid)
+      if (res.status) setBaseStatus(res.status)
+      const p = res.pulled
+      setBaseNotes({
+        ok: !!res.ok,
+        lines: p
+          ? [
+              `读取 ${p.scanned} 行 · 应用到本地 ${p.applied}${p.skippedLocalWin ? ` · 冲突保留本地 ${p.skippedLocalWin}` : ''}${p.unmatched ? ` · 认不出 ${p.unmatched}` : ''}`
+            ]
+          : [res.error ?? '拉取失败']
       })
     } finally {
       setBaseBusy('')
@@ -1104,6 +1138,15 @@ function SettingsPage(): React.JSX.Element {
                 title="忽略上次同步时间，把所有议题核对一遍"
               >
                 全量核对
+              </button>
+              <button
+                type="button"
+                className="st-btn ghost"
+                disabled={baseBusy !== '' || !baseStatus?.configured}
+                onClick={() => void pullBaseNow()}
+                title="只把同事在表格里改的状态/跟进人拉回本地（不推送本地变更）"
+              >
+                {baseBusy === 'pull' ? '拉取中…' : '拉取同事改动'}
               </button>
             </div>
             <SwitchRow

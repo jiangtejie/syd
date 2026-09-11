@@ -832,6 +832,16 @@ export function listIssues(wxid: string, opts?: { status?: FeedbackIssueStatus }
   return issues
 }
 
+/** 按 id 取单条问题（外部同步回写时用：要拿 updated_at 做冲突判定） */
+export function getIssueById(id: number): FeedbackIssue | null {
+  const row = getDb().prepare('SELECT * FROM issue_feedback WHERE id = ?').get(id) as
+    IssueRow | undefined
+  if (!row) return null
+  const issue = rowToIssue(row)
+  decorateIssues([issue])
+  return issue
+}
+
 /**
  * 增量列出「自某时刻以来有变更」的问题（外部同步用：飞书多维表格按 updated_at 拉变更）。
  * 顺序固定按 id 升序：外部系统的写入顺序稳定，便于排查。

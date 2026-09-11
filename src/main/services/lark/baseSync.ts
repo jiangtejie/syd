@@ -1,12 +1,29 @@
-import { createHash } from 'crypto'
 import { getConfig, getConfigBoolean, setConfig } from '../../db/repos/config'
-import { countSyncRefs, getSyncRef, saveSyncRef } from '../../db/repos/larkSyncRepo'
-import { listIssuesChangedSince } from '../../db/repos/issueRepo'
+import {
+  countSyncRefs,
+  getSyncRef,
+  listSyncRefs,
+  saveRemoteCollab,
+  saveSyncRef
+} from '../../db/repos/larkSyncRepo'
+import {
+  getIssueById,
+  listIssuesChangedSince,
+  setIssueAssignee,
+  setIssueStatus
+} from '../../db/repos/issueRepo'
 import { listTeamMembers } from '../../db/repos/teamRepo'
 import { larkCall, larkErrorHint } from './client'
+import {
+  assigneeFromText,
+  collabOf,
+  diffCollab,
+  hashOf,
+  issueToFields,
+  statusFromText
+} from './baseMapping'
 import { parseLarkRef } from './url'
 import { createLogger } from '../logging'
-import type { FeedbackIssue } from '../../../shared/types'
 
 const syncLog = createLogger('lark')
 
@@ -34,6 +51,7 @@ const CFG_SYNC_ENABLED = 'lark.sync.enabled'
 const CFG_RAW_EVIDENCE = 'lark.sync.rawEvidence'
 const CFG_LAST_AT = 'lark.sync.lastAt'
 const CFG_LAST_RESULT = 'lark.sync.lastResult'
+const CFG_LAST_PULL = 'lark.sync.lastPull'
 
 /** 单批写入条数（Base 批量接口上限 500，这里留余量并给群之间留节奏） */
 const BATCH_SIZE = 100
@@ -277,47 +295,7 @@ export async function verifyBaseLink(link: string): Promise<BaseVerifyResult> {
 
 // ── 议题 → Base ──
 
-const STATUS_TEXT: Record<string, string> = {
-  open: '待处理',
-  done: '已解决',
-  stalled: '已搁置',
-  archived: '不是问题'
-}
-
-function statusText(i: FeedbackIssue): string {
-  if (i.status === 'open') return i.followUp ? '跟进中' : '待处理'
-  return STATUS_TEXT[i.status] ?? '待处理'
-}
-
-function assigneeText(i: FeedbackIssue, names: Map<string, string>): string {
-  if (!i.assignee) return ''
-  return names.get(i.assignee) || i.assignee
-}
-
-/** 议题 → Base 字段（脱敏：默认只给标题/摘要，不推聊天原文） */
-export function issueToFields(
-  i: FeedbackIssue,
-  names: Map<string, string>
-): Record<string, unknown> {
-  const summary = (i.summary ?? '').slice(0, 900)
-  return {
-    议题ID: String(i.id),
-    客户群: i.groupName || i.groupUsername,
-    类型: i.type,
-    严重度: i.severity ?? '一般',
-    标题: (i.title ?? '').slice(0, 240),
-    摘要: summary,
-    状态: statusText(i),
-    跟进人: assigneeText(i, names),
-    首现时间: i.occurAt,
-    最近更新: i.updatedAt,
-    证据条数: i.msgCount
-  }
-}
-
-function hashOf(fields: Record<string, unknown>): string {
-  return createHash('sha1').update(JSON.stringify(fields)).digest('hex').slice(0, 16)
-}
+// 字段映射（issueToFields / statusText / hashOf 等）在 baseMapping.ts —— 纯函数、可自检
 
 export interface SyncOutResult {
   ok: boolean
@@ -340,6 +318,16 @@ function readLastResult(): SyncOutResult | null {
   }
 }
 
+function readLastPull(): PullResult | null {
+  const raw = getConfig(CFG_LAST_PULL)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as PullResult
+  } catch {
+    return null
+  }
+}
+
 export interface BaseSyncStatus {
   configured: boolean
   appToken?: string
@@ -351,6 +339,7 @@ export interface BaseSyncStatus {
   mappedIssues: number
   mappedReplies: number
   lastResult: SyncOutResult | null
+  lastPull: PullResult | null
 }
 
 export function baseSyncStatus(): BaseSyncStatus {
@@ -364,7 +353,8 @@ export function baseSyncStatus(): BaseSyncStatus {
     lastAt: Number(getConfig(CFG_LAST_AT) ?? 0) || 0,
     mappedIssues: countSyncRefs('issue'),
     mappedReplies: countSyncRefs('reply'),
-    lastResult: readLastResult()
+    lastResult: readLastResult(),
+    lastPull: readLastPull()
   }
 }
 
@@ -442,7 +432,11 @@ export async function syncIssuesOut(
         out.failed++
         return
       }
-      saveSyncRef('issue', b.id, appToken, tableId, recordId, b.hash)
+      saveSyncRef('issue', b.id, appToken, tableId, recordId, b.hash, {
+        status: String(b.fields['状态'] ?? ''),
+        assignee: String(b.fields['跟进人'] ?? ''),
+        pushed: true
+      })
       out.created++
     })
     await sleep(BATCH_GAP_MS)
@@ -478,7 +472,11 @@ export async function syncIssuesOut(
       syncLog.warn(`更新议题 #${issue.id} 失败: ${r.error}`)
       continue
     }
-    saveSyncRef('issue', issue.id, appToken, tableId, ref.recordId, hash)
+    saveSyncRef('issue', issue.id, appToken, tableId, ref.recordId, hash, {
+      status: String(fields['状态'] ?? ''),
+      assignee: String(fields['跟进人'] ?? ''),
+      pushed: true
+    })
     out.updated++
     await sleep(BATCH_GAP_MS)
   }
@@ -490,6 +488,150 @@ export async function syncIssuesOut(
   return out
 }
 
+// ── Base → 本地（回写）──
+
+/**
+ * 从 Base 拉回同事的改动（状态 / 跟进人）。
+ *
+ * 判定「是不是同事改的」：拿 Base 现值与 `lark_sync_map.remote_*`（**上次同步时 Base 上的值**）比对，
+ * 不同即认定是人在表格里动的 —— 否则我们自己刚写上去的值会被误判成同事改的，来回打架。
+ *
+ * 冲突规则（**本地权威**）：若本地行的 updated_at 晚于我们上次推送时间（pushed_at），说明本地也动了，
+ * 这一轮不采纳对方的值（下一轮推送会把本地值写回 Base）；否则采纳。
+ */
+export interface PullResult {
+  ok: boolean
+  error?: string
+  /** Base 里读到的记录数 */
+  scanned: number
+  /** 采纳并应用到本地的条数 */
+  applied: number
+  /** 冲突：本地更新更晚，保留本地 */
+  skippedLocalWin: number
+  /** 认不出来的行（找不到本地议题 / 状态文案不认） */
+  unmatched: number
+  at: number
+}
+
+interface RemoteRecord {
+  recordId: string
+  fields: Record<string, unknown>
+}
+
+/** 读取议题表里我们关心的三列（分页；field_names 只取必要的，减少流量与限流压力） */
+async function listIssueRecords(appToken: string, tableId: string): Promise<RemoteRecord[]> {
+  const out: RemoteRecord[] = []
+  let pageToken: string | undefined
+  for (let page = 0; page < 20; page += 1) {
+    const r = await larkCall<{
+      items?: Array<{ record_id?: string; fields?: Record<string, unknown> }>
+      has_more?: boolean
+      page_token?: string
+    }>((api) =>
+      api.bitable.appTableRecord.list({
+        path: { app_token: appToken, table_id: tableId },
+        params: {
+          page_size: 200,
+          field_names: JSON.stringify(['议题ID', '状态', '跟进人']),
+          ...(pageToken ? { page_token: pageToken } : {})
+        }
+      })
+    )
+    if (!r.ok) throw new Error(r.error)
+    for (const it of r.data.items ?? []) {
+      if (it.record_id) out.push({ recordId: it.record_id, fields: it.fields ?? {} })
+    }
+    if (!r.data.has_more || !r.data.page_token) break
+    pageToken = r.data.page_token
+  }
+  return out
+}
+
+export async function pullIssuesBack(wxid: string): Promise<PullResult> {
+  const at = Date.now()
+  const empty: PullResult = {
+    ok: false,
+    scanned: 0,
+    applied: 0,
+    skippedLocalWin: 0,
+    unmatched: 0,
+    at
+  }
+  const appToken = baseConfiguredLink()
+  if (!appToken) return { ...empty, error: '未配置多维表格链接' }
+  const tableId = (getConfig(CFG_TABLE_ISSUES) ?? '').trim()
+  if (!tableId) return { ...empty, error: '未解析出议题表 id' }
+
+  let records: RemoteRecord[]
+  try {
+    records = await listIssueRecords(appToken, tableId)
+  } catch (e) {
+    return { ...empty, error: e instanceof Error ? e.message : String(e) }
+  }
+
+  const refs = new Map(listSyncRefs('issue').map((r) => [r.localId, r]))
+  const members = listTeamMembers(wxid).map((m) => ({ username: m.username, label: m.label ?? '' }))
+  const out: PullResult = {
+    ok: true,
+    scanned: records.length,
+    applied: 0,
+    skippedLocalWin: 0,
+    unmatched: 0,
+    at
+  }
+
+  for (const rec of records) {
+    const idText = String(rec.fields['议题ID'] ?? '').trim()
+    const localId = Number.parseInt(idText, 10)
+    if (!Number.isFinite(localId)) {
+      out.unmatched++
+      continue
+    }
+    const ref = refs.get(localId)
+    if (!ref) {
+      out.unmatched++
+      continue
+    }
+    const remote = collabOf(rec.fields)
+    const diff = diffCollab(remote, { status: ref.remoteStatus, assignee: ref.remoteAssignee })
+    if (!diff.statusChanged && !diff.assigneeChanged) continue
+
+    const local = getIssueById(localId)
+    if (!local) {
+      out.unmatched++
+      continue
+    }
+    // 冲突：本地更新时间晚于我们上次推送 → 本地赢（下一轮推送把本地值写回 Base）
+    if (ref.pushedAt && local.updatedAt > ref.pushedAt) {
+      out.skippedLocalWin++
+      saveRemoteCollab('issue', localId, remote)
+      continue
+    }
+
+    let okApply = true
+    if (diff.statusChanged) {
+      const status = statusFromText(remote.status)
+      if (!status) {
+        okApply = false
+        syncLog.warn(`议题 #${localId} 的状态值「${remote.status}」不认识，已跳过`)
+      } else if (status !== local.status) {
+        setIssueStatus(localId, status, false)
+      }
+    }
+    if (diff.assigneeChanged) {
+      const next = assigneeFromText(remote.assignee, members)
+      if (next !== (local.assignee ?? null)) setIssueAssignee(localId, next)
+    }
+    if (okApply) out.applied++
+    else out.unmatched++
+    saveRemoteCollab('issue', localId, remote)
+    await sleep(BATCH_GAP_MS)
+  }
+
+  setConfig(CFG_LAST_PULL, JSON.stringify(out))
+  return out
+}
+
 /** 给 UI 的一句话状态 */
 export function baseSyncHint(): string {
   const st = baseSyncStatus()
@@ -498,7 +640,11 @@ export function baseSyncHint(): string {
   const r = st.lastResult
   if (!r) return '已配置，尚未同步过'
   const when = new Date(r.at).toLocaleString('zh-CN')
-  return `最近同步 ${when}：新增 ${r.created} · 更新 ${r.updated} · 跳过 ${r.skipped}${r.failed ? ` · 失败 ${r.failed}` : ''}${r.error ? ` · ${r.error}` : ''}`
+  const p = st.lastPull
+  const pullText = p
+    ? ` · 拉回同事改动 ${p.applied}${p.skippedLocalWin ? `（${p.skippedLocalWin} 条本地更新更晚，保留本地）` : ''}`
+    : ''
+  return `最近同步 ${when}：新增 ${r.created} · 更新 ${r.updated} · 跳过 ${r.skipped}${r.failed ? ` · 失败 ${r.failed}` : ''}${r.error ? ` · ${r.error}` : ''}${pullText}`
 }
 
 export { larkErrorHint }

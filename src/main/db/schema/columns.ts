@@ -133,6 +133,30 @@ export const COLUMN_MIGRATIONS: ColumnMigration[] = [
     note: '候选/产出归属营销任务'
   },
   {
+    table: 'lark_sync_map',
+    column: 'remote_status',
+    ddl: "TEXT NOT NULL DEFAULT ''",
+    note: '上次同步时 Base 上的「状态」值：与当前 Base 值比对即可判断是不是同事改的'
+  },
+  {
+    table: 'lark_sync_map',
+    column: 'remote_assignee',
+    ddl: "TEXT NOT NULL DEFAULT ''",
+    note: '上次同步时 Base 上的「跟进人」值'
+  },
+  {
+    table: 'lark_sync_map',
+    column: 'pushed_at',
+    ddl: 'INTEGER',
+    note: '最近一次推送到 Base 的时间：与本地 updated_at 比较决定冲突时谁赢（本地权威）'
+  },
+  {
+    table: 'lark_sync_map',
+    column: 'pulled_at',
+    ddl: 'INTEGER',
+    note: '最近一次从 Base 拉取（应用同事改动）的时间'
+  },
+  {
     table: 'growth_remix_output',
     column: 'meta_json',
     ddl: "TEXT NOT NULL DEFAULT '{}'",

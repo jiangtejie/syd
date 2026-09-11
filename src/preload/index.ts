@@ -6,6 +6,8 @@ import type {
   ChatSessionItem,
   FeedbackAnalysisState,
   LarkBaseStatus,
+  LarkPullResult,
+  LarkSyncOut,
   FeedbackIssue,
   FeedbackIssueDetail,
   ImAuditEntry,
@@ -711,22 +713,23 @@ const api: PreloadApi = {
       }> => ipcRenderer.invoke('cs:lark:baseVerify', link),
       baseSync: (
         wxid: string,
-        force?: boolean
+        force?: boolean,
+        pull?: boolean
       ): Promise<{
         ok: boolean
-        result?: {
-          ok: boolean
-          error?: string
-          scanned: number
-          created: number
-          updated: number
-          skipped: number
-          failed: number
-          at: number
-        }
+        result?: LarkSyncOut
+        pulled?: LarkPullResult | null
         status?: LarkBaseStatus
         error?: string
-      }> => ipcRenderer.invoke('cs:lark:baseSync', wxid, force),
+      }> => ipcRenderer.invoke('cs:lark:baseSync', wxid, force, pull),
+      basePull: (
+        wxid: string
+      ): Promise<{
+        ok: boolean
+        pulled?: LarkPullResult
+        status?: LarkBaseStatus
+        error?: string
+      }> => ipcRenderer.invoke('cs:lark:basePull', wxid),
       baseConfig: (patch: {
         enabled?: boolean
         rawEvidence?: boolean

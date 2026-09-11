@@ -342,6 +342,8 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 npm run typecheck     # tsc --noEmit（主进程 + 渲染端）
 npm run lint          # ESLint（Prettier 规则内含）
 npm run test:feedback # 跟进判定「回复归属」+ 议题同一性判据 回归自检（真实数据标定）
+npm run test:matcher  # 数字员工话术判定（真实群原话当夹具）
+npm run test:lark     # 飞书同步字段映射（状态往返/跟进人匹配/冲突比对，纯函数）
 npm run test:schema   # schema 迁移自检：合成老库上跑三条数据迁移 + 幂等性（不碰真实库）
 npm run build         # typecheck + electron-vite 三端构建
 ```
@@ -379,7 +381,26 @@ npm run build         # typecheck + electron-vite 三端构建
 非文本转人工 41 条、纯应答或通知跳过 37 条、需 LLM 兜底 147 条 —— 兜底占比偏高说明话术还没覆盖「系统下单异常」
 这类真实高频场景（已补模板），也说明图片/语音理解是二期必须补的能力。
 
-## 17. 待完善与已知边界
+## 17. 飞书协作面（议题同步）
+
+定位：把单机看板变成「同事也能看、也能处理」的协作面。选择飞书多维表格而不是自建 Web，
+理由是可验证性优先 —— 先用最低成本验证「同事到底会不会用」，再决定要不要上控制面/数据面架构。
+
+**模块**：`services/lark/baseSync.ts`（同步主体）+ `baseMapping.ts`（字段映射，纯函数可自检）
++ `baseSyncScheduler.ts`（每 2 分钟，先拉后推）+ `db/repos/larkSyncRepo.ts`（映射与协作列已知值）。
+
+**为什么需要 `lark_sync_map`**：Base 没有唯一键约束，写前无法按字段去重；这张表记
+`(kind, local_id) → record_id`，并额外保存 `remote_status/remote_assignee`（上次同步时 Base 上的值）。
+后者是「区分同事改动 vs 自己刚写的值」的唯一依据 —— 少了它，推送与拉取会互相覆盖。
+
+**方向与冲突**：只推不覆盖协作列；只拉「状态/跟进人」两列；冲突时本地权威（本地 updated_at 更晚则
+保留本地，下一轮把本地值写回 Base）。这些判定全在 `baseMapping.ts` 里，用
+`npm run test:lark` 钉死（状态往返、跟进人匹配、脱敏、冲突比对、hash 稳定性）。
+
+**未做**：「数字员工回复」表暂未推数据（表已建好，等影子记录积累后再接）、卡片交互（采纳/驳回/审批）、
+日报推送、Base → 本地的「处理备注」列（需要先给 issue_feedback 加列并纳入人工字段快照）。
+
+## 18. 待完善与已知边界
 
 - **预留表未接入**：`customer`（客户档案，当前客户页由会话+问题派生）、`session`（门控/转人工）、`tier_rule`、`knowledge_item`、`reply_decision` —— DDL 在 `schema/reserved.ts`，**不再建表**，接入功能时搬回 `base.ts`。
 - **密钥存储两种策略**：微信 DB 密钥走 `key_store` + safeStorage，图片解密密钥（`img:<wxid>:aesKey/xorKey`）仍是 `app_config` 明文，敏感度不同但应统一。

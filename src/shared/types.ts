@@ -851,14 +851,30 @@ export interface LarkBaseStatus {
   mappedIssues: number
   mappedReplies: number
   hint: string
-  lastResult: {
-    ok: boolean
-    error?: string
-    scanned: number
-    created: number
-    updated: number
-    skipped: number
-    failed: number
-    at: number
-  } | null
+  lastPull: LarkPullResult | null
+  lastResult: LarkSyncOut | null
+}
+
+/** 一次「议题 → Base」同步的结果 */
+export interface LarkSyncOut {
+  ok: boolean
+  error?: string
+  scanned: number
+  created: number
+  updated: number
+  skipped: number
+  failed: number
+  at: number
+}
+
+/** 一次「Base → 本地」拉取的结果（同事改的状态/跟进人） */
+export interface LarkPullResult {
+  ok: boolean
+  error?: string
+  scanned: number
+  applied: number
+  /** 冲突：本地更新更晚，保留本地 */
+  skippedLocalWin: number
+  unmatched: number
+  at: number
 }

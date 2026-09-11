@@ -4,6 +4,7 @@ import { testLarkAccess } from '../services/lark/api'
 import {
   baseSyncHint,
   baseSyncStatus,
+  pullIssuesBack,
   setRawEvidence,
   setSyncEnabled,
   syncIssuesOut,
@@ -63,13 +64,26 @@ export function registerLarkHandlers(): void {
     }
   })
 
-  ipcMain.handle('cs:lark:baseSync', async (_e, wxid: string, force?: boolean) => {
+  /** 立即同步：默认先拉同事改动再推本地变更（pull=false 时只推，用于「全量核对」） */
+  ipcMain.handle('cs:lark:baseSync', async (_e, wxid: string, force?: boolean, pull = true) => {
     if (!wxid) return { ok: false as const, error: '缺少账号' }
     try {
+      const pulled = pull ? await pullIssuesBack(wxid) : null
       const r = await syncIssuesOut(wxid, { force: force === true })
-      return { ok: r.ok, result: r, status: snapshot() }
+      return { ok: r.ok, result: r, pulled, status: snapshot() }
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '同步失败' }
+    }
+  })
+
+  /** 只拉取同事在表格里的改动（状态/跟进人 → 本地） */
+  ipcMain.handle('cs:lark:basePull', async (_e, wxid: string) => {
+    if (!wxid) return { ok: false as const, error: '缺少账号' }
+    try {
+      const pulled = await pullIssuesBack(wxid)
+      return { ok: pulled.ok, pulled, status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '拉取失败' }
     }
   })
 

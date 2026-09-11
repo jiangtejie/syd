@@ -1,5 +1,5 @@
 import type { MonitorData } from './monitorMetrics'
-import type { LarkBaseStatus } from './types'
+import type { LarkBaseStatus, LarkPullResult, LarkSyncOut } from './types'
 import type {
   FeedbackAnalysisState,
   FeedbackIssue,
@@ -619,22 +619,19 @@ export interface CsApi {
     }>
     baseSync: (
       wxid: string,
-      force?: boolean
+      force?: boolean,
+      pull?: boolean
     ) => Promise<{
       ok: boolean
-      result?: {
-        ok: boolean
-        error?: string
-        scanned: number
-        created: number
-        updated: number
-        skipped: number
-        failed: number
-        at: number
-      }
+      result?: LarkSyncOut
+      pulled?: LarkPullResult | null
       status?: LarkBaseStatus
       error?: string
     }>
+    /** 只拉取同事在表格里的改动（状态/跟进人 → 本地） */
+    basePull: (
+      wxid: string
+    ) => Promise<{ ok: boolean; pulled?: LarkPullResult; status?: LarkBaseStatus; error?: string }>
     baseConfig: (patch: {
       enabled?: boolean
       rawEvidence?: boolean
