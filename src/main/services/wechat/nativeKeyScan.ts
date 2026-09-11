@@ -214,3 +214,88 @@ export function nativeKeyScanStatus(): NativeScanDiagnostics {
     ...lastDiag
   }
 }
+/* ── 环境诊断：组件需要「加载了 weixin.dll 的那个微信进程」 ── */
+
+export interface WeixinProcessInfo {
+  pid: number
+  mb: number
+  modules: number
+  /** 该进程是否加载了 weixin.dll（组件的内存扫描前提） */
+  hasWeixinDll: boolean
+  /** 加载到的 weixin.dll 版本（4.x 的核心版本在这里，不是 Weixin.exe 的资源版本） */
+  wxDllVersion: string | null
+  wxDllPath: string | null
+}
+
+let procCache: { at: number; list: WeixinProcessInfo[] } | null = null
+
+/**
+ * 列出 Weixin 进程及各自的 weixin.dll 加载情况。
+ *
+ * 为什么要这一步：组件的字符串里有 `weixin.dll` + `module not found`，用的是
+ * CreateToolhelp32Snapshot/Module32FirstW + ReadProcessMemory —— 也就是说它**必须挑到那个加载了
+ * weixin.dll 的进程**。实测本机 5 个 Weixin 进程里只有 1 个加载了它（其余是子进程/辅助进程），
+ * 挑错就只会拿到空结果。这里把这份环境事实暴露出来，便于定位「组件为什么扫不到」。
+ */
+export function weixinProcesses(force = false): WeixinProcessInfo[] {
+  const now = Date.now()
+  if (!force && procCache && now - procCache.at < 10_000) return procCache.list
+  const script =
+    "Get-Process -Name Weixin -ErrorAction SilentlyContinue | ForEach-Object { " +
+    "$m=$null; try{$m=$_.Modules|Where-Object{$_.ModuleName -ieq 'weixin.dll'}|Select-Object -First 1}catch{}; " +
+    "$c=0; try{$c=$_.Modules.Count}catch{}; " +
+    "[pscustomobject]@{pid=$_.Id;mb=[math]::Round($_.WorkingSet64/1MB);modules=$c;" +
+    "ver=$(if($m){$m.FileVersionInfo.FileVersion}else{''});path=$(if($m){$m.FileName}else{''})} } | ConvertTo-Json -Compress"
+  let raw = ''
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- 只在诊断时按需调用
+    const { execFileSync } = require('node:child_process') as typeof import('node:child_process')
+    raw = String(
+      execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+        timeout: 8000,
+        windowsHide: true,
+        encoding: 'utf8'
+      }) ?? ''
+    ).trim()
+  } catch (e) {
+    lastDiag.lastError = `进程枚举失败: ${e instanceof Error ? e.message : String(e)}`
+    return []
+  }
+  let list: WeixinProcessInfo[] = []
+  try {
+    const parsed = JSON.parse(raw || '[]') as
+      | Record<string, unknown>
+      | Array<Record<string, unknown>>
+    list = (Array.isArray(parsed) ? parsed : [parsed]).map((r) => ({
+      pid: Number(r.pid) || 0,
+      mb: Number(r.mb) || 0,
+      modules: Number(r.modules) || 0,
+      hasWeixinDll: !!String(r.ver ?? '').trim(),
+      wxDllVersion: String(r.ver ?? '').trim() || null,
+      wxDllPath: String(r.path ?? '').trim() || null
+    }))
+  } catch {
+    list = []
+  }
+  procCache = { at: now, list }
+  return list
+}
+
+/** 组件运行环境摘要（体检/失败原因里展示） */
+export function nativeScanEnvironment(): {
+  processes: WeixinProcessInfo[]
+  withDll: WeixinProcessInfo[]
+  hint: string
+} {
+  const processes = weixinProcesses()
+  const withDll = processes.filter((x) => x.hasWeixinDll)
+  let hint = '未发现 Weixin 进程（微信可能没在运行）'
+  if (processes.length > 0 && withDll.length === 0) {
+    hint = `${processes.length} 个 Weixin 进程都没有加载 weixin.dll（组件的内存扫描前提）`
+  } else if (withDll.length > 0) {
+    hint =
+      `${processes.length} 个 Weixin 进程中 ${withDll.length} 个加载了 weixin.dll ` +
+      `${withDll[0].wxDllVersion ?? '未知版本'}（pid ${withDll.map((x) => x.pid).join(',')}）`
+  }
+  return { processes, withDll, hint }
+}

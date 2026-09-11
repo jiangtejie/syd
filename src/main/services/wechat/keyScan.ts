@@ -4,7 +4,7 @@ import { getConfig, getConfigNumber } from '../../db/repos/config'
 import { verifyWxDbKey } from './decrypt'
 import { locateWeChatDbs } from './dbLocator'
 import { createLogger } from '../logging'
-import { nativeKeyScanStatus, nativeScanAccount } from './nativeKeyScan'
+import { nativeKeyScanStatus, nativeScanAccount, nativeScanEnvironment } from './nativeKeyScan'
 import {
   buildCmdLine,
   expandPlaceholders,
@@ -87,11 +87,13 @@ const nativeDllProvider: Provider = async (ctx) => {
   const info = nativeScanAccount()
   const after = nativeKeyScanStatus()
   if (!info) {
+    // 组件依赖「加载了 weixin.dll 的那个 Weixin 进程」：把环境事实一并给出来，便于定位
+    const env = nativeScanEnvironment()
     return {
       id: 'nativeDll',
       label,
       status: 'empty',
-      detail: `组件已加载但没扫到密钥（${after.lastError ?? '未返回数据'}）`
+      detail: `组件已加载但没扫到密钥（${after.lastError ?? '未返回数据'}）；微信环境：${env.hint}`
     }
   }
   if (info.dbKey && ctx.verify(info.dbKey)) {

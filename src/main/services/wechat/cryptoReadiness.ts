@@ -15,7 +15,7 @@ import { deriveImageKeys } from '../media/imageKeys'
 import { asrStatus } from '../media/asr'
 import { mediaCachePolicy, mediaCacheStats } from '../media/mediaCache'
 import { scanWeChatKey } from './keyScan'
-import { nativeKeyScanStatus } from './nativeKeyScan'
+import { nativeKeyScanStatus, nativeScanEnvironment } from './nativeKeyScan'
 import { createLogger } from '../logging'
 
 const log = createLogger('crypto-center')
@@ -234,11 +234,12 @@ export function accountReadiness(wxid: string): AccountReadiness {
           id: 'native',
           label: '原生取 key 组件',
           status: native.loaded && !native.lastError ? 'ok' : 'warn',
-          detail: native.loaded
-            ? native.lastError
-              ? `已加载；上次调用：${native.lastError}`
-              : `已加载（上次耗时 ${native.lastMs ?? '?'}ms）`
-            : `已随包分发（${native.dir}），尚未调用`
+          detail:
+            (native.loaded
+              ? native.lastError
+                ? `已加载；上次调用：${native.lastError}`
+                : `已加载（上次耗时 ${native.lastMs ?? '?'}ms）`
+              : `已随包分发（${native.dir}），尚未调用`) + `；${nativeScanEnvironment().hint}`
         }
       : {
           id: 'native',
