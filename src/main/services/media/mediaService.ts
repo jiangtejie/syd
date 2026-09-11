@@ -46,12 +46,9 @@ export interface DecryptImageResult {
   error?: string
 }
 
-/** media 协议 URL 前缀（与主进程 protocol.handle('ct-media') 约定一致） */
-export const MEDIA_URL_BASE = 'ct-media://media'
-
-export function toMediaUrl(wxid: string, fileName: string): string {
-  return `${MEDIA_URL_BASE}/${encodeURIComponent(wxid)}/${encodeURIComponent(fileName)}`
-}
+/** media 协议 URL 与解析规则都收在 mediaProtocol（纯函数，可自检）；这里转出以保持既有引用路径 */
+import { MEDIA_URL_BASE, toMediaUrl, toVoiceMediaUrl } from './mediaProtocol'
+export { MEDIA_URL_BASE, toMediaUrl, toVoiceMediaUrl }
 
 /** 目录列表短缓存：一张图要查 orig/thumb/hd 三次，逐次 readdir 是纯浪费 */
 const dirListCache = new Map<string, { at: number; names: string[] }>()

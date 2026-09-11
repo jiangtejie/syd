@@ -136,6 +136,14 @@ export interface CsApi {
     ) => Promise<{ ok: boolean; stats?: OpsStats; error?: string }>
     /** 图片密钥本地推导 + AES 校验（读账号目录下的 *_t.dat 模板，不依赖原生组件） */
     deriveImageKeys: (wxid: string, knownAesKey?: string) => Promise<DeriveImageKeysResult>
+    /**
+     * 库密钥自动获取（可选组件）：
+     * - installed=false 表示组件没装（预期状态），渲染端应引导「手动导入」而不是报错；
+     * - ok=true 表示候选密钥已通过页 1 校验并落库。
+     */
+    scanDbKey: (
+      wxid: string
+    ) => Promise<{ ok: boolean; installed?: boolean; valid?: boolean; error?: string }>
     onDbChanged: (callback: (payload: DbChangedPayload) => void) => () => void
   }
   ai: {
@@ -266,6 +274,11 @@ export interface CsApi {
       wxid: string,
       input: { md5?: string; productId?: string; cdnUrl?: string }
     ) => Promise<{ ok: boolean; url?: string; error?: string }>
+    /** 语音消息（localType 34）：VoiceInfo 取 SILK → 解码成 WAV → 返回 ct-media URL */
+    voiceWav: (
+      wxid: string,
+      opts?: { serverId?: string; localId?: number; createTime?: number }
+    ) => Promise<{ ok: boolean; url?: string; durationMs?: number; error?: string }>
   }
   issue: {
     list: (wxid: string) => Promise<Result<{ issues?: FeedbackIssue[] }>>

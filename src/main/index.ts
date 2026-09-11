@@ -18,6 +18,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getDb, closeDb, getLastMigrateResult } from './db/database'
 import { getGrowthMediaDir, getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
+import { parseMediaPath } from './services/media/mediaProtocol'
 import { migrateStoredSecrets } from './services/secrets'
 import { listTables } from './db/schema'
 import { startDbHousekeeping, stopDbHousekeeping } from './db/housekeeping'
@@ -104,22 +105,18 @@ function createTray(): void {
 /**
  * 自定义 media 协议：把缓存目录的已解密媒体以 ct-media://media/<wxid>/<文件名> 暴露给渲染层。
  * dev 渲染源是 http://localhost，file:// 子资源会被 Chromium 拦截，故统一走协议。
- * 安全：文件名强校验（md5_kind.ext），wxid 仅允许常规字符，并限制在缓存根目录内。
+ * 语音走三段布局 `/voices/<id>.wav`（SILK 解码产物，命名规则与图片不同）。
+ * 安全：文件名按布局分别强校验，wxid 仅允许常规字符，并限制在缓存根目录内。
  */
 function registerMediaProtocol(): void {
   protocol.handle('ct-media', (request) => {
     try {
       const { pathname } = new URL(request.url)
-      const seg = pathname.split('/').filter(Boolean)
-      if (seg.length !== 2) return new Response('Not found', { status: 404 })
-      const wxid = decodeURIComponent(seg[0])
-      const name = decodeURIComponent(seg[1])
-      if (!/^[a-zA-Z0-9_@.-]+$/.test(wxid)) return new Response('Forbidden', { status: 403 })
-      if (!/^[0-9a-f]{32}_[a-z0-9]+\.(jpe?g|png|gif|webp|mp4|mkv|avi|mov|m4v)$/i.test(name)) {
-        return new Response('Forbidden', { status: 403 })
-      }
+      const { hit, badShape } = parseMediaPath(pathname)
+      if (!hit)
+        return new Response(badShape ? 'Not found' : 'Forbidden', { status: badShape ? 404 : 403 })
       const base = getMediaRootDir() // 规范结构：<cache>/media（ct-media 协议映射根）
-      const file = resolve(base, wxid, name)
+      const file = resolve(base, hit.wxid, ...hit.rel)
       if (!file.startsWith(base + sep) || !existsSync(file)) {
         return new Response('Not found', { status: 404 })
       }

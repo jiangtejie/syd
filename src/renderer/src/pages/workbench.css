@@ -477,6 +477,57 @@
   color: var(--text-2);
 }
 
+.wb-msg-voice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 110px;
+  padding: 2px 0;
+}
+
+.wb-msg-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.03);
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wb-msg-voice-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.wb-msg-voice-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.wb-msg-voice-icon {
+  font-size: 12px;
+}
+
+.wb-msg-voice-dur {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.wb-msg-voice-err {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: #c0392b;
+}
+
+.wb-msg-voice-audio {
+  height: 32px;
+  max-width: 260px;
+}
+
 .wb-msg-chathistory {
   min-width: 200px;
   max-width: 280px;

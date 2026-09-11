@@ -89,6 +89,10 @@ const api: PreloadApi = {
       /** 图片密钥本地推导 + AES 校验（不依赖原生组件） */
       deriveImageKeys: (wxid: string, knownAesKey?: string): Promise<DeriveImageKeysResult> =>
         ipcRenderer.invoke('cs:wx:deriveImageKeys', wxid, knownAesKey),
+      scanDbKey: (
+        wxid: string
+      ): Promise<{ ok: boolean; installed?: boolean; valid?: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:wx:scanDbKey', wxid),
       onDbChanged: (callback: (payload: DbChangedPayload) => void) => {
         const listener = (_e: Electron.IpcRendererEvent, payload: DbChangedPayload): void =>
           callback(payload)
@@ -254,7 +258,12 @@ const api: PreloadApi = {
         wxid: string,
         input: { md5?: string; productId?: string; cdnUrl?: string }
       ): Promise<{ ok: boolean; url?: string; error?: string }> =>
-        ipcRenderer.invoke('cs:media:resolveEmoji', wxid, input)
+        ipcRenderer.invoke('cs:media:resolveEmoji', wxid, input),
+      voiceWav: (
+        wxid: string,
+        opts?: { serverId?: string; localId?: number; createTime?: number }
+      ): Promise<{ ok: boolean; url?: string; durationMs?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:media:voiceWav', wxid, opts)
     },
     issue: {
       list: (wxid: string): Promise<Result<{ issues?: FeedbackIssue[] }>> =>

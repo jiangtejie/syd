@@ -3,7 +3,8 @@ import * as wxService from '../services/wechat/wxService'
 import { startWatch } from '../services/wechat/watchService'
 import { ensure as ensureIssueScheduler } from '../services/feedback/scheduler'
 import { startBaseSyncScheduler } from '../services/lark/baseSyncScheduler'
-import { getKeyStatus } from '../services/keyStoreService'
+import { getKeyStatus, importKey, testKey } from '../services/keyStoreService'
+import { scanWeChatKey } from '../services/wechat/keyScan'
 import { deriveImageKeys } from '../services/media/imageKeys'
 import type { MessageCursor } from '../../shared/types'
 
@@ -68,6 +69,28 @@ export function registerWechatHandlers(): void {
       return deriveImageKeys(accountDir, knownAesKey)
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '推导失败' }
+    }
+  })
+
+  /**
+   * 库密钥自动获取（可选组件）：组件未安装时返回明确的「怎么装/怎么退回手填」，
+   * 拿到候选 key 必须先过页 1 校验才落库（见 wechat/keyScan.ts）。
+   */
+  ipcMain.handle('cs:wx:scanDbKey', async (_e, wxid: string) => {
+    if (!wxid) return { ok: false as const, error: '缺少账号' }
+    const info = getKeyStatus(wxid)
+    const scanned = await scanWeChatKey({ wxid, dbPath: info.dbPath ?? '' })
+    if (!scanned.ok || !scanned.key) {
+      return { ok: false as const, installed: scanned.installed ?? false, error: scanned.error }
+    }
+    const saved = importKey(wxid, scanned.key, 'registry', info.dbPath ?? '')
+    if (!saved.success) return { ok: false as const, installed: true, error: saved.error }
+    const tested = testKey(wxid)
+    return {
+      ok: true as const,
+      installed: true,
+      valid: tested.success,
+      error: tested.success ? undefined : tested.error
     }
   })
 

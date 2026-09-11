@@ -61,7 +61,7 @@ function WechatKeySection(): React.JSX.Element {
   const [ffmpegPath, setFfmpegPath] = useState('')
   const [status, setStatus] = useState<KeyStatusInfo | null>(null)
   const [lastError, setLastError] = useState('')
-  const [busy, setBusy] = useState<'import' | 'test' | 'connect' | 'img' | null>(null)
+  const [busy, setBusy] = useState<'import' | 'test' | 'connect' | 'img' | 'scan' | null>(null)
 
   const loadStatus = useCallback(async (id: string) => {
     if (!id.trim() || !keyStoreApi) {
@@ -202,6 +202,33 @@ function WechatKeySection(): React.JSX.Element {
     }
   }
 
+  /**
+   * 库密钥自动获取：走可选的「密钥扫描组件」（本应用不随包分发）。
+   * 组件没装是**预期状态**——这里不报错，而是把「怎么装 / 怎么退回手填」说清楚；
+   * 组件给出候选 key 也必须先过页 1 校验才会落库（校验在主进程）。
+   */
+  const scanDbKey = async (): Promise<void> => {
+    if (!wxid.trim()) return toast.error('请先填写当前微信账号 wxid')
+    setBusy('scan')
+    try {
+      const r = await wxApi?.scanDbKey?.(wxid.trim())
+      if (r?.ok) {
+        toast.success(
+          r.valid === false ? '密钥已导入，但测试未通过（请检查数据目录）' : '密钥已自动获取并导入'
+        )
+        await loadStatus(wxid.trim())
+        return
+      }
+      if (r?.installed === false) {
+        toast.error(r.error || '未安装密钥扫描组件，请手动导入密钥')
+        return
+      }
+      toast.error(r?.error || '自动获取失败')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   /** 测试图片密钥：先保存当前输入，再从 attach 取一张图真实解密 */
   const testImageKey = async (): Promise<void> => {
     if (!wxid.trim()) return toast.error('请先填写当前微信账号 wxid')
@@ -304,6 +331,15 @@ function WechatKeySection(): React.JSX.Element {
           onClick={() => void doImport()}
         >
           {busy === 'import' ? '导入中…' : '导入密钥'}
+        </button>
+        <button
+          type="button"
+          className="st-btn ghost"
+          disabled={busy !== null}
+          onClick={() => void scanDbKey()}
+          title="尝试用可选的「密钥扫描组件」自动取密钥；未安装组件时会提示如何手动导入（本应用不随包分发这类组件）"
+        >
+          {busy === 'scan' ? '尝试中…' : '自动获取密钥（可选组件）'}
         </button>
         <button
           type="button"

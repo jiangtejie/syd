@@ -76,7 +76,7 @@ src/
 │     ├─ lark/                   飞书：client/api/im/contact/notify/tools
 │     ├─ im/                     外部 IM 渠道（飞书长连接、微信 ClawBot）+ 渠道文件
 │     ├─ growth/                 营销增长：collector / warehouse / buzz / remix / publisher / ai
-│     ├─ media/                  图片 .dat 解密、表情、视频缓存
+│     ├─ media/                  图片 .dat 解密、表情、视频缓存、语音 SILK→WAV、密钥推导
 │     ├─ export/                 会话/业务导出
 │     ├─ logging.ts  paths.ts    统一日志、缓存分区与路径策略
 │     └─ keyStoreService.ts      微信密钥（safeStorage）
@@ -96,12 +96,13 @@ src/
 
 ### 4.1 库解密与定位
 
-微信 4.x 库为魔改 SQLCipher，实现见 `services/wechat/decrypt.ts`：
+微信 4.x 库为魔改 SQLCipher。分三层，纯计算与 IO 分离，纯的那层有自检覆盖：
 
-- **页结构**：页 4096，reserve=80（IV 16B + HMAC-SHA512 64B）。页 1 前 16B 为 salt，加密区 `file[16:4016]`，解密后补写 `SQLite format 3\0`；页 N 加密区 `page[0:4016]`，IV 在 `page[4016:4032]`。
-- **密钥派生**：`AES key = PBKDF2-HMAC-SHA512(encKey, salt, iter=256000, dklen=32)`，逐页 AES-256-CBC（无 padding）。
-- **WAL 合并**：解析 WAL 帧（32B 头 + N×(24B 帧头 + 4096B 页)），把「文件头第一周期」的帧解密合并进主库并修正 db size，失败静默回退主库。
-- **明文副本**：解密结果落 `<cache>/db/<name>_<hash>.db`（以「源库路径 + key」的 md5 命名复用；历史目录 `wx-plain` 启动自动并入），只读打开、用完即关。
+- `services/wechat/crypto/sqlcipher.ts`（纯函数）：**页结构** 页 4096、reserve=80（IV 16B + HMAC-SHA512 64B）；页 1 前 16B 为 salt，加密区 `file[16:4016]`，解密后补写 `SQLite format 3\0`；页 N 加密区 `page[0:4016]`，IV 在 `page[4016:4032]`，HMAC 在 `[4032:4096)`。
+- **密钥派生**：`AES key = PBKDF2-HMAC-SHA512(encKey, salt, iter=256000, dklen=32)`，逐页 AES-256-CBC（无 padding）；`verifyPage1` 先验页 1 的 HMAC，密钥不对立即失败（不再白解一整库）。
+- `services/wechat/crypto/wal.ts`（纯函数）：解析 WAL 帧（32B 头 + N×(24B 帧头 + 4096B 页)）。**语义修正**：只有当「WAL 头 salt == 第一帧 salt」时才认为这是**当前日志**（可合并），此时才逐帧校验校验和、只应用到最后一个 commit 帧、按 `nTruncate` 截断；否则说明帧属于旧周期、主库已是最新，**一帧都不合并**。早期按「取头部 salt 连续段」的实现会把旧周期的页盖到新主库上，属于会读出错数据的静默错误 —— 真实数据上 20/20 个微信 WAL 都落在这个分支。
+- `services/wechat/decrypt.ts`（IO）：`verifyWxDbKey` → 流式分页解密（`BATCH_PAGES=128`，不再整库进内存）→ 合并 WAL → 合并后跑一次 `PRAGMA quick_check`，失败即丢弃合并结果回落主库。
+- **明文副本**：落 `<cache>/db/<name>_<hash>.db`（以「源库路径 + key」的 md5 命名复用；历史目录 `wx-plain` 启动自动并入），只读打开、用完即关；写入前后有 `prunePlainDbCache` 按 `wechat.plainCacheMaxMB=3072` / `plainCacheMaxFiles=20` 收敛（防「解密副本把磁盘吃满」）。
 
 缓存分区由 `paths.ts` 统一管理（**禁止硬编码子目录**）：
 `db/` 明文库副本 · `media/<wxid>/` 附件解码产物（ct-media 映射根）· `files/` 渠道接收文件 · `tmp/` 一次性临时 · `export/` 导出产物 · `growth/` 营销素材。
@@ -115,6 +116,10 @@ src/
 - 来源 `registry`（注册表，待探测）/ `import`（导入）/ `manual`（手填）；导入校验 64 位十六进制。
 - 落库：`safeStorage.encryptString` 加密后存 `key_store`；**明文 key 只在主进程内存**。
 - 状态机 `pending → valid / invalid`：`testKey` 以「试开真实库」验证并回写错误原因。
+
+**库密钥自动获取（可选组件，本仓不分发）**：微信 4.x 的库密钥只在微信进程内存里，社区实现靠 koffi + 自研 DLL 读内存 + Ed25519 握手，授权独立。`wechat/keyScan.ts` 只提供**接口 + 明确降级**：组件放 `<userData>/components/key-scan/index.cjs`，导出 `scan(ctx)`（ctx 给 `wxid / dbStoragePath / verify`）；组件只管找候选 key，**校验仍由我们做**（`verifyWxDbKey` 页 1 HMAC），通过才 `importKey(..., 'registry')` 落 safeStorage，随后 `testKey` 试开真实库。未装组件时返回「未安装 + 怎么手动导入」，不伪装成功。设置页按钮「自动获取密钥（可选组件）」。
+
+**图片密钥（另一套密钥）**：图片 .dat 的 V2 用 aes-128-ecb、V3 用整文件 XOR，与库密钥无关，历史上只能手填。`media/imageKeys.ts` 现在能从本机自动推导：扫 `*_t.dat` 缩略图模板（深度 ≤8、最多 64 个）反解 XOR 低字节（自校验 `y == x ^ 0xd9` + 多模板投票），再用 V2 模板密文做一次 AES 试探（解密后必须像图片）确认 AES key。入口 `cs:wx:deriveImageKeys`，设置页「自动推导图片密钥」一键回填；推导失败仍可手填。
 
 ### 4.3 消息读取（`queries.ts` / `content.ts`）
 
@@ -265,7 +270,9 @@ src/
 ## 10. 媒体与文件
 
 - **图片**：`mediaService` + `datDecrypt` —— 定位 `msg/attach` 下 `<md5>.dat`；V1/V2（15B 头 + AES-128-ECB + XOR）、V3（整文件 XOR）；解密后处理 wxgf（HEVC 容器）：优先内嵌 JPEG/PNG，纯 HEVC 交外部 ffmpeg 转首帧；结果写 `media/<wxid>/`，经自定义 `ct-media://` 协议暴露（含路径与文件名强校验）。
-- **表情/视频/语音**：表情解析、视频与语音缓存到 media 分区；语音不做本地转写。
+- **语音**：`media/voice.ts` —— 微信 4.x 把语音 SILK 放在 `db_storage/message/media_*.db` 的 `VoiceInfo` 表（`svr_id / local_id / create_time / voice_data`）。按「消息行自己的 serverId」优先、`local_id + create_time`（按量级自动选秒/毫秒窗口）兜底定位，`silk-wasm` 解码成 PCM → 包 44 字节 WAV 头（24kHz 单声道）→ 落 `media/<wxid>/voices/<id>.wav`。渲染端只在用户点播放时才要音频（IPC `cs:media:voiceWav`），不在打开会话时批量解码。
+  ct-media 协议因此多了**三段布局** `/<wxid>/voices/<id>.wav`（图片/视频仍是两段 `/<wxid>/<md5>_<kind>.<ext>`）；解析规则抽到纯函数 `media/mediaProtocol.ts` 并有自检 —— 早期把 `voices/x.wav` 整体 `encodeURIComponent`，`/` 变 `%2F` 导致整条路径只剩两段被判 403，渲染端只看到「播放失败」；现在这类 URL 由自检直接拦下。
+- **表情/视频**：表情解析、视频缓存到 media 分区。
 - **渠道文件**：`im/channelFiles` 统一归档 + 限额策略 + 管理面板。
 
 ---
@@ -317,14 +324,14 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 域 | 代表通道 | 说明 |
 | --- | --- | --- |
 | `key` | `getStatus/list/importKey/test` | 密钥状态/导入/验证 |
-| `wx` | `connect/getSessions/getMessages/getMessagesSince/getAvatar/contactNames/opsStats/startWatch` | 微信读库、联系人、运营统计、监控 |
+| `wx` | `connect/getSessions/getMessages/getMessagesSince/getAvatar/contactNames/opsStats/startWatch/deriveImageKeys/scanDbKey` | 微信读库、联系人、运营统计、监控、密钥推导/自动获取（可选组件） |
 | `issue` | `list/overview/analyze/analyzeGroup/cancel/state/detail/setStatus/assign/confirmDoubt/groupBadges/mergeDuplicates/archiveStale/clear/clearGroup/listGroup` | 群问题闭环全链路 |
 | `duty` | `status/scripts/scriptSave/scriptRemove/scriptToggle/scriptImport/seedStarters/groups/groupsSet/groupOne/groupSet/replies/feedback/run/preview` | 数字员工：话术库、群开关（批量）、决策记录、手动值班、回放预演 |
 | `team` | `list/save/remove` | 团队客服名单 |
 | `reply` | `overview/stats/getSendStatus/resetCircuit/stopAll` | 发送质量与熔断 |
 | `ai` `agent` | 生成候选、智能体 CRUD | AI 建议 |
 | `wb` | `listChats/searchChats/messages/create/stop/retry/approve/workspace/skills/trustTool/…` | AI 工作台 |
-| `media` | `decryptImage/decryptVideo/resolveEmoji/testImageDecrypt` | 媒体解密 |
+| `media` | `decryptImage/decryptVideo/resolveEmoji/testImageDecrypt/voiceWav` | 媒体解密（`voiceWav`：语音 SILK → WAV） |
 | `files` | `policy/prune/remove/reveal` | 渠道文件管理 |
 | `im` | `list/save/remove/toggle/clawQrPoll` | 外部 IM 渠道 |
 | `feishu` `lark` | `notify/audit/contact/status/test` | 飞书通知与云文档 |
@@ -369,6 +376,8 @@ npm run test:lark     # 飞书同步字段映射（状态往返/跟进人匹配/
 npm run test:digest   # 日报文案（时长文案/空口径/行数上限，纯函数）
 npm run test:send     # 发送前目标唯一性与文本比对（纯函数）
 npm run test:schema   # schema 迁移自检：合成老库上跑三条数据迁移 + 幂等性（不碰真实库）
+npm run test:crypto   # 库解密：合成 SQLCipher 页/WAL 帧，验密钥校验、篡改拒绝、页往返、WAL commit/nTruncate/断帧/跨周期
+npm run test:media-proto # ct-media 路径解析：两段/三段布局、整体编码回归、目录穿越与非法命名
 npm run build         # typecheck + electron-vite 三端构建
 ```
 
@@ -441,8 +450,10 @@ npm run build         # typecheck + electron-vite 三端构建
 - **数字员工的前置条件**：「我方同事」名单不全时会去回同事的话 —— 上线前必须把名单标全（群问题面板的「同事标记」可批量补）。
 - **growth 域无外键/级联**：父子表（素材/拆解/产出/发布结果）目前靠应用层保证，删除路径需自行清理。
 - **约束偏松**：核心表 `NOT NULL` 覆盖率低（靠代码纪律保证），布尔/枚举列无 `CHECK`；`AUTOINCREMENT` 用法不统一（growth 域与审计表用，核心表不用）。
-- **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入。
-- **语音转写**：本地不做 ASR，语音以 `[语音]` 占位参与分析；需要转写走飞书妙记。
+- **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入（图片密钥可从本机模板推导，见 §4.2）。
+- **语音**：已能解码播放（`VoiceInfo` → SILK → WAV，见 §10），但**不做本地 ASR**：语音仍以 `[语音] N″` 占位参与议题分析与数字员工决策；需要转写走飞书妙记。
+- **ct-media 不支持 Range**：协议用 `net.fetch(file://)` 直出整文件，没有 Range 响应头 —— 图片/短视频/几秒语音播放没问题，长音频拖动进度条可能不灵。
+- **库密钥自动获取：接口已就绪，组件未内置**：`keyScan.ts` 的组件协议 + 页 1 校验 + 落库链路已跑通（有探针验证），但「读微信进程内存取 key」那部分依赖第三方 DLL（koffi + `wechat_key_tool.dll`），授权未确认，**不随本仓分发**：没有组件时按钮会明确提示「未安装 + 手动导入」。图片密钥不依赖任何组件，已可本地推导（§4.2）。
 - **HEVC 原图**：纯 HEVC 依赖外部 ffmpeg（设置里配路径）。
 - **LLM 闭环依据**：自动闭环目前不落「依据行号」，不可审计（LLM 只输出状态）。
 - **明细分页**：监控明细为主进程限量回传 + 归档收敛，未做服务端游标分页。

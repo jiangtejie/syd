@@ -2,6 +2,8 @@ import { ipcMain } from 'electron'
 import { decryptImage, decryptVideo, testImageDecrypt } from '../services/media/mediaService'
 import type { DecryptImageOptions, DecryptVideoOptions } from '../services/media/mediaService'
 import { resolveEmojiLocal, type ResolveEmojiInput } from '../services/media/emojiService'
+import { getVoiceWav } from '../services/media/voice'
+import { getDecryptedKey } from '../services/keyStoreService'
 
 /** 图片/视频 .dat 解密 IPC（M3）：渲染进程传 wxid + md5 → 返回可访问的 ct-media:// URL */
 export function registerMediaHandlers(): void {
@@ -26,6 +28,26 @@ export function registerMediaHandlers(): void {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
+  // 语音消息（localType 34）：VoiceInfo 取 SILK → silk-wasm 解码 → 缓存 WAV → ct-media URL
+  // 密钥只在主进程内存里取，渲染端只拿 wxid + 定位字段
+  ipcMain.handle(
+    'cs:media:voiceWav',
+    async (
+      _e,
+      wxid: string,
+      opts?: { serverId?: string; localId?: number; createTime?: number }
+    ) => {
+      if (!wxid || typeof wxid !== 'string') return { ok: false as const, error: '缺少账号' }
+      const hexKey = getDecryptedKey(wxid)
+      if (!hexKey) return { ok: false as const, error: '未配置数据库密钥，请先在设置里导入' }
+      try {
+        return await getVoiceWav({ wxid, hexKey, ...(opts || {}) })
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
+
   // 动画/商店表情本地化：cdn/模板 URL 下载缓存 → ct-media 本地地址（渲染端裂图后重试用）
   ipcMain.handle('cs:media:resolveEmoji', async (_e, wxid: string, input: ResolveEmojiInput) => {
     if (!wxid || typeof wxid !== 'string') return { ok: false as const, error: '缺少账号' }

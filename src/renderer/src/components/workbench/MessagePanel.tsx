@@ -164,6 +164,74 @@ function chatRecordText(item: ChatRecordItem): string {
  */
 
 /** 头像：有 URL（http/data:image）用 img，加载失败/无 URL 时用首字占位；onUrlError 供外层换本地兜底 */
+/**
+ * 语音消息（localType 34）：点击才向主进程要 WAV（VoiceInfo 取 SILK → 解码 → 缓存），
+ * 避免打开聊天页就对整屏语音做解码。
+ */
+function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
+  const [stage, setStage] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  const [url, setUrl] = useState('')
+  const [error, setError] = useState('')
+  const seconds = message.voiceDuration
+    ? Math.max(1, Math.round(message.voiceDuration / 1000))
+    : undefined
+
+  const load = (): void => {
+    if (stage === 'loading' || stage === 'ready') return
+    const wxid = useWorkbenchStore.getState().wxid
+    if (!wxid) {
+      setStage('failed')
+      setError('未选择账号')
+      return
+    }
+    setStage('loading')
+    window.api?.cs?.media
+      ?.voiceWav(wxid, {
+        serverId: message.serverId,
+        localId: message.localId,
+        createTime: message.createTime
+      })
+      .then((r) => {
+        if (r?.ok && r.url) {
+          setUrl(r.url)
+          setStage('ready')
+        } else {
+          setError(r?.error || '语音解码失败')
+          setStage('failed')
+        }
+      })
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e))
+        setStage('failed')
+      })
+  }
+
+  if (stage === 'ready' && url) {
+    return (
+      <div className="wb-msg-voice">
+        <audio className="wb-msg-voice-audio" src={url} controls autoPlay />
+        {seconds !== undefined && <span className="wb-msg-voice-dur">{seconds}″</span>}
+      </div>
+    )
+  }
+  return (
+    <div className="wb-msg-voice">
+      <button
+        type="button"
+        className="wb-msg-voice-btn"
+        onClick={load}
+        disabled={stage === 'loading'}
+        title={stage === 'failed' ? error : '解码并播放'}
+      >
+        <span className="wb-msg-voice-icon">{stage === 'loading' ? '…' : '▶'}</span>
+        {stage === 'loading' ? '解码中' : stage === 'failed' ? '播放失败' : '语音'}
+      </button>
+      {seconds !== undefined && <span className="wb-msg-voice-dur">{seconds}″</span>}
+      {stage === 'failed' && error && <span className="wb-msg-voice-err">{error}</span>}
+    </div>
+  )
+}
+
 function Avatar({
   name,
   url,
@@ -226,6 +294,7 @@ const MessageBubble = memo(function MessageBubble({
   const isImage = message.localType === 3
   const isEmoji = message.localType === 47 && !!message.emojiCdnUrl
   const isVideo = message.localType === 43
+  const isVoice = message.localType === 34
   const isChatHistory = message.localType === 49 && !!message.chatRecordList?.length
   const isFile = message.localType === 49 && !!message.fileName && !isChatHistory
   const isRedEnvelope = message.localType === 49 && !!message.redEnvelopeSendId
@@ -462,6 +531,8 @@ const MessageBubble = memo(function MessageBubble({
                 <span className="wb-msg-hongbao-status">未领取</span>
               )}
             </div>
+          ) : isVoice ? (
+            <VoiceBubble message={message} />
           ) : (
             <span className="wb-msg-text">{bubbleText}</span>
           )}
