@@ -91,8 +91,19 @@ const api: PreloadApi = {
         ipcRenderer.invoke('cs:wx:deriveImageKeys', wxid, knownAesKey),
       scanDbKey: (
         wxid: string
-      ): Promise<{ ok: boolean; installed?: boolean; valid?: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:wx:scanDbKey', wxid),
+      ): Promise<{
+        ok: boolean
+        installed?: boolean
+        valid?: boolean
+        provider?: 'component' | 'externalTool' | 'localArtifacts'
+        attempts: Array<{
+          id: 'component' | 'externalTool' | 'localArtifacts'
+          label: string
+          status: 'ok' | 'candidates' | 'empty' | 'skipped' | 'error'
+          detail: string
+        }>
+        error?: string
+      }> => ipcRenderer.invoke('cs:wx:scanDbKey', wxid),
       onDbChanged: (callback: (payload: DbChangedPayload) => void) => {
         const listener = (_e: Electron.IpcRendererEvent, payload: DbChangedPayload): void =>
           callback(payload)

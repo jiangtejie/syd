@@ -73,24 +73,33 @@ export function registerWechatHandlers(): void {
   })
 
   /**
-   * 库密钥自动获取（可选组件）：组件未安装时返回明确的「怎么装/怎么退回手填」，
-   * 拿到候选 key 必须先过页 1 校验才落库（见 wechat/keyScan.ts）。
+   * 库密钥自动获取（多来源：可选组件 / 外部工具 / 本地文件）。
+   * 任何候选都必须先过页 1 校验才落库；每个来源的结果照实回传，界面能说清「到底卡在哪」。
    */
   ipcMain.handle('cs:wx:scanDbKey', async (_e, wxid: string) => {
-    if (!wxid) return { ok: false as const, error: '缺少账号' }
+    if (!wxid) return { ok: false as const, error: '缺少账号', attempts: [] }
     const info = getKeyStatus(wxid)
     const scanned = await scanWeChatKey({ wxid, dbPath: info.dbPath ?? '' })
     if (!scanned.ok || !scanned.key) {
-      return { ok: false as const, installed: scanned.installed ?? false, error: scanned.error }
+      return {
+        ok: false as const,
+        installed: scanned.installed ?? false,
+        error: scanned.error,
+        attempts: scanned.attempts
+      }
     }
     const saved = importKey(wxid, scanned.key, 'registry', info.dbPath ?? '')
-    if (!saved.success) return { ok: false as const, installed: true, error: saved.error }
+    if (!saved.success) {
+      return { ok: false as const, installed: true, error: saved.error, attempts: scanned.attempts }
+    }
     const tested = testKey(wxid)
     return {
       ok: true as const,
       installed: true,
+      provider: scanned.provider,
       valid: tested.success,
-      error: tested.success ? undefined : tested.error
+      error: tested.success ? undefined : tested.error,
+      attempts: scanned.attempts
     }
   })
 

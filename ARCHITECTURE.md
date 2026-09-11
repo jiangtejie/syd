@@ -120,7 +120,21 @@ src/
 - 落库：`safeStorage.encryptString` 加密后存 `key_store`；**明文 key 只在主进程内存**。
 - 状态机 `pending → valid / invalid`：`testKey` 以「试开真实库」验证并回写错误原因。
 
-**库密钥自动获取（可选组件，本仓不分发）**：微信 4.x 的库密钥只在微信进程内存里，社区实现靠 koffi + 自研 DLL 读内存 + Ed25519 握手，授权独立。`wechat/keyScan.ts` 只提供**接口 + 明确降级**：组件放 `<userData>/components/key-scan/index.cjs`，导出 `scan(ctx)`（ctx 给 `wxid / dbStoragePath / verify`）；组件只管找候选 key，**校验仍由我们做**（`verifyWxDbKey` 页 1 HMAC），通过才 `importKey(..., 'registry')` 落 safeStorage，随后 `testKey` 试开真实库。未装组件时返回「未安装 + 怎么手动导入」，不伪装成功。设置页按钮「自动获取密钥（可选组件）」。
+**库密钥自动获取（三来源 + 统一校验，`wechat/keyScan.ts` + 纯逻辑 `keyScanPure.ts`）**：
+微信 4.x 的库密钥只在微信进程内存里，读内存需要原生组件（社区实现是 koffi + 自研 DLL + Ed25519 握手），
+授权不明且随微信版本漂移 —— 本仓**不分发**这类组件，也不内置内存扫描，改为提供三条稳健来源：
+
+1. `component`：用户自备的已授权组件（`<userData>/components/key-scan/index.cjs` 导出 `scan(ctx)`，ctx 给 `wxid / dbPath / dbStoragePath / verify`）；
+2. `externalTool`：用户自备的命令行工具（把 64 位十六进制打到 stdout/stderr 即可，支持 `{{wxid}}/{{dbPath}}/{{dbStorage}}` 占位符、可配超时；
+   **`.cmd/.bat` 会自动经 `cmd.exe /d /s /c` 执行并按 Windows 规则转义参数** —— 实测 `execFile` 直接跑 `.cmd` 会 `spawn EINVAL`，而很多 CLI 装出来就是 `.cmd`）；
+3. `localArtifacts`：在搜索路径（默认 userData + 微信数据根 + 账号目录，可配）里找**已经被别的工具导出过**的密钥（txt/json/ini/log…，深度≤4、单文件≤2MB、≤400 个文件）。
+
+**唯一安全边界**：任何来源的候选都必须过 `verifyWxDbKey`（页 1 HMAC）才 `importKey(..., 'registry')` 落 safeStorage，随后 `testKey` 试开真实库；
+每个候选要跑一次 256000 轮 PBKDF2，所以候选提取有硬上限（单次 20 个）。三个来源的结果都会照实回传（界面逐条显示「卡在哪一步」），
+全部失败时明确提示「最稳妥的办法仍是手动导入」。组件文件**换掉即生效**（加载前清 require 缓存，不必重启）。
+
+> 为什么不做内存扫描：页 1 校验对每个候选都要一次 PBKDF2-SHA512(256000)，全内存逐字节扫描在算力上不可行；
+> 公开实现能跑得快靠的是与 DLL 配合的定位/握手，这既无法验证其正确性，也有授权问题。要接这类工具，走上面的 `externalTool` 即可。
 
 **图片密钥（另一套密钥）**：图片 .dat 的 V2 用 aes-128-ecb、V3 用整文件 XOR，与库密钥无关，历史上只能手填。`media/imageKeys.ts` 现在能从本机自动推导：扫 `*_t.dat` 缩略图模板（深度 ≤8、最多 64 个）反解 XOR 低字节（自校验 `y == x ^ 0xd9` + 多模板投票），再用 V2 模板密文做一次 AES 试探（解密后必须像图片）确认 AES key。入口 `cs:wx:deriveImageKeys`，设置页「自动推导图片密钥」一键回填；推导失败仍可手填。
 
@@ -382,6 +396,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
 | 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
 | 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.decrypt.legacy`（回退旧内存整块路径）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |
+| 密钥获取 | `wechat.keyTool.command`、`wechat.keyTool.args`、`wechat.keyTool.timeoutMs`（30000）、`wechat.keySearchPaths` |
 | 语音转写 | `asr.whisperPath`、`asr.modelPath`、`asr.language`（默认 zh）、`asr.threads`（0=whisper 默认）、`asr.timeoutMs`（120000） |
 | 媒体缓存保留 | `wechat.mediaCacheAutoClean`（默认开）、`wechat.mediaCacheKeepDays`（180）、`wechat.mediaCacheMaxMB`（8192）、`wechat.mediaCacheMaxFiles`（50000）、`wechat.report.archiveMigrated`（迁移完成标记）、`wechat.report.pathRepairCursor`（归档路径修复游标） |
 
@@ -481,7 +496,8 @@ npm run build         # typecheck + electron-vite 三端构建
 - **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入（图片密钥可从本机模板推导，见 §4.2）。
 - **语音**：能解码播放（`VoiceInfo` → SILK → WAV），也能**本地转写**（whisper.cpp，见 §10）—— 但转写是**按需触发**（点气泡上的「转写」），不做批量回填；未转写的语音在分析与数字员工里仍是 `[语音] N″` 占位。
 - **ct-media 不支持 Range**：协议用 `net.fetch(file://)` 直出整文件，没有 Range 响应头 —— 图片/短视频/几秒语音播放没问题，长音频拖动进度条可能不灵。
-- **库密钥自动获取：接口已就绪，组件未内置**：`keyScan.ts` 的组件协议 + 页 1 校验 + 落库链路已跑通（有探针验证），但「读微信进程内存取 key」那部分依赖第三方 DLL（koffi + `wechat_key_tool.dll`），授权未确认，**不随本仓分发**：没有组件时按钮会明确提示「未安装 + 手动导入」。图片密钥不依赖任何组件，已可本地推导（§4.2）。
+- **库密钥自动获取：三来源可用，但“内存扫描”不做**：组件 / 外部工具 / 本地文件三条来源都已落地并逐条验证（含错误候选被页 1 HMAC 拒绝、命令不存在、工具输出无密钥、组件抛异常、`.cmd` 包装器）。真正的“从微信进程内存里读出 key”仍需第三方原生组件（授权不明），本仓不分发也不内置；页 1 校验每候选一次 PBKDF2(256000) 的现实成本也让盲扫内存不可行（§4.2）。
+- **`localArtifacts` 的命中率取决于机器上有没有别的工具导出过 key**：它不猜、不破解，只在配置的路径里找现成的 64 位十六进制并验证。
 - **HEVC 原图**：纯 HEVC 依赖外部 ffmpeg（设置里配路径）。
 - **明文副本的「新鲜度」仍是启发式**：靠 mtime + size 比较（含 `-wal`），没有把「解密时的源签名」存成 sidecar。极端情形（用保留 mtime 的方式还原/替换源库、时钟回拨）可能被误判为新鲜。已覆盖的替代判据是逐页 HMAC（解密时）与打开失败自愈（打开时）。
 - **副本能打开但内部页被外部改坏**：只在「打开失败」时自愈；若副本仍能打开、只是某些页坏了，要等该页被查询才会暴露（微信库是只读副本，正常路径不会发生；逐页校验已挡住产生坏副本的主因——撕裂读）。

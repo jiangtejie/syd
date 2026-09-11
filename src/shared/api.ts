@@ -141,9 +141,21 @@ export interface CsApi {
      * - installed=false 表示组件没装（预期状态），渲染端应引导「手动导入」而不是报错；
      * - ok=true 表示候选密钥已通过页 1 校验并落库。
      */
-    scanDbKey: (
-      wxid: string
-    ) => Promise<{ ok: boolean; installed?: boolean; valid?: boolean; error?: string }>
+    scanDbKey: (wxid: string) => Promise<{
+      ok: boolean
+      installed?: boolean
+      valid?: boolean
+      /** 命中的来源 */
+      provider?: 'component' | 'externalTool' | 'localArtifacts'
+      /** 每个来源的结果（界面照实展示，说明卡在哪一步） */
+      attempts: Array<{
+        id: 'component' | 'externalTool' | 'localArtifacts'
+        label: string
+        status: 'ok' | 'candidates' | 'empty' | 'skipped' | 'error'
+        detail: string
+      }>
+      error?: string
+    }>
     onDbChanged: (callback: (payload: DbChangedPayload) => void) => () => void
   }
   ai: {
