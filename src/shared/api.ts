@@ -1,5 +1,5 @@
 import type { MonitorData } from './monitorMetrics'
-import type { LarkBaseStatus, LarkPullResult, LarkSyncOut } from './types'
+import type { LarkBaseStatus, LarkDigestConfig, LarkPullResult, LarkSyncOut } from './types'
 import type {
   FeedbackAnalysisState,
   FeedbackIssue,
@@ -558,6 +558,23 @@ export interface CsApi {
     >
     setEnabled: (on: boolean) => Promise<{ ok: boolean; error?: string }>
     setEvent: (evt: string, on: boolean) => Promise<{ ok: boolean; error?: string }>
+    /** 每日日报配置与手动发送 */
+    digestGet: () => Promise<{ ok: boolean; config?: LarkDigestConfig; error?: string }>
+    digestSet: (patch: {
+      enabled?: boolean
+      time?: string
+      includeAgent?: boolean
+    }) => Promise<{ ok: boolean; config?: LarkDigestConfig; error?: string }>
+    digestSend: (
+      wxid: string,
+      markSent?: boolean
+    ) => Promise<{
+      ok: boolean
+      sent: number
+      text: string
+      error?: string
+      config?: LarkDigestConfig
+    }>
     addTarget: (input: {
       kind: 'chat' | 'user'
       id: string

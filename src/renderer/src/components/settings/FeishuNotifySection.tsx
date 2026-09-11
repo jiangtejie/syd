@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { SwitchRow } from './ui'
 import { ContactPicker } from './ContactPicker'
 import { toast } from '../../stores/toast'
+import { useWorkbenchStore } from '../../stores/workbench'
 
 /**
  * 飞书通知(告警推送)配置:目标(群/个人)、事件开关、测试发送与最近记录。
@@ -19,6 +20,14 @@ interface NotifyConfig {
   targets: NotifyTarget[]
   events: string[]
   dailyLimit: number
+}
+
+interface DigestConfig {
+  enabled: boolean
+  time: string
+  includeAgent: boolean
+  lastDate: string
+  targets: number
 }
 
 interface RecentRow {
@@ -50,6 +59,10 @@ export function FeishuNotifySection(): React.JSX.Element {
   const [email, setEmail] = useState('')
   const [resolved, setResolved] = useState<{ openId: string; name: string } | null>(null)
   const [chats, setChats] = useState<Array<{ chatId: string; name: string }> | null>(null)
+  /** 每日日报（独立开关，共用上面的接收目标） */
+  const [digest, setDigest] = useState<DigestConfig | null>(null)
+  const [digestPreview, setDigestPreview] = useState('')
+  const [digestBusy, setDigestBusy] = useState('')
   const [chatPick, setChatPick] = useState('')
   const [err, setErr] = useState('')
 
@@ -87,11 +100,49 @@ export function FeishuNotifySection(): React.JSX.Element {
         if (alive) applyRes(res)
       })
       .catch(() => undefined)
+    void api
+      ?.digestGet()
+      .then((res) => {
+        if (alive && res?.ok && res.config) setDigest(res.config)
+      })
+      .catch(() => undefined)
     return () => {
       alive = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅首次挂载读取一次
   }, [])
+
+  const patchDigest = async (patch: {
+    enabled?: boolean
+    time?: string
+    includeAgent?: boolean
+  }): Promise<void> => {
+    const r = await api?.digestSet(patch).catch(() => null)
+    if (!r?.ok) {
+      toast.error(r?.error || '保存失败')
+      if (r?.config) setDigest(r.config)
+      return
+    }
+    if (r.config) setDigest(r.config)
+  }
+
+  const sendDigest = async (): Promise<void> => {
+    const wxid = useWorkbenchStore.getState().wxid
+    setDigestBusy('send')
+    try {
+      const r = await api?.digestSend(wxid ?? '', false).catch(() => null)
+      if (!r) {
+        toast.error('发送失败')
+        return
+      }
+      if (r.config) setDigest(r.config)
+      setDigestPreview(r.text ?? '')
+      if (!r.ok) toast.error(r.error || '发送失败（先在下面添加接收目标）')
+      else toast.success(`日报已发送到 ${r.sent} 个目标`)
+    } finally {
+      setDigestBusy('')
+    }
+  }
 
   const onToggleEnabled = async (on: boolean): Promise<void> => {
     const r = await api?.setEnabled(on).catch(() => null)
@@ -252,6 +303,54 @@ export function FeishuNotifySection(): React.JSX.Element {
         checked={events.includes('issue_escalate')}
         onChange={(v) => void onToggleEvent('issue_escalate', v)}
       />
+
+      {/* 每日日报：与实时告警分开开关（有人只想要日报），共用上面的接收目标 */}
+      <div className="st-label" style={{ marginTop: 12 }}>
+        每日日报
+      </div>
+      <SwitchRow
+        label="每天定时推送日报"
+        desc="到点把「昨日新增/已解决 · 待处理 · 无人应 · 积压最久」推到上面的接收目标；与实时告警互不影响，也没有待办时照发一条（用来确认定时任务没死）。"
+        checked={!!digest?.enabled}
+        onChange={(v) => void patchDigest({ enabled: v })}
+      />
+      <div className="st-actions">
+        <span className="st-hint">推送时间</span>
+        <input
+          className="st-input"
+          style={{ maxWidth: 110 }}
+          value={digest?.time ?? '09:00'}
+          placeholder="09:00"
+          onChange={(e) => setDigest((d) => (d ? { ...d, time: e.target.value } : d))}
+          onBlur={(e) => void patchDigest({ time: e.target.value })}
+          title="24 小时制，HH:mm"
+        />
+        <button
+          type="button"
+          className="st-btn ghost"
+          disabled={digestBusy !== ''}
+          onClick={() => void sendDigest()}
+        >
+          {digestBusy === 'send' ? '发送中…' : '立即发一条看看'}
+        </button>
+      </div>
+      <SwitchRow
+        label="日报里附数字员工统计"
+        desc="附一行「影子模式：命中话术 / 转人工 / 未命中 / 话术覆盖率」，方便判断话术该补哪些。"
+        checked={digest?.includeAgent ?? true}
+        onChange={(v) => void patchDigest({ includeAgent: v })}
+      />
+      {digest && digest.targets === 0 && (
+        <div className="st-hint">
+          ⚠ 还没有接收目标：日报发不出去，请先在上面「接收目标」里加一个群或同事。
+        </div>
+      )}
+      {digest?.lastDate && <div className="st-hint">上次发送：{digest.lastDate}</div>}
+      {digestPreview && (
+        <pre className="st-hint" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
+          {digestPreview}
+        </pre>
+      )}
 
       <div className="st-label" style={{ marginTop: 8 }}>
         接收目标({config?.targets.length ?? 0})

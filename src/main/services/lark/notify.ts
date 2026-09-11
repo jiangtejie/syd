@@ -27,7 +27,7 @@ const KEY_DAILY = 'feishu.notify.dailyLimit'
 const EVENT_MIN_GAP_MS = 60_000
 const MAX_TARGETS = 20
 
-export type FeishuNotifyEvent = 'issue_new' | 'issue_escalate'
+export type FeishuNotifyEvent = 'issue_new' | 'issue_escalate' | 'issue_digest'
 
 export interface FeishuNotifyTarget {
   kind: 'chat' | 'user'
@@ -71,6 +71,7 @@ function readEvents(): FeishuNotifyEvent[] {
   const out: FeishuNotifyEvent[] = []
   if (raw.includes('issue_new')) out.push('issue_new')
   if (raw.includes('issue_escalate')) out.push('issue_escalate')
+  if (raw.includes('issue_digest')) out.push('issue_digest')
   return out
 }
 
@@ -246,6 +247,22 @@ export async function notifyIssueAlert(input: {
     .join('_')}`
   const r = await sendToTargets(text, `notify_${input.kind}`, key, input.kind)
   if (r.sent > 0) log.info(`已推送 ${input.kind} n=${input.issues.length} 目标=${r.sent}`)
+}
+
+/**
+ * 发送日报（每日定时推送用）。
+ * 与告警不同：日报有**自己的开关**（lark.digest.enabled），不受 feishu.notify.enabled / events 影响 ——
+ * 有人只想要每天一份日报、不要实时告警；但接收目标、日限额与审计是共用的。
+ */
+export async function sendDigestText(
+  text: string,
+  idempotencyKey: string
+): Promise<{ ok: boolean; sent: number; error?: string }> {
+  const r = await sendToTargets(text, 'digest', idempotencyKey)
+  if (r.sent > 0) log.info(`已推送日报 目标=${r.sent}`)
+  if (r.sent === 0)
+    return { ok: false, sent: 0, error: r.error ?? '发送失败(请检查接收目标与权限)' }
+  return { ok: true, sent: r.sent }
 }
 
 /** 最近发送记录(设置页展示) */

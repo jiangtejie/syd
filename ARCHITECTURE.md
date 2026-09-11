@@ -344,6 +344,7 @@ npm run lint          # ESLint（Prettier 规则内含）
 npm run test:feedback # 跟进判定「回复归属」+ 议题同一性判据 回归自检（真实数据标定）
 npm run test:matcher  # 数字员工话术判定（真实群原话当夹具）
 npm run test:lark     # 飞书同步字段映射（状态往返/跟进人匹配/冲突比对，纯函数）
+npm run test:digest   # 日报文案（时长文案/空口径/行数上限，纯函数）
 npm run test:schema   # schema 迁移自检：合成老库上跑三条数据迁移 + 幂等性（不碰真实库）
 npm run build         # typecheck + electron-vite 三端构建
 ```
@@ -403,7 +404,11 @@ npm run build         # typecheck + electron-vite 三端构建
 **影子记录推送**：`syncRepliesOut` 把 `agent_reply` 的判定/意图/拟回复/风险/人工反馈推到「数字员工回复」表，
 与议题同步同样的幂等策略（映射表 + hash 跳过）；触发消息默认截断 120 字。
 
-**未做**：卡片交互（采纳/驳回/审批）、日报推送、飞书侧改动「人工反馈」回写本地。
+**每日日报**（`services/feedback/digest.ts` + `digestText.ts`）：挂在既有 60s tick 上「到点且当天未发」才发，
+独立开关（`lark.digest.*`）但共用飞书通知的接收目标与日限额；文案渲染是纯函数，
+`npm run test:digest` 钉死时长文案、空口径不出现、空日报兜底、行数上限（手机可读）。
+
+**未做**：卡片交互（采纳/驳回/审批）、飞书侧改动「人工反馈」回写本地。
 
 ## 18. 待完善与已知边界
 

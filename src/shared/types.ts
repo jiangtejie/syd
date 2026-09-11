@@ -882,3 +882,16 @@ export interface LarkPullResult {
   unmatched: number
   at: number
 }
+
+/** 每日日报配置（设置页「飞书通知 → 每日日报」） */
+export interface LarkDigestConfig {
+  enabled: boolean
+  /** HH:mm */
+  time: string
+  /** 是否附上数字员工（影子）昨日统计 */
+  includeAgent: boolean
+  /** 上次成功发送的日期 YYYY-MM-DD */
+  lastDate: string
+  /** 接收目标数（复用飞书通知的目标） */
+  targets: number
+}

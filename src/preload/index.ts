@@ -6,6 +6,7 @@ import type {
   ChatSessionItem,
   FeedbackAnalysisState,
   LarkBaseStatus,
+  LarkDigestConfig,
   LarkPullResult,
   LarkSyncOut,
   FeedbackIssue,
@@ -633,6 +634,25 @@ const api: PreloadApi = {
         ipcRenderer.invoke('cs:feishu:notify:setEnabled', on),
       setEvent: (evt: string, on: boolean): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:feishu:notify:setEvent', evt, on),
+      // ── 每日日报（与实时告警分开开关，共用接收目标）──
+      digestGet: (): Promise<{ ok: boolean; config?: LarkDigestConfig; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:digest:get'),
+      digestSet: (patch: {
+        enabled?: boolean
+        time?: string
+        includeAgent?: boolean
+      }): Promise<{ ok: boolean; config?: LarkDigestConfig; error?: string }> =>
+        ipcRenderer.invoke('cs:feishu:digest:set', patch),
+      digestSend: (
+        wxid: string,
+        markSent?: boolean
+      ): Promise<{
+        ok: boolean
+        sent: number
+        text: string
+        error?: string
+        config?: LarkDigestConfig
+      }> => ipcRenderer.invoke('cs:feishu:digest:send', wxid, markSent),
       addTarget: (input: {
         kind: 'chat' | 'user'
         id: string

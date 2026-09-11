@@ -9,6 +9,7 @@ import {
   setFeishuNotifyEvent,
   type FeishuNotifyEvent
 } from '../services/lark/notify'
+import { getDigestConfig, sendDigestNow, setDigestConfig } from '../services/feedback/digest'
 import { listBotChats, resolveOpenIdByEmail } from '../services/lark/im'
 import { getContactScope, listDepartmentUsers, listDepartments } from '../services/lark/contact'
 import { larkConfigStatus } from '../services/lark/client'
@@ -29,6 +30,45 @@ export function registerFeishuNotifyHandlers(): void {
       }
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '读取飞书通知配置失败' }
+    }
+  })
+
+  // ── 每日日报（与实时告警分开开关，共用接收目标）──
+  ipcMain.handle('cs:feishu:digest:get', () => {
+    try {
+      return { ok: true as const, config: getDigestConfig() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '读取日报配置失败' }
+    }
+  })
+
+  ipcMain.handle(
+    'cs:feishu:digest:set',
+    (_e, patch: { enabled?: boolean; time?: string; includeAgent?: boolean } = {}) => {
+      try {
+        const r = setDigestConfig(patch)
+        return r.ok
+          ? { ok: true as const, config: r.config }
+          : { ok: false as const, error: r.error, config: r.config }
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : '保存失败' }
+      }
+    }
+  )
+
+  /** 立即发一条（设置页预览）：markSent=false 不占用「今天已发」标记，到点仍会正常发 */
+  ipcMain.handle('cs:feishu:digest:send', async (_e, wxid: string, markSent?: boolean) => {
+    if (!wxid) return { ok: false as const, error: '缺少账号（同步需要账号作用域）' }
+    try {
+      const r = await sendDigestNow(wxid, { markSent: markSent === true })
+      return { ...r, config: getDigestConfig() }
+    } catch (e) {
+      return {
+        ok: false as const,
+        sent: 0,
+        text: '',
+        error: e instanceof Error ? e.message : '发送失败'
+      }
     }
   })
 
