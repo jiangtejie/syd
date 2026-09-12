@@ -192,6 +192,14 @@ const SETTINGS_TAB_KEYS: readonly SettingsTab[] = [
 /** 记住上次所选 Tab（localStorage，首次进入默认「微信数据」） */
 const SETTINGS_TAB_KEY = 'cs.settingsTab'
 
+/** 同步历史里的 kind → 中文（证据明细是新增的一类，别只显示英文） */
+const KIND_LABEL: Record<string, string> = {
+  issue: '议题',
+  reply: '影子回复',
+  evidence: '证据明细',
+  pull: '拉取同事改动'
+}
+
 function SettingsPage(): React.JSX.Element {
   const [tab, setTab] = useState<SettingsTab>(() => {
     const saved = localStorage.getItem(SETTINGS_TAB_KEY)
@@ -225,6 +233,10 @@ function SettingsPage(): React.JSX.Element {
   const [baseFieldMap, setBaseFieldMap] = useState<Record<string, string>>({})
   /** 已配置时是否展开"配置类"按钮(预览/执行并建表/认领),避免与日常动作挤在一起 */
   const [baseReconfig, setBaseReconfig] = useState(false)
+  /** 证据明细同步:三个上限的本地编辑值(保存后由 baseStatus.evidence 回读) */
+  const [evDays, setEvDays] = useState('')
+  const [evMax, setEvMax] = useState('')
+  const [evChars, setEvChars] = useState('')
   const wxid = useWorkbenchStore((s) => s.wxid)
   /** 飞书凭证状态刷新计数(保存配置后 +1 重新读取) */
   const [larkReload, setLarkReload] = useState(0)
@@ -258,6 +270,12 @@ function SettingsPage(): React.JSX.Element {
         setBaseStatus(res.status)
         setBaseLink((cur) => cur || res.status?.link || '')
         if (res.status.fieldMap) setBaseFieldMap(res.status.fieldMap)
+        const ev = res.status.evidence
+        if (ev) {
+          setEvDays((cur) => cur || String(ev.days))
+          setEvMax((cur) => cur || String(ev.maxPerIssue))
+          setEvChars((cur) => cur || String(ev.maxChars))
+        }
       })
       .catch(() => undefined)
     return () => {
@@ -600,6 +618,11 @@ function SettingsPage(): React.JSX.Element {
                     `影子记录：新增 ${res.replies.created} · 更新 ${res.replies.updated} · 跳过 ${res.replies.skipped}`
                   ]
                 : []),
+              ...(res.evidence && !res.evidence.error
+                ? [
+                    `证据明细：新增 ${res.evidence.created} · 更新 ${res.evidence.updated} · 跳过 ${res.evidence.skipped}${res.evidence.failed ? ` · 失败 ${res.evidence.failed}` : ''}`
+                  ]
+                : []),
               ...(r.error ? [r.error] : []),
               ...(pulled && !pulled.ok && pulled.error ? [pulled.error] : [])
             ]
@@ -646,6 +669,83 @@ function SettingsPage(): React.JSX.Element {
     const res = await api.baseConfig(patch)
     if (res.status) setBaseStatus(res.status)
     if (!res.ok) setBaseNotes({ ok: false, lines: [res.error ?? '保存失败'] })
+  }
+
+  /** 证据明细:开关 + 三个上限(天数 / 每议题条数 / 每条字数) */
+  const patchBaseEvidence = async (patch: {
+    enabled?: boolean
+    days?: number
+    maxPerIssue?: number
+    maxChars?: number
+  }): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseEvidence) return
+    setBaseBusy('ev')
+    setBaseNotes(null)
+    try {
+      const res = await api.baseEvidence(patch)
+      if (res.status) setBaseStatus(res.status)
+      if (res.evidence) {
+        setEvDays(String(res.evidence.days))
+        setEvMax(String(res.evidence.maxPerIssue))
+        setEvChars(String(res.evidence.maxChars))
+      }
+      if (!res.ok) setBaseNotes({ ok: false, lines: [res.error ?? '保存证据配置失败'] })
+      else if (patch.enabled === true && !res.evidence?.enabled) {
+        setBaseNotes({ ok: false, lines: ['开关未生效,请重试'] })
+      }
+    } finally {
+      setBaseBusy('')
+    }
+  }
+
+  /** 创建/校验「议题证据」子表(含尝试建立关联字段) */
+  const setupBaseEvidence = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseEvidenceSetup) return
+    setBaseBusy('evsetup')
+    setBaseNotes(null)
+    try {
+      const res = await api.baseEvidenceSetup()
+      if (res.status) setBaseStatus(res.status)
+      setBaseNotes({
+        ok: !!res.ok,
+        lines: res.ok
+          ? [
+              res.created ? '已新建「议题证据」子表' : '「议题证据」子表已存在',
+              (res.fieldsAdded ?? []).length > 0
+                ? `补齐字段:${(res.fieldsAdded ?? []).join('、')}`
+                : '字段已齐',
+              res.linkOk
+                ? '已建立「关联议题」关联字段:点开议题即可看到证据明细'
+                : '未建立关联字段(不影响同步):可在证据表按「议题ID」分组查看',
+              ...(res.note ? [res.note] : [])
+            ]
+          : [res.error ?? '创建证据表失败']
+      })
+    } finally {
+      setBaseBusy('')
+    }
+  }
+
+  /** 清理孤儿证据行(议题已删除、远程行残留) */
+  const cleanBaseEvidence = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseEvidenceClean) return
+    setBaseBusy('evclean')
+    setBaseNotes(null)
+    try {
+      const res = await api.baseEvidenceClean()
+      if (res.status) setBaseStatus(res.status)
+      setBaseNotes({
+        ok: !!res.ok,
+        lines: res.ok
+          ? [res.removed > 0 ? `已清理 ${res.removed} 行孤儿证据` : '没有孤儿行']
+          : [res.error ?? '清理失败']
+      })
+    } finally {
+      setBaseBusy('')
+    }
   }
 
   /** 切换设置 Tab 并记忆选择（下次进入直接定位） */
@@ -1282,11 +1382,14 @@ function SettingsPage(): React.JSX.Element {
               onChange={(v) => void patchBaseConfig({ enabled: v })}
             />
             <SwitchRow
-              label="推送聊天原文"
-              desc="默认关闭：只推标题与摘要。打开后会把证据原文一并写入多维表格（注意敏感信息外发）"
+              label="影子记录附带更长的聊天原文"
+              desc="默认关闭。打开后「数字员工回复」表的「触发消息」列会带上更长上下文（120 → 500 字），便于同事对照话术；只影响这一列，不等于推送证据明细（见下方「议题证据明细」卡片）"
               checked={!!baseStatus?.rawEvidence}
               onChange={(v) => void patchBaseConfig({ rawEvidence: v })}
             />
+            <div className="st-hint">
+              证据明细（客户原话）默认不推：见下方「议题证据明细同步（子表）」卡片，需单独开启。
+            </div>
             {basePreview && (
               <div className="st-hint">
                 <b>目标表：</b>
@@ -1388,7 +1491,7 @@ function SettingsPage(): React.JSX.Element {
                 <div style={{ marginTop: 6 }}>
                   {(baseStatus?.history ?? []).slice(0, 8).map((h, i) => (
                     <div key={i}>
-                      {String(h.kind ?? '')} ·{' '}
+                      {KIND_LABEL[String(h.kind ?? '')] ?? String(h.kind ?? '')} ·{' '}
                       {String(h.at ? new Date(Number(h.at)).toLocaleString('zh-CN') : '')} ·{' '}
                       {h.error
                         ? `失败:${String(h.error).slice(0, 80)}`
@@ -1403,6 +1506,99 @@ function SettingsPage(): React.JSX.Element {
             {baseStatus?.pullNote && (
               <div className="st-hint">最近一轮拉取：{baseStatus.pullNote}</div>
             )}
+          </SettingsCard>
+
+          {/* 证据明细:客户原话单独一张子表(默认关闭) */}
+          <SettingsCard
+            title="议题证据明细同步（子表）"
+            desc="把每个议题下的消息逐条推到「议题证据」子表（一行一条），同事在 Base 里能按议题ID/时间分组筛选，看清客户到底说了什么。默认关闭：客户原话属于敏感内容，请确认可外发后再开。"
+          >
+            <div className="st-hint">
+              {baseStatus?.evidence
+                ? `生效现状：${baseStatus.evidence.enabled ? '已开启' : '未开启'} · 范围近 ${baseStatus.evidence.days} 天 · 每议题最多 ${baseStatus.evidence.maxPerIssue} 条 · 每条截断 ${baseStatus.evidence.maxChars} 字 · 已推 ${baseStatus.mappedEvidence ?? 0} 条${baseStatus.pendingEvidence ? ` · 本轮待推 ${baseStatus.pendingEvidence} 条` : ' · 已追平'}`
+                : '读取证据同步状态中…'}
+            </div>
+            {baseStatus?.evidence && !baseStatus.evidence.tableId && (
+              <div className="st-hint">
+                {'证据子表还没创建：点「创建 / 校验证据表」会自动新建并补齐字段。'}
+              </div>
+            )}
+            <SwitchRow
+              label="推送证据明细（客户原话）"
+              desc="打开后按下面的三个上限把证据原文写入飞书表格；关闭时一条都不推。"
+              checked={!!baseStatus?.evidence?.enabled}
+              onChange={(v) => void patchBaseEvidence({ enabled: v })}
+            />
+            <div className="st-grid">
+              <FieldRow label="范围（天）">
+                <input
+                  className="st-input sm"
+                  value={evDays}
+                  onChange={(e) => setEvDays(e.target.value)}
+                  onBlur={() => void patchBaseEvidence({ days: Number(evDays) })}
+                  placeholder="7"
+                />
+              </FieldRow>
+              <FieldRow label="每议题最多（条）">
+                <input
+                  className="st-input sm"
+                  value={evMax}
+                  onChange={(e) => setEvMax(e.target.value)}
+                  onBlur={() => void patchBaseEvidence({ maxPerIssue: Number(evMax) })}
+                  placeholder="20"
+                />
+              </FieldRow>
+              <FieldRow label="每条截断（字）">
+                <input
+                  className="st-input sm"
+                  value={evChars}
+                  onChange={(e) => setEvChars(e.target.value)}
+                  onBlur={() => void patchBaseEvidence({ maxChars: Number(evChars) })}
+                  placeholder="200"
+                />
+              </FieldRow>
+            </div>
+            <div className="st-hint">
+              选取规则：每个议题取「首现 1 条 + 最新若干条」（受上面的条数上限约束），不是全量搬。
+              图片/语音/视频/表情等非文本证据写占位标记（如「[图片]」），内容不落地。
+            </div>
+            <div className="st-actions">
+              <button
+                type="button"
+                className="st-btn"
+                disabled={baseBusy !== '' || !baseStatus?.configured}
+                onClick={() => void setupBaseEvidence()}
+                title="在同一个 Base 里创建「议题证据」子表并补齐字段（已存在则只补字段）；会尝试建立与议题表的关联字段，失败不影响同步"
+              >
+                {baseBusy === 'evsetup' ? '处理中…' : '创建 / 校验证据表'}
+              </button>
+              <button
+                type="button"
+                className="st-btn ghost"
+                disabled={baseBusy !== '' || !baseStatus?.configured}
+                onClick={() => void cleanBaseEvidence()}
+                title="对比远程「证据ID」与本地记录，删掉议题已删除后残留的孤儿行"
+              >
+                {baseBusy === 'evclean' ? '清理中…' : '清理孤儿行'}
+              </button>
+            </div>
+            {baseStatus?.lastEvidence && (
+              <div className="st-hint">
+                上次证据同步：
+                {baseStatus.lastEvidence.error
+                  ? baseStatus.lastEvidence.error
+                  : `扫 ${baseStatus.lastEvidence.scanned} · 新增 ${baseStatus.lastEvidence.created} · 更新 ${baseStatus.lastEvidence.updated} · 跳过 ${baseStatus.lastEvidence.skipped}${baseStatus.lastEvidence.failed ? ` · 失败 ${baseStatus.lastEvidence.failed}` : ''}`}
+              </div>
+            )}
+            <div className="st-hint">
+              ⚠ 隐私提示：开启后客户在群里的原话会写入飞书多维表格。建议先在证据表里
+              单独设置权限/视图（例如只给处理同事），并对敏感业务（手机号、住址、订单号）
+              控制范围天数或直接保持关闭。
+            </div>
+            <div className="st-hint">
+              Base 侧建议：在「议题证据」表新建两个视图——「按 议题ID 分组」（分组 + 按时间升序）
+              和「今日新增」（筛选 时间 = 今天），同事排查看证据会快很多。
+            </div>
           </SettingsCard>
         </div>
       )}

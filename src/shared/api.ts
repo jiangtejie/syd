@@ -4,6 +4,8 @@ import type {
   LarkBaseStatus,
   LarkBaseVerify,
   LarkDigestConfig,
+  LarkEvidenceConfig,
+  LarkEvidenceSetup,
   LarkPullResult,
   LarkSyncOut
 } from './types'
@@ -767,6 +769,27 @@ export interface CsApi {
       status?: LarkBaseStatus
       error?: string
     }>
+    /** 证据明细同步:开关 + 三重上限(传空对象仅读取) */
+    baseEvidence: (patch?: {
+      enabled?: boolean
+      days?: number
+      maxPerIssue?: number
+      maxChars?: number
+    }) => Promise<{
+      ok: boolean
+      evidence?: LarkEvidenceConfig
+      status?: LarkBaseStatus
+      error?: string
+    }>
+    /** 创建/校验「议题证据」子表(+ 尝试建立关联字段) */
+    baseEvidenceSetup: () => Promise<LarkEvidenceSetup>
+    /** 清理孤儿证据行 */
+    baseEvidenceClean: () => Promise<{
+      ok: boolean
+      removed: number
+      status?: LarkBaseStatus
+      error?: string
+    }>
     /** 列名映射（传 null 仅读取） */
     baseFieldMap: (
       map?: Record<string, string> | null
@@ -780,6 +803,8 @@ export interface CsApi {
       result?: LarkSyncOut
       pulled?: LarkPullResult | null
       replies?: LarkSyncOut
+      /** 证据明细子表本轮结果（未开启时带 error 说明） */
+      evidence?: LarkSyncOut
       status?: LarkBaseStatus
       error?: string
     }>

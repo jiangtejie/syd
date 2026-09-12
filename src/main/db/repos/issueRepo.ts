@@ -433,6 +433,74 @@ export function findIssueByKey(
     .get(key) as { id: number; status: string; occurAt: number | null } | undefined
 }
 
+/** 供外部同步用的证据行（含所属议题的展示字段；本模块不知道同步的存在，只提供数据） */
+export interface EvidenceForSync {
+  msgId: number
+  issueId: number
+  issueTitle: string
+  groupName: string
+  /** 该议题内证据原始顺序（按 seq，从 1 开始） */
+  seqNo: number
+  time: number
+  senderName: string
+  senderUsername?: string
+  isSend: boolean
+  isTeam: boolean
+  text: string
+  imageMd5?: string
+  localType?: number
+}
+
+/**
+ * 按时间窗取证据行（升序），供多维表格同步用。
+ * 只取「议题仍存在」的行：级联删除已保证孤儿不会留在库里。
+ */
+export function listEvidenceForSync(opts: { sinceMs: number; limit?: number }): EvidenceForSync[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT m.id AS msg_id, m.issue_id, m.seq, m.msg_time, m.sender_name, m.sender_username,
+              m.is_send, m.is_team, m.text, m.image_md5, m.local_type,
+              i.title AS issue_title, i.group_name AS group_name,
+              (SELECT COUNT(*) FROM issue_feedback_msg x WHERE x.issue_id = m.issue_id AND x.seq <= m.seq) AS seq_no
+         FROM issue_feedback_msg m
+         JOIN issue_feedback i ON i.id = m.issue_id
+        WHERE m.msg_time >= ?
+        ORDER BY m.msg_time ASC, m.id ASC
+        LIMIT ?`
+    )
+    .all(opts.sinceMs, Math.min(Math.max(opts.limit ?? 2000, 1), 5000)) as Array<
+    Record<string, unknown>
+  >
+  return rows.map((r) => ({
+    msgId: Number(r.msg_id),
+    issueId: Number(r.issue_id),
+    issueTitle: String(r.issue_title ?? ''),
+    groupName: String(r.group_name ?? ''),
+    seqNo: Number(r.seq_no ?? 0),
+    time: Number(r.msg_time ?? 0),
+    senderName: String(r.sender_name ?? ''),
+    senderUsername: r.sender_username ? String(r.sender_username) : undefined,
+    isSend: Number(r.is_send ?? 0) === 1,
+    isTeam: Number(r.is_team ?? 0) === 1,
+    text: String(r.text ?? ''),
+    imageMd5: r.image_md5 ? String(r.image_md5) : undefined,
+    localType:
+      r.local_type === null || r.local_type === undefined ? undefined : Number(r.local_type)
+  }))
+}
+
+/**
+ * 全部本地证据 id（不限时间窗）。
+ * 清理远程孤儿行用：议题删除会级联删证据，但 lark_sync_map 里的映射会留下，
+ * 所以「是否孤儿」必须按本地真实存在的证据 id 判断，而不是按映射表判断。
+ */
+export function listEvidenceIds(): Set<number> {
+  const rows = getDb().prepare('SELECT id FROM issue_feedback_msg').all() as Array<{
+    id: number
+  }>
+  return new Set(rows.map((r) => Number(r.id)))
+}
+
 /** 某问题现有证据消息（key 复用时用于合并证据，保住最早锚点行） */
 export function getIssueMsgs(id: number): FeedbackIssueMsg[] {
   const rows = getDb()

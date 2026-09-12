@@ -10,7 +10,7 @@ import { getDb } from '../database'
  *   「Base 现在的值」到底是同事改的，还是我们自己刚写上去的（否则会来回打架）。
  */
 
-export type LarkSyncKind = 'issue' | 'reply'
+export type LarkSyncKind = 'issue' | 'reply' | 'evidence'
 
 export interface LarkSyncRef {
   localId: number
@@ -123,6 +123,16 @@ export function saveRemoteCollab(
 
 export function dropSyncRef(kind: LarkSyncKind, localId: number): void {
   getDb().prepare('DELETE FROM lark_sync_map WHERE kind = ? AND local_id = ?').run(kind, localId)
+}
+
+/**
+ * 清掉某一类的全部映射(换了一个多维表格时用)。
+ * 旧映射记的是**另一个 Base 里的 record_id**,留着只会让后续更新落到不存在的记录上,
+ * 所以换 Base 时宁可全部丢掉、重新推一遍。
+ */
+export function clearSyncRefs(kind: LarkSyncKind): number {
+  const r = getDb().prepare('DELETE FROM lark_sync_map WHERE kind = ?').run(kind)
+  return Number(r.changes ?? 0)
 }
 
 export function countSyncRefs(kind: LarkSyncKind): number {

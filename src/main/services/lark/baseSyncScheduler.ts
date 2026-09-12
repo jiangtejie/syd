@@ -1,6 +1,7 @@
 import { getConfigBoolean } from '../../db/repos/config'
 import {
   pullIssuesBack,
+  syncEvidenceOut,
   syncIssuesOut,
   syncRepliesOut,
   type PullResult,
@@ -49,6 +50,10 @@ async function tick(): Promise<void> {
     if (rep.created + rep.updated > 0) {
       syncLog.info(`影子记录同步: 新增 ${rep.created} · 更新 ${rep.updated}`)
     }
+    // 证据明细(默认关闭,开启后同样每轮增量推;append-only 不需要冲突处理)
+    const ev = await syncEvidenceOut()
+    if (ev.created > 0) syncLog.info(`证据明细同步: 新增 ${ev.created} 条`)
+    else if (!ev.ok && ev.error) syncLog.debug(`证据明细同步跳过: ${ev.error}`)
   } catch (e) {
     syncLog.warn(`议题同步异常: ${e instanceof Error ? e.message : String(e)}`)
   } finally {
@@ -71,9 +76,12 @@ export function stopBaseSyncScheduler(): void {
   wxid = null
 }
 
-/** 手动触发（设置页「立即同步」） */
+/** 手动触发（设置页「立即同步」）：议题 → 影子回复 → 证据明细 */
 export async function runBaseSyncNow(accountWxid: string, force = false): Promise<SyncOutResult> {
-  return syncIssuesOut(accountWxid, { force })
+  const r = await syncIssuesOut(accountWxid, { force })
+  await syncRepliesOut(accountWxid, { force })
+  await syncEvidenceOut()
+  return r
 }
 
 /** 手动拉取同事改动（设置页「拉取同事改动」） */

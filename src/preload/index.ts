@@ -15,6 +15,8 @@ import type {
   LarkBaseStatus,
   LarkBaseVerify,
   LarkDigestConfig,
+  LarkEvidenceConfig,
+  LarkEvidenceSetup,
   LarkPullResult,
   LarkSyncOut,
   FeedbackIssue,
@@ -831,7 +833,29 @@ const api: PreloadApi = {
       }): Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }> =>
         ipcRenderer.invoke('cs:lark:baseConfig', patch),
       baseClear: (): Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }> =>
-        ipcRenderer.invoke('cs:lark:baseClear')
+        ipcRenderer.invoke('cs:lark:baseClear'),
+      // ── 证据明细 → 「议题证据」子表 ──
+      baseEvidence: (
+        patch?: {
+          enabled?: boolean
+          days?: number
+          maxPerIssue?: number
+          maxChars?: number
+        }
+      ): Promise<{
+        ok: boolean
+        evidence?: LarkEvidenceConfig
+        status?: LarkBaseStatus
+        error?: string
+      }> => ipcRenderer.invoke('cs:lark:baseEvidence', patch ?? {}),
+      baseEvidenceSetup: (): Promise<LarkEvidenceSetup> =>
+        ipcRenderer.invoke('cs:lark:baseEvidenceSetup'),
+      baseEvidenceClean: (): Promise<{
+        ok: boolean
+        removed: number
+        status?: LarkBaseStatus
+        error?: string
+      }> => ipcRenderer.invoke('cs:lark:baseEvidenceClean')
     },
     app: {
       /** 菜单/托盘等触发的页面导航（如 Ctrl+, 打开设置） */

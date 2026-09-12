@@ -10,8 +10,11 @@ import {
   assigneeFromText,
   collabOf,
   diffCollab,
+  evidenceKindText,
+  evidenceToFields,
   hashOf,
   issueToFields,
+  originText,
   replyToFields,
   riskText,
   statusFromText,
@@ -136,6 +139,51 @@ const h1 = hashOf({ a: 1, b: 'x' })
 log(h1 === hashOf({ a: 1, b: 'x' }), '同内容 → 同 hash')
 log(h1 !== hashOf({ a: 1, b: 'y' }), '内容变了 → hash 变')
 log(hashOf({}).length === 16, 'hash 长度固定 16', String(hashOf({}).length))
+
+console.log('\n[8] 议题证据 → 「议题证据」子表字段')
+const ev = {
+  msgId: 91,
+  issueId: 42,
+  issueTitle: '客户问到货进度',
+  groupName: '保利星荟店对接群',
+  seqNo: 3,
+  time: 1789000000000,
+  senderName: '张三',
+  isSend: false,
+  isTeam: false,
+  text: 'Y'.repeat(500),
+  localType: 1
+}
+const ef = evidenceToFields(ev)
+log(ef['证据ID'] === '91', '证据ID 是字符串（幂等键）')
+log(ef['议题ID'] === '42' && ef['序号'] === 3, '议题ID / 序号带上（子表可分组排序）')
+log(ef['来源'] === '客户', '非我方非同事 → 客户')
+log(
+  originText(true, false) === '我方' && originText(false, true) === '我方同事' && originText(false, false) === '客户',
+  '来源三态文案'
+)
+log(originText(true, true) === '我方', '两个标记同时为真时以「我方」优先（is_send 更可信）')
+log(String(ef['内容']).length === 200, '内容默认截断 200 字', String(String(ef['内容']).length))
+log(
+  String(evidenceToFields(ev, { maxChars: 2000 })['内容']).length === 500,
+  '放宽上限后原文 500 字不截'
+)
+log(evidenceToFields({ ...ev, text: '', imageMd5: 'abc', localType: 3 })['内容'] === '[图片]', '纯图片 → 占位 [图片]')
+log(
+  evidenceToFields({ ...ev, text: '看下这个', imageMd5: 'abc', localType: 3 })['内容'] === '[图片] 看下这个',
+  '图配文 → 占位 + 文字'
+)
+log(evidenceKindText(34, undefined) === '语音', 'local_type=34 → 语音')
+log(evidenceKindText(43, undefined) === '视频', 'local_type=43 → 视频')
+log(evidenceKindText(47, undefined) === '表情', 'local_type=47 → 表情')
+log(
+  !JSON.stringify(evidenceToFields(ev)).includes('chatroom'),
+  '证据行不带内部 username（这是 senderUsername，不写进表）'
+)
+log(
+  !Object.keys(evidenceToFields(ev)).some((k) => k === '处理备注' || k === '状态'),
+  '证据表只用标准列名（不套议题表的列名映射）'
+)
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)

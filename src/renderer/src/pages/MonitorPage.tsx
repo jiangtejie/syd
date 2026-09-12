@@ -657,9 +657,14 @@ function MonitorPage(): React.JSX.Element {
       if (res.ok) {
         const out = res.result
         const pulled = res.pulled
+        const ev = res.evidence
         toast.success(
           `已同步飞书表格:新增 ${out?.created ?? 0} · 更新 ${out?.updated ?? 0}${
             pulled && pulled.applied > 0 ? ` · 采纳同事改动 ${pulled.applied}` : ''
+          }${
+            ev && !ev.error
+              ? ` · 证据新增 ${ev.created}${ev.failed ? `(失败 ${ev.failed})` : ''}`
+              : ''
           }`
         )
       } else {
@@ -714,9 +719,13 @@ function MonitorPage(): React.JSX.Element {
             }}
             title={
               baseSync?.configured
-                ? `同步到飞书表格(已映射 ${baseSync.mappedIssues} 条)${
-                    baseSync.pullNote ? `\n最近一轮拉取:${baseSync.pullNote}` : ''
-                  }${baseSync.lastResult?.error ? `\n上次失败:${baseSync.lastResult.error}` : ''}`
+                ? `同步到飞书表格(已映射 ${baseSync.mappedIssues} 条${
+                    baseSync.evidence?.enabled
+                      ? ` · 证据 ${baseSync.mappedEvidence ?? 0} 条${baseSync.pendingEvidence ? `(待推 ${baseSync.pendingEvidence})` : ''}`
+                      : ' · 证据明细未开启'
+                  })${baseSync.pullNote ? `\n最近一轮拉取:${baseSync.pullNote}` : ''}${
+                    baseSync.lastResult?.error ? `\n上次失败:${baseSync.lastResult.error}` : ''
+                  }`
                 : '尚未配置:请到 设置 → AI 助手 → 议题同步到多维表格 粘贴链接并执行'
             }
           >
@@ -738,6 +747,11 @@ function MonitorPage(): React.JSX.Element {
                     baseSync.lastResult?.failed ? ` · 失败 ${baseSync.lastResult.failed}` : ''
                   }`
                 : `飞书同步待运行 · 映射 ${baseSync.mappedIssues} 条`}
+              {baseSync.evidence?.enabled
+                ? ` · 证据 ${baseSync.mappedEvidence ?? 0} 条${
+                    baseSync.pendingEvidence ? `(待推 ${baseSync.pendingEvidence})` : ''
+                  }`
+                : ''}
             </span>
           )}
           {anaState?.lastAt && !anaBusy && (

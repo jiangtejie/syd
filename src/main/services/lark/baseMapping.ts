@@ -159,6 +159,75 @@ export function diffCollab(
   }
 }
 
+// ── 议题证据（明细）→ Base ──
+
+/** 证据来源（单选文案） */
+export function originText(isSend: boolean, isTeam: boolean): string {
+  if (isSend) return '我方'
+  return isTeam ? '我方同事' : '客户'
+}
+
+/** 非文本消息的占位标记（图片走占位,附件上传见后续阶段） */
+export function evidenceKindText(localType: number | undefined, imageMd5?: string): string {
+  const t = Number(localType ?? 0)
+  if (t === 3 || imageMd5) return '图片'
+  if (t === 34) return '语音'
+  if (t === 43) return '视频'
+  if (t === 47) return '表情'
+  if (t === 49) return '链接/卡片'
+  if (t === 42) return '名片'
+  if (t === 48) return '位置'
+  return '文本'
+}
+
+export interface EvidenceLike {
+  msgId: number
+  issueId: number
+  issueTitle: string
+  groupName: string
+  seqNo: number
+  time: number
+  senderName: string
+  isSend: boolean
+  isTeam: boolean
+  text: string
+  imageMd5?: string
+  localType?: number
+}
+
+/**
+ * 证据行 → Base 字段。
+ * 内容按 maxChars 截断(默认 200):客户原文外发,默认保守;非文本写占位标记。
+ */
+export function evidenceToFields(
+  e: EvidenceLike,
+  opts: { maxChars?: number } = {}
+): Record<string, unknown> {
+  const maxChars = Math.min(Math.max(opts.maxChars ?? 200, 20), 2000)
+  const kind = evidenceKindText(e.localType, e.imageMd5)
+  const rawText = (e.text ?? '').trim()
+  const content =
+    kind === '文本'
+      ? rawText.slice(0, maxChars)
+      : rawText
+        ? `[${kind}] ${rawText.slice(0, maxChars)}`
+        : `[${kind}]`
+  const standard: Record<string, unknown> = {
+    证据ID: String(e.msgId),
+    议题ID: String(e.issueId),
+    议题标题: (e.issueTitle ?? '').slice(0, 200),
+    客户群: e.groupName ?? '',
+    序号: e.seqNo,
+    时间: e.time,
+    发送人: (e.senderName ?? '').slice(0, 80),
+    来源: originText(e.isSend, e.isTeam),
+    内容: content,
+    类型: kind
+  }
+  // 「议题证据」表由我们创建、列名固定:不使用议题表的列名映射
+  return standard
+}
+
 // ── 数字员工回复（影子记录）→ Base ──
 
 /** 决策来源 → Base 单选文案 */

@@ -5,11 +5,16 @@ import {
   baseSyncHint,
   baseSyncStatus,
   claimExistingRecords,
+  cleanOrphanEvidence,
+  ensureEvidenceTable,
+  getEvidenceConfig,
+  setEvidenceConfig,
   getFieldMap,
   pullIssuesBack,
   setFieldMap,
   setRawEvidence,
   setSyncEnabled,
+  syncEvidenceOut,
   syncIssuesOut,
   syncRepliesOut,
   verifyBaseLink,
@@ -98,6 +103,47 @@ export function registerLarkHandlers(): void {
     }
   })
 
+  // ── 议题证据明细(子表) ──
+
+  /** 证据同步配置:开关 + 三重上限(天数 / 每议题条数 / 每条字数) */
+  ipcMain.handle(
+    'cs:lark:baseEvidence',
+    (
+      _e,
+      patch: { enabled?: boolean; days?: number; maxPerIssue?: number; maxChars?: number } = {}
+    ) => {
+      try {
+        if (patch && Object.keys(patch).length > 0) setEvidenceConfig(patch)
+        return { ok: true as const, evidence: getEvidenceConfig(), status: snapshot() }
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : '保存证据配置失败' }
+      }
+    }
+  )
+
+  /** 创建/校验「议题证据」子表,并尝试建立与议题表的关联字段(失败不致命) */
+  ipcMain.handle('cs:lark:baseEvidenceSetup', async () => {
+    try {
+      const appToken = (getConfig('lark.baseToken') ?? '').trim()
+      const issuesTableId = (getConfig('lark.baseTableIssues') ?? '').trim()
+      if (!appToken) return { ok: false as const, error: '请先完成「验证并建表」' }
+      const r = await ensureEvidenceTable(appToken, issuesTableId || undefined)
+      return { ok: true as const, ...r, status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '创建证据表失败' }
+    }
+  })
+
+  /** 清理孤儿证据行(议题已删除、远程行残留) */
+  ipcMain.handle('cs:lark:baseEvidenceClean', async () => {
+    try {
+      const r = await cleanOrphanEvidence()
+      return { ...r, status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, removed: 0, error: e instanceof Error ? e.message : '清理失败' }
+    }
+  })
+
   /** 列名映射（本地标准列名 → 目标表实际列名） */
   ipcMain.handle('cs:lark:baseFieldMap', (_e, map: FieldMap | null = null) => {
     try {
@@ -116,7 +162,9 @@ export function registerLarkHandlers(): void {
       const r = await syncIssuesOut(wxid, { force: force === true })
       // 影子记录（数字员工回复）一并推：手机上就能审话术
       const replies = await syncRepliesOut(wxid, { force: force === true })
-      return { ok: r.ok, result: r, pulled, replies, status: snapshot() }
+      // 证据明细子表（默认关闭；开启时才推）
+      const evidence = await syncEvidenceOut()
+      return { ok: r.ok, result: r, pulled, replies, evidence, status: snapshot() }
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '同步失败' }
     }
@@ -155,6 +203,11 @@ export function registerLarkHandlers(): void {
       setConfig('lark.fieldMap', '')
       setConfig('lark.fieldConflicts', '')
       setConfig('lark.sync.history', '')
+      setConfig('lark.baseTableEvidence', '')
+      setConfig('lark.evidence.linkField', '')
+      setConfig('lark.evidence.enabled', '0')
+      setConfig('lark.sync.evidenceAt', '')
+      setConfig('lark.sync.lastEvidence', '')
       setConfig('lark.sync.enabled', '0')
       return { ok: true as const, status: snapshot() }
     } catch (e) {

@@ -865,6 +865,40 @@ export interface LarkBaseStatus {
   pullNote?: string
   /** 最近若干轮同步结果(最新在前,最多 20 条) */
   history?: Array<Record<string, unknown>>
+  /** 证据明细同步配置 */
+  evidence?: LarkEvidenceConfig
+  /** 已推证据条数 */
+  mappedEvidence?: number
+  /** 证据最近一次推送结果 */
+  lastEvidence?: LarkSyncOut | null
+  /** 按当前上限,本轮还会推几条证据 */
+  pendingEvidence?: number
+}
+
+/** 议题证据明细同步配置(默认关闭:客户原文外发,保守优先) */
+export interface LarkEvidenceConfig {
+  enabled: boolean
+  /** 收集范围(天) */
+  days: number
+  /** 每议题最多推几条(首现 1 条 + 最新若干) */
+  maxPerIssue: number
+  /** 每条内容截断字数 */
+  maxChars: number
+  /** 证据子表 id(未创建为空) */
+  tableId: string
+}
+
+/** 证据子表创建/校验结果 */
+export interface LarkEvidenceSetup {
+  ok: boolean
+  error?: string
+  tableId?: string
+  created?: boolean
+  fieldsAdded?: string[]
+  /** 与议题表的关联字段是否建立成功(失败则退化为按议题ID分组) */
+  linkOk?: boolean
+  note?: string
+  status?: LarkBaseStatus
 }
 
 /** 议题同步「预览/验证」结果(cs:lark:basePreview / baseVerify) */
