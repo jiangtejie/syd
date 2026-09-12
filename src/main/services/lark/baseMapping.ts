@@ -52,12 +52,26 @@ export function assigneeFromText(
   return hit ? hit.username : t
 }
 
-/** 议题 → Base 字段（默认脱敏：只有标题/摘要，不推聊天原文） */
+/**
+ * 列名映射：本地标准列名 → 目标表里的实际列名。
+ * 用于把议题写进**用户自己已有的表**（他们的列名可能叫「问题描述」「负责人」）。
+ * 没有映射的列沿用标准名。
+ */
+export type FieldMap = Record<string, string>
+
+/** 取映射后的列名（空/空白视为未映射） */
+export function mapFieldName(local: string, map?: FieldMap): string {
+  const hit = map?.[local]
+  return hit && hit.trim() ? hit.trim() : local
+}
+
+/** 议题 → Base 字段（默认脱敏：只有标题/摘要，不推聊天原文；列名按 fieldMap 重写） */
 export function issueToFields(
   i: FeedbackIssue,
-  names: Map<string, string>
+  names: Map<string, string>,
+  opts: { fieldMap?: FieldMap; primaryField?: string } = {}
 ): Record<string, unknown> {
-  return {
+  const standard: Record<string, unknown> = {
     议题ID: String(i.id),
     客户群: i.groupName || i.groupUsername,
     类型: i.type,
@@ -70,6 +84,13 @@ export function issueToFields(
     最近更新: i.updatedAt,
     证据条数: i.msgCount
   }
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(standard)) out[mapFieldName(k, opts.fieldMap)] = v
+  // 飞书数据表第一列是主字段（不可删除/改类型）：若它不在标准列里，额外把标题写进去，
+  // 同事在手机上第一眼看到的就是问题标题，而不是空列。
+  const pf = (opts.primaryField ?? '').trim()
+  if (pf && !(pf in out)) out[pf] = (i.title ?? '').slice(0, 240)
+  return out
 }
 
 export function hashOf(fields: Record<string, unknown>): string {
@@ -83,7 +104,10 @@ export interface RemoteCollab {
   note: string
 }
 
-export function collabOf(fields: Record<string, unknown> | undefined): RemoteCollab {
+export function collabOf(
+  fields: Record<string, unknown> | undefined,
+  map?: FieldMap
+): RemoteCollab {
   const f = fields ?? {}
   const text = (v: unknown): string => {
     if (typeof v === 'string') return v.trim()
@@ -101,9 +125,9 @@ export function collabOf(fields: Record<string, unknown> | undefined): RemoteCol
     return ''
   }
   return {
-    status: text(f['状态']),
-    assignee: text(f['跟进人']),
-    note: text(f['处理备注'])
+    status: text(f[mapFieldName('状态', map)]),
+    assignee: text(f[mapFieldName('跟进人', map)]),
+    note: text(f[mapFieldName('处理备注', map)])
   }
 }
 

@@ -1,4 +1,47 @@
 /* ══════════ 问题监控中心(大屏 BI + 钻取追踪) ══════════ */
+/* ── 工具栏状态文字(此前 .mon-ana-state 未定义 → 裸文本) ── */
+.mon-ana-state {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  max-width: 44ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 状态文字里的异常态(同步失败 / 构建过旧) */
+.mon-ana-state.is-bad {
+  color: var(--danger, #d4380d);
+}
+
+/* ── 飞书多维表格同步:未配置时就地配置面板 ── */
+.mon-sync-setup {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-panel);
+  padding: 10px 12px;
+  margin: 8px 0;
+}
+
+.mon-sync-note {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.6;
+}
+
+.mon-sync-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+
+.mon-sync-row .mon-input {
+  flex: 1 1 320px;
+  min-width: 240px;
+}
+
 
 .mon-page {
   max-width: 1760px;

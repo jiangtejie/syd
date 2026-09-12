@@ -857,6 +857,41 @@ export interface LarkBaseStatus {
   lastResult: LarkSyncOut | null
   /** 数字员工影子记录最近一次推送结果 */
   lastReplies: LarkSyncOut | null
+  /** 主字段名(问题标题会写进这一列) */
+  primaryField?: string
+  /** 列名映射(本地标准列名 → 目标表实际列名) */
+  fieldMap?: Record<string, string>
+  /** 最近一轮拉取说明(如:目标表缺回写列,已跳过) */
+  pullNote?: string
+  /** 最近若干轮同步结果(最新在前,最多 20 条) */
+  history?: Array<Record<string, unknown>>
+}
+
+/** 议题同步「预览/验证」结果(cs:lark:basePreview / baseVerify) */
+export interface LarkBaseVerify {
+  ok: boolean
+  error?: string
+  /** 预览模式:未做任何写入 */
+  preview?: boolean
+  appToken?: string
+  appName?: string
+  issuesTableId?: string
+  /** 目标表名(可能是用户自己的表,也可能是自动建的「议题」) */
+  issuesTableName?: string
+  issuesTableCreated?: boolean
+  repliesTableId?: string
+  /** 目标表已有列 */
+  existingFields?: string[]
+  /** 将新建的列 */
+  missingFields?: string[]
+  /** 同名但类型不符(不改动,写入时才报错,故先讲清) */
+  typeConflicts?: Array<{ name: string; want: number; got: number }>
+  /** 主字段(标题写进这一列) */
+  primaryField?: string
+  /** 三列齐全 → 支持同事回写 */
+  canWriteBack?: boolean
+  notes?: string[]
+  status?: LarkBaseStatus
 }
 
 /** 一次「议题 → Base」同步的结果 */

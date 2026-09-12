@@ -4,12 +4,16 @@ import { testLarkAccess } from '../services/lark/api'
 import {
   baseSyncHint,
   baseSyncStatus,
+  claimExistingRecords,
+  getFieldMap,
   pullIssuesBack,
+  setFieldMap,
   setRawEvidence,
   setSyncEnabled,
   syncIssuesOut,
   syncRepliesOut,
-  verifyBaseLink
+  verifyBaseLink,
+  type FieldMap
 } from '../services/lark/baseSync'
 import { getConfig, setConfig } from '../db/repos/config'
 
@@ -53,7 +57,22 @@ export function registerLarkHandlers(): void {
     }
   })
 
-  /** 粘贴链接 → 验证读写 + 自动建表建字段（成功后落配置） */
+  /**
+   * 粘贴链接 → **预览**自检：读 Base 名 / 目标表名 / 现有列 / 将新建列 / 类型冲突 / 主字段 / 回写能力。
+   * 不建表、不建列、不写测试、不落配置 —— 先让用户看清"将发生什么"。
+   */
+  ipcMain.handle('cs:lark:basePreview', async (_e, link: string) => {
+    const target = typeof link === 'string' ? link.trim() : ''
+    if (!target) return { ok: false as const, error: '请先粘贴多维表格链接' }
+    try {
+      const r = await verifyBaseLink(target, { preview: true })
+      return { ...r, status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '预览失败' }
+    }
+  })
+
+  /** 粘贴链接 → 执行：建表/补列 + 写测试记录 + 落配置（成功后即可同步） */
   ipcMain.handle('cs:lark:baseVerify', async (_e, link: string) => {
     const target = typeof link === 'string' ? link.trim() : ''
     if (!target) return { ok: false as const, error: '请先粘贴多维表格链接' }
@@ -62,6 +81,30 @@ export function registerLarkHandlers(): void {
       return { ...r, status: snapshot() }
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '验证失败' }
+    }
+  })
+
+  /** 认领目标表里已有的行（按「议题ID」匹配本地议题），避免重复插入 */
+  ipcMain.handle('cs:lark:baseClaim', async () => {
+    try {
+      const appToken = (getConfig('lark.baseToken') ?? '').trim()
+      const tableId = (getConfig('lark.baseTableIssues') ?? '').trim()
+      if (!appToken || !tableId) return { ok: false as const, error: '请先完成「验证并建表」' }
+      // 认领只依赖本地议题 id(全局唯一),与账号作用域无关
+      const claimed = await claimExistingRecords(appToken, tableId)
+      return { ok: claimed.ok, claimed, status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '认领失败' }
+    }
+  })
+
+  /** 列名映射（本地标准列名 → 目标表实际列名） */
+  ipcMain.handle('cs:lark:baseFieldMap', (_e, map: FieldMap | null = null) => {
+    try {
+      if (map) setFieldMap(map)
+      return { ok: true as const, fieldMap: getFieldMap(), status: snapshot() }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '保存列名映射失败' }
     }
   })
 
@@ -108,6 +151,10 @@ export function registerLarkHandlers(): void {
       setConfig('lark.baseToken', '')
       setConfig('lark.baseTableIssues', '')
       setConfig('lark.baseTableReplies', '')
+      setConfig('lark.primaryField', '')
+      setConfig('lark.fieldMap', '')
+      setConfig('lark.fieldConflicts', '')
+      setConfig('lark.sync.history', '')
       setConfig('lark.sync.enabled', '0')
       return { ok: true as const, status: snapshot() }
     } catch (e) {

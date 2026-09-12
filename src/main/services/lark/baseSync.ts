@@ -23,8 +23,10 @@ import {
   diffCollab,
   hashOf,
   issueToFields,
+  mapFieldName,
   replyToFields,
-  statusFromText
+  statusFromText,
+  type FieldMap
 } from './baseMapping'
 import { parseLarkRef } from './url'
 import { createLogger } from '../logging'
@@ -58,6 +60,20 @@ const CFG_LAST_RESULT = 'lark.sync.lastResult'
 const CFG_LAST_PULL = 'lark.sync.lastPull'
 const CFG_LAST_REPLIES_AT = 'lark.sync.repliesAt'
 const CFG_LAST_REPLIES = 'lark.sync.lastReplies'
+
+/** 列名映射类型(转发自 baseMapping,便于调用方一处导入) */
+export type { FieldMap }
+/** 列名映射（本地标准列名 → 目标表实际列名） */
+const CFG_FIELD_MAP = 'lark.fieldMap'
+/** 目标表主字段名（飞书第一列；同步时把标题写进去） */
+const CFG_PRIMARY_FIELD = 'lark.primaryField'
+/** 最近若干轮同步结果（可观测） */
+const CFG_HISTORY = 'lark.sync.history'
+/** 类型不符的列名:同步时跳过这些列(避免整条记录写入被拒) */
+const CFG_CONFLICTS = 'lark.fieldConflicts'
+
+/** 可回写的三列（本地列名） */
+const COLLAB_KEYS = ['状态', '跟进人', '处理备注'] as const
 
 /** 单批写入条数（Base 批量接口上限 500，这里留余量并给群之间留节奏） */
 const BATCH_SIZE = 100
@@ -135,6 +151,67 @@ export function baseConfiguredLink(): string {
   return (getConfig(CFG_TOKEN) ?? '').trim()
 }
 
+/** 当前列名映射（空对象 = 全部用标准列名） */
+export function getFieldMap(): FieldMap {
+  const raw = (getConfig(CFG_FIELD_MAP) ?? '').trim()
+  if (!raw) return {}
+  try {
+    const v = JSON.parse(raw) as unknown
+    if (!v || typeof v !== 'object') return {}
+    const out: FieldMap = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      const name = typeof val === 'string' ? val.trim() : ''
+      if (k.trim() && name) out[k.trim()] = name
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export function setFieldMap(map: FieldMap): void {
+  const clean: FieldMap = {}
+  for (const [k, v] of Object.entries(map ?? {})) {
+    if (k.trim() && typeof v === 'string' && v.trim()) clean[k.trim()] = v.trim()
+  }
+  setConfig(CFG_FIELD_MAP, Object.keys(clean).length > 0 ? JSON.stringify(clean) : '')
+}
+
+export function getPrimaryField(): string {
+  return (getConfig(CFG_PRIMARY_FIELD) ?? '').trim()
+}
+
+/** 类型不符的列名(同步时跳过;设置页会提示用户去改列类型或做列名映射) */
+export function getConflictedFields(): string[] {
+  const raw = (getConfig(CFG_CONFLICTS) ?? '').trim()
+  if (!raw) return []
+  try {
+    const v = JSON.parse(raw) as unknown
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** 是否具备三列回写条件（缺列则同步退化为纯单向） */
+export function canWriteBack(fieldNames: string[]): boolean {
+  const map = getFieldMap()
+  return COLLAB_KEYS.every((k) => fieldNames.includes(mapFieldName(k, map)))
+}
+
+/** 同步结果入历史环（最近 20 条，供设置页/监控页展示） */
+function pushHistory(kind: 'issue' | 'pull' | 'reply', r: SyncOutResult | PullResult): void {
+  try {
+    const raw = (getConfig(CFG_HISTORY) ?? '').trim()
+    const list = raw ? (JSON.parse(raw) as unknown[]) : []
+    const arr = Array.isArray(list) ? list : []
+    arr.unshift({ ...r, kind })
+    setConfig(CFG_HISTORY, JSON.stringify(arr.slice(0, 20)))
+  } catch {
+    /* 历史记录失败不影响同步 */
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
@@ -161,6 +238,65 @@ async function findTable(appToken: string, name: string): Promise<string | null>
   return hit?.table_id ?? null
 }
 
+/** 目标表字段元信息（名字 + 类型 + 是否主字段） */
+async function listFields(
+  appToken: string,
+  tableId: string
+): Promise<Array<{ name: string; type: number; primary: boolean }>> {
+  const r = await larkCall<{
+    items?: Array<{ field_name?: string; type?: number; is_primary?: boolean }>
+  }>((api) =>
+    api.bitable.appTableField.list({
+      path: { app_token: appToken, table_id: tableId },
+      params: { page_size: 100 }
+    })
+  )
+  if (!r.ok) throw new Error(r.error)
+  return (r.data.items ?? []).map((f, idx) => ({
+    name: (f.field_name ?? '').trim(),
+    type: Number(f.type ?? 0),
+    // 飞书未回 is_primary 时按「第一列即主字段」的约定判定
+    primary: f.is_primary === true || idx === 0
+  }))
+}
+
+/**
+ * 字段补齐：缺则建（带选项）。**只增不改不删** —— 目标表可能是用户自己的表。
+ * 同名但类型不符的列不动，只在返回值里报出来（写入时飞书会报错，避免静默失败）。
+ */
+async function ensureFields(
+  appToken: string,
+  tableId: string,
+  fields: FieldSpec[]
+): Promise<{ added: string[]; conflicts: Array<{ name: string; want: number; got: number }> }> {
+  const existing = await listFields(appToken, tableId)
+  const byName = new Map(existing.map((f) => [f.name, f]))
+  const added: string[] = []
+  const conflicts: Array<{ name: string; want: number; got: number }> = []
+  for (const spec of fields) {
+    const have = byName.get(spec.name)
+    if (have) {
+      if (have.type !== spec.type)
+        conflicts.push({ name: spec.name, want: spec.type, got: have.type })
+      continue
+    }
+    const r = await larkCall((api) =>
+      api.bitable.appTableField.create({
+        path: { app_token: appToken, table_id: tableId },
+        data: fieldPayload(spec)
+      })
+    )
+    if (!r.ok) {
+      // 主字段不可改名/重名等：记录但不致命，后续写入会暴露具体缺哪个字段
+      syncLog.warn(`补字段「${spec.name}」失败: ${r.error}`)
+      continue
+    }
+    added.push(spec.name)
+    await sleep(BATCH_GAP_MS)
+  }
+  return { added, conflicts }
+}
+
 /**
  * 确保表存在且字段齐全：缺表则建（带字段），缺字段则补。
  * 返回 { tableId, created, fieldsAdded }；任何一步失败都抛错（由调用方转成人话）。
@@ -184,98 +320,234 @@ async function ensureTable(
     if (!tableId) throw new Error(`创建数据表「${name}」成功但没有返回 table_id`)
     created = true
   }
-
-  // 字段补齐（新建表时若接口忽略了 fields，这里会补齐；已有表则只加缺的）
-  const listed = await larkCall<{ items?: Array<{ field_name?: string }> }>((api) =>
-    api.bitable.appTableField.list({
-      path: { app_token: appToken, table_id: tableId as string },
-      params: { page_size: 100 }
-    })
-  )
-  if (!listed.ok) throw new Error(listed.error)
-  const have = new Set((listed.data.items ?? []).map((f) => (f.field_name ?? '').trim()))
-  const fieldsAdded: string[] = []
-  for (const spec of fields) {
-    if (have.has(spec.name)) continue
-    const r = await larkCall((api) =>
-      api.bitable.appTableField.create({
-        path: { app_token: appToken, table_id: tableId as string },
-        data: fieldPayload(spec)
-      })
-    )
-    if (!r.ok) {
-      // 主字段名不可改/重名等：记录但不致命，后续写入会暴露具体缺哪个字段
-      syncLog.warn(`补字段「${spec.name}」失败: ${r.error}`)
-      continue
-    }
-    fieldsAdded.push(spec.name)
-    await sleep(BATCH_GAP_MS)
-  }
-  return { tableId, created, fieldsAdded }
+  const { added } = await ensureFields(appToken, tableId, fields)
+  return { tableId, created, fieldsAdded: added }
 }
 
 export interface BaseVerifyResult {
   ok: boolean
   error?: string
+  /** 预览模式:只做自检,不改表结构、不落配置 */
+  preview?: boolean
   appToken?: string
+  /** Base 名称(展示用) */
+  appName?: string
   issuesTableId?: string
+  /** 议题表实际名字(可能是用户表「数据表」,也可能是自动建的「议题」) */
+  issuesTableName?: string
+  issuesTableCreated?: boolean
   repliesTableId?: string
+  /** 目标议题表已有的列 */
+  existingFields?: string[]
+  /** 将新建的列 */
+  missingFields?: string[]
+  /** 同名但类型不符(不动它,只报出来) */
+  typeConflicts?: Array<{ name: string; want: number; got: number }>
+  /** 主字段名(同步时把标题写进这一列) */
+  primaryField?: string
+  /** 三列(状态/跟进人/处理备注)齐全 → 支持同事回写 */
+  canWriteBack?: boolean
   notes: string[]
+}
+
+export interface VerifyOptions {
+  /** 预览:只自检不落库(不建表、不建字段、不写测试、不写配置) */
+  preview?: boolean
 }
 
 /**
  * 验证链接 + 建表建字段 + 写一条测试记录再删掉（把「读得到/write 得进」一次说清）。
  * 成功后把 app_token 与两张表 id 落配置，后续同步直接复用。
  */
-export async function verifyBaseLink(link: string): Promise<BaseVerifyResult> {
+/** 目标表名(链接指定时用于展示) */
+async function tableNameOf(appToken: string, tableId: string): Promise<string> {
+  const r = await larkCall<{ items?: Array<{ table_id?: string; name?: string }> }>((api) =>
+    api.bitable.appTable.list({ path: { app_token: appToken }, params: { page_size: 100 } })
+  )
+  if (!r.ok) return ''
+  return (r.data.items ?? []).find((t) => t.table_id === tableId)?.name ?? ''
+}
+
+/**
+ * 验证链接 + (可选)建表建字段 + 写一条测试记录再删掉。
+ *
+ * `preview=true` 只做自检:读 Base 名 / 目标表名 / 现有列 / 将新建列 / 类型冲突 / 主字段 / 回写能力,
+ * **不建表、不建字段、不写测试、不写配置** —— 设置页据此先给用户看"将发生什么"。
+ *
+ * 目标议题表的选择:`链接里带 table=…` → **就用那张表**(用户自己的表,只补列不新建);
+ * 不带 → 沿用旧行为(按名字找/建「议题」表)。
+ */
+export async function verifyBaseLink(
+  link: string,
+  opts: VerifyOptions = {}
+): Promise<BaseVerifyResult> {
   const notes: string[] = []
   const parsed = parseBaseRef(link)
   if (!parsed.ok) return { ok: false, error: parsed.error, notes }
   const appToken = parsed.ref.appToken
+  const linkTableId = parsed.ref.tableId
 
   try {
-    const issues = await ensureTable(appToken, ISSUE_TABLE_NAME, ISSUE_FIELDS)
-    notes.push(
-      issues.created
-        ? `已创建数据表「${ISSUE_TABLE_NAME}」`
-        : `复用已有数据表「${ISSUE_TABLE_NAME}」`
+    // Base 名(仅展示;失败不致命)
+    let appName = ''
+    const meta = await larkCall<{ app?: { name?: string } }>((api) =>
+      api.request({ method: 'GET', url: `open-apis/bitable/v1/apps/${appToken}` })
     )
-    if (issues.fieldsAdded.length > 0) notes.push(`议题表补字段: ${issues.fieldsAdded.join('、')}`)
-    await sleep(BATCH_GAP_MS)
-    const replies = await ensureTable(appToken, REPLY_TABLE_NAME, REPLY_FIELDS)
-    notes.push(
-      replies.created
-        ? `已创建数据表「${REPLY_TABLE_NAME}」`
-        : `复用已有数据表「${REPLY_TABLE_NAME}」`
-    )
-    if (replies.fieldsAdded.length > 0)
-      notes.push(`回复表补字段: ${replies.fieldsAdded.join('、')}`)
+    if (meta.ok) appName = meta.data.app?.name ?? ''
 
-    // 写测试：真正证明「有写权限」，而不是只读得动
-    const created = await larkCall<{ record?: { record_id?: string } }>((api) =>
-      api.bitable.appTableRecord.create({
-        path: { app_token: appToken, table_id: issues.tableId },
-        data: { fields: { 议题ID: '__verify__', 标题: '同步连通性测试（会自动删除）' } }
-      })
-    )
-    if (!created.ok) {
-      return {
-        ok: false,
-        appToken,
-        issuesTableId: issues.tableId,
-        repliesTableId: replies.tableId,
-        error:
-          '读得到但写不进：请在开放平台给应用开通多维表格**读写**权限（bitable:app）并发布版本 —— ' +
-          created.error,
-        notes
+    // ── 议题表:链接指定就用它 ──
+    let issuesTableId = ''
+    let issuesTableName = ''
+    let created = false
+    if (linkTableId) {
+      issuesTableId = linkTableId
+      issuesTableName = (await tableNameOf(appToken, linkTableId)) || linkTableId
+      notes.push(`使用链接指定的数据表「${issuesTableName}」(不新建)`)
+    } else {
+      const found = await findTable(appToken, ISSUE_TABLE_NAME)
+      if (found) {
+        issuesTableId = found
+        issuesTableName = ISSUE_TABLE_NAME
+        notes.push(`复用已有数据表「${ISSUE_TABLE_NAME}」`)
+      } else if (opts.preview) {
+        issuesTableName = ISSUE_TABLE_NAME
+        notes.push(`将新建数据表「${ISSUE_TABLE_NAME}」`)
+      } else {
+        const t = await ensureTable(appToken, ISSUE_TABLE_NAME, ISSUE_FIELDS)
+        issuesTableId = t.tableId
+        issuesTableName = ISSUE_TABLE_NAME
+        created = t.created
+        notes.push(
+          t.created ? `已创建数据表「${ISSUE_TABLE_NAME}」` : `复用数据表「${ISSUE_TABLE_NAME}」`
+        )
+        if (t.fieldsAdded.length > 0) notes.push(`议题表补字段: ${t.fieldsAdded.join('、')}`)
       }
     }
-    const recordId = created.data.record?.record_id
+
+    // ── 字段自检(预览与执行共用) ──
+    let existingFields: string[] | undefined
+    let missingFields: string[] | undefined
+    let typeConflicts: BaseVerifyResult['typeConflicts']
+    let primaryField = ''
+    if (!issuesTableId) {
+      // 预览且将新建表:所有标准列都会新建(此前这一支漏报,预览会误显示"字段已齐")
+      const map = getFieldMap()
+      existingFields = []
+      missingFields = ISSUE_FIELDS.map((s) => mapFieldName(s.name, map))
+      typeConflicts = []
+      notes.push(`将新建数据表并创建 ${missingFields.length} 列: ${missingFields.join('、')}`)
+    } else {
+      const have = await listFields(appToken, issuesTableId)
+      existingFields = have.map((f) => f.name)
+      // 主字段:只有文本类型才写标题(单选/数字/日期类型写入必然失败)
+      const primary = have.find((f) => f.primary)
+      if (primary && primary.type === T_TEXT) primaryField = primary.name
+      else if (primary) {
+        notes.push(
+          `主字段「${primary.name}」不是文本类型(type=${primary.type}),不写入标题;标题仍写入标准「标题」列`
+        )
+      }
+      const map = getFieldMap()
+      const wanted = ISSUE_FIELDS.map((s) => mapFieldName(s.name, map))
+      const haveSet = new Set(existingFields)
+      missingFields = wanted.filter((n) => !haveSet.has(n))
+      // 类型冲突:同名但类型不符(不动它,写入时飞书会报错,这里先讲清楚)
+      typeConflicts = []
+      for (const spec of ISSUE_FIELDS) {
+        const name = mapFieldName(spec.name, map)
+        const hit = have.find((f) => f.name === name)
+        if (hit && hit.type !== spec.type) {
+          typeConflicts.push({ name, want: spec.type, got: hit.type })
+        }
+      }
+      notes.push(
+        `目标表现有 ${existingFields.length} 列${missingFields.length > 0 ? `,将新建 ${missingFields.length} 列: ${missingFields.join('、')}` : ',字段已齐'}`
+      )
+      if (primaryField) notes.push(`主字段「${primaryField}」:同步时会把问题标题写进这一列`)
+      if (typeConflicts.length > 0) {
+        notes.push(
+          `⚠ 类型不符(不改动,可能导致写入失败): ${typeConflicts.map((c) => `${c.name}(现有 ${c.got} / 需要 ${c.want})`).join('、')}`
+        )
+      }
+    }
+
+    // ── 回复表:始终由我们建/复用 ──
+    let repliesTableId = ''
+    if (opts.preview) {
+      const found = await findTable(appToken, REPLY_TABLE_NAME)
+      repliesTableId = found ?? ''
+      notes.push(
+        found ? `复用已有数据表「${REPLY_TABLE_NAME}」` : `将新建数据表「${REPLY_TABLE_NAME}」`
+      )
+    } else {
+      await sleep(BATCH_GAP_MS)
+      const replies = await ensureTable(appToken, REPLY_TABLE_NAME, REPLY_FIELDS)
+      repliesTableId = replies.tableId
+      notes.push(
+        replies.created
+          ? `已创建数据表「${REPLY_TABLE_NAME}」`
+          : `复用已有数据表「${REPLY_TABLE_NAME}」`
+      )
+      if (replies.fieldsAdded.length > 0)
+        notes.push(`回复表补字段: ${replies.fieldsAdded.join('、')}`)
+    }
+
+    // 注意:变量名不能与上面的 canWriteBack() 同名(否则初始化器里自我引用)
+    const writeBackOk =
+      (existingFields ?? []).length > 0 ? canWriteBack(existingFields ?? []) : false
+    const base: BaseVerifyResult = {
+      ok: true,
+      preview: !!opts.preview,
+      appToken,
+      appName,
+      issuesTableId: issuesTableId || undefined,
+      issuesTableName,
+      issuesTableCreated: created,
+      repliesTableId: repliesTableId || undefined,
+      existingFields,
+      missingFields,
+      typeConflicts,
+      primaryField: primaryField || undefined,
+      canWriteBack: writeBackOk,
+      notes
+    }
+
+    if (opts.preview) {
+      notes.push('以上为预览:尚未建表/建列,点「执行并建表」后才会真正写入')
+      return base
+    }
+
+    if (!issuesTableId) throw new Error('未解析出议题表 id')
+
+    // 写测试:真正证明「有写权限」,而不是只读得动(列名按映射)
+    const map = getFieldMap()
+    const idCol = mapFieldName('议题ID', map)
+    const titleCol = mapFieldName('标题', map)
+    const testFields: Record<string, unknown> = {
+      [idCol]: '__verify__',
+      [titleCol]: '同步连通性测试（会自动删除）'
+    }
+    const createdRec = await larkCall<{ record?: { record_id?: string } }>((api) =>
+      api.bitable.appTableRecord.create({
+        path: { app_token: appToken, table_id: issuesTableId },
+        data: { fields: testFields }
+      })
+    )
+    if (!createdRec.ok) {
+      return {
+        ...base,
+        ok: false,
+        error:
+          '读得到但写不进：请在开放平台给应用开通多维表格**读写**权限（bitable:app）并发布版本 —— ' +
+          createdRec.error
+      }
+    }
+    const recordId = createdRec.data.record?.record_id
     notes.push('写入测试记录成功（读写权限 OK）')
     if (recordId) {
       const del = await larkCall((api) =>
         api.bitable.appTableRecord.delete({
-          path: { app_token: appToken, table_id: issues.tableId, record_id: recordId }
+          path: { app_token: appToken, table_id: issuesTableId, record_id: recordId }
         })
       )
       notes.push(
@@ -284,15 +556,17 @@ export async function verifyBaseLink(link: string): Promise<BaseVerifyResult> {
     }
 
     setConfig(CFG_TOKEN, appToken)
-    setConfig(CFG_TABLE_ISSUES, issues.tableId)
-    setConfig(CFG_TABLE_REPLIES, replies.tableId)
-    return {
-      ok: true,
-      appToken,
-      issuesTableId: issues.tableId,
-      repliesTableId: replies.tableId,
-      notes
-    }
+    setConfig(CFG_TABLE_ISSUES, issuesTableId)
+    setConfig(CFG_TABLE_REPLIES, repliesTableId)
+    setConfig(CFG_PRIMARY_FIELD, primaryField || '')
+    // 类型不符的列记下来:同步时跳过这些列,避免"一条坏列毁掉整条记录"
+    setConfig(
+      CFG_CONFLICTS,
+      (typeConflicts ?? []).length > 0
+        ? JSON.stringify((typeConflicts ?? []).map((c) => c.name))
+        : ''
+    )
+    return base
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return { ok: false, appToken, error: msg, notes }
@@ -311,6 +585,8 @@ export interface SyncOutResult {
   updated: number
   skipped: number
   failed: number
+  /** 因列类型不符被跳过的列次数(>0 时设置页会提示去改列或做映射) */
+  skippedFields?: number
   at: number
 }
 
@@ -358,6 +634,14 @@ export interface BaseSyncStatus {
   lastPull: PullResult | null
   /** 数字员工回复（影子记录）最近一次推送结果 */
   lastReplies: SyncOutResult | null
+  /** 主字段名(标题写入这一列) */
+  primaryField: string
+  /** 列名映射(本地标准列名 → 目标表列名) */
+  fieldMap: FieldMap
+  /** 目标表是否有同事回写过(最近一轮拉取的说明) */
+  pullNote?: string
+  /** 最近若干轮结果(kind + 概要),供设置页/监控页展示 */
+  history: Array<Record<string, unknown>>
 }
 
 export function baseSyncStatus(): BaseSyncStatus {
@@ -373,7 +657,23 @@ export function baseSyncStatus(): BaseSyncStatus {
     mappedReplies: countSyncRefs('reply'),
     lastResult: readLastResult(),
     lastPull: readLastPull(),
-    lastReplies: readLastReplies()
+    lastReplies: readLastReplies(),
+    primaryField: getPrimaryField(),
+    fieldMap: getFieldMap(),
+    pullNote: readLastPull()?.note,
+    history: readHistory()
+  }
+}
+
+/** 最近同步历史(最新的在前,最多 20 条) */
+function readHistory(): Array<Record<string, unknown>> {
+  const raw = (getConfig(CFG_HISTORY) ?? '').trim()
+  if (!raw) return []
+  try {
+    const v = JSON.parse(raw) as unknown
+    return Array.isArray(v) ? (v as Array<Record<string, unknown>>).slice(0, 20) : []
+  } catch {
+    return []
   }
 }
 
@@ -405,17 +705,30 @@ export async function syncIssuesOut(
   }
   const appToken = baseConfiguredLink()
   if (!appToken) return { ...empty, error: '未配置多维表格链接（设置 → 飞书云文档 → 议题同步）' }
-  let tableId = (getConfig(CFG_TABLE_ISSUES) ?? '').trim()
+  const tableId = (getConfig(CFG_TABLE_ISSUES) ?? '').trim()
+  // 与回复表一致:不在同步里隐式建表(避免"同步一下结果多出一张表"的意外副作用)
   if (!tableId) {
-    const verified = await verifyBaseLink(appToken)
-    if (!verified.ok) return { ...empty, error: verified.error ?? '建表失败' }
-    tableId = verified.issuesTableId ?? ''
+    return {
+      ...empty,
+      error: '尚未确定议题表:请先在设置页点「执行并建表」(或监控页「同步到飞书」配置)'
+    }
   }
-  if (!tableId) return { ...empty, error: '未解析出议题表 id，请重新点「验证并建表」' }
 
   const since = opts.force ? 0 : Number(getConfig(CFG_LAST_AT) ?? 0) || 0
   const rows = listIssuesChangedSince(wxid, since)
   const names = new Map(listTeamMembers(wxid).map((m) => [m.username, m.label || m.username]))
+  // 列名映射 + 主字段:目标表可能是用户自己的表(列名不同 / 第一列是主字段)
+  const fieldMap = getFieldMap()
+  const primaryField = getPrimaryField()
+  const colOf = (local: string): string => mapFieldName(local, fieldMap)
+  // 类型不符的列直接不写:否则飞书会整条记录拒收 → 该议题永远同步不进去
+  const conflicts = new Set(getConflictedFields())
+  if (conflicts.has(colOf('议题ID'))) {
+    return {
+      ...empty,
+      error: `列「${colOf('议题ID')}」类型不符(需要文本),无法建立映射:请在飞书里把它改成文本列,或在设置页做列名映射`
+    }
+  }
   const out: SyncOutResult = {
     ok: true,
     scanned: rows.length,
@@ -452,8 +765,8 @@ export async function syncIssuesOut(
         return
       }
       saveSyncRef('issue', b.id, appToken, tableId, recordId, b.hash, {
-        status: String(b.fields['状态'] ?? ''),
-        assignee: String(b.fields['跟进人'] ?? ''),
+        status: String(b.fields[colOf('状态')] ?? ''),
+        assignee: String(b.fields[colOf('跟进人')] ?? ''),
         pushed: true
       })
       out.created++
@@ -462,7 +775,11 @@ export async function syncIssuesOut(
   }
 
   for (const issue of rows) {
-    const fields = issueToFields(issue, names)
+    const fields = issueToFields(issue, names, { fieldMap, primaryField })
+    if (conflicts.size > 0) {
+      for (const k of Object.keys(fields)) if (conflicts.has(k)) delete fields[k]
+      out.skippedFields = (out.skippedFields ?? 0) + 1
+    }
     const hash = hashOf(fields)
     const ref = getSyncRef('issue', issue.id)
     if (!ref) {
@@ -492,8 +809,8 @@ export async function syncIssuesOut(
       continue
     }
     saveSyncRef('issue', issue.id, appToken, tableId, ref.recordId, hash, {
-      status: String(fields['状态'] ?? ''),
-      assignee: String(fields['跟进人'] ?? ''),
+      status: String(fields[colOf('状态')] ?? ''),
+      assignee: String(fields[colOf('跟进人')] ?? ''),
       pushed: true
     })
     out.updated++
@@ -504,6 +821,7 @@ export async function syncIssuesOut(
   setConfig(CFG_LAST_AT, String(at))
   setConfig(CFG_LAST_RESULT, JSON.stringify(out))
   if (out.failed > 0) out.ok = false
+  pushHistory('issue', out)
   return out
 }
 
@@ -529,7 +847,56 @@ export interface PullResult {
   skippedLocalWin: number
   /** 认不出来的行（找不到本地议题 / 状态文案不认） */
   unmatched: number
+  /** 本轮说明（如：目标表缺少回写列，已跳过回写） */
+  note?: string
   at: number
+}
+
+export interface ClaimResult {
+  ok: boolean
+  error?: string
+  /** 目标表里读到的行数 */
+  scanned: number
+  /** 本次认领(建立映射)的行数 */
+  claimed: number
+  /** 已有映射、无需认领 */
+  already: number
+  /** 目标表里有行但本地找不到对应议题（例如历史清理过） */
+  unmatched: number
+}
+
+/**
+ * 认领既有行：目标表本来就是用户的表，里面可能已经有行（他们手工写的，或换表前的历史）。
+ * 按「议题ID」列把 Base 行与本地议题对上并写入映射，避免同步时**重复插入**。
+ * 不写入协作列的上次已知值 —— 让首轮拉取能把同事已填的状态/跟进人带进本地。
+ */
+export async function claimExistingRecords(
+  appToken: string,
+  tableId: string
+): Promise<ClaimResult> {
+  const out: ClaimResult = { ok: false, scanned: 0, claimed: 0, already: 0, unmatched: 0 }
+  const map = getFieldMap()
+  const idCol = mapFieldName('议题ID', map)
+  const records = await listIssueRecords(appToken, tableId, [idCol])
+  out.scanned = records.length
+  for (const rec of records) {
+    const idText = String(rec.fields[idCol] ?? '').trim()
+    const localId = Number.parseInt(idText, 10)
+    if (!Number.isFinite(localId) || !getIssueById(localId)) {
+      out.unmatched++
+      continue
+    }
+    const ref = getSyncRef('issue', localId)
+    if (ref && ref.recordId === rec.recordId) {
+      out.already++
+      continue
+    }
+    // contentHash 留空 → 下一轮推送会补写程序列(把我们的列填上);协作列留给首轮拉取
+    saveSyncRef('issue', localId, appToken, tableId, rec.recordId, '')
+    out.claimed++
+  }
+  out.ok = true
+  return out
 }
 
 interface RemoteRecord {
@@ -538,7 +905,11 @@ interface RemoteRecord {
 }
 
 /** 读取议题表里我们关心的三列（分页；field_names 只取必要的，减少流量与限流压力） */
-async function listIssueRecords(appToken: string, tableId: string): Promise<RemoteRecord[]> {
+async function listIssueRecords(
+  appToken: string,
+  tableId: string,
+  fieldNames: string[] = ['议题ID', '状态', '跟进人', '处理备注']
+): Promise<RemoteRecord[]> {
   const out: RemoteRecord[] = []
   let pageToken: string | undefined
   for (let page = 0; page < 20; page += 1) {
@@ -551,7 +922,7 @@ async function listIssueRecords(appToken: string, tableId: string): Promise<Remo
         path: { app_token: appToken, table_id: tableId },
         params: {
           page_size: 200,
-          field_names: JSON.stringify(['议题ID', '状态', '跟进人', '处理备注']),
+          field_names: JSON.stringify(fieldNames),
           ...(pageToken ? { page_token: pageToken } : {})
         }
       })
@@ -581,9 +952,47 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
   const tableId = (getConfig(CFG_TABLE_ISSUES) ?? '').trim()
   if (!tableId) return { ...empty, error: '未解析出议题表 id' }
 
+  const map = getFieldMap()
+  const idCol = mapFieldName('议题ID', map)
+  // 回写闸门:目标表没有 状态/跟进人/处理备注 三列时,同步退化为单向(不再报错刷日志)
+  try {
+    const have = (await listFields(appToken, tableId)).map((f) => f.name)
+    const conflicted = new Set(getConflictedFields())
+    const collabBlocked = COLLAB_KEYS.some((k) => conflicted.has(mapFieldName(k, map)))
+    if (collabBlocked) {
+      const skipped: PullResult = {
+        ...empty,
+        ok: true,
+        note: '回写列(状态/跟进人/处理备注)存在类型不符,已跳过回写（同步为单向;请改列类型或做列名映射）',
+        at
+      }
+      setConfig(CFG_LAST_PULL, JSON.stringify(skipped))
+      pushHistory('pull', skipped)
+      return skipped
+    }
+    if (!canWriteBack(have)) {
+      const skipped: PullResult = {
+        ...empty,
+        ok: true,
+        note: '目标表缺少「状态/跟进人/处理备注」列,本轮跳过回写（同步为单向）',
+        at
+      }
+      setConfig(CFG_LAST_PULL, JSON.stringify(skipped))
+      pushHistory('pull', skipped)
+      return skipped
+    }
+  } catch {
+    /* 列表失败不拦:继续按既有流程拉取,由后续调用报错 */
+  }
+
   let records: RemoteRecord[]
   try {
-    records = await listIssueRecords(appToken, tableId)
+    records = await listIssueRecords(appToken, tableId, [
+      idCol,
+      mapFieldName('状态', map),
+      mapFieldName('跟进人', map),
+      mapFieldName('处理备注', map)
+    ])
   } catch (e) {
     return { ...empty, error: e instanceof Error ? e.message : String(e) }
   }
@@ -600,7 +1009,7 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
   }
 
   for (const rec of records) {
-    const idText = String(rec.fields['议题ID'] ?? '').trim()
+    const idText = String(rec.fields[idCol] ?? '').trim()
     const localId = Number.parseInt(idText, 10)
     if (!Number.isFinite(localId)) {
       out.unmatched++
@@ -611,7 +1020,7 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
       out.unmatched++
       continue
     }
-    const remote = collabOf(rec.fields)
+    const remote = collabOf(rec.fields, map)
     const diff = diffCollab(remote, {
       status: ref.remoteStatus,
       assignee: ref.remoteAssignee,
@@ -656,6 +1065,7 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
   }
 
   setConfig(CFG_LAST_PULL, JSON.stringify(out))
+  pushHistory('pull', out)
   return out
 }
 
@@ -681,13 +1091,11 @@ export async function syncRepliesOut(
   }
   const appToken = baseConfiguredLink()
   if (!appToken) return { ...empty, error: '未配置多维表格链接' }
-  let tableId = (getConfig(CFG_TABLE_REPLIES) ?? '').trim()
+  const tableId = (getConfig(CFG_TABLE_REPLIES) ?? '').trim()
+  // 不再隐式调用 verifyBaseLink:裸 token 进去会"顺手"新建一张「议题」表(用户没同意的副作用)
   if (!tableId) {
-    const verified = await verifyBaseLink(appToken)
-    if (!verified.ok) return { ...empty, error: verified.error ?? '建表失败' }
-    tableId = verified.repliesTableId ?? ''
+    return { ...empty, error: '尚未创建「数字员工回复」表:请在设置页点「执行并建表」后再同步' }
   }
-  if (!tableId) return { ...empty, error: '未解析出回复表 id，请重新点「验证并建表」' }
 
   const since = opts.force ? 0 : Number(getConfig(CFG_LAST_REPLIES_AT) ?? 0) || 0
   const rows = listRepliesChangedSince(wxid, since)
@@ -777,6 +1185,7 @@ export async function syncRepliesOut(
   setConfig(CFG_LAST_REPLIES_AT, String(at))
   setConfig(CFG_LAST_REPLIES, JSON.stringify(out))
   if (out.failed > 0) out.ok = false
+  pushHistory('reply', out)
   return out
 }
 

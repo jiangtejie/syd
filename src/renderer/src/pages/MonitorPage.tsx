@@ -26,7 +26,8 @@ import type {
   FeedbackIssueSeverity,
   FeedbackIssueStatus,
   FeedbackIssueType,
-  FeedbackAnalysisState
+  FeedbackAnalysisState,
+  LarkBaseStatus
 } from '../../../shared/types'
 import './monitor.css'
 
@@ -65,6 +66,16 @@ function MonitorPage(): React.JSX.Element {
   /** 渲染端比主进程新（未重启）：已退回全量通道，提示重启即可恢复聚合与限量 */
   const [skewed, setSkewed] = useState(false)
   const [loading, setLoading] = useState(false)
+  /** 飞书多维表格同步状态(徽标 + 一键同步;与设置页同一份状态) */
+  const [baseSync, setBaseSync] = useState<LarkBaseStatus | null>(null)
+  const [baseBusy, setBaseBusy] = useState('')
+  /** 未配置时的一键配置面板(不必再去设置页) */
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [setupLink, setSetupLink] = useState('')
+  const [setupBusy, setSetupBusy] = useState(false)
+  const [setupNotes, setSetupNotes] = useState<string[]>([])
+  /** preload 桥是否含同步接口(旧构建/热更新后可能需要重启) */
+  const hasBaseSyncApi = typeof window.api?.cs?.lark?.baseVerify === 'function'
   const [range, setRange] = useState(7)
   // 筛选与钻取
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open')
@@ -541,6 +552,124 @@ function MonitorPage(): React.JSX.Element {
   const curPage = Math.min(page, pageTotal)
   const pageItems = filtered.slice((curPage - 1) * pageSize, curPage * pageSize)
 
+  /** 读取飞书同步状态(失败静默:未配置时不该在监控页报错;同步完成后也会刷新) */
+  const loadBaseSync = useCallback((): void => {
+    void window.api?.cs?.lark
+      ?.baseStatus()
+      .then((r) => {
+        if (r?.ok && r.status) setBaseSync(r.status)
+      })
+      .catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    void window.api?.cs?.lark
+      ?.baseStatus()
+      .then((r) => {
+        if (alive && r?.ok && r.status) setBaseSync(r.status)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  /**
+   * 一键配置:粘贴链接 → 执行并建表(带 table= 就写进你指定的表) → 认领既有行 → 首批全量同步。
+   * 目标:从「未配置」到「数据进表」只需一次点击,不必先去设置页。
+   */
+  const runQuickSetup = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseVerify) {
+      toast.error('当前运行的构建不含同步接口:请完全退出并重启应用后再试')
+      return
+    }
+    if (!wxid) {
+      toast.error('还没连接微信账号:同步需要账号作用域')
+      return
+    }
+    const link = setupLink.trim()
+    if (!link) {
+      toast.error('请粘贴多维表格链接（…/base/xxxx?table=tblxxxx）')
+      return
+    }
+    setSetupBusy(true)
+    setSetupNotes([])
+    try {
+      const res = await api.baseVerify(link)
+      if (res.status) setBaseSync(res.status)
+      const notes = [...(res.notes ?? [])]
+      if (!res.ok) {
+        setSetupNotes([...notes, res.error ?? '配置失败'])
+        toast.error(res.error || '配置失败')
+        return
+      }
+      // 已有历史行先认领,避免重复插入
+      if (api.baseClaim) {
+        const c = await api.baseClaim(wxid).catch(() => null)
+        if (c?.ok && c.claimed) {
+          notes.push(
+            `认领既有行:扫描 ${c.claimed.scanned} · 认领 ${c.claimed.claimed} · 无法匹配 ${c.claimed.unmatched}`
+          )
+        }
+      }
+      setSetupNotes(notes)
+      toast.success('多维表格已就绪,开始首批同步…')
+      const sync = await api.baseSync(wxid, true)
+      if (sync.status) setBaseSync(sync.status)
+      if (sync.ok) {
+        const out = sync.result
+        // 面板承诺"开启每 2 分钟自动同步":这里真的打开(否则用户会误以为在自动同步)
+        const cfg = await api.baseConfig({ enabled: true }).catch(() => null)
+        if (cfg?.status) setBaseSync(cfg.status)
+        toast.success(
+          `首批同步完成:新增 ${out?.created ?? 0} · 更新 ${out?.updated ?? 0};已开启每 2 分钟自动同步`
+        )
+        setSetupOpen(false)
+      } else {
+        const err = sync.error || sync.result?.error || '首批同步失败'
+        setSetupNotes([...notes, err])
+        toast.error(err)
+      }
+    } finally {
+      setSetupBusy(false)
+    }
+  }
+
+  /** 监控页「同步到飞书」:先拉同事改动再推本地变更(与设置页同一实现) */
+  const syncBaseNow = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseSync) return
+    if (!wxid) {
+      toast.error('还没连接微信账号:同步需要账号作用域')
+      return
+    }
+    if (!baseSync?.configured) {
+      toast.error('还没配置多维表格链接:请到 设置 → AI 助手 → 议题同步到多维表格 配置')
+      return
+    }
+    setBaseBusy('sync')
+    try {
+      const res = await api.baseSync(wxid, false)
+      if (res.status) setBaseSync(res.status)
+      else loadBaseSync()
+      if (res.ok) {
+        const out = res.result
+        const pulled = res.pulled
+        toast.success(
+          `已同步飞书表格:新增 ${out?.created ?? 0} · 更新 ${out?.updated ?? 0}${
+            pulled && pulled.applied > 0 ? ` · 采纳同事改动 ${pulled.applied}` : ''
+          }`
+        )
+      } else {
+        toast.error(res.error || res.result?.error || '同步失败(详见 设置 → 议题同步 的最近记录)')
+      }
+    } finally {
+      setBaseBusy('')
+    }
+  }
+
   return (
     <div className="page-scroll mon-page">
       <div className="mon-head">
@@ -574,6 +703,43 @@ function MonitorPage(): React.JSX.Element {
           >
             导出快照
           </button>
+          {/* 飞书多维表格同步:未配置时点一下就地配置;已配置则一键同步(详细记录在 设置 → 议题同步) */}
+          <button
+            type="button"
+            className="mon-btn ghost"
+            disabled={baseBusy !== '' || setupBusy}
+            onClick={() => {
+              if (baseSync?.configured) void syncBaseNow()
+              else setSetupOpen((v) => !v)
+            }}
+            title={
+              baseSync?.configured
+                ? `同步到飞书表格(已映射 ${baseSync.mappedIssues} 条)${
+                    baseSync.pullNote ? `\n最近一轮拉取:${baseSync.pullNote}` : ''
+                  }${baseSync.lastResult?.error ? `\n上次失败:${baseSync.lastResult.error}` : ''}`
+                : '尚未配置:请到 设置 → AI 助手 → 议题同步到多维表格 粘贴链接并执行'
+            }
+          >
+            {baseBusy === 'sync' || setupBusy
+              ? '同步中…'
+              : baseSync?.configured
+                ? `同步到飞书${baseSync.enabled ? '' : '（自动同步已关）'}`
+                : setupOpen
+                  ? '收起配置'
+                  : '同步到飞书（点此配置）'}
+          </button>
+          {baseSync?.configured && (
+            <span
+              className={`mon-ana-state${baseSync.lastResult && !baseSync.lastResult.ok ? ' is-bad' : ''}`}
+              title="飞书多维表格同步状态"
+            >
+              {baseSync.lastAt > 0
+                ? `飞书同步 ${fmtTimeShort(baseSync.lastAt)} · 映射 ${baseSync.mappedIssues} 条${
+                    baseSync.lastResult?.failed ? ` · 失败 ${baseSync.lastResult.failed}` : ''
+                  }`
+                : `飞书同步待运行 · 映射 ${baseSync.mappedIssues} 条`}
+            </span>
+          )}
           {anaState?.lastAt && !anaBusy && (
             <span
               className="mon-ana-state"
@@ -659,6 +825,53 @@ function MonitorPage(): React.JSX.Element {
           )}
         </div>
       </div>
+
+      {/* 未配置:就地粘贴链接 → 执行并建表 → 认领既有行 → 首批同步 */}
+      {setupOpen && !baseSync?.configured && (
+        <div className="mon-sync-setup">
+          <div className="mon-sync-note">
+            粘贴多维表格链接（…/base/xxxx?table=tblxxxx）。<b>带 table= 会直接写进你指定的那张表</b>
+            （只补列、不新建表）;不带 table= 则自动新建「议题」与「数字员工回复」两张表。
+            执行成功后会立刻做一次全量同步,并开启每 2 分钟自动同步。
+          </div>
+          <div className="mon-sync-row">
+            <input
+              className="mon-input"
+              value={setupLink}
+              onChange={(e) => setSetupLink(e.target.value)}
+              placeholder="https://xxx.feishu.cn/base/<app_token>?table=<table_id>"
+            />
+            <button
+              type="button"
+              className="mon-btn"
+              disabled={setupBusy}
+              onClick={() => void runQuickSetup()}
+            >
+              {setupBusy ? '配置并同步中…' : '执行并建表 + 首批同步'}
+            </button>
+            <button
+              type="button"
+              className="mon-btn ghost"
+              disabled={setupBusy}
+              onClick={() => setSetupOpen(false)}
+            >
+              取消
+            </button>
+          </div>
+          {setupNotes.length > 0 && (
+            <div className="mon-sync-note" style={{ marginTop: 6 }}>
+              {setupNotes.map((n, i) => (
+                <div key={i}>· {n}</div>
+              ))}
+            </div>
+          )}
+          {!hasBaseSyncApi && (
+            <div className="mon-ana-state is-bad" style={{ marginTop: 6 }}>
+              ⚠ 当前运行的构建不含同步接口:请完全退出并重启应用后再试
+            </div>
+          )}
+        </div>
+      )}
 
       <PlanBanner
         dupPlan={dupPlan}

@@ -1,6 +1,12 @@
 import type { MonitorData } from './monitorMetrics'
 import type { DeriveImageKeysResult } from './types'
-import type { LarkBaseStatus, LarkDigestConfig, LarkPullResult, LarkSyncOut } from './types'
+import type {
+  LarkBaseStatus,
+  LarkBaseVerify,
+  LarkDigestConfig,
+  LarkPullResult,
+  LarkSyncOut
+} from './types'
 import type {
   FeedbackAnalysisState,
   FeedbackIssue,
@@ -747,17 +753,24 @@ export interface CsApi {
       }>
     >
     test: (url: string) => Promise<Result<{ text?: string }>>
-    /** 议题 → 多维表格（Base）同步：状态 / 验证建表 / 立即同步 / 开关 */
+    /** 议题 → 多维表格（Base）同步：状态 / 预览 / 验证建表 / 认领 / 立即同步 / 开关 */
     baseStatus: () => Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }>
-    baseVerify: (link: string) => Promise<{
+    /** 预览:只自检不改动（目标表名 / 现有列 / 将新建列 / 类型冲突 / 主字段 / 回写能力） */
+    basePreview: (link: string) => Promise<LarkBaseVerify>
+    baseVerify: (link: string) => Promise<LarkBaseVerify>
+    /** 认领目标表里已有的行（避免重复插入） */
+    baseClaim: (
+      wxid: string
+    ) => Promise<{
       ok: boolean
-      error?: string
-      notes?: string[]
-      appToken?: string
-      issuesTableId?: string
-      repliesTableId?: string
+      claimed?: { scanned: number; claimed: number; already: number; unmatched: number }
       status?: LarkBaseStatus
+      error?: string
     }>
+    /** 列名映射（传 null 仅读取） */
+    baseFieldMap: (
+      map?: Record<string, string> | null
+    ) => Promise<{ ok: boolean; fieldMap?: Record<string, string>; status?: LarkBaseStatus; error?: string }>
     baseSync: (
       wxid: string,
       force?: boolean,

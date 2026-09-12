@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { LarkBaseStatus, SendStatusInfo } from '../../../shared/types'
+import type { LarkBaseStatus, LarkBaseVerify, SendStatusInfo } from '../../../shared/types'
 import { useWorkbenchStore } from '../stores/workbench'
 import WechatKeySection from '../components/settings/WechatKeySection'
 import CryptoCenterSection from '../components/settings/CryptoCenterSection'
@@ -219,6 +219,12 @@ function SettingsPage(): React.JSX.Element {
   const [baseLink, setBaseLink] = useState('')
   const [baseBusy, setBaseBusy] = useState('')
   const [baseNotes, setBaseNotes] = useState<{ ok: boolean; lines: string[] } | null>(null)
+  /** 预览结果(目标表/将新建列/类型冲突/主字段/回写能力) */
+  const [basePreview, setBasePreview] = useState<LarkBaseVerify | null>(null)
+  /** 列名映射表单(标准列名 → 目标表列名;空=用标准名) */
+  const [baseFieldMap, setBaseFieldMap] = useState<Record<string, string>>({})
+  /** 已配置时是否展开"配置类"按钮(预览/执行并建表/认领),避免与日常动作挤在一起 */
+  const [baseReconfig, setBaseReconfig] = useState(false)
   const wxid = useWorkbenchStore((s) => s.wxid)
   /** 飞书凭证状态刷新计数(保存配置后 +1 重新读取) */
   const [larkReload, setLarkReload] = useState(0)
@@ -251,6 +257,7 @@ function SettingsPage(): React.JSX.Element {
         if (!alive || !res?.ok || !res.status) return
         setBaseStatus(res.status)
         setBaseLink((cur) => cur || res.status?.link || '')
+        if (res.status.fieldMap) setBaseFieldMap(res.status.fieldMap)
       })
       .catch(() => undefined)
     return () => {
@@ -463,6 +470,80 @@ function SettingsPage(): React.JSX.Element {
       )
     } finally {
       setLarkTesting(false)
+    }
+  }
+
+  /** 预览:只自检不改动 —— 先让用户看清"将发生什么"(目标表/将新建列/类型冲突/主字段/回写能力) */
+  const previewBase = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.basePreview) return
+    const link = baseLink.trim()
+    if (!link) {
+      setBaseNotes({ ok: false, lines: ['请先粘贴多维表格链接（…/base/xxxx）'] })
+      return
+    }
+    setBaseBusy('preview')
+    setBaseNotes(null)
+    try {
+      const res = await api.basePreview(link)
+      setBasePreview(res)
+      if (res.status) setBaseStatus(res.status)
+      setBaseNotes({
+        ok: !!res.ok,
+        lines: [...(res.notes ?? []), ...(res.ok ? [] : [res.error ?? '预览失败'])]
+      })
+    } finally {
+      setBaseBusy('')
+    }
+  }
+
+  /** 认领目标表里已有的行(避免重复插入) */
+  const claimBase = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseClaim || !wxid) return
+    setBaseBusy('claim')
+    setBaseNotes(null)
+    try {
+      const res = await api.baseClaim(wxid)
+      if (res.status) setBaseStatus(res.status)
+      const c = res.claimed
+      setBaseNotes({
+        ok: !!res.ok,
+        lines: c
+          ? [
+              `扫描 ${c.scanned} 行:认领 ${c.claimed} · 已有映射 ${c.already} · 无法匹配 ${c.unmatched}`,
+              ...(c.claimed > 0 ? ['下一轮同步会补齐这些行的程序列'] : []),
+              ...(c.unmatched > 0
+                ? ['无法匹配的行:目标表里存在但本地没有对应议题(可忽略或手动删除)']
+                : [])
+            ]
+          : [res.error ?? '认领失败']
+      })
+    } finally {
+      setBaseBusy('')
+    }
+  }
+
+  /** 保存列名映射(本地标准列名 → 目标表实际列名) */
+  const saveBaseFieldMap = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseFieldMap) return
+    const map: Record<string, string> = {}
+    for (const [k, v] of Object.entries(baseFieldMap)) {
+      const name = (v ?? '').trim()
+      if (name) map[k] = name
+    }
+    setBaseBusy('fieldmap')
+    try {
+      const res = await api.baseFieldMap(map)
+      if (res.status) setBaseStatus(res.status)
+      if (res.fieldMap) setBaseFieldMap(res.fieldMap)
+      setBaseNotes({
+        ok: !!res.ok,
+        lines: [res.ok ? '列名映射已保存,下次同步生效' : (res.error ?? '保存失败')]
+      })
+    } finally {
+      setBaseBusy('')
     }
   }
 
@@ -1125,14 +1206,48 @@ function SettingsPage(): React.JSX.Element {
               />
             </FieldRow>
             <div className="st-actions">
-              <button
-                type="button"
-                className="st-btn"
-                disabled={baseBusy !== ''}
-                onClick={() => void verifyBase()}
-              >
-                {baseBusy === 'verify' ? '验证中…' : '验证并建表'}
-              </button>
+              {/* 配置类按钮:未配置时直接展示;已配置后收起,避免与日常动作(同步/拉取)挤在一起 */}
+              {(!baseStatus?.configured || baseReconfig) && (
+                <>
+                  <button
+                    type="button"
+                    className="st-btn ghost"
+                    disabled={baseBusy !== ''}
+                    onClick={() => void previewBase()}
+                    title="只自检、不改动：先看目标表、将新建哪些列、有没有类型冲突"
+                  >
+                    {baseBusy === 'preview' ? '预览中…' : '预览（不改动）'}
+                  </button>
+                  <button
+                    type="button"
+                    className="st-btn"
+                    disabled={baseBusy !== ''}
+                    onClick={() => void verifyBase()}
+                    title="按链接执行：用你指定的表（或新建「议题」表）并补齐字段，然后写一条测试记录验证写权限"
+                  >
+                    {baseBusy === 'verify' ? '执行中…' : '执行并建表'}
+                  </button>
+                  <button
+                    type="button"
+                    className="st-btn ghost"
+                    disabled={baseBusy !== '' || !baseStatus?.configured}
+                    onClick={() => void claimBase()}
+                    title="目标表里已有行时，按「议题ID」与本地议题对上，避免同步时重复插入"
+                  >
+                    {baseBusy === 'claim' ? '认领中…' : '认领既有行'}
+                  </button>
+                </>
+              )}
+              {baseStatus?.configured && !baseReconfig && (
+                <button
+                  type="button"
+                  className="st-btn ghost"
+                  onClick={() => setBaseReconfig(true)}
+                  title="换一个多维表格 / 换目标表 / 重新自检字段"
+                >
+                  重新配置
+                </button>
+              )}
               <button
                 type="button"
                 className="st-btn ghost"
@@ -1172,6 +1287,43 @@ function SettingsPage(): React.JSX.Element {
               checked={!!baseStatus?.rawEvidence}
               onChange={(v) => void patchBaseConfig({ rawEvidence: v })}
             />
+            {basePreview && (
+              <div className="st-hint">
+                <b>目标表：</b>
+                {basePreview.issuesTableName ?? '-'}
+                {basePreview.issuesTableCreated ? '（本次新建）' : ''}
+                {basePreview.appName ? ` · Base「${basePreview.appName}」` : ''}
+                <br />
+                <b>现有列：</b>
+                {(basePreview.existingFields ?? []).join('、') || '(空表)'}
+                <br />
+                <b>将新建：</b>
+                {(basePreview.missingFields ?? []).join('、') || '无（字段已齐）'}
+                {basePreview.primaryField ? (
+                  <>
+                    <br />
+                    <b>主字段：</b>
+                    {basePreview.primaryField}（会把问题标题写进这一列）
+                  </>
+                ) : null}
+                <br />
+                <b>同事回写：</b>
+                {basePreview.canWriteBack
+                  ? '支持（状态 / 跟进人 / 处理备注 三列齐全）'
+                  : '暂不支持（缺状态/跟进人/处理备注列，执行后会补齐）'}
+                {(basePreview.typeConflicts ?? []).length > 0 && (
+                  <>
+                    <br />
+                    <span className="st-bad">
+                      ⚠ 类型不符（不改动，写入可能失败）：
+                      {(basePreview.typeConflicts ?? [])
+                        .map((c) => `${c.name}（现有 ${c.got} / 需要 ${c.want}）`)
+                        .join('、')}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
             {baseNotes && (
               <div className="st-ai-test">
                 <span className={baseNotes.ok ? 'st-ok' : 'st-bad'}>
@@ -1182,8 +1334,75 @@ function SettingsPage(): React.JSX.Element {
             <div className="st-hint">
               权限前提：开放平台给应用开通多维表格**读写**(bitable:app)并发布版本，再把应用加为该
               Base 的协作者（打开表格 → 分享 → 添加协作者 → 选本应用 →
-              「可编辑」）。只读权限能读表但写不进去， 「验证并建表」会明确告诉你是哪种情况。
+              「可编辑」）。只读权限能读表但写不进去， 「预览/执行并建表」会明确告诉你是哪种情况。
             </div>
+
+            {/* 列名映射:目标表列名与标准列不同时,在这里对齐(留空=用标准名) */}
+            <details className="st-hint" style={{ marginTop: 8 }}>
+              <summary style={{ cursor: 'pointer' }}>
+                列名映射（可选:你的表列名与标准列不同时填写）
+              </summary>
+              <div className="st-grid" style={{ marginTop: 6 }}>
+                {[
+                  '议题ID',
+                  '客户群',
+                  '类型',
+                  '严重度',
+                  '标题',
+                  '摘要',
+                  '状态',
+                  '跟进人',
+                  '处理备注',
+                  '首现时间',
+                  '最近更新',
+                  '证据条数'
+                ].map((name) => (
+                  <FieldRow key={name} label={name}>
+                    <input
+                      className="st-input sm"
+                      value={baseFieldMap[name] ?? ''}
+                      placeholder={name}
+                      onChange={(e) => setBaseFieldMap((m) => ({ ...m, [name]: e.target.value }))}
+                    />
+                  </FieldRow>
+                ))}
+                <div className="st-actions">
+                  <button
+                    type="button"
+                    className="st-btn"
+                    disabled={baseBusy !== ''}
+                    onClick={() => void saveBaseFieldMap()}
+                  >
+                    {baseBusy === 'fieldmap' ? '保存中…' : '保存列名映射'}
+                  </button>
+                </div>
+              </div>
+            </details>
+
+            {/* 同步历史:最近 8 轮,便于排查"为什么没同步" */}
+            {(baseStatus?.history ?? []).length > 0 && (
+              <details className="st-hint" style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>
+                  最近同步记录（{baseStatus?.history?.length ?? 0} 轮）
+                </summary>
+                <div style={{ marginTop: 6 }}>
+                  {(baseStatus?.history ?? []).slice(0, 8).map((h, i) => (
+                    <div key={i}>
+                      {String(h.kind ?? '')} ·{' '}
+                      {String(h.at ? new Date(Number(h.at)).toLocaleString('zh-CN') : '')} ·{' '}
+                      {h.error
+                        ? `失败:${String(h.error).slice(0, 80)}`
+                        : h.kind === 'pull'
+                          ? `读 ${String(h.scanned ?? 0)} · 采纳 ${String(h.applied ?? 0)} · 冲突保留本地 ${String(h.skippedLocalWin ?? 0)}${h.note ? ` · ${String(h.note)}` : ''}`
+                          : `扫 ${String(h.scanned ?? 0)} · 新增 ${String(h.created ?? 0)} · 更新 ${String(h.updated ?? 0)} · 跳过 ${String(h.skipped ?? 0)}${Number(h.skippedFields ?? 0) > 0 ? ` · ⚠ 因列类型不符跳过 ${String(h.skippedFields)} 次` : ''}`}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+            {baseStatus?.pullNote && (
+              <div className="st-hint">最近一轮拉取：{baseStatus.pullNote}</div>
+            )}
           </SettingsCard>
         </div>
       )}

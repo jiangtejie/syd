@@ -13,6 +13,7 @@ import type {
   FeedbackAnalysisState,
   DeriveImageKeysResult,
   LarkBaseStatus,
+  LarkBaseVerify,
   LarkDigestConfig,
   LarkPullResult,
   LarkSyncOut,
@@ -784,17 +785,26 @@ const api: PreloadApi = {
       // ── 议题 → 多维表格（Base）同步 ──
       baseStatus: (): Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }> =>
         ipcRenderer.invoke('cs:lark:baseStatus'),
-      baseVerify: (
-        link: string
+      basePreview: (link: string): Promise<LarkBaseVerify> =>
+        ipcRenderer.invoke('cs:lark:basePreview', link),
+      baseVerify: (link: string): Promise<LarkBaseVerify> =>
+        ipcRenderer.invoke('cs:lark:baseVerify', link),
+      baseClaim: (
+        wxid: string
       ): Promise<{
         ok: boolean
-        error?: string
-        notes?: string[]
-        appToken?: string
-        issuesTableId?: string
-        repliesTableId?: string
+        claimed?: { scanned: number; claimed: number; already: number; unmatched: number }
         status?: LarkBaseStatus
-      }> => ipcRenderer.invoke('cs:lark:baseVerify', link),
+        error?: string
+      }> => ipcRenderer.invoke('cs:lark:baseClaim', wxid),
+      baseFieldMap: (
+        map?: Record<string, string> | null
+      ): Promise<{
+        ok: boolean
+        fieldMap?: Record<string, string>
+        status?: LarkBaseStatus
+        error?: string
+      }> => ipcRenderer.invoke('cs:lark:baseFieldMap', map ?? null),
       baseSync: (
         wxid: string,
         force?: boolean,
