@@ -187,7 +187,7 @@ async function verifyFileSend(
  */
 function isRetryableInjectError(error: string | undefined): boolean {
   if (!error) return false
-  return /焦点被抢|剪贴板|未检测到微信窗口|未在限时内响应|超时|focus stolen|clipboard busy|window not found|timed? ?out/i.test(
+  return /焦点被抢|剪贴板|未检测到微信窗口|未在限时内响应|超时|微信搜索框没能打开|截图\/识别失败|focus stolen|clipboard busy|window not found|search box did not open|wrong chat opened|screenshot failed|ocr failed|timed? ?out/i.test(
     error
   )
 }
@@ -244,8 +244,15 @@ async function drain(): Promise<void> {
       continue
     }
 
-    // 目标唯一性预检：搜索框回车会打开第一个结果，重名/前缀撞车时必须拒绝（否则发错群收不回）
-    const decision = pickUniqueTarget(guardSessions(job.wxid), job.sessionId, job.targetName)
+    // 目标唯一性预检：搜索结果第一行未必是目标群，重名/前缀撞车时必须拒绝（否则发错群收不回）
+    // 会话名清单同时交给注入脚本：它读完「实际打开的会话标题」后拿这张表做最近邻比对，
+    // 比目标更接近别的会话名就中止——这是发错群前的最后一道闸门。
+    const sessions = guardSessions(job.wxid)
+    const decision = pickUniqueTarget(sessions, job.sessionId, job.targetName)
+    const injectCtx = {
+      names: sessions.map((s) => s.displayName),
+      isGroup: /@chatroom$/i.test(job.sessionId)
+    }
     if (!decision.ok) {
       sendLog.warn(`发送已拦截（目标不唯一）: ${decision.error ?? ''}`)
       job.resolve({
@@ -262,12 +269,15 @@ async function drain(): Promise<void> {
     await sleep(humanDelay())
 
     let result: SendResult
+    /** 注入脚本 OCR 读回的「实际打开会话」,写进日志便于事后审计 */
+    let openedChat = ''
     if (job.file) {
       // 图片/文件发送:注入后等待微信落库,再做“种类级”弱校验(文件无正文可比,不参与熔断)
       const inject = await injectWithRetry(
-        () => sendFileToChat(decision.name, job.file!.path, job.file!.kind),
+        () => sendFileToChat(decision.name, job.file!.path, job.file!.kind, injectCtx),
         'file'
       )
+      openedChat = inject.opened ?? ''
       if (!inject.ok) {
         result = {
           ok: false,
@@ -288,7 +298,11 @@ async function drain(): Promise<void> {
         }
       }
     } else {
-      const inject = await injectWithRetry(() => sendToChat(decision.name, job.text), 'text')
+      const inject = await injectWithRetry(
+        () => sendToChat(decision.name, job.text, injectCtx),
+        'text'
+      )
+      openedChat = inject.opened ?? ''
       if (!inject.ok) {
         result = {
           ok: false,
@@ -347,8 +361,8 @@ async function drain(): Promise<void> {
         0,
         100
       )} => status=${result.status} verified=${result.verified ?? 'n/a'}${
-        result.error ? ` err=${result.error.slice(0, 200)}` : ''
-      }`
+        openedChat ? ` opened=${openedChat.slice(0, 40)}` : ''
+      }${result.error ? ` err=${result.error.slice(0, 200)}` : ''}`
     )
 
     // 会话间间隔（随机 2.5~7s，仅当还有排队任务时）

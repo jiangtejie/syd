@@ -21,6 +21,7 @@
     "test:media-proto": "node scripts/media-proto-selftest.mjs",
     "test:media-cache": "node scripts/media-cache-selftest.mjs",
     "test:asr": "node scripts/asr-tencent-selftest.mjs",
+    "test:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/wechat-window-selftest.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/wechat-ocr-selftest.ps1",
     "test:all": "npm run test:schema && npm run test:crypto && npm run test:media-proto && npm run test:media-cache && npm run test:asr && npm run test:matcher && npm run test:lark && npm run test:digest && npm run test:send && npm run test:feedback",
     "test:feedback": "node --experimental-strip-types scripts/reply-attribution-selftest.mjs && node --experimental-strip-types scripts/text-filters-selftest.mjs && node --experimental-strip-types scripts/issue-similarity-selftest.mjs",
     "start": "electron-vite preview",

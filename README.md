@@ -280,7 +280,13 @@ npm run test:crypto      # 仅微信库解密（合成 SQLCipher 页 / WAL 帧�
 npm run test:media-proto # 仅 ct-media 路径解析（图片两段 / 语音三段 / 非法命名与穿越）
 npm run test:media-cache # 仅媒体缓存淘汰策略（哪些能删、归档永不删、年龄与容量双约束）
 npm run test:asr         # 仅腾讯云转写纯逻辑（TC3 签名对官方 SDK 黄金向量、请求体字段、响应解析）
+npm run test:win         # 仅微信窗口识别 + 搜索结果行/会话标题判定（真实 OCR 夹具，需 Windows PowerShell）
 ```
+
+> 发送注入用到的 `resources/ps/*.ps1` 必须是**纯 ASCII**（PowerShell 5.1 对无 BOM 脚本按 ANSI 解析），
+> 中文一律用码点拼（如「微信」= `[char]0x5FAE + [char]0x4FE1`），注释也只用英文。
+> 排查注入可用：`powershell -NoProfile -ExecutionPolicy Bypass -File resources/ps/wechat-inject.ps1 -Action list`
+> （只读打印识别到的微信实例，不敲任何键）。
 
 ---
 

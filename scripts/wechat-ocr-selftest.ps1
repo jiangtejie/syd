@@ -1,0 +1,119 @@
+# Self-test for the WeChat search-row / conversation-header matching used by the
+# injector (pure functions on OCR output captured from the real client, so no WeChat,
+# no screen and no OCR engine are needed to run it).
+#
+#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/wechat-ocr-selftest.ps1
+#   npm run test:win
+#
+# Why it must exist: WeChat 4.x keeps a "search the web" block (plus query
+# suggestions) on top of the search dropdown, so "type the name, press Enter" opens
+# something that is not the chat. The injector now clicks the row OCR says is the
+# target and re-reads the conversation header before typing. Those two decisions are
+# what keeps a message out of the wrong group - they are pinned down here.
+#
+# NOTE: keep this file ASCII-only (PS 5.1 parses no-BOM scripts as ANSI); the Chinese
+# fixtures live in scripts/fixtures/wechat-ocr-lines.json and are read as UTF-8.
+
+. (Join-Path $PSScriptRoot '..\resources\ps\wechat-ocr.ps1')
+
+$script:failed = 0
+
+function Check {
+  param([bool]$Ok, [string]$Name, [string]$Detail = '')
+  if (-not $Ok) { $script:failed++ }
+  $tag = '  ok  '
+  if (-not $Ok) { $tag = ' FAIL ' }
+  $line = $tag + ' ' + $Name
+  if ($Detail -ne '') { $line = $line + ' - ' + $Detail }
+  Write-Host $line
+}
+
+function To-Lines($Rows) {
+  $out = New-Object System.Collections.ArrayList
+  foreach ($r in $Rows) {
+    [void]$out.Add([pscustomobject]@{ text = $r.text; x = $r.x; y = $r.y; w = $r.w; h = $r.h })
+  }
+  return ,$out
+}
+
+$fx = Get-Content (Join-Path $PSScriptRoot 'fixtures\wechat-ocr-lines.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$target = $fx.targetGroup
+$names = @($fx.names)
+$search = To-Lines $fx.searchLines
+$miss = To-Lines $fx.searchLinesMiss
+$headerOk = To-Lines $fx.headerLinesOk
+$headerWrong = To-Lines $fx.headerLinesWrong
+
+Write-Host ''
+Write-Host '[1] folding + scoring'
+Check ((ConvertTo-WxName $fx.searchLines[6].text) -eq (ConvertTo-WxName $target)) 'spaced OCR glyphs fold to the real name' (ConvertTo-WxName $fx.searchLines[6].text)
+Check ((Get-WxNameScore $target $target) -eq 1.0) 'identical names score 1.0'
+$sSug = Get-WxNameScore $fx.searchLines[2].text $target
+Check ($sSug -ge 0.7) 'a query-suggestion row scores close to the row threshold' ('score=' + [Math]::Round($sSug, 2))
+$trap = @($search) + [pscustomobject]@{ text = '0 ' + $fx.searchLines[6].text; x = 94; y = 113; w = 92; h = 13 }
+$sTrap = Get-WxNameScore $trap[$trap.Count - 1].text $target
+Check ($sTrap -ge 0.8) 'a suggestion row carrying the EXACT name still clears the row threshold' ('score=' + [Math]::Round($sTrap, 2))
+$rowTrap = Select-WxSearchRow -Lines @($trap) -Target $target -IsGroup $true
+Check ($null -ne $rowTrap -and $rowTrap.y -eq 230) 'and is still not clicked: only rows under the group header count' ('y=' + $rowTrap.y)
+$sOther = Get-WxNameScore $fx.names[2] $target
+Check ($sOther -lt 0.8) 'two store groups sharing prefix/suffix stay below the row threshold' ('score=' + [Math]::Round($sOther, 2))
+$headerLine = $fx.headerLinesOk[1].text
+Check ((ConvertTo-WxNameWithoutTrailingDigits $headerLine).Length -eq (ConvertTo-WxName $target).Length) 'unread counter appended to the header is dropped for matching' (ConvertTo-WxNameWithoutTrailingDigits $headerLine)
+
+Write-Host ''
+Write-Host '[2] row selection on the real dropdown (search the web on top, group row under the group header)'
+$row = Select-WxSearchRow -Lines @($search) -Target $target -IsGroup $true
+Check ($null -ne $row) 'a row was found'
+if ($null -ne $row) {
+  Check ($row.y -eq 230) 'picked the group row (y=230), not the web block or the suggestion rows' ('y=' + $row.y)
+  Check ((ConvertTo-WxName $row.text) -ne $script:WxLblSearchWeb) 'never picks the "search the web" row'
+} 
+Check (($null -eq (Select-WxSearchRow -Lines @($search) -Target $target -IsGroup $true -MinScore 1.01))) 'nothing matches => refuse (caller aborts instead of pressing Enter)'
+Check (($null -eq (Select-WxSearchRow -Lines @($miss) -Target $target -IsGroup $true))) 'target missing from the dropdown => refuse'
+Check (($null -eq (Select-WxSearchRow -Lines @($search) -Target $target -IsGroup $false))) 'contact target is not satisfied by a group-section row'
+$common = To-Lines $fx.searchLinesCommon
+$rowCommon = Select-WxSearchRow -Lines @($common) -Target $target -IsGroup $true
+Check ($null -ne $rowCommon -and $rowCommon.y -eq 130) 'a hit listed under the "frequently used" block is still clickable' ('y=' + $rowCommon.y)
+Check ($null -ne $rowCommon -and $rowCommon.section -eq 'common') 'and is reported as a frequently-used row' ($rowCommon.section)
+foreach ($variant in $script:WxLblCommonForms) {
+  $lines2 = @($common | ForEach-Object { if ($_.y -eq 82) { [pscustomobject]@{ text = $variant; x = $_.x; y = $_.y; w = $_.w; h = $_.h } } else { $_ } })
+  $rv = Select-WxSearchRow -Lines $lines2 -Target $target -IsGroup $true
+  Check ($null -ne $rv -and $rv.y -eq 130) "the block header also matches the OCR reading [$variant]" ('y=' + $rv.y)
+}
+$webOnly = @($search | Where-Object { $_.y -lt 182 })
+Check (($null -eq (Select-WxSearchRow -Lines $webOnly -Target $target -IsGroup $true))) 'no dropdown header on screen => refuse (never blind-click)'
+
+Write-Host ''
+Write-Host '[3] conversation header check: the chat that actually got opened'
+$mOk = Get-WxHeaderMatch -Lines @($headerOk) -Target $target -Names $names
+Check ($mOk.direct -ge 0.6) 'header of the right chat passes the score floor' ('direct=' + [Math]::Round($mOk.direct, 2))
+Check ($mOk.direct -ge ($mOk.bestScore - 0.02)) 'and is not beaten by another known session' ('best=' + $mOk.bestName + ' ' + [Math]::Round($mOk.bestScore, 2))
+Check ($mOk.direct -ge 0.8) 'readable header (one OCR typo) still scores clearly' ('direct=' + [Math]::Round($mOk.direct, 2))
+
+$mWrong = Get-WxHeaderMatch -Lines @($headerWrong) -Target $target -Names $names
+Check ($mWrong.bestName -ne $target) 'similar-but-different group is identified as another session' ('best=' + $mWrong.bestName)
+Check (-not ($mWrong.direct -ge 0.6 -and $mWrong.direct -ge ($mWrong.bestScore - 0.02))) 'wrong chat is REFUSED (no keystroke reaches the chat)' ('direct=' + [Math]::Round($mWrong.direct, 2) + ' best=' + [Math]::Round($mWrong.bestScore, 2))
+
+Write-Host ''
+Write-Host '[4] header check without a session list (names file missing)'
+$mNoNames = Get-WxHeaderMatch -Lines @($headerOk) -Target $target -Names @()
+Check ($mNoNames.direct -ge 0.6) 'still accepts a header that plainly matches the target' ('direct=' + [Math]::Round($mNoNames.direct, 2))
+$mNoNamesWrong = Get-WxHeaderMatch -Lines @($headerWrong) -Target $target -Names @()
+Check ($mNoNamesWrong.direct -lt 0.8) 'and still scores a different group far lower' ('direct=' + [Math]::Round($mNoNamesWrong.direct, 2))
+
+Write-Host ''
+Write-Host '[5] header strip is bounded: message text further down can not fake a match'
+$deep = To-Lines @(
+  @{ text = '0'; x = 398; y = 700; w = 12; h = 12 },
+  @{ text = $target; x = 550; y = 320; w = 100; h = 12 }
+)
+$mDeep = Get-WxHeaderMatch -Lines $deep -Target $target -Names $names
+Check ($mDeep.direct -lt 0.6) 'a chat name in the message area is outside the header strip' ('direct=' + [Math]::Round($mDeep.direct, 2))
+
+Write-Host ''
+if ($script:failed -eq 0) {
+  Write-Host 'all checks passed'
+  exit 0
+}
+Write-Host ($script:failed.ToString() + ' checks FAILED')
+exit 1
