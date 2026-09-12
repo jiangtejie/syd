@@ -49,7 +49,7 @@ function fmtLine(m: ChatMessage): string {
   const text = m.parsedContent || '[无内容]'
   return `[${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(
     d.getMinutes()
-  )}] ${who}: ${text}`
+  )}:${pad(d.getSeconds())}] ${who}: ${text}`
 }
 
 function fmtTimeFull(ts: number): string {
@@ -57,7 +57,7 @@ function fmtTimeFull(ts: number): string {
   const pad = (n: number): string => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(
     d.getMinutes()
-  )}`
+  )}:${pad(d.getSeconds())}`
 }
 
 /** 拉取某会话全部消息（时间过滤后），分批回调行；返回条数 */

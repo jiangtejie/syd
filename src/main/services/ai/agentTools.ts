@@ -30,9 +30,8 @@ function clip(text: string): string {
 
 function fmtTime(ts: number): string {
   const d = new Date(ts)
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(
-    d.getMinutes()
-  ).padStart(2, '0')}`
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 export const SUGGEST_TOOLS: AgentTool[] = [

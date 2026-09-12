@@ -8,6 +8,7 @@ import { toast } from '../../stores/toast'
 import { confirmAsk } from '../../stores/confirmDialog'
 import SkeletonRows from './SkeletonRows'
 import { useEscape } from '../../lib/useEscape'
+import { fmtStamp } from '../../../../shared/monitorMetrics'
 import type {
   GrowthBuzzCommentView,
   GrowthBuzzMentionView,
@@ -55,8 +56,8 @@ function sentimentClass(s: string): string {
   return 'none'
 }
 
-const fmt = (ts: number | null | undefined): string =>
-  ts ? new Date(ts).toLocaleString('zh-CN', { hour12: false }) : '—'
+/** 时间一律精确到时分秒(共享实现) */
+const fmt = (ts: number | null | undefined): string => fmtStamp(ts)
 
 const fmtNum = (n: number): string => (n >= 10000 ? (n / 10000).toFixed(1) + 'w' : String(n))
 

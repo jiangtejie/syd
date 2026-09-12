@@ -70,12 +70,8 @@ export function schemaFromParams(
 
 function fmtTime(ts: number): string {
   const d = new Date(ts)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate()
-  ).padStart(
-    2,
-    '0'
-  )} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 /** 单条微信消息转可读文本(助手展示用,不依赖解析对象内部形态) */
@@ -323,7 +319,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
           const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(
             2,
             '0'
-          )}`
+          )}:${String(t.getSeconds()).padStart(2, '0')}`
           return `${hm} ${who}: ${msgText(m)}`
         })
         .join('\n')

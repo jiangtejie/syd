@@ -41,6 +41,7 @@ import { getDb } from '../../db/database'
 import { topicSame, type TopicFacts } from './issueSimilarity'
 import { ruleExtract } from './ruleExtract'
 import { analyzeLlmIssues, APX_MAX, chunkMainRows, normalizeIssues } from './llmExtract'
+import { fmtStamp } from '../../../shared/monitorMetrics'
 import { AUTO_CLOSE_MAX_AGE_MS, reconcileOpenIssues } from './reconcile'
 import {
   fmtRow,
@@ -494,7 +495,7 @@ export async function analyzeGroupIssues(
               (i) =>
                 `[${i.type}${i.severity && i.severity !== '一般' ? `·${i.severity}` : ''}] ${i.title}${
                   i.followUp ? '（跟进中）' : ''
-                } · 首现 ${new Date(i.occurAt).toLocaleString('zh-CN', { hour12: false })}`
+                } · 首现 ${fmtStamp(i.occurAt)}`
             )
             const out = await analyzeLlmIssues(
               wxid,

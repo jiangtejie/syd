@@ -48,6 +48,8 @@ import {
   isEvidenceImage
 } from './evidenceMedia'
 import { parseLarkRef } from './url'
+/** 时间口径统一走共享实现(精确到秒),别在提示文案里再拼一份 */
+import { fmtStamp } from '../../../shared/monitorMetrics'
 import { createLogger } from '../logging'
 
 const syncLog = createLogger('lark')
@@ -1766,7 +1768,7 @@ export function baseSyncHint(): string {
   if (!st.enabled) return '已配置但同步开关关闭'
   const r = st.lastResult
   if (!r) return '已配置，尚未同步过'
-  const when = new Date(r.at).toLocaleString('zh-CN')
+  const when = fmtStamp(r.at)
   const p = st.lastPull
   const pullText = p
     ? ` · 拉回同事改动 ${p.applied}${p.skippedLocalWin ? `（${p.skippedLocalWin} 条本地更新更晚，保留本地）` : ''}`

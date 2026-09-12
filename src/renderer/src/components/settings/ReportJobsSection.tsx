@@ -47,7 +47,7 @@ function fmtClock(ms?: number): string {
   if (!ms) return '—'
   const d = new Date(ms)
   const p = (n: number): string => String(n).padStart(2, '0')
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 export default function ReportJobsSection(): React.JSX.Element {
@@ -323,7 +323,7 @@ export default function ReportJobsSection(): React.JSX.Element {
                   {j.scope.maxPerRun > 0 && <span>单轮≤{j.scope.maxPerRun}条</span>}
                 </div>
                 <div className="rp-job-last">
-                  最近 {timeAgo(j.lastAt)}
+                  最近 {fmtClock(j.lastAt)}（{timeAgo(j.lastAt)}）
                   {j.lastStatus ? (
                     <>
                       ·

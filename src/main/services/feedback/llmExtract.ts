@@ -2,6 +2,7 @@
  * LLM 提取：分批消费主区、按段排版、证据行号回映射、议题级归一化。
  */
 import { createAiProvider } from '../ai/provider'
+import { fmtHms } from '../../../shared/monitorMetrics'
 import type { NewIssue } from '../../db/repos/issueRepo'
 import {
   LlmLineRef,
@@ -183,13 +184,8 @@ export async function analyzeLlmIssues(
     const names = new Set<string>()
     for (let i = seg.start; i < seg.end; i++) names.add(main[i].senderName)
     const from = new Date(main[seg.start].msg.createTime)
-    parts.push(
-      `[段 ${parts.length + 1} | ${from.getMonth() + 1}月${from.getDate()}日 ${String(
-        from.getHours()
-      ).padStart(2, '0')}:${String(from.getMinutes()).padStart(2, '0')} | 参与：${Array.from(
-        names
-      ).join('、')}]`
-    )
+    const segAt = `${from.getMonth() + 1}月${from.getDate()}日 ${fmtHms(from.getTime())}`
+    parts.push(`[段 ${parts.length + 1} | ${segAt} | 参与：${Array.from(names).join('、')}]`)
     for (let i = seg.start; i < seg.end; i++) parts.push(`[${i}] ${main[i].text}`)
   }
   if (apx.length > 0) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from '../../stores/toast'
 import { confirmAsk } from '../../stores/confirmDialog'
+import { fmtTimeShort } from '../../../../shared/monitorMetrics'
 
 /**
  * 工作台侧栏「收到的渠道文件」:飞书等外部渠道接收并落盘的图片/文件,
@@ -32,12 +33,6 @@ function fmtSize(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
-
-function fmtTime(ts: number): string {
-  const d = new Date(ts)
-  const p = (n: number): string => String(n).padStart(2, '0')
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
 export function ChannelFileTray(): React.JSX.Element {
@@ -290,7 +285,7 @@ export function ChannelFileTray(): React.JSX.Element {
                     </b>
                     <span>
                       {CHANNEL_LABEL[f.channel] ?? f.channel} · {accountName(f.accountId)} ·{' '}
-                      {fmtTime(f.createdAt)} · {fmtSize(f.bytes)}
+                      {fmtTimeShort(f.createdAt)} · {fmtSize(f.bytes)}
                       {f.senderId ? ` · ${f.senderId}` : ''}
                     </span>
                   </div>

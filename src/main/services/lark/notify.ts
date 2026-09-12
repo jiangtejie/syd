@@ -7,6 +7,7 @@ import {
 } from '../../db/repos/feishuSendLogRepo'
 import { createLogger } from '../logging'
 import { sendImText, type FeishuReceiveIdType } from './im'
+import { fmtStamp } from '../../../shared/monitorMetrics'
 
 /**
  * 飞书告警推送(机器人身份,只读业务数据不外发细节的克制口径)。
@@ -189,7 +190,7 @@ export async function sendFeishuTestMessage(): Promise<{
   const now = new Date()
   const text = [
     '【测试消息】微信客服工作台 → 飞书通知',
-    `时间: ${now.toLocaleString('zh-CN')}`,
+    `时间: ${fmtStamp(now.getTime())}`,
     `目标: ${cfg.targets.map((t) => `${t.name}(${t.kind === 'chat' ? '群' : '个人'})`).join('、')}`
   ].join('\n')
   const r = await sendToTargets(text, 'test', `test-${now.getTime()}`)
@@ -211,7 +212,7 @@ export interface AlertIssue {
 function fmtTime(ts: number): string {
   const d = new Date(ts)
   const p = (n: number): string => String(n).padStart(2, '0')
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 /** 问题告警推送(新问题 / 盯办升级);未开启或无目标时静默返回 */

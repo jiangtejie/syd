@@ -29,6 +29,7 @@ import {
   isEvidenceImage,
   maxMediaBytesOf
 } from '../src/main/services/lark/evidenceMedia.ts'
+import { fmtHms, fmtStamp, fmtTimeShort } from '../src/shared/monitorMetrics.ts'
 
 let failed = 0
 const log = (ok, name, detail) => {
@@ -241,6 +242,20 @@ log(
   '附件字段值形状 [{file_token}]（飞书要求）'
 )
 log(EVIDENCE_MEDIA_PARENT_TYPE === 'bitable_image', '父类型=bitable_image（多维表格图片）')
+
+console.log('\n[10] 时间口径：一律精确到时分秒（共享实现，渲染端与主进程同一份）')
+const SAMPLE = 1789000000000
+const STAMP_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
+const HMS_RE = /^\d{2}:\d{2}:\d{2}$/
+log(STAMP_RE.test(fmtStamp(SAMPLE)), 'fmtStamp → YYYY-MM-DD HH:mm:ss', fmtStamp(SAMPLE))
+log(fmtStamp(SAMPLE).endsWith(':' + String(new Date(SAMPLE).getSeconds()).padStart(2, '0')), '最后一段就是秒（不是 00 占位）')
+log(fmtStamp(0) === '—' && fmtStamp(undefined) === '—', '空值 → —（不落到 1970）')
+log(HMS_RE.test(fmtHms(SAMPLE)), 'fmtHms → HH:mm:ss', fmtHms(SAMPLE))
+log(HMS_RE.test(fmtHms(0)) === false && fmtHms(0) === '—', 'fmtHms 空值 → —')
+const shortToday = fmtTimeShort(Date.now())
+log(shortToday.startsWith('今天 ') && HMS_RE.test(shortToday.slice(3)), '今天 → 今天 HH:mm:ss', shortToday)
+log(fmtTimeShort(SAMPLE).includes(':') && fmtTimeShort(SAMPLE).split(':').length === 3, '非今天 → … HH:mm:ss', fmtTimeShort(SAMPLE))
+log(fmtTimeShort(0) === '—', 'fmtTimeShort 空值 → —')
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)

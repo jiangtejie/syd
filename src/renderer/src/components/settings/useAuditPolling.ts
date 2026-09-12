@@ -52,8 +52,8 @@ export function useAuditPolling(
   return { logs, err }
 }
 
-/** 时间(MM-DD HH:mm[:ss]) */
-export function fmtAuditTime(ts: number, withSeconds = false): string {
+/** 时间(MM-DD HH:mm:ss；withSeconds=false 才省秒 —— 默认给秒，审计对时间要精确) */
+export function fmtAuditTime(ts: number, withSeconds = true): string {
   const d = new Date(ts)
   const p = (n: number): string => String(n).padStart(2, '0')
   const base = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`

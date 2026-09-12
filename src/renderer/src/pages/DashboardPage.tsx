@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import { avatarColor } from '../lib/ui'
+import { fmtStamp } from '../../../shared/monitorMetrics'
 import EChart from '../components/EChart'
 import type { EChartsOption } from 'echarts'
 import type {
@@ -578,7 +579,7 @@ function DashboardPage(): React.JSX.Element {
                   style={{ display: 'flex', gap: 12, padding: '4px 0', alignItems: 'baseline' }}
                 >
                   <span style={{ color: 'var(--text-3)', fontSize: 12, flex: 'none' }}>
-                    {fmtAge(nowMs, m.capturedAt)}
+                    {fmtStamp(m.capturedAt)}（{fmtAge(nowMs, m.capturedAt)}）
                   </span>
                   <span style={{ flex: 'none' }}>{m.channel}</span>
                   <span
@@ -642,7 +643,7 @@ function DashboardPage(): React.JSX.Element {
                     <div className="db-q-sub">{s.summary}</div>
                   </div>
                   <span className={`db-q-time${overdue ? ' is-overdue' : ''}`}>
-                    {fmtAge(nowMs, s.lastTimestamp)}
+                    {fmtStamp(s.lastTimestamp)}（{fmtAge(nowMs, s.lastTimestamp)}）
                   </span>
                 </div>
               )

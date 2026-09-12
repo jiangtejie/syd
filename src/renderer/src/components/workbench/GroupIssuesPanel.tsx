@@ -3,6 +3,7 @@ import { useWorkbenchStore } from '../../stores/workbench'
 import { confirmAsk } from '../../stores/confirmDialog'
 import { toast } from '../../stores/toast'
 import { useTeamNames } from '../../lib/teamNames'
+import { fmtTimeShort as fmtTime } from '../../../../shared/monitorMetrics'
 import { TeamMarkButton } from '../TeamMarkButton'
 import { SenderMarkFold } from './SenderMarkFold'
 import type {
@@ -29,22 +30,6 @@ const STATUS_LABEL: Record<FeedbackIssueStatus, string> = {
 
 const DAYS_OPTIONS = [1, 2, 3, 7]
 const DAYS_KEY = 'cs.gipDays'
-
-function fmtTime(ts: number): string {
-  // 同 fmtTimeShort：空值不能落到 new Date(null)，否则 1970-01-01 08:00 会显示成「1月1日 08:00」
-  if (!ts || !Number.isFinite(ts)) return '—'
-  const d = new Date(ts)
-  const now = new Date()
-  const sameDay = (a: Date, b: Date): boolean =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  if (sameDay(d, now)) return `今天 ${hhmm}`
-  const yest = new Date(now.getTime() - 86_400_000)
-  if (sameDay(d, yest)) return `昨天 ${hhmm}`
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${hhmm}`
-}
 
 /** 展开区：跟进人指派（团队成员；空 = 未指派） */
 function OwnerPicker({

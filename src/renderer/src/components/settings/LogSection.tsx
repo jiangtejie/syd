@@ -183,12 +183,9 @@ export function LogSection(): React.JSX.Element {
     const list = rows ?? []
     if (list.length === 0) return toast.error('当前没有可导出的日志')
     const d = new Date()
-    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(
-      d.getDate()
-    ).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(
-      2,
-      '0'
-    )}`
+    const p = (n: number): string => String(n).padStart(2, '0')
+    // 文件名到秒:同一分钟内连点两次导出不会互相覆盖
+    const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
     const blob = new Blob([`${linesOf(list)}\n`], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

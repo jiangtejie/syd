@@ -213,18 +213,42 @@ export const MONITOR_STATUS_LABEL: Record<FeedbackIssueStatus, string> = {
   archived: '已归档'
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+/** 时分秒 HH:mm:ss（时间口径统一到秒：同一分钟里的两条记录也要能分出先后） */
+export function fmtHms(ts: number): string {
+  if (!ts || !Number.isFinite(ts)) return '—'
+  const d = new Date(ts)
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}
+
+/**
+ * 完整时间戳 YYYY-MM-DD HH:mm:ss —— 全应用统一口径。
+ * 为什么不用 toLocaleString：各平台/语言的默认格式不一致（有的不带秒、有的是 12 小时制），
+ * 排查问题时「15:20」也不够用。要展示时间就用这一个函数。
+ */
+export function fmtStamp(ts?: number | null): string {
+  if (!ts || !Number.isFinite(ts)) return '—'
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}
+
 export function fmtTimeShort(ts: number): string {
   // 空/非有限值直接留白：new Date(null) = 1970-01-01 08:00，会伪装成「1月1日 08:00」这种真实时间
   if (!ts || !Number.isFinite(ts)) return '—'
   const d = new Date(ts)
-  const pad = (n: number): string => String(n).padStart(2, '0')
   const sameDay = (now: Date): boolean =>
     d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate()
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
-  if (sameDay(new Date())) return `今天 ${hm}`
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`
+  const yest = new Date()
+  yest.setDate(yest.getDate() - 1)
+  const hms = fmtHms(ts)
+  if (sameDay(new Date())) return `今天 ${hms}`
+  if (sameDay(yest)) return `昨天 ${hms}`
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${hms}`
 }
 
 export function ageText(ts: number, now = Date.now()): string {

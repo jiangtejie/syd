@@ -7,6 +7,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from '../stores/toast'
 import SkeletonRows from '../components/growth/SkeletonRows'
 import { useEscape } from '../lib/useEscape'
+import { fmtStamp } from '../../../shared/monitorMetrics'
 import './growth-ai.css'
 
 interface TaskView {
@@ -149,16 +150,8 @@ const VARIANT_LABEL: Record<string, string> = {
   'chat:image': '生成图候选'
 }
 
-const fmtTime = (ts: number | null): string =>
-  ts
-    ? new Date(ts).toLocaleString('zh-CN', {
-        hour12: false,
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
-    : '—'
+/** 时间一律精确到时分秒(共享实现) */
+const fmtTime = (ts: number | null): string => fmtStamp(ts)
 
 interface TaskCardProps {
   t: TaskView

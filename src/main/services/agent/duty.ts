@@ -12,6 +12,7 @@ import { isGroupExcluded } from '../feedback/groupScope'
 import { isRuleText, isTeamMsg, msgToText, readGroupMessages } from '../feedback/shared'
 import { enrichMessages, getSessions } from '../wechat/wxService'
 import { generateSuggestions } from '../ai/suggest'
+import { fmtStamp } from '../../../shared/monitorMetrics'
 import { matchReply } from './matcher'
 import { createLogger } from '../logging'
 import type { ChatMessage } from '../../../shared/types'
@@ -163,12 +164,8 @@ export async function runDutyPass(
       const vars: Record<string, string> = {
         客户名: customerName,
         群名: g.displayName,
-        日期: new Date(now).toLocaleDateString('zh-CN'),
-        时间: new Date(now).toLocaleTimeString('zh-CN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        })
+        日期: fmtStamp(now).slice(0, 10),
+        时间: fmtStamp(now).slice(11) // 一律到秒(话术模板里 {时间} 也是秒级)
       }
 
       const decision = matchReply(
@@ -333,7 +330,7 @@ export function previewOnMessages(
     const vars: Record<string, string> = {
       客户名: m.senderNickname || m.senderUsername || '',
       群名: groupName,
-      日期: new Date(m.createTime).toLocaleDateString('zh-CN')
+      日期: fmtStamp(m.createTime).slice(0, 10)
     }
     const d = matchReply({ text, fromTeam, nonText: !isRuleText(m), vars }, scripts)
     if (d.action === 'skip') continue

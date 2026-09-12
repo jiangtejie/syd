@@ -6,6 +6,7 @@ import StoresCard from '../components/growth/StoresCard'
 import BuzzPanel from '../components/growth/BuzzPanel'
 import SkeletonRows from '../components/growth/SkeletonRows'
 import { useCountUp } from '../lib/useCountUp'
+import { fmtStamp } from '../../../shared/monitorMetrics'
 import type {
   GrowthAsset,
   GrowthContentDetailView,
@@ -27,8 +28,8 @@ type GrowthTab = 'provider' | 'sources' | 'warehouse' | 'ai' | 'buzz'
 
 const growthApi = window.api?.cs?.growth
 
-const fmt = (ts: number | null | undefined): string =>
-  ts ? new Date(ts).toLocaleString('zh-CN', { hour12: false }) : '—'
+/** 时间一律精确到时分秒(共享实现,别在这里再写一份) */
+const fmt = (ts: number | null | undefined): string => fmtStamp(ts)
 
 /** 相对时间(用于「下次采集」) */
 const fmtRel = (ts: number | null | undefined): string => {

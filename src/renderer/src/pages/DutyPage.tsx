@@ -10,6 +10,7 @@ import type {
   DutyStats,
   DutyStatus
 } from '../../../shared/types'
+import { fmtTimeShort as fmtTime } from '../../../shared/monitorMetrics'
 import './duty.css'
 
 /**
@@ -35,15 +36,6 @@ const DECISION_LABEL: Record<string, string> = {
   llm: 'LLM 兜底',
   handoff: '转人工',
   skip: '不介入'
-}
-
-function fmtTime(ts?: number): string {
-  if (!ts) return '—'
-  const d = new Date(ts)
-  const now = new Date()
-  const sameDay = d.toDateString() === now.toDateString()
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`
 }
 
 /** 话术模式列表 ←→ 文本（一行一条：kw: 关键词 / re: 正则） */

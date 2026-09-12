@@ -11,6 +11,7 @@ import type {
   FeedbackIssueSeverity,
   FeedbackIssueType
 } from '../../../shared/types'
+import { fmtHms } from '../../../shared/monitorMetrics'
 
 export const ISSUE_TYPES: FeedbackIssueType[] = [
   '客诉',
@@ -175,11 +176,7 @@ export function fmtRow(m: ChatMessage, team: Set<string>): LlmRow {
     msg: m,
     senderName: senderLabel(m, team),
     senderIsTeam: isTeamMsg(m, team) || undefined,
-    text: `${new Date(m.createTime).toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    })} ${senderLabel(m, team)}: ${msgToText(m)}`
+    text: `${fmtHms(m.createTime)} ${senderLabel(m, team)}: ${msgToText(m)}`
   }
 }
 

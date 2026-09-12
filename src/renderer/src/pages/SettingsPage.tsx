@@ -22,6 +22,7 @@ import {
 } from '../components/settings/ui'
 import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
+import { fmtStamp } from '../../../shared/monitorMetrics'
 import { confirmAsk } from '../stores/confirmDialog'
 import { setIssueAlertPref } from '../lib/issueAlert'
 import './settings.css'
@@ -210,16 +211,6 @@ function maskBaseLink(link: string | undefined): string {
   if (!m) return raw.length > 12 ? raw.slice(0, 6) + '…' + raw.slice(-4) : raw
   const tok = m[2]
   return tok.length > 10 ? m[1] + '/base/' + tok.slice(0, 4) + '…' + tok.slice(-4) : raw
-}
-
-/** 相对时间：比 toLocaleString 更省心（「3 分钟前」比一串日期好读） */
-function fmtAgo(at: number): string {
-  if (!at) return '从未'
-  const diff = Date.now() - at
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3600_000) return Math.floor(diff / 60_000) + ' 分钟前'
-  if (diff < 86400_000) return Math.floor(diff / 3600_000) + ' 小时前'
-  return Math.floor(diff / 86400_000) + ' 天前'
 }
 
 /** 同步历史里的 kind → 中文（证据明细是新增的一类，别只显示英文） */
@@ -1593,7 +1584,7 @@ function SettingsPage(): React.JSX.Element {
                     </button>
                   </FieldRow>
                   <div className="st-hint">
-                    {`Base「${baseStatus.baseName || '未读取到名称'}」 · 议题表「${baseStatus.issuesTableName || '议题'}」 · 上次同步 ${fmtAgo(baseStatus.lastAt)}`}
+                    {`Base「${baseStatus.baseName || '未读取到名称'}」 · 议题表「${baseStatus.issuesTableName || '议题'}」 · 上次同步 ${fmtStamp(baseStatus.lastAt)}`}
                   </div>
                   <div className="sf-actions-split">
                     <button
@@ -1663,7 +1654,7 @@ function SettingsPage(): React.JSX.Element {
                     {(baseStatus?.history ?? []).slice(0, 8).map((h, i) => (
                       <div key={i}>
                         {KIND_LABEL[String(h.kind ?? '')] ?? String(h.kind ?? '')} ·{' '}
-                        {String(h.at ? new Date(Number(h.at)).toLocaleString('zh-CN') : '')} ·{' '}
+                        {fmtStamp(Number(h.at ?? 0))} ·{' '}
                         {h.error
                           ? `失败:${String(h.error).slice(0, 80)}`
                           : h.kind === 'pull'
@@ -1745,7 +1736,7 @@ function SettingsPage(): React.JSX.Element {
             </div>
             {baseStatus?.lastEvidence && (
               <div className="st-hint">
-                {`上次证据同步 ${fmtAgo(baseStatus.lastEvidence.at)}：`}
+                {`上次证据同步 ${fmtStamp(baseStatus.lastEvidence.at)}：`}
                 {baseStatus.lastEvidence.error
                   ? baseStatus.lastEvidence.error
                   : `扫 ${baseStatus.lastEvidence.scanned} · 新增 ${baseStatus.lastEvidence.created} · 更新 ${baseStatus.lastEvidence.updated} · 跳过 ${baseStatus.lastEvidence.skipped}${baseStatus.lastEvidence.failed ? ` · 失败 ${baseStatus.lastEvidence.failed}` : ''}${baseStatus.lastEvidence.mediaUploaded || baseStatus.lastEvidence.mediaCached ? ` · 附件写 ${baseStatus.lastEvidence.mediaUploaded ?? 0} 条（复用素材 ${baseStatus.lastEvidence.mediaCached ?? 0} 张）` : ''}${baseStatus.lastEvidence.mediaFailed ? ` · 附件失败 ${baseStatus.lastEvidence.mediaFailed}` : ''}`}

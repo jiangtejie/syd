@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { writeFile } from 'node:fs/promises'
+import { fmtStamp } from '../../shared/monitorMetrics'
 import {
   clearChatMessages,
   createChat,
@@ -60,7 +61,7 @@ function sessionToMarkdown(sessionId: number): { title: string; md: string } | {
   const lines: string[] = []
   lines.push(`# ${session.title || '工作台会话'}`)
   lines.push('')
-  lines.push(`> 导出时间:${new Date().toLocaleString()} · 消息 ${rows.length} 条`)
+  lines.push(`> 导出时间:${fmtStamp(Date.now())} · 消息 ${rows.length} 条`)
   lines.push('')
   for (const r of rows) {
     let meta: Record<string, unknown> | null = null
