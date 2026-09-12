@@ -592,8 +592,17 @@ function Get-WxOcrLines {
 # it started. A teleporting cursor that clicks in the same millisecond is the one thing
 # an onlooker (or a screen recording) notices immediately.
 function Invoke-WxClick {
-  param([int]$X, [int]$Y, [bool]$RestoreCursor = $true, [switch]$Instant)
+  param([int]$X, [int]$Y, [bool]$RestoreCursor = $true, [switch]$Instant, [int]$OwnerPid = 0)
+  # Ownership is checked when the point is COMPUTED, but one to two seconds pass before
+  # the button actually goes down here. If the window moved, dropped behind, or another
+  # app came to the front in the meantime, this click lands in that app - the one
+  # accident this tool must never have. Re-check at the last moment and refuse instead.
+  if ($OwnerPid -gt 0) {
+    if (([WxUi32]::At($X, $Y)) -notlike ('pid=' + $OwnerPid + ' *')) { return $false }
+  }
   $from = [WxUi32]::Cursor()
+  # Returns $true when the click really happened: callers abort on $false instead of
+  # carrying on as if the window had been clicked.
   if ($Instant) {
     [void][WxUi32]::SetCursorPos($X, $Y)
   } else {
@@ -611,7 +620,7 @@ function Invoke-WxClick {
   [WxUi32]::Down()
   Start-Sleep -Milliseconds (Get-WxJitter -Base 55 -Spread 30)
   [WxUi32]::Up()
-  if (-not $RestoreCursor) { return }
+  if (-not $RestoreCursor) { return $true }
   Start-Sleep -Milliseconds (Get-WxJitter -Base 220 -Spread 120)
   $back = Get-Random -Minimum 4 -Maximum 8
   for ($i = 1; $i -le $back; $i++) {
@@ -620,4 +629,5 @@ function Invoke-WxClick {
     Start-Sleep -Milliseconds (Get-WxJitter -Base 10 -Spread 6)
   }
   [void][WxUi32]::SetCursorPos($from[0], $from[1])
+  return $true
 }

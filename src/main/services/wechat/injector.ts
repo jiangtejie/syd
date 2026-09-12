@@ -123,6 +123,21 @@ export function humanizeInjectError(raw: string | undefined): string | undefined
   if (/workstation is locked/i.test(raw)) {
     return '电脑已锁屏:锁屏期间无法操作微信,请解锁后再重试(排队中的发送不会被消耗)'
   }
+  // 「窗口闪一下又退回后台」的实际原因:注入时微信没抢到前台/被别的窗口盖住。
+  // 脚本现在会点名挡在前面的应用(Get-WxCoveredBy),这里直接把它翻译成可执行的建议。
+  if (/window is covered by another window/i.test(raw)) {
+    const who = raw.match(/covered by another window at[^:]*:\s*([^"(]+)/i)?.[1]?.trim()
+    const title = raw.match(/\("([^"]*)"\)/)?.[1]?.trim()
+    const blocker = [who, title ? `「${title}」` : ''].filter(Boolean).join(' ')
+    return `微信窗口被其它窗口盖住了${blocker ? `（挡在前面的是 ${blocker}）` : ''}:请把微信窗口拖到没被遮挡的位置、或先点一下微信窗口让它到最前,再重试`
+  }
+  // 两种 not clickable 的处置不同:搜索框点不到 vs 结果行点不到,分开说
+  if (/search box is not clickable/i.test(raw)) {
+    return '微信搜索框点不到(窗口太小、被别的窗口挡住或已移出屏幕):请把微信窗口摆好后再重试'
+  }
+  if (/search result row is not clickable/i.test(raw)) {
+    return '微信搜索结果行点不到(窗口被移走或被挡住):请让微信窗口保持可见后重试'
+  }
   if (/not clickable/i.test(raw)) {
     return '微信窗口不可点击(可能已移出屏幕/被遮挡/太小):请把微信窗口摆好后再重试'
   }

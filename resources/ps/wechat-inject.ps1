@@ -224,6 +224,12 @@ function Clear-WxField {
 # not slower in any way that matters - it just stops looking like a metronome.
 function Send-KeySeq {
   param([string]$seq, [switch]$Quick)
+  # While a send is in flight the keyboard must still belong to WeChat: if another app
+  # grabbed the foreground (a stray click, a popup, a toast), these keys would be typed
+  # into THAT app - ESC into its dialogs, Ctrl+V into its fields. Abort instead.
+  if ($script:WxKeyGuardHwnd -ne 0 -and ([Win32]::GetForegroundWindow() -ne [IntPtr]$script:WxKeyGuardHwnd)) {
+    throw 'Focus stolen, send cancelled (keys blocked: the foreground window is not WeChat)'
+  }
   # Quick is for bulk repeats (the backspace sweep): a human holding Backspace deletes
   # in a burst, so those must NOT be paced like deliberate key presses.
   $hold = 45; $gap = 30; $modHold = 18; $modGap = 25
@@ -408,6 +414,68 @@ function Focus-WeChatWindow([IntPtr]$hwnd) {
   return ([Win32]::GetForegroundWindow() -eq $hwnd)
 }
 
+# ------------------------------------------------- foreground / coverage
+
+# While a send is in flight, every keystroke must land in WeChat. 0 = no guard (the
+# diagnostics actions type nothing). Set by the dispatcher before send/sendfile/open.
+$script:WxKeyGuardHwnd = [int64]0
+
+function Get-WxProcessName([int]$ProcId) {
+  try { return (Get-Process -Id $ProcId -ErrorAction Stop).ProcessName } catch { return ('pid ' + $ProcId) }
+}
+
+# Parse "[WxUi32]::At" ("pid=1 cls=X title=[Y]") into pid / cls / title.
+function ConvertFrom-WxAt([string]$At) {
+  $out = @{ pid = 0; cls = ''; title = '' }
+  if ([string]::IsNullOrWhiteSpace($At)) { return $out }
+  if ($At -match 'pid=(\d+)') { $out.pid = [int]$Matches[1] }
+  if ($At -match 'cls=([^ ]*)') { $out.cls = $Matches[1] }
+  if ($At -match 'title=\[(.*)\]') { $out.title = $Matches[1] }
+  return $out
+}
+
+<#
+  Is something else sitting on top of the WeChat window - right where we are about to
+  work? Get-WxWindowShot is a SCREEN capture of the window rect, so a covered window
+  silently yields a picture of whatever is in front, and every OCR decision after that is
+  made on the wrong app. Probing the title bar and the search-box strip (the two places
+  this flow touches) turns that into a named, actionable failure.
+  Returns @{ proc; title; x; y } for the covering app, or $null when WeChat is clear.
+#>
+function Get-WxCoveredBy {
+  param([int]$OwnerPid, [int[]]$Rect)
+  if ($null -eq $Rect -or $Rect.Count -lt 4) { return $null }
+  if ($Rect[2] -le 0 -or $Rect[3] -le 0) { return $null }
+  $pts = @(
+    @(($Rect[0] + [int]($Rect[2] / 2)), ($Rect[1] + 12)),
+    @(($Rect[0] + 130), ($Rect[1] + 52))
+  )
+  foreach ($p in $pts) {
+    $at = ConvertFrom-WxAt ([WxUi32]::At([int]$p[0], [int]$p[1]))
+    if ($at.pid -le 0 -or $at.pid -eq $OwnerPid) { continue }
+    # Braces would break the single-line JSON this script prints on stdout.
+    $title = ([string]$at.title) -replace '[{}]', ''
+    return @{ proc = (Get-WxProcessName $at.pid); title = $title; x = $p[0]; y = $p[1] }
+  }
+  return $null
+}
+
+<#
+  One message naming the app that is in the way. humanizeInjectError turns it into an
+  actionable Chinese hint; "not clickable" alone never told anyone what to do.
+#>
+function New-WxCoveredError {
+  param([string]$Stage, $Cover)
+  $who = 'another window'
+  if ($null -ne $Cover) {
+    $who = [string]$Cover.proc
+    if (-not [string]::IsNullOrWhiteSpace([string]$Cover.title)) {
+      $who = $who + ' ("' + (([string]$Cover.title) -replace '[{}]', '') + '")'
+    }
+  }
+  return ('WeChat window is covered by another window at ' + $Stage + ': ' + $who)
+}
+
 <#
   Open the chat named Target.
   WeChat 4.x does not expose its search dropdown to UI Automation and pressing Enter
@@ -453,11 +521,22 @@ function Open-WxSession {
   #    (In production WeChat sits behind the app, so that first click is ALWAYS eaten -
   #    which is exactly why "click the search box once" used to do nothing.)
   # So: click a harmless spot to activate, then click the search box for real.
-  Restore-WeChatWindow $hwnd
-  [Win32]::Raise($hwnd)
-  [void][Win32]::SetForegroundWindow($hwnd)
+  # Raise() alone only toggles topmost (a visible flash) and SetForegroundWindow is
+  # refused for a background process: the window flashed up and dropped straight back
+  # behind whatever was in front - and everything below kept going as if it had not.
+  # Focus-WeChatWindow runs the verified ladder and says so when it fails, instead of
+  # letting the screen capture below "read" the covering app.
+  if (-not (Focus-WeChatWindow $hwnd)) {
+    return @{ ok = $false; error = (New-WxCoveredError -Stage 'the WeChat window' -Cover (Get-WxCoveredBy -OwnerPid $Win.pid -Rect ([WxUi32]::Rect($hwnd)))) }
+  }
   Start-WxPause -Base 320 -Spread 120 -Hesitate $false
   $rect = [WxUi32]::Rect($hwnd)
+  # Foreground but still covered (a topmost overlay does exactly this): the screenshot
+  # below would be a picture of that overlay, so stop before it and name the blocker.
+  $cover = Get-WxCoveredBy -OwnerPid $Win.pid -Rect $rect
+  if ($null -ne $cover) {
+    return @{ ok = $false; error = (New-WxCoveredError -Stage 'the search box' -Cover $cover) }
+  }
   # Find the search box by looking at the window, not by assuming a fixed offset: the
   # layout moves between versions, window sizes and pane widths, and a stale offset means
   # clicking somewhere that is not the field at all. The fallback offset is kept as a
@@ -487,9 +566,15 @@ function Open-WxSession {
   $atClick = [WxUi32]::At($searchX, $searchY)
   # First click activates the window (that click is eaten by the activation), the second
   # one really opens and focuses the field - so no separate title-bar click is needed.
-  Invoke-WxClick -X $searchX -Y $searchY
+  # Both are ownership-checked at the moment of the click: if WeChat dropped behind in the
+  # meantime the click would otherwise land in the app that took its place.
+  if (-not (Invoke-WxClick -X $searchX -Y $searchY -OwnerPid $Win.pid)) {
+    return @{ ok = $false; error = (New-WxCoveredError -Stage 'the search box' -Cover (Get-WxCoveredBy -OwnerPid $Win.pid -Rect $rect)) }
+  }
   Start-WxPause -Base 800 -Spread 250 -Hesitate $false
-  Invoke-WxClick -X $searchX -Y $searchY
+  if (-not (Invoke-WxClick -X $searchX -Y $searchY -OwnerPid $Win.pid)) {
+    return @{ ok = $false; error = (New-WxCoveredError -Stage 'the search box' -Cover (Get-WxCoveredBy -OwnerPid $Win.pid -Rect $rect)) }
+  }
   Start-WxPause -Base 620 -Spread 180 -Hesitate $false
   # Diagnostics: did that first click actually open the dropdown? (If the click was eaten
   # by window activation this is False, and the shot below shows exactly what happened.)
@@ -507,10 +592,14 @@ function Open-WxSession {
   for ($attempt = 1; $attempt -le 3; $attempt++) {
     if ($attempt -eq 2) {
       # The OCR point may have been the wrong run: try the classic offset instead.
+      $retryClick = $false
       if ($null -ne $fallback -and ($fallback[0] -ne $searchX -or $fallback[1] -ne $searchY)) {
-        Invoke-WxClick -X $fallback[0] -Y $fallback[1]
+        $retryClick = Invoke-WxClick -X $fallback[0] -Y $fallback[1] -OwnerPid $Win.pid
       } else {
-        Invoke-WxClick -X $searchX -Y $searchY
+        $retryClick = Invoke-WxClick -X $searchX -Y $searchY -OwnerPid $Win.pid
+      }
+      if (-not $retryClick) {
+        return @{ ok = $false; error = (New-WxCoveredError -Stage 'the search box' -Cover (Get-WxCoveredBy -OwnerPid $Win.pid -Rect $rect)) }
       }
       Start-WxPause -Base 620 -Spread 180 -Hesitate $false
     } elseif ($attempt -gt 2) {
@@ -585,7 +674,9 @@ function Open-WxSession {
 
   $rowPoint = Resolve-WxClickPoint -Rect $shot.rect -X ($shot.rect[0] + $row.x + 40) -Y ($shot.rect[1] + $row.y + [int]($row.h / 2)) -OwnerPid $Win.pid
   if ($null -eq $rowPoint) { return @{ ok = $false; error = 'Search result row is not clickable (window moved?)' } }
-  Invoke-WxClick -X $rowPoint[0] -Y $rowPoint[1]
+  if (-not (Invoke-WxClick -X $rowPoint[0] -Y $rowPoint[1] -OwnerPid $Win.pid)) {
+    return @{ ok = $false; error = (New-WxCoveredError -Stage 'the search result row' -Cover (Get-WxCoveredBy -OwnerPid $Win.pid -Rect $shot.rect)) }
+  }
   # Remember where the pointer came to rest: used later to notice the operator grabbing
   # the mouse mid-send (in which case we back off instead of fighting them).
   $cursorAfterClick = [WxUi32]::Cursor()
@@ -779,6 +870,9 @@ try {
       Send-KeySeq $Keys
       $out = @{ ok = $true; title = $win.title }
     } elseif ($Action -eq 'send' -or $Action -eq 'sendfile' -or $Action -eq 'open') {
+      # From here on every keystroke must land in this window: Send-KeySeq refuses to
+      # type once the foreground has moved to another app (see the guard there).
+      $script:WxKeyGuardHwnd = [int64]$win.hwnd
       $shotDir = $ShotDir
       if ([string]::IsNullOrWhiteSpace($shotDir)) { $shotDir = [System.IO.Path]::GetTempPath() }
       if (-not (Test-Path -LiteralPath $shotDir)) { [void](New-Item -ItemType Directory -Path $shotDir -Force) }
