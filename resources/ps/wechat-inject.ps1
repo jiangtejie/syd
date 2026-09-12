@@ -481,6 +481,9 @@ function Open-WxSession {
   if ($null -eq $boxPt) { return @{ ok = $false; error = 'WeChat search box is not clickable (window too small or covered)' } }
   $searchX = $boxPt[0]
   $searchY = $boxPt[1]
+  # Rows above this line are the field itself / the title bar, never a result.
+  $searchBelowY = 80                                # fallback path: same offset as the click point
+  if ($null -ne $boxLine) { $searchBelowY = [int]$boxLine.y + [int]$boxLine.h + 4 }
   $atClick = [WxUi32]::At($searchX, $searchY)
   # First click activates the window (that click is eaten by the activation), the second
   # one really opens and focuses the field - so no separate title-bar click is needed.
@@ -538,18 +541,22 @@ function Open-WxSession {
     # in the result rows instead). The dropdown's own rows are the honest signal:
     #   - a row we can click, or
     #   - any row that resembles the target  => the typed text got through.
+    # A clickable row is the strongest evidence and does not depend on any section
+    # header being recognized (WeChat puts the contact hit above every header).
+    $row = Select-WxSearchRow -Lines @($lines) -Target $Target -IsGroup $IsGroup -BelowY $searchBelowY
+    if ($null -ne $row) {
+      $sawDropdown = $true
+      break
+    }
     $dropdownOpen = Test-WxSearchDropdown -Lines @($lines)
     $queryLanded = $false
     foreach ($l in @($lines)) {
-      if ($l.y -le 100) { continue }
+      if ($l.y -le $searchBelowY) { continue }
       if ((Get-WxNameScore $l.text $Target) -ge 0.5) { $queryLanded = $true }
     }
-    if ($dropdownOpen) {
-      $row = Select-WxSearchRow -Lines @($lines) -Target $Target -IsGroup $IsGroup
-      if ($null -ne $row -or $queryLanded) {
-        $sawDropdown = $true
-        break
-      }
+    if ($dropdownOpen -and $queryLanded) {
+      $sawDropdown = $true
+      break
     }
     $lastBoxText = ''
     foreach ($l in @($lines)) {
@@ -639,6 +646,16 @@ function Invoke-SendText {
     Start-WxPause -Base 420 -Spread 170
     # Read the chat input back before pressing Enter: Enter is the point of no return, and
     # an empty or wrong input is either a silent no-send or somebody else's leftover text.
+    # If the window lost the foreground the frame would show whatever is in front, so make
+    # sure WeChat is in front first - otherwise this gate would blame the paste.
+    if ([Win32]::GetForegroundWindow() -ne $hwnd) {
+      [Win32]::Raise($hwnd)
+      [void][Win32]::SetForegroundWindow($hwnd)
+      Start-WxPause -Base 400 -Spread 150 -Hesitate $false
+    }
+    if ([Win32]::GetForegroundWindow() -ne $hwnd) {
+      return @{ ok = $false; error = 'Focus stolen, send cancelled' }
+    }
     $rect = [WxUi32]::Rect($hwnd)
     $beforeEnter = Join-Path $shotDir 'wx-before-enter.png'
     $shotB = Get-WxWindowShot -Hwnd ([int64]$Win.hwnd) -OutPath $beforeEnter

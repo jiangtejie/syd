@@ -345,5 +345,146 @@
       "w": 84,
       "h": 12
     }
+  ],
+  "targetContact": "亚特报销-张新宇17782050991",
+  "_contactLines": "real capture: WeChat puts the contact hit ABOVE every section header, and its small grey '联系人' header is missed by OCR - the row must still be clickable (group target on the same frame must stay in the group block)",
+  "contactLines": [
+    {
+      "text": "0",
+      "x": 20,
+      "y": 48,
+      "w": 36,
+      "h": 30
+    },
+    {
+      "text": "亚 恃 报 销 ． 张 新 宇 1778205099 的",
+      "x": 108,
+      "y": 48,
+      "w": 170,
+      "h": 14
+    },
+    {
+      "text": "Q",
+      "x": 88,
+      "y": 50,
+      "w": 12,
+      "h": 12
+    },
+    {
+      "text": "亚 持 报 销 ． 张 新 宇 177820S0991",
+      "x": 136,
+      "y": 130,
+      "w": 192,
+      "h": 14
+    },
+    {
+      "text": "-js 搜 索 网 络 结 果",
+      "x": 92,
+      "y": 178,
+      "w": 97,
+      "h": 12
+    },
+    {
+      "text": "Q 亚 持 报 销 ． 张 新 宇 17782050991",
+      "x": 94,
+      "y": 209,
+      "w": 184,
+      "h": 13
+    },
+    {
+      "text": "群 聊",
+      "x": 92,
+      "y": 244,
+      "w": 24,
+      "h": 11
+    },
+    {
+      "text": "0 、 调 货 沟 通 群",
+      "x": 94,
+      "y": 280,
+      "w": 112,
+      "h": 14
+    },
+    {
+      "text": "0 过 包 含 ： 亚 持 报 销 ． 张 新 宇 17782050991",
+      "x": 92,
+      "y": 303,
+      "w": 234,
+      "h": 14
+    },
+    {
+      "text": "包含：亚 持 报 销 ． 张 新 宇 17782050991",
+      "x": 136,
+      "y": 367,
+      "w": 192,
+      "h": 14
+    }
+  ],
+  "targetFeature": "文件传输助手",
+  "_featureLines": "real capture: the chat sits under a 'features' block BELOW the web-suggestion block; treating it as web would refuse the row",
+  "featureLines": [
+    {
+      "text": "0",
+      "x": 20,
+      "y": 48,
+      "w": 36,
+      "h": 30
+    },
+    {
+      "text": "Q 文 仁 传 霸 助",
+      "x": 88,
+      "y": 50,
+      "w": 80,
+      "h": 14
+    },
+    {
+      "text": "-js 搜 索 网 络 结 果",
+      "x": 92,
+      "y": 82,
+      "w": 97,
+      "h": 12
+    },
+    {
+      "text": "0 文 件 传 助 手",
+      "x": 94,
+      "y": 113,
+      "w": 92,
+      "h": 13
+    },
+    {
+      "text": "0 文 件 传 菏 助 手 打 开",
+      "x": 94,
+      "y": 147,
+      "w": 116,
+      "h": 13
+    },
+    {
+      "text": "0 文 仁 传 助 手 已 读 功 能",
+      "x": 94,
+      "y": 181,
+      "w": 140,
+      "h": 13
+    },
+    {
+      "text": "功 能",
+      "x": 92,
+      "y": 284,
+      "w": 24,
+      "h": 11
+    },
+    {
+      "text": "文 件 传 输 助 手",
+      "x": 136,
+      "y": 332,
+      "w": 84,
+      "h": 14
+    },
+    {
+      "text": "[ 23 条 ] 德 片 ]]",
+      "x": 126,
+      "y": 378,
+      "w": 98,
+      "h": 12
+    }
   ]
 }

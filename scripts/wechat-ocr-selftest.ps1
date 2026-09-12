@@ -37,6 +37,7 @@ function To-Lines($Rows) {
 }
 
 $fx = Get-Content (Join-Path $PSScriptRoot 'fixtures\wechat-ocr-lines.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$fieldBottom = 70   # fixture geometry: the search field row sits at y=48..64
 $target = $fx.targetGroup
 $names = @($fx.names)
 $search = To-Lines $fx.searchLines
@@ -53,7 +54,7 @@ Check ($sSug -ge 0.7) 'a query-suggestion row scores close to the row threshold'
 $trap = @($search) + [pscustomobject]@{ text = '0 ' + $fx.searchLines[6].text; x = 94; y = 113; w = 92; h = 13 }
 $sTrap = Get-WxNameScore $trap[$trap.Count - 1].text $target
 Check ($sTrap -ge 0.8) 'a suggestion row carrying the EXACT name still clears the row threshold' ('score=' + [Math]::Round($sTrap, 2))
-$rowTrap = Select-WxSearchRow -Lines @($trap) -Target $target -IsGroup $true
+$rowTrap = Select-WxSearchRow -Lines @($trap) -Target $target -IsGroup $true -BelowY $fieldBottom
 Check ($null -ne $rowTrap -and $rowTrap.y -eq 230) 'and is still not clicked: only rows under the group header count' ('y=' + $rowTrap.y)
 $sOther = Get-WxNameScore $fx.names[2] $target
 Check ($sOther -lt 0.8) 'two store groups sharing prefix/suffix stay below the row threshold' ('score=' + [Math]::Round($sOther, 2))
@@ -62,26 +63,26 @@ Check ((ConvertTo-WxNameWithoutTrailingDigits $headerLine).Length -eq (ConvertTo
 
 Write-Host ''
 Write-Host '[2] row selection on the real dropdown (search the web on top, group row under the group header)'
-$row = Select-WxSearchRow -Lines @($search) -Target $target -IsGroup $true
+$row = Select-WxSearchRow -Lines @($search) -Target $target -IsGroup $true -BelowY $fieldBottom
 Check ($null -ne $row) 'a row was found'
 if ($null -ne $row) {
   Check ($row.y -eq 230) 'picked the group row (y=230), not the web block or the suggestion rows' ('y=' + $row.y)
   Check ((ConvertTo-WxName $row.text) -ne $script:WxLblSearchWeb) 'never picks the "search the web" row'
 } 
-Check (($null -eq (Select-WxSearchRow -Lines @($search) -Target $target -IsGroup $true -MinScore 1.01))) 'nothing matches => refuse (caller aborts instead of pressing Enter)'
-Check (($null -eq (Select-WxSearchRow -Lines @($miss) -Target $target -IsGroup $true))) 'target missing from the dropdown => refuse'
-Check (($null -eq (Select-WxSearchRow -Lines @($search) -Target $target -IsGroup $false))) 'contact target is not satisfied by a group-section row'
+Check (($null -eq (Select-WxSearchRow -Lines @($search) -Target $target -IsGroup $true -BelowY $fieldBottom -MinScore 1.01))) 'nothing matches => refuse (caller aborts instead of pressing Enter)'
+Check (($null -eq (Select-WxSearchRow -Lines @($miss) -Target $target -IsGroup $true -BelowY $fieldBottom))) 'target missing from the dropdown => refuse'
+Check (($null -eq (Select-WxSearchRow -Lines @($search) -Target $target -IsGroup $false -BelowY $fieldBottom))) 'contact target is not satisfied by a group-section row'
 $common = To-Lines $fx.searchLinesCommon
-$rowCommon = Select-WxSearchRow -Lines @($common) -Target $target -IsGroup $true
+$rowCommon = Select-WxSearchRow -Lines @($common) -Target $target -IsGroup $true -BelowY $fieldBottom
 Check ($null -ne $rowCommon -and $rowCommon.y -eq 130) 'a hit listed under the "frequently used" block is still clickable' ('y=' + $rowCommon.y)
 Check ($null -ne $rowCommon -and $rowCommon.section -eq 'common') 'and is reported as a frequently-used row' ($rowCommon.section)
 foreach ($variant in $script:WxLblCommonForms) {
   $lines2 = @($common | ForEach-Object { if ($_.y -eq 82) { [pscustomobject]@{ text = $variant; x = $_.x; y = $_.y; w = $_.w; h = $_.h } } else { $_ } })
-  $rv = Select-WxSearchRow -Lines $lines2 -Target $target -IsGroup $true
+  $rv = Select-WxSearchRow -Lines $lines2 -Target $target -IsGroup $true -BelowY $fieldBottom
   Check ($null -ne $rv -and $rv.y -eq 130) "the block header also matches the OCR reading [$variant]" ('y=' + $rv.y)
 }
 $webOnly = @($search | Where-Object { $_.y -lt 182 })
-Check (($null -eq (Select-WxSearchRow -Lines $webOnly -Target $target -IsGroup $true))) 'no dropdown header on screen => refuse (never blind-click)'
+Check (($null -eq (Select-WxSearchRow -Lines $webOnly -Target $target -IsGroup $true -BelowY $fieldBottom))) 'no dropdown header on screen => refuse (never blind-click)'
 
 Write-Host ''
 Write-Host '[3] conversation header check: the chat that actually got opened'
@@ -137,6 +138,40 @@ $composerTail = @([pscustomobject]@{ text = 'TAIL-MARKER'; x = 520; y = 640; w =
 Check (Test-WxComposerHasBody -Lines $composerTail -Text $long -WinW 802 -WinH 771) 'a scrolled-to-tail body still counts (fragment containment)'
 $composerOther = @([pscustomobject]@{ text = 'DIFFERENT-DRAFT-TEXT 9999'; x = 520; y = 640; w = 200; h = 12 })
 Check (-not (Test-WxComposerHasBody -Lines $composerOther -Text $long -WinW 802 -WinH 771)) 'unrelated text in the box does NOT count'
+
+Write-Host ''
+Write-Host '[7b] 1:1 contact hits sit ABOVE every section header (and OCR misses that header)'
+$contact = To-Lines $fx.contactLines
+$ctarget = $fx.targetContact
+$cRow = Select-WxSearchRow -Lines @($contact) -Target $ctarget -IsGroup $false -BelowY 66
+Check ($null -ne $cRow -and $cRow.y -eq 130) 'contact row above all headers is still clickable' ('y=' + $cRow.y)
+Check ($null -ne $cRow -and $cRow.section -eq 'none') 'and reports no section (that is what the header check is for)' ($cRow.section)
+$gRow = Select-WxSearchRow -Lines @($contact) -Target $ctarget -IsGroup $true -BelowY 66
+Check ($null -ne $gRow -and $gRow.section -eq 'group') 'the SAME frame for a group target stays inside the group block' ('section=' + $gRow.section + ' y=' + $gRow.y)
+# canary: with no boundary the FIELD row is the best match and would be clicked - that is
+# exactly why BelowY is a mandatory parameter instead of defaulting to 0
+$fieldRow = Select-WxSearchRow -Lines @($contact) -Target $ctarget -IsGroup $false -BelowY 0
+Check ($null -ne $fieldRow -and $fieldRow.y -eq 48) 'no boundary => the field row itself wins (parameter is mandatory for this reason)' ('y=' + $fieldRow.y)
+$rowNoField = Select-WxSearchRow -Lines @($contact) -Target $ctarget -IsGroup $false -BelowY 80
+Check ($null -ne $rowNoField -and $rowNoField.y -eq 130) 'with the production default boundary the field line is excluded' ('y=' + $rowNoField.y)
+# the same row as the client elides it (fixture text cut short, no literals needed)
+$truncFrame = @(
+  [pscustomobject]@{ text = ($fx.contactLines[3].text.Substring(0, 24)); x = 136; y = 130; w = 120; h = 14 },
+  [pscustomobject]@{ text = $fx.searchLines[4].text; x = 92; y = 244; w = 24; h = 11 }
+)
+$trunc = Select-WxSearchRow -Lines $truncFrame -Target $ctarget -IsGroup $false -BelowY 80
+Check ($null -ne $trunc -and $trunc.y -eq 130 -and $trunc.truncated) 'an elided result row (long name) is still accepted, flagged truncated' ('y=' + $trunc.y + ' truncated=' + $trunc.truncated)
+
+Write-Host ''
+Write-Host '[7c] built-in targets sit under a features block, below the web-suggestion block'
+$feature = To-Lines $fx.featureLines
+$fTarget = $fx.targetFeature
+$fRow = Select-WxSearchRow -Lines @($feature) -Target $fTarget -IsGroup $false -BelowY 66
+Check ($null -ne $fRow -and $fRow.y -eq 332) 'row under the features block is clickable' ('y=' + $fRow.y)
+Check ($null -ne $fRow -and $fRow.section -eq 'other') 'and is not mistaken for a web suggestion' ($fRow.section)
+$sug = @($fx.featureLines | Where-Object { $_.y -lt 284 })
+$fSug = Select-WxSearchRow -Lines (To-Lines $sug) -Target $fTarget -IsGroup $false -BelowY 66
+Check ($null -eq $fSug) 'without that header the same rows would be refused (why the label list matters)'
 
 Write-Host ''
 Write-Host '[8] dynamic layout anchors (search box found by looking, not by a fixed offset)'

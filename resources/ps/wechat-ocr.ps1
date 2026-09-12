@@ -29,6 +29,11 @@ $script:WxLblHistory = [string][char]0x804A + [char]0x5929 + [char]0x8BB0 + [cha
 # "most frequently used" - the block WeChat puts above everything else once a chat
 # was opened recently. Measured label is U+6700 U+5E38 U+4F7F U+7528, but OCR has been
 # seen dropping the leading character, so all shortened readings are accepted.
+# U+529F U+80FD = "features" - the block WeChat uses for built-in targets such as
+# the file transfer helper. Without recognising it those rows look like they belong to
+# the "search the web" block above and get refused.
+$script:WxLblFeature = [string][char]0x529F + [char]0x80FD
+
 $script:WxLblCommonForms = @(
   ([string][char]0x6700 + [char]0x5E38 + [char]0x4F7F + [char]0x7528),
   ([string][char]0x6700 + [char]0x5E38 + [char]0x7528),
@@ -362,7 +367,11 @@ function Select-WxSearchRow {
     [AllowEmptyCollection()][object[]]$Lines = @(),
     [string]$Target = '',
     [bool]$IsGroup = $true,
-    [double]$MinScore = 0.8
+    [double]$MinScore = 0.8,
+    # Bottom edge of the search field (from Find-WxSearchBoxLine). Mandatory on purpose:
+    # rows above it are the field itself, and the field CONTAINS the query - without this
+    # boundary the field line is a perfect match for the target and gets "clicked".
+    [Parameter(Mandatory = $true)][int]$BelowY
   )
   $nt = ConvertTo-WxName $Target
   if ($nt.Length -eq 0) { return $null }
@@ -376,43 +385,67 @@ function Select-WxSearchRow {
     elseif ($t -eq $script:WxLblContact) { $kind = 'contact' }
     elseif ($t -eq $script:WxLblHistory) { $kind = 'history' }
     elseif ($script:WxLblCommonForms -contains $t) { $kind = 'common' }
+    elseif ($t -eq $script:WxLblFeature) { $kind = 'other' }
     if ($kind -ne '') { [void]$headers.Add([pscustomobject]@{ y = [int]$l.y; kind = $kind }) }
   }
-  if ($headers.Count -eq 0) { return $null }   # no search dropdown on screen -> refuse
 
-  $bestScore = 0.0
+  $want = 'contact'
+  if ($IsGroup) { $want = 'group' }
   $cands = New-Object System.Collections.ArrayList
   foreach ($l in @($Lines)) {
+    if ($l.y -le $BelowY) { continue }                     # the search field / title bar itself
     $nt2 = ConvertTo-WxName $l.text
-    if ([Math]::Abs($nt2.Length - $nt.Length) -gt 3) { continue }
     $s = Get-WxNameScore $l.text $Target
-    if ($s -lt $MinScore) { continue }
+    # Result rows get elided for long names, so a shorter row that still resembles the
+    # target counts too (>= 8 chars of evidence, and either a clean prefix or a tolerant
+    # similarity - OCR regularly swaps one character). The header check is what decides.
+    # A shorter row is a candidate elided version of the target (any amount shorter: OCR of
+    # a long name also loses/breaks characters, so the strict ratio gate would reject the
+    # one row that is actually there).
+    $truncated = ($nt2.Length -ge 8 -and $nt2.Length -lt $nt.Length -and
+                  ($nt.StartsWith($nt2) -or $s -ge 0.5))
+    if ($truncated) {
+      # accepted on resemblance alone
+    } else {
+      if ([Math]::Abs($nt2.Length - $nt.Length) -gt 3) { continue }
+      if ($s -lt $MinScore) { continue }
+    }
 
-    $kind = ''
+    $kind = 'none'
     $hy = -1
     foreach ($h in $headers) {
       if ($h.y -lt $l.y -and $h.y -gt $hy) { $hy = $h.y; $kind = $h.kind }
     }
-    if ($hy -lt 0) { continue }                            # the search box itself
     if ($kind -eq 'web') { continue }                      # suggestion, not a chat
     if ($IsGroup -and $kind -eq 'contact') { continue }
     if ((-not $IsGroup) -and $kind -eq 'group') { continue }
 
-    [void]$cands.Add([pscustomobject]@{ line = $l; score = $s; kind = $kind })
-    if ($s -gt $bestScore) { $bestScore = $s }
+    # Which block a row is in decides how much we trust it: the section we asked for
+    # first, then the neutral "frequently used" one, then rows that sit above every
+    # recognized header - WeChat puts the contact hit there and its small grey
+    # "contacts" header is regularly missed by OCR - and message hits last.
+    $tier = 2
+    if ($kind -eq 'none') { $tier = 2 }
+    elseif ($kind -eq $want) { $tier = 0 }
+    elseif ($kind -eq 'common') { $tier = 1 }
+    elseif ($kind -eq 'history') { $tier = 3 }
+    [void]$cands.Add([pscustomobject]@{ line = $l; score = $s; kind = $kind; tier = $tier; truncated = $truncated })
   }
   if ($cands.Count -eq 0) { return $null }
 
+  $bestTier = [int](($cands | Measure-Object -Property tier -Minimum).Minimum)
+  $pool = @($cands | Where-Object { $_.tier -eq $bestTier })
+  $bestScore = [double](($pool | Measure-Object -Property score -Maximum).Maximum)
   # best score wins; ties (the same name is also listed in the session list under the
   # open dropdown) resolve to the topmost row, which is the dropdown one.
   $top = $null
-  foreach ($c in $cands) {
+  foreach ($c in $pool) {
     if ($c.score -lt ($bestScore - 0.05)) { continue }
     if ($null -eq $top -or $c.line.y -lt $top.line.y) { $top = $c }
   }
   return [pscustomobject]@{
     x = $top.line.x; y = $top.line.y; w = $top.line.w; h = $top.line.h
-    text = $top.line.text; score = $top.score; section = $top.kind
+    text = $top.line.text; score = $top.score; section = $top.kind; truncated = $top.truncated
   }
 }
 
