@@ -108,6 +108,77 @@ export function pickUniqueTarget(
   }
 }
 
+/* ── 风控闸门（同样是纯函数，可自检） ──
+ *
+ * 发得对不对（上面）之外，还要管「发得像不像人」：同一会话连发、同一条文案群发，
+ * 是服务器侧最容易识别为营销号的两个特征。两者都只做**拒绝**，不做排队等待——
+ * 队列是串行的，等 90 秒会把后面所有任务一起拖住，而且渲染端 60s 就超时了。
+ */
+
+/**
+ * 同会话连发判定。
+ *
+ * 为什么不是「两条之间必须隔 N 秒」：客户追问、客服补一条，人 20 秒内回两条完全正常，
+ * 硬间隔会把正常客服一起挡住。反过来，机器在同一会话里短时间内连发很多条才是特征。
+ * 口径因此是「窗口内最多连发 maxInWindow 条」：窗口 90 秒 + 上限 3 条，人不会被挡，
+ * 机器连发第 4 条即拦截。
+ */
+export interface BurstDecision {
+  ok: boolean
+  /** 窗口内已发出的条数（不含本次） */
+  count: number
+  /** 窗口内最早那条滑出窗口还需多少秒（拦截时提示「再等 N 秒」） */
+  waitSec: number
+}
+
+export function sessionBurstCheck(
+  sentTimes: number[],
+  now: number,
+  windowSec: number,
+  maxInWindow: number
+): BurstDecision {
+  const times = (sentTimes || []).filter((t) => typeof t === 'number' && Number.isFinite(t))
+  if (!windowSec || windowSec <= 0 || !maxInWindow || maxInWindow <= 0) {
+    return { ok: true, count: times.length, waitSec: 0 }
+  }
+  const windowMs = windowSec * 1000
+  const inWindow = times.filter((t) => now - t < windowMs).sort((a, b) => a - b)
+  if (inWindow.length < maxInWindow) return { ok: true, count: inWindow.length, waitSec: 0 }
+  // 最早那条滑出窗口后，就能再发一条
+  const waitSec = Math.max(1, Math.ceil((inWindow[0] + windowMs - now) / 1000))
+  return { ok: false, count: inWindow.length, waitSec }
+}
+
+/** 内容重复率判定：窗口内同一内容已发往多少个会话 */
+export interface DupDecision {
+  ok: boolean
+  /** 窗口内已收到该内容的会话数（不含本次目标） */
+  sessions: number
+}
+
+/**
+ * 比较用 normalizeForCompare（去空白/零宽、只比前 80 字）：同一条文案换个称呼前缀
+ * 也会被认成同一条，正合风控口径。maxSessions<=0 表示不限制。
+ */
+export function contentDupCheck(
+  rows: Array<{ sessionId: string; message: string }>,
+  message: string,
+  maxSessions: number
+): DupDecision {
+  const key = normalizeForCompare(message)
+  if (!key) return { ok: true, sessions: 0 }
+  const seen = new Set<string>()
+  for (const r of rows) {
+    if (!r || !r.sessionId) continue
+    const other = normalizeForCompare(r.message)
+    if (!other || other !== key) continue
+    seen.add(r.sessionId)
+  }
+  const sessions = seen.size
+  if (!maxSessions || maxSessions <= 0) return { ok: true, sessions }
+  return { ok: sessions < maxSessions, sessions }
+}
+
 /** 发送后比对的归一化：去空白与零宽字符，只比前 80 字（微信可能截断/换行） */
 export function normalizeForCompare(text: string): string {
   return (text || '')

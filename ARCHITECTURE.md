@@ -259,6 +259,14 @@ src/
 - **注入引擎**：`injector.ts` 调 PowerShell（`resources/ps/wechat-inject.ps1`）→ Win32 找窗口 → 抢前台 → `Ctrl+F` 搜会话 → 剪贴板粘贴 → Enter。
 - **闸门与会话策略**：`sendGate.ts` 决定「AI 是否可发 / 是否需人工审批」（`send.agentEnabled`、`send.approve`）。
 - **频控与熔断**：日上限（默认 200）、拟人化延迟；发送后回查微信库做**闭环校验**，连续失败自动熔断。
+- **风控闸门（服务器侧「像不像人」，纯函数 + 自检）**：
+  ① **同会话连发**：同一会话在 90 秒窗口内最多 3 条（`send.sessionBurstWindowSec` / `send.sessionBurstMax`），
+  第 4 条即拦。口径刻意不做「两条之间硬间隔 N 秒」——客户追问、客服补一条，人 20 秒内回两条很正常，
+  硬间隔会把正常客服一起挡住；而机器在同一会话里短时间连发很多条才是特征。
+  ② **内容重复率**：同一条文案在 24 小时内发往 ≥ 20 个会话即拦（`send.dupMaxSessions` / `send.dupWindowHours`），
+  比较用 `normalizeForCompare`（去空白/零宽、只比前 80 字），同文案换个称呼前缀也算同一条。
+  两者都**只拒绝、不排队等待**：队列是串行的，等 90 秒会把后面所有任务一起拖住，而且渲染端 60s 就超时；
+  拦截统一记 `send_log`（status=rejected）并回中文原因。设置在「设置 → 发送」里可调，0 = 关闭。
 - **审计**：全部发送写 `send_log`（mode/source/result/verified/error_reason），看板据此出「闭环校验通过率 / 失败原因 Top」。
 
 ### 7.1 为什么这条链路要按「发出去收不回」来设计

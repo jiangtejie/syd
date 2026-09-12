@@ -45,6 +45,29 @@ export function countTodaySent(): number {
   return row.n
 }
 
+/**
+ * 该会话在窗口内**成功发出**的时间戳（风控：同会话连发判定）。
+ * 只认 result='sent'：失败/被拦的尝试没让对方看到内容，拿它们去挡重试只会碍事。
+ */
+export function recentSentTimesForSession(sessionId: string, sinceMs: number): number[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT created_at AS t FROM send_log WHERE session_id = ? AND result = 'sent' AND created_at >= ?`
+    )
+    .all(sessionId, sinceMs) as Array<{ t: number }>
+  return rows.map((r) => r.t)
+}
+
+/** 窗口内成功发出的 (会话, 内容) 行（风控：内容重复率）；条数受日上限约束，量很小 */
+export function recentSentRows(sinceMs: number): Array<{ sessionId: string; message: string }> {
+  const rows = getDb()
+    .prepare(
+      `SELECT session_id AS sessionId, message FROM send_log WHERE result = 'sent' AND created_at >= ?`
+    )
+    .all(sinceMs) as Array<{ sessionId: string; message: string }>
+  return rows
+}
+
 /** 近 N 天发送统计（看板用）：返回 { day: 'M/D', sent, failed } 按日期升序 */
 export function countRecentDays(
   days: number

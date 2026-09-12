@@ -1,9 +1,20 @@
 import type { SendResult, SendStatusInfo } from '../../../shared/types'
 import { sendToChat, sendFileToChat, injectEnabled } from '../wechat/injector'
 import * as wxService from '../wechat/wxService'
-import { insertSendLog, countTodaySent } from '../../db/repos/sendLog'
+import {
+  insertSendLog,
+  countTodaySent,
+  recentSentTimesForSession,
+  recentSentRows
+} from '../../db/repos/sendLog'
 import { getConfigNumber, getConfigBoolean, setConfig } from '../../db/repos/config'
-import { pickUniqueTarget, textMatchesSent, type GuardSession } from './guard'
+import {
+  pickUniqueTarget,
+  textMatchesSent,
+  sessionBurstCheck,
+  contentDupCheck,
+  type GuardSession
+} from './guard'
 import { createLogger } from '../logging'
 
 const sendLog = createLogger('send')
@@ -269,6 +280,53 @@ async function drain(): Promise<void> {
       continue
     }
 
+    // 审计文案（文件任务记为 [图片]/[文件] + 文件名）：风控两个闸门都要用它
+    const auditText = job.file
+      ? `[${job.file.kind === 'image' ? '图片' : '文件'}] ${job.file.name}`
+      : job.text
+
+    // 风控闸门 1：同会话连发。窗口内最多连发 N 条——机器连发是特征，正常客服（追问/补一条）不会被挡。
+    const burstWindowSec = getConfigNumber('send.sessionBurstWindowSec', 90)
+    const burstMax = getConfigNumber('send.sessionBurstMax', 3)
+    if (burstWindowSec > 0 && burstMax > 0) {
+      const burst = sessionBurstCheck(
+        recentSentTimesForSession(job.sessionId, at - burstWindowSec * 1000),
+        at,
+        burstWindowSec,
+        burstMax
+      )
+      if (!burst.ok) {
+        const msg =
+          '已拦截：该会话 ' +
+          burstWindowSec +
+          ' 秒内已连发 ' +
+          burst.count +
+          ` 条（上限 ${burstMax} 条），请 ${burst.waitSec} 秒后再发`
+        sendLog.warn(
+          `发送已拦截（同会话连发） session=${job.sessionId} count=${burst.count} wait=${burst.waitSec}s`
+        )
+        job.resolve({ ok: false, status: 'rejected', error: msg, verified: false, at })
+        continue
+      }
+    }
+
+    // 风控闸门 2：内容重复率。同一条文案短时间发给大量会话是风控第一触发点。
+    const dupMax = getConfigNumber('send.dupMaxSessions', 20)
+    const dupWindowHours = getConfigNumber('send.dupWindowHours', 24)
+    if (dupMax > 0) {
+      const since = at - Math.max(1, dupWindowHours) * 3600_000
+      const dup = contentDupCheck(recentSentRows(since), auditText, dupMax)
+      if (!dup.ok) {
+        const msg =
+          '已拦截：同一内容已在 ' +
+          dup.sessions +
+          ` 个会话发出（上限 ${dupMax} 个 / ${dupWindowHours} 小时）。如确需群发，请人工逐条发送或调整阈值`
+        sendLog.warn(`发送已拦截（内容重复） sessions=${dup.sessions} limit=${dupMax}`)
+        job.resolve({ ok: false, status: 'rejected', error: msg, verified: false, at })
+        continue
+      }
+    }
+
     // 拟人化延迟
     await sleep(humanDelay())
 
@@ -346,10 +404,7 @@ async function drain(): Promise<void> {
       }
     }
 
-    // 审计落库(文件任务以 [图片]/[文件] + 文件名 记录)
-    const auditText = job.file
-      ? `[${job.file.kind === 'image' ? '图片' : '文件'}] ${job.file.name}`
-      : job.text
+    // 审计落库(auditText 在闸门前就算好了,风控用同一份文案)
     insertSendLog({
       sessionId: job.sessionId,
       message: auditText,

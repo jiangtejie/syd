@@ -33,6 +33,8 @@ interface FormState {
   'ai.agent': string
   'send.dailyLimit': string
   'send.humanizeDelay': string
+  'send.sessionBurstWindowSec': string
+  'send.dupMaxSessions': string
   'inject.enabled': string
   'notify.enabled': string
   'growth.image.enabled': string
@@ -113,6 +115,8 @@ const DEFAULTS: FormState = {
   'ai.agent': '1',
   'send.dailyLimit': '200',
   'send.humanizeDelay': '1',
+  'send.sessionBurstWindowSec': '90',
+  'send.dupMaxSessions': '20',
   'inject.enabled': '1',
   'notify.enabled': '1',
   'growth.image.enabled': '0',
@@ -739,7 +743,7 @@ function SettingsPage(): React.JSX.Element {
       {tab === 'wechat' && (
         <div className="st-tab-panel">
           <WechatKeySection />
-        <CryptoCenterSection />
+          <CryptoCenterSection />
         </div>
       )}
 
@@ -1199,6 +1203,34 @@ function SettingsPage(): React.JSX.Element {
                   onChange={(e) => patch('send.dailyLimit', e.target.value)}
                 />
               </FieldRow>
+              <FieldRow label="同会话连发窗口(秒)">
+                <input
+                  className="st-input sm"
+                  type="number"
+                  min={0}
+                  max={3600}
+                  value={form['send.sessionBurstWindowSec']}
+                  onChange={(e) => patch('send.sessionBurstWindowSec', e.target.value)}
+                />
+                <div className="st-hint">
+                  同一会话在这个窗口内最多连发 3 条,超出即拦截。机器连发是风控特征,而正常客服
+                  (客户追问 / 补一条)不会被挡;0 = 关闭该限制。
+                </div>
+              </FieldRow>
+              <FieldRow label="重复内容上限(会话数 / 24 小时)">
+                <input
+                  className="st-input sm"
+                  type="number"
+                  min={0}
+                  max={500}
+                  value={form['send.dupMaxSessions']}
+                  onChange={(e) => patch('send.dupMaxSessions', e.target.value)}
+                />
+                <div className="st-hint">
+                  同一条文案在 24 小时内发往多少会话后开始拦截。同文案群发是微信风控的首要触发点； 0
+                  = 不限制。
+                </div>
+              </FieldRow>
               <SwitchRow
                 label="拟人化延迟(发送间隔随机化)"
                 desc="在节流区间内随机延迟后再发出,降低批量发送的机械感。"
@@ -1236,7 +1268,13 @@ function SettingsPage(): React.JSX.Element {
                   type="button"
                   className="st-btn"
                   onClick={() =>
-                    void save(['send.dailyLimit', 'send.humanizeDelay', 'inject.enabled'])
+                    void save([
+                      'send.dailyLimit',
+                      'send.humanizeDelay',
+                      'send.sessionBurstWindowSec',
+                      'send.dupMaxSessions',
+                      'inject.enabled'
+                    ])
                   }
                 >
                   保存发送配置
