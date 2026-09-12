@@ -35,6 +35,11 @@ export interface LarkApi {
     appTableField: {
       list: (payload: unknown) => Promise<unknown>
       create: (payload: unknown) => Promise<unknown>
+      update: (payload: unknown) => Promise<unknown>
+    }
+    appTableView: {
+      list: (payload: unknown) => Promise<unknown>
+      create: (payload: unknown) => Promise<unknown>
     }
     appTableRecord: {
       list: (payload: unknown) => Promise<unknown>

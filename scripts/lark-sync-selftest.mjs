@@ -15,6 +15,8 @@ import {
   hashOf,
   issueToFields,
   originText,
+  parseManualMap,
+  personFieldValue,
   replyToFields,
   riskText,
   statusFromText,
@@ -30,6 +32,7 @@ import {
   maxMediaBytesOf
 } from '../src/main/services/lark/evidenceMedia.ts'
 import { fmtHms, fmtStamp, fmtTimeShort } from '../src/shared/monitorMetrics.ts'
+// 人员列的两个纯函数放在 baseMapping(与证据映射同源),这里直接离线导入
 
 let failed = 0
 const log = (ok, name, detail) => {
@@ -256,6 +259,16 @@ const shortToday = fmtTimeShort(Date.now())
 log(shortToday.startsWith('今天 ') && HMS_RE.test(shortToday.slice(3)), '今天 → 今天 HH:mm:ss', shortToday)
 log(fmtTimeShort(SAMPLE).includes(':') && fmtTimeShort(SAMPLE).split(':').length === 3, '非今天 → … HH:mm:ss', fmtTimeShort(SAMPLE))
 log(fmtTimeShort(0) === '—', 'fmtTimeShort 空值 → —')
+
+console.log('\n[11] 人员列：称呼 → open_id 的映射解析（纯函数）')
+const parsed = parseManualMap(
+  ['# 注释行', '陈西西=ou_abc123', '黄巧：ou_def456', '  ', '格式不对的一行', '王五 = ou_ghi789'].join('\n')
+)
+log(parsed['陈西西'] === 'ou_abc123', '等号写法', JSON.stringify(parsed['陈西西']))
+log(parsed['黄巧'] === 'ou_def456', '全角冒号也认', JSON.stringify(parsed['黄巧']))
+log(parsed['王五'] === 'ou_ghi789', '两侧空格容错', JSON.stringify(parsed['王五']))
+log(Object.keys(parsed).length === 3, '注释/空行/非法行被忽略', String(Object.keys(parsed).length))
+log(JSON.stringify(personFieldValue('ou_x')) === '[{"id":"ou_x"}]', '人员字段值形状 [{id}]（飞书要求）')
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)

@@ -6,6 +6,8 @@ import type {
   LarkDigestConfig,
   LarkEvidenceConfig,
   LarkEvidenceSetup,
+  LarkPersonConfig,
+  LarkSystemUpgrade,
   LarkPullResult,
   LarkSyncOut
 } from './types'
@@ -761,13 +763,29 @@ export interface CsApi {
     basePreview: (link: string) => Promise<LarkBaseVerify>
     baseVerify: (link: string) => Promise<LarkBaseVerify>
     /** 认领目标表里已有的行（避免重复插入） */
-    baseClaim: (
-      wxid: string
-    ) => Promise<{
+    baseClaim: (wxid: string) => Promise<{
       ok: boolean
       claimed?: { scanned: number; claimed: number; already: number; unmatched: number }
       status?: LarkBaseStatus
       error?: string
+    }>
+    /** 一键把表格升级成「工单台」:建列 + 建视图 + 证据关联升双向（幂等） */
+    baseSystemUpgrade: () => Promise<LarkSystemUpgrade>
+    /** 人员列（飞书成员）:开关与列名（传空对象仅读取） */
+    basePerson: (patch?: { enabled?: boolean; field?: string; manual?: string }) => Promise<{
+      ok: boolean
+      person?: LarkPersonConfig
+      status?: LarkBaseStatus
+      error?: string
+    }>
+    /** 按应用可见的通讯录刷新「称呼 → open_id」映射 */
+    basePersonRefresh: () => Promise<{
+      ok: boolean
+      mapped: number
+      names: string[]
+      hint?: string
+      error?: string
+      status?: LarkBaseStatus
     }>
     /** 证据明细同步:开关 + 三重上限(传空对象仅读取) */
     baseEvidence: (patch?: {
@@ -796,7 +814,12 @@ export interface CsApi {
     /** 列名映射（传 null 仅读取） */
     baseFieldMap: (
       map?: Record<string, string> | null
-    ) => Promise<{ ok: boolean; fieldMap?: Record<string, string>; status?: LarkBaseStatus; error?: string }>
+    ) => Promise<{
+      ok: boolean
+      fieldMap?: Record<string, string>
+      status?: LarkBaseStatus
+      error?: string
+    }>
     baseSync: (
       wxid: string,
       force?: boolean,

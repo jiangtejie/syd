@@ -17,6 +17,8 @@ import type {
   LarkDigestConfig,
   LarkEvidenceConfig,
   LarkEvidenceSetup,
+  LarkPersonConfig,
+  LarkSystemUpgrade,
   LarkPullResult,
   LarkSyncOut,
   FeedbackIssue,
@@ -834,18 +836,37 @@ const api: PreloadApi = {
         ipcRenderer.invoke('cs:lark:baseConfig', patch),
       baseClear: (): Promise<{ ok: boolean; status?: LarkBaseStatus; error?: string }> =>
         ipcRenderer.invoke('cs:lark:baseClear'),
+      // ── 把表格升级成「工单台」 ──
+      baseSystemUpgrade: (): Promise<LarkSystemUpgrade> =>
+        ipcRenderer.invoke('cs:lark:baseSystemUpgrade'),
+      basePerson: (patch?: {
+        enabled?: boolean
+        field?: string
+        manual?: string
+      }): Promise<{
+        ok: boolean
+        person?: LarkPersonConfig
+        status?: LarkBaseStatus
+        error?: string
+      }> => ipcRenderer.invoke('cs:lark:basePerson', patch ?? {}),
+      basePersonRefresh: (): Promise<{
+        ok: boolean
+        mapped: number
+        names: string[]
+        hint?: string
+        error?: string
+        status?: LarkBaseStatus
+      }> => ipcRenderer.invoke('cs:lark:basePersonRefresh'),
       // ── 证据明细 → 「议题证据」子表 ──
-      baseEvidence: (
-        patch?: {
-          enabled?: boolean
-          days?: number
-          maxPerIssue?: number
-          maxChars?: number
-          media?: boolean
-          maxMediaMB?: number
-          maxUploadsPerRound?: number
-        }
-      ): Promise<{
+      baseEvidence: (patch?: {
+        enabled?: boolean
+        days?: number
+        maxPerIssue?: number
+        maxChars?: number
+        media?: boolean
+        maxMediaMB?: number
+        maxUploadsPerRound?: number
+      }): Promise<{
         ok: boolean
         evidence?: LarkEvidenceConfig
         status?: LarkBaseStatus

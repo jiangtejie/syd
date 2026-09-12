@@ -69,7 +69,12 @@ export function mapFieldName(local: string, map?: FieldMap): string {
 export function issueToFields(
   i: FeedbackIssue,
   names: Map<string, string>,
-  opts: { fieldMap?: FieldMap; primaryField?: string } = {}
+  opts: {
+    fieldMap?: FieldMap
+    primaryField?: string
+    /** 人员列(可选):列名 + 该跟进人的 open_id。映射不到 open_id 时不要写空值,否则会清掉同事手填的人 */
+    personField?: { name: string; openId: string }
+  } = {}
 ): Record<string, unknown> {
   const standard: Record<string, unknown> = {
     议题ID: String(i.id),
@@ -90,6 +95,10 @@ export function issueToFields(
   // 同事在手机上第一眼看到的就是问题标题，而不是空列。
   const pf = (opts.primaryField ?? '').trim()
   if (pf && !(pf in out)) out[pf] = (i.title ?? '').slice(0, 240)
+  // 人员列:飞书要求 [{id: open_id}]。只在「有跟进人且能映射到 open_id」时写,
+  // 否则留空不动 —— 写空数组会把同事在飞书里选的人清掉。
+  const person = opts.personField
+  if (person && person.openId) out[person.name] = [{ id: person.openId }]
   return out
 }
 
@@ -157,6 +166,30 @@ export function diffCollab(
     noteChanged,
     any: statusChanged || assigneeChanged || noteChanged
   }
+}
+
+// ── 人员列(飞书成员)──
+
+/** 人员字段的写入值:飞书要求 [{id: open_id}] */
+export function personFieldValue(openId: string): Array<{ id: string }> {
+  return [{ id: openId }]
+}
+
+/**
+ * 解析「称呼=open_id」的多行文本(手工映射):容错空行、# 注释、中英文等号与全角冒号。
+ * 放在这里是为了能离线自检 —— 映射错一个人就是把 A 的问题派给 B。
+ */
+export function parseManualMap(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const raw of (text ?? '').split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const m = /^(.+?)\s*[=＝:：]\s*(ou_[A-Za-z0-9]+)$/.exec(line)
+    if (!m) continue
+    const name = m[1].trim()
+    if (name) out[name] = m[2]
+  }
+  return out
 }
 
 // ── 议题证据（明细）→ Base ──

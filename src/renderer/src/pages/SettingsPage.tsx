@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { LarkBaseStatus, LarkBaseVerify, SendStatusInfo } from '../../../shared/types'
+import type {
+  LarkBaseStatus,
+  LarkBaseVerify,
+  LarkSystemUpgrade,
+  SendStatusInfo
+} from '../../../shared/types'
 import { useWorkbenchStore } from '../stores/workbench'
 import WechatKeySection from '../components/settings/WechatKeySection'
 import CryptoCenterSection from '../components/settings/CryptoCenterSection'
@@ -260,6 +265,13 @@ function SettingsPage(): React.JSX.Element {
   const [evDays, setEvDays] = useState('')
   const [evMax, setEvMax] = useState('')
   const [evChars, setEvChars] = useState('')
+  /** 表格系统化升级:进行中的动作 + 结果报告 + 人员映射提示 */
+  const [sysBusy, setSysBusy] = useState('')
+  const [sysReport, setSysReport] = useState<LarkSystemUpgrade | null>(null)
+  const [personFieldInput, setPersonFieldInput] = useState('')
+  /** 手工映射文本（每行「称呼=open_id」） */
+  const [personManual, setPersonManual] = useState('')
+  const [personNotes, setPersonNotes] = useState('')
   /** 附件:单张上限(MB) / 每轮最多张数 */
   const [evMaxMB, setEvMaxMB] = useState('')
   const [evMaxUploads, setEvMaxUploads] = useState('')
@@ -302,6 +314,11 @@ function SettingsPage(): React.JSX.Element {
           setEvChars((cur) => cur || String(ev.maxChars))
           setEvMaxMB((cur) => cur || String(ev.maxMediaMB))
           setEvMaxUploads((cur) => cur || String(ev.maxUploadsPerRound))
+        }
+        const person = res.status.person
+        if (person) {
+          setPersonFieldInput((cur) => cur || person.field)
+          setPersonManual((cur) => cur || person.manual)
         }
       })
       .catch(() => undefined)
@@ -780,6 +797,77 @@ function SettingsPage(): React.JSX.Element {
     }
   }
 
+  /** 一键把表格升级成「工单台」（幂等：重复点只显示「已存在」） */
+  const upgradeSystem = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.baseSystemUpgrade) return
+    setSysBusy('upgrade')
+    setPersonNotes('')
+    try {
+      const res = await api.baseSystemUpgrade()
+      setSysReport(res)
+      const st = await api.baseStatus()
+      if (st?.status) setBaseStatus(st.status)
+      if (res.ok) toast.success('表格已升级（按钮/自动化/仪表盘见「手动清单」）')
+      else toast.error(res.error ?? '部分步骤失败，详见结果')
+    } finally {
+      setSysBusy('')
+    }
+  }
+
+  /** 复制「只能手动点」的清单 */
+  const copyManualSteps = async (): Promise<void> => {
+    const list = sysReport?.manual ?? []
+    if (list.length === 0) return
+    try {
+      await navigator.clipboard.writeText(list.map((s, i) => i + 1 + '. ' + s).join('\n'))
+      toast.success('已复制手动清单')
+    } catch {
+      toast.error('复制失败：可手动选中文本')
+    }
+  }
+
+  /** 人员列开关 / 列名 */
+  const patchPerson = async (patch: {
+    enabled?: boolean
+    field?: string
+    manual?: string
+  }): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.basePerson) return
+    const res = await api.basePerson(patch)
+    if (res.status) setBaseStatus(res.status)
+    if (res.person) setPersonFieldInput(res.person.field)
+    if (!res.ok) toast.error(res.error ?? '保存人员列配置失败')
+    else if (patch.enabled === true) {
+      setPersonNotes(
+        '已开启：点「一键升级表格」会建出人员列；先「刷新人员映射」把称呼对上飞书账号。'
+      )
+    }
+  }
+
+  /** 刷新「称呼 → open_id」映射 */
+  const refreshPerson = async (): Promise<void> => {
+    const api = window.api?.cs?.lark
+    if (!api?.basePersonRefresh) return
+    setSysBusy('person')
+    setPersonNotes('')
+    try {
+      const res = await api.basePersonRefresh()
+      if (res.status) setBaseStatus(res.status)
+      if (!res.ok) {
+        setPersonNotes(`解析失败：${res.error ?? '未知错误'}`)
+        toast.error('人员映射解析失败')
+        return
+      }
+      setPersonNotes(
+        `已解析 ${res.mapped} 人${res.names.length > 0 ? '：' + res.names.slice(0, 8).join('、') + (res.names.length > 8 ? '…' : '') : ''}${res.hint ? ' · ' + res.hint : ''}`
+      )
+      toast.success(`人员映射已刷新：${res.mapped} 人`)
+    } finally {
+      setSysBusy('')
+    }
+  }
   /** 复制多维表格完整链接（高级信息里给排查/转给同事用） */
   const copyBaseLink = async (): Promise<void> => {
     const link = (baseStatus?.link ?? '').trim()
@@ -1605,6 +1693,98 @@ function SettingsPage(): React.JSX.Element {
                 →「可编辑」）。只读权限能读表但写不进去， 「预览 /
                 执行并建表」会明确告诉你是哪种情况。
               </div>
+
+              {/* 一键把表格升级成「工单台」:建列 + 建视图 + 证据关联升双向(幂等) */}
+              <div className="st-subtitle">表格系统化（工单号 / 超时预警 / 看板 / 表单）</div>
+              <div className="st-hint">
+                {'一键给议题表加「工单号、等待时长、超时预警、标签」4 列，给三个表建看板/表单/画册视图，' +
+                  '并把证据关联升级成双向（议题行上就能看到全部证据）。幂等：重复点只显示「已存在」。'}
+              </div>
+              <div className="sf-actions-split">
+                <button
+                  type="button"
+                  className="st-btn"
+                  disabled={sysBusy !== '' || !baseStatus?.configured}
+                  onClick={() => void upgradeSystem()}
+                  title="只新增：不动你已有的列与数据；按钮列/仪表盘/自动化飞书没开放接口，会列在结果里让你手动点"
+                >
+                  {sysBusy === 'upgrade' ? '升级中…' : '一键升级表格'}
+                </button>
+                {sysReport && sysReport.manual.length > 0 && (
+                  <button
+                    type="button"
+                    className="st-btn ghost is-end"
+                    onClick={() => void copyManualSteps()}
+                    title="复制「需要手动点」的清单（按钮列/自动化/仪表盘/日期格式）"
+                  >
+                    复制手动清单
+                  </button>
+                )}
+              </div>
+              {sysReport && (
+                <div className="st-hint">
+                  {sysReport.ok ? '✓ 升级完成' : `✗ ${sysReport.error ?? '部分步骤失败'}`}
+                  <br />
+                  {sysReport.steps.map((s, i) => (
+                    <div key={i}>
+                      {s.action === 'created' ? '＋ ' : s.action === 'skipped' ? '· ' : '⚠ '}
+                      {s.label}
+                      {s.detail ? `（${s.detail}）` : ''}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 人员列:真正的飞书成员(能 @提醒、能被自动化识别) */}
+              <div className="st-subtitle">处理人（飞书成员）</div>
+              <SwitchRow
+                label="把「跟进人」也写成飞书人员"
+                desc="打开后，Base 会多一列人员字段（默认叫「处理人」），写的是飞书成员，可以 @提醒、也能被自动化识别。需要先「刷新人员映射」把同事称呼对上飞书账号；对不上就留空，绝不猜人。"
+                checked={!!baseStatus?.person?.enabled}
+                onChange={(v) => void patchPerson({ enabled: v })}
+              />
+              {baseStatus?.person?.enabled && (
+                <>
+                  <FieldRow label="人员列列名">
+                    <input
+                      className="st-input sm"
+                      value={personFieldInput}
+                      onChange={(e) => setPersonFieldInput(e.target.value)}
+                      onBlur={() => void patchPerson({ field: personFieldInput })}
+                      placeholder="处理人"
+                    />
+                  </FieldRow>
+                  <div className="sf-actions-split">
+                    <button
+                      type="button"
+                      className="st-btn ghost"
+                      disabled={sysBusy !== ''}
+                      onClick={() => void refreshPerson()}
+                      title="按应用可见的通讯录解析「称呼 → open_id」，一天刷一次就够"
+                    >
+                      {sysBusy === 'person' ? '解析中…' : '刷新人员映射'}
+                    </button>
+                  </div>
+                  <div className="st-hint">
+                    {`已解析 ${baseStatus.person.mapped} 人${baseStatus.person.mappedAt ? ` · 上次 ${fmtStamp(baseStatus.person.mappedAt)}` : ' · 还没解析过'}`}
+                  </div>
+                  <div className="st-subtitle">手工映射（通讯录读不到姓名时用）</div>
+                  <div className="st-hint">
+                    {
+                      '每行一条：称呼=open_id（例如 陈西西=ou_xxx）。手工写的优先于自动解析，保存后立刻生效。'
+                    }
+                  </div>
+                  <textarea
+                    className="st-input st-ta"
+                    value={personManual}
+                    onChange={(e) => setPersonManual(e.target.value)}
+                    onBlur={() => void patchPerson({ manual: personManual })}
+                    placeholder={'陈西西=ou_xxxxxxxx\n黄巧=ou_yyyyyyyy'}
+                    rows={3}
+                  />
+                </>
+              )}
+              {personNotes && <div className="st-hint">{personNotes}</div>}
 
               {/* 列名映射:目标表列名与标准列不同时,在这里对齐(留空=用标准名) */}
               <div className="st-subtitle">列名映射（可选：你的表列名与标准列不同时填写）</div>

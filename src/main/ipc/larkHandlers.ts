@@ -22,6 +22,8 @@ import {
   type FieldMap
 } from '../services/lark/baseSync'
 import { getConfig, setConfig } from '../db/repos/config'
+import { upgradeBaseToSystem } from '../services/lark/baseSystem'
+import { getPersonConfig, refreshPersonMap, setPersonConfig } from '../services/lark/personMap'
 
 /**
  * 飞书云文档 IPC(cs:lark:*):设置页的状态展示与连通性测试。
@@ -101,6 +103,50 @@ export function registerLarkHandlers(): void {
       return { ok: claimed.ok, claimed, status: snapshot() }
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '认领失败' }
+    }
+  })
+
+  // ── 把表格升级成「工单台」(建列/建视图/关联升双向) ──
+
+  /** 一键升级：幂等，重复点只会显示「已存在」 */
+  ipcMain.handle('cs:lark:baseSystemUpgrade', async () => {
+    try {
+      return await upgradeBaseToSystem()
+    } catch (e) {
+      return {
+        ok: false as const,
+        error: e instanceof Error ? e.message : '升级失败',
+        steps: [],
+        manual: []
+      }
+    }
+  })
+
+  /** 人员列（飞书成员）：开关 + 列名 + 手工映射（传空对象仅读取） */
+  ipcMain.handle(
+    'cs:lark:basePerson',
+    (_e, patch: { enabled?: boolean; field?: string; manual?: string } = {}) => {
+      try {
+        if (patch && Object.keys(patch).length > 0) setPersonConfig(patch)
+        return { ok: true as const, person: getPersonConfig(), status: snapshot() }
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : '保存人员列配置失败' }
+      }
+    }
+  )
+
+  /** 刷新「称呼 → open_id」映射（读应用可见的通讯录） */
+  ipcMain.handle('cs:lark:basePersonRefresh', async () => {
+    try {
+      const r = await refreshPersonMap()
+      return { ...r, status: snapshot() }
+    } catch (e) {
+      return {
+        ok: false as const,
+        mapped: 0,
+        names: [],
+        error: e instanceof Error ? e.message : '刷新人员映射失败'
+      }
     }
   })
 

@@ -41,6 +41,13 @@ import {
 } from '../../db/repos/larkMediaRepo'
 import { uploadEvidenceImage } from './mediaUpload'
 import {
+  getPersonConfig,
+  openIdOf,
+  personMapStale,
+  refreshPersonMap,
+  type PersonConfig
+} from './personMap'
+import {
   DEFAULT_MAX_MEDIA_MB,
   DEFAULT_MAX_UPLOADS_PER_ROUND,
   attachmentFieldValue,
@@ -764,6 +771,8 @@ export interface BaseSyncStatus {
   baseName: string
   /** 议题表名(链接指定的那张,或自动建的「议题」) */
   issuesTableName: string
+  /** 人员列(飞书成员)配置与映射状态 */
+  person: PersonConfig
 }
 
 export function baseSyncStatus(): BaseSyncStatus {
@@ -794,7 +803,8 @@ export function baseSyncStatus(): BaseSyncStatus {
     mappedMedia: countMediaRefs(),
     attachedEvidence: countAttached(),
     baseName: (getConfig(CFG_BASE_NAME) ?? '').trim(),
-    issuesTableName: (getConfig(CFG_TABLE_ISSUES_NAME) ?? '').trim()
+    issuesTableName: (getConfig(CFG_TABLE_ISSUES_NAME) ?? '').trim(),
+    person: getPersonConfig()
   }
 }
 
@@ -938,8 +948,21 @@ export async function syncIssuesOut(
     await sleep(BATCH_GAP_MS)
   }
 
+  // 人员列:开启映射时,若映射过期顺手刷一次(一天一次,失败不影响同步)
+  const person = getPersonConfig()
+  if (person.enabled && personMapStale()) {
+    const r2 = await refreshPersonMap()
+    if (r2.ok) syncLog.info(`人员映射已刷新: ${r2.mapped} 人`)
+    else syncLog.warn(`人员映射刷新失败(人员列本轮留空): ${r2.error ?? ''}`)
+  }
+
   for (const issue of rows) {
-    const fields = issueToFields(issue, names, { fieldMap, primaryField })
+    const personName = person.enabled ? (issue.assignee ?? '').trim() : ''
+    const personField =
+      personName && openIdOf(personName)
+        ? { name: person.field, openId: openIdOf(personName) }
+        : undefined
+    const fields = issueToFields(issue, names, { fieldMap, primaryField, personField })
     if (conflicts.size > 0) {
       for (const k of Object.keys(fields)) if (conflicts.has(k)) delete fields[k]
       out.skippedFields = (out.skippedFields ?? 0) + 1

@@ -883,6 +883,8 @@ export interface LarkBaseStatus {
   issuesTableName?: string
   /** 同事能否回写（状态/跟进人/处理备注三列齐全） */
   canWriteBack?: boolean
+  /** 人员列配置与映射状态 */
+  person?: LarkPersonConfig
 }
 
 /** 议题证据明细同步配置(默认关闭:客户原文外发,保守优先) */
@@ -902,6 +904,28 @@ export interface LarkEvidenceConfig {
   maxMediaMB: number
   /** 单轮最多上传几张(限流闸门) */
   maxUploadsPerRound: number
+}
+
+/** 一键升级表格：每一步的结果（created/skipped/failed） */
+export interface LarkSystemUpgrade {
+  ok: boolean
+  error?: string
+  steps: Array<{ label: string; action: 'created' | 'skipped' | 'failed'; detail?: string }>
+  /** 飞书未开放接口、只能手动做的部分 */
+  manual: string[]
+}
+
+/** 人员列（真正的飞书成员，可 @提醒/可被自动化识别） */
+export interface LarkPersonConfig {
+  enabled: boolean
+  /** Base 里的列名 */
+  field: string
+  /** 已解析出映射的人数（含手工映射） */
+  mapped: number
+  /** 上次自动解析时间 */
+  mappedAt: number
+  /** 手工映射文本（每行「称呼=open_id」） */
+  manual: string
 }
 
 /** 证据子表创建/校验结果 */
