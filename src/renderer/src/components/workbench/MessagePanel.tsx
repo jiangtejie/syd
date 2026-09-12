@@ -172,12 +172,44 @@ function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
   const [stage, setStage] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
-  // 已转写内容：查询层会把缓存的转写并进 parsedContent（形如 [语音] 8″ 文本）。
-  // 识别引擎走云侧（腾讯云 ASR），产物落到语音缓存同名 .txt 后这里就会自动显示。
-  const [text] = useState<string | null>(transcriptOf(message.parsedContent))
+  // 已转写内容：查询层会把缓存的转写并进 parsedContent（形如 [语音] 8″ 文本），这里也支持现转（腾讯云 ASR）
+  const [text, setText] = useState<string | null>(transcriptOf(message.parsedContent))
+  const [asr, setAsr] = useState<'idle' | 'running' | 'failed'>('idle')
+  const [asrError, setAsrError] = useState('')
   const seconds = message.voiceDuration
     ? Math.max(1, Math.round(message.voiceDuration / 1000))
     : undefined
+
+  const transcribe = (): void => {
+    if (asr === 'running') return
+    const wxid = useWorkbenchStore.getState().wxid
+    if (!wxid) {
+      setAsr('failed')
+      setAsrError('未选择账号')
+      return
+    }
+    setAsr('running')
+    setAsrError('')
+    window.api?.cs?.media
+      ?.voiceTranscript(wxid, {
+        serverId: message.serverId,
+        localId: message.localId,
+        createTime: message.createTime
+      })
+      .then((r) => {
+        if (r?.ok && r.text) {
+          setText(r.text)
+          setAsr('idle')
+        } else {
+          setAsr('failed')
+          setAsrError(r?.error || '转写失败')
+        }
+      })
+      .catch((e: unknown) => {
+        setAsr('failed')
+        setAsrError(e instanceof Error ? e.message : String(e))
+      })
+  }
 
   const load = (): void => {
     if (stage === 'loading' || stage === 'ready') return
@@ -209,11 +241,26 @@ function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
       })
   }
 
-  const transcriptNode = text ? (
-    <span className="wb-msg-voice-text" title="语音转写文本">
-      {text}
-    </span>
-  ) : null
+  const transcriptNode = (
+    <>
+      {text ? (
+        <span className="wb-msg-voice-text" title="腾讯云 ASR 转写文本">
+          {text}
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="wb-msg-voice-asr"
+          onClick={transcribe}
+          disabled={asr === 'running'}
+          title="用腾讯云一句话识别转写这条语音（需在设置里配置 SecretId/SecretKey）"
+        >
+          {asr === 'running' ? '转写中…' : '转写'}
+        </button>
+      )}
+      {asr === 'failed' && asrError && <span className="wb-msg-voice-err">{asrError}</span>}
+    </>
+  )
 
   if (stage === 'ready' && url) {
     return (

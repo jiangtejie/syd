@@ -290,7 +290,31 @@ const api: PreloadApi = {
         wxid: string,
         opts?: { serverId?: string; localId?: number; createTime?: number }
       ): Promise<{ ok: boolean; url?: string; durationMs?: number; error?: string }> =>
-        ipcRenderer.invoke('cs:media:voiceWav', wxid, opts)
+        ipcRenderer.invoke('cs:media:voiceWav', wxid, opts),
+      voiceTranscript: (
+        wxid: string,
+        opts?: { serverId?: string; localId?: number; createTime?: number; force?: boolean }
+      ): Promise<{
+        ok: boolean
+        text?: string
+        cached?: boolean
+        audioDurationMs?: number
+        requestId?: string
+        error?: string
+      }> => ipcRenderer.invoke('cs:media:voiceTranscript', wxid, opts),
+      asrStatus: (): Promise<{
+        ok: boolean
+        available?: boolean
+        secretId?: string
+        hasSecretKey?: boolean
+        region?: string
+        engine?: string
+        voiceFormat?: string
+        reason?: string
+        error?: string
+      }> => ipcRenderer.invoke('cs:media:asrStatus'),
+      asrSaveSecret: (secretKey: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:media:asrSaveSecret', secretKey)
     },
     issue: {
       list: (wxid: string): Promise<Result<{ issues?: FeedbackIssue[] }>> =>

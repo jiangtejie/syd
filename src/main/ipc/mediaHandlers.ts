@@ -4,6 +4,7 @@ import type { DecryptImageOptions, DecryptVideoOptions } from '../services/media
 import { resolveEmojiLocal, type ResolveEmojiInput } from '../services/media/emojiService'
 import { getVoiceWav } from '../services/media/voice'
 import { getDecryptedKey } from '../services/keyStoreService'
+import { asrTencentStatus, saveAsrSecretKey, transcribeVoice } from '../services/media/asrTencent'
 
 /** 图片/视频 .dat 解密 IPC（M3）：渲染进程传 wxid + md5 → 返回可访问的 ct-media:// URL */
 export function registerMediaHandlers(): void {
@@ -47,6 +48,38 @@ export function registerMediaHandlers(): void {
       }
     }
   )
+
+  // 语音转写（腾讯云一句话识别）：SILK 直传，不走本地识别引擎
+  ipcMain.handle(
+    'cs:media:voiceTranscript',
+    async (
+      _e,
+      wxid: string,
+      opts?: { serverId?: string; localId?: number; createTime?: number; force?: boolean }
+    ) => {
+      if (!wxid || typeof wxid !== 'string') return { ok: false as const, error: '缺少账号' }
+      try {
+        return await transcribeVoice({ wxid, ...(opts || {}) })
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
+  ipcMain.handle('cs:media:asrStatus', () => {
+    try {
+      return { ok: true as const, ...asrTencentStatus() }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+  /** 保存腾讯云 SecretKey（主进程加密后落库，渲染端不持有明文） */
+  ipcMain.handle('cs:media:asrSaveSecret', (_e, secretKey: string) => {
+    try {
+      return saveAsrSecretKey(secretKey)
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
 
   // 动画/商店表情本地化：cdn/模板 URL 下载缓存 → ct-media 本地地址（渲染端裂图后重试用）
   ipcMain.handle('cs:media:resolveEmoji', async (_e, wxid: string, input: ResolveEmojiInput) => {

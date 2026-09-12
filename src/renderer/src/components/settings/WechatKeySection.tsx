@@ -59,9 +59,19 @@ function WechatKeySection(): React.JSX.Element {
   const [showXor, setShowXor] = useState(false)
   const [showAes, setShowAes] = useState(false)
   const [ffmpegPath, setFfmpegPath] = useState('')
+  // 语音转写：腾讯云一句话识别（SILK 直传）；SecretKey 由主进程 safeStorage 加密，渲染端只提交新值
+  const [tcSecretId, setTcSecretId] = useState('')
+  const [tcSecretKey, setTcSecretKey] = useState('')
+  const [tcRegion, setTcRegion] = useState('ap-guangzhou')
+  const [tcEngine, setTcEngine] = useState('16k_zh')
+  const [asrStage, setAsrStage] = useState<{
+    available: boolean
+    reason?: string
+    hasSecretKey?: boolean
+  } | null>(null)
   const [status, setStatus] = useState<KeyStatusInfo | null>(null)
   const [lastError, setLastError] = useState('')
-  const [busy, setBusy] = useState<'import' | 'test' | 'connect' | 'img' | null>(null)
+  const [busy, setBusy] = useState<'import' | 'test' | 'connect' | 'img' | 'asr' | null>(null)
 
   const loadStatus = useCallback(async (id: string) => {
     if (!id.trim() || !keyStoreApi) {
@@ -76,6 +86,9 @@ function WechatKeySection(): React.JSX.Element {
     setXorKey(cfg?.[`img:${id.trim()}:xorKey`] ?? '')
     setAesKey(cfg?.[`img:${id.trim()}:aesKey`] ?? '')
     setFfmpegPath(cfg?.['media.ffmpegPath'] ?? '')
+    setTcSecretId(cfg?.['asr.tencent.secretId'] ?? '')
+    setTcRegion(cfg?.['asr.tencent.region'] ?? 'ap-guangzhou')
+    setTcEngine(cfg?.['asr.tencent.engine'] ?? '16k_zh')
   }, [])
 
   // wxid 输入后自动查询密钥状态（600ms 防抖）
@@ -202,6 +215,39 @@ function WechatKeySection(): React.JSX.Element {
     }
   }
 
+  /**
+   * 保存腾讯云 ASR 配置并检测一次。
+   * SecretKey 只在用户输入了新值时提交，主进程用 safeStorage 加密后落库（渲染端不持有明文）。
+   */
+  const saveAsrConfig = async (): Promise<void> => {
+    setBusy('asr')
+    try {
+      await Promise.all([
+        configApi?.set('asr.tencent.secretId', tcSecretId.trim()),
+        configApi?.set('asr.tencent.region', tcRegion.trim() || 'ap-guangzhou'),
+        configApi?.set('asr.tencent.engine', tcEngine.trim() || '16k_zh')
+      ])
+      if (tcSecretKey.trim()) {
+        const saved = await mediaApi?.asrSaveSecret?.(tcSecretKey.trim())
+        if (!saved?.ok) {
+          toast.error(saved?.error || 'SecretKey 保存失败')
+          return
+        }
+        setTcSecretKey('')
+      }
+      const st = await mediaApi?.asrStatus?.()
+      setAsrStage({
+        available: st?.available === true,
+        reason: st?.reason,
+        hasSecretKey: st?.hasSecretKey
+      })
+      if (st?.available) toast.success('语音转写已就绪（腾讯云一句话识别，SILK 直传）')
+      else toast.error(st?.reason || '语音转写不可用')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   /** 测试图片密钥：先保存当前输入，再从 attach 取一张图真实解密 */
   const testImageKey = async (): Promise<void> => {
     if (!wxid.trim()) return toast.error('请先填写当前微信账号 wxid')
@@ -321,6 +367,65 @@ function WechatKeySection(): React.JSX.Element {
         >
           {busy === 'connect' ? '连接中…' : '连接并启动监控'}
         </button>
+      </div>
+
+      {/* 语音转写：腾讯云一句话识别（SILK 直传，不需要本地模型） */}
+      <div className="st-subtitle">语音转写（腾讯云 ASR）</div>
+      <label className="st-row">
+        <span className="st-label">SecretId</span>
+        <input
+          className="st-input"
+          value={tcSecretId}
+          onChange={(e) => setTcSecretId(e.target.value)}
+          placeholder="腾讯云 → 访问管理 → API 密钥"
+        />
+      </label>
+      <label className="st-row">
+        <span className="st-label">SecretKey</span>
+        <input
+          className="st-input"
+          type="password"
+          value={tcSecretKey}
+          onChange={(e) => setTcSecretKey(e.target.value)}
+          placeholder={
+            asrStage?.hasSecretKey ? '已保存（留空=不修改）' : '仅提交一次，主进程加密保存'
+          }
+        />
+      </label>
+      <label className="st-row">
+        <span className="st-label">地域</span>
+        <input
+          className="st-input"
+          value={tcRegion}
+          onChange={(e) => setTcRegion(e.target.value)}
+          placeholder="ap-guangzhou"
+        />
+      </label>
+      <label className="st-row">
+        <span className="st-label">引擎模型</span>
+        <input
+          className="st-input"
+          value={tcEngine}
+          onChange={(e) => setTcEngine(e.target.value)}
+          placeholder="16k_zh（中文通用）/ 16k_zh_dialect（23 种方言）"
+        />
+      </label>
+      <div className="st-actions">
+        <button
+          type="button"
+          className="st-btn"
+          disabled={busy !== null}
+          onClick={() => void saveAsrConfig()}
+        >
+          {busy === 'asr' ? '检测中…' : '保存并检测'}
+        </button>
+        <span className="st-hint">
+          {asrStage
+            ? asrStage.available
+              ? '已就绪：语音气泡点「转写」即可（微信 SILK 直传，不走本地模型）'
+              : asrStage.reason || '不可用'
+            : '未配置也不影响语音播放；配置后转写文本会进入界面、议题分析与数字员工的判断依据'}
+        </span>
       </div>
 
       {/* 图片 .dat 解密密钥（M3：msg/attach 内 <md5>.dat 原图与缩略图） */}

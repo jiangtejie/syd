@@ -314,12 +314,17 @@ src/
 - **图片**：`mediaService` + `datDecrypt` —— 定位 `msg/attach` 下 `<md5>.dat`；V1/V2（15B 头 + AES-128-ECB + XOR）、V3（整文件 XOR）；解密后处理 wxgf（HEVC 容器）：优先内嵌 JPEG/PNG，纯 HEVC 交外部 ffmpeg 转首帧；结果写 `media/<wxid>/`，经自定义 `ct-media://` 协议暴露（含路径与文件名强校验）。
 - **语音**：`media/voice.ts` —— 微信 4.x 把语音 SILK 放在 `db_storage/message/media_*.db` 的 `VoiceInfo` 表（`svr_id / local_id / create_time / voice_data`）。按「消息行自己的 serverId」优先、`local_id + create_time`（按量级自动选秒/毫秒窗口）兜底定位，`silk-wasm` 解码成 PCM → 包 44 字节 WAV 头（24kHz 单声道）→ 落 `media/<wxid>/voices/<id>.wav`。渲染端只在用户点播放时才要音频（IPC `cs:media:voiceWav`），不在打开会话时批量解码。
   ct-media 协议因此多了**三段布局** `/<wxid>/voices/<id>.wav`（图片/视频仍是两段 `/<wxid>/<md5>_<kind>.<ext>`）；解析规则抽到纯函数 `media/mediaProtocol.ts` 并有自检 —— 早期把 `voices/x.wav` 整体 `encodeURIComponent`，`/` 变 `%2F` 导致整条路径只剩两段被判 403，渲染端只看到「播放失败」；现在这类 URL 由自检直接拦下。
-- **语音转写文本的管道（识别引擎待接腾讯云 ASR）**：本地 whisper.cpp 那条路已按决定**下线**
-  （设置里的本地转写配置、whisper 调用、24k→16k 重采样与其自检一并移除）。保留的是「转写产物怎么被用起来」：
-  约定某条语音的转写文本放在 `<媒体缓存>/<wxid>/voices/<serverId>.txt`（与 WAV 同名、改扩展名），
-  由 `media/voiceTranscript.ts` 读取，并在消息读取层 enrich 后由 `decorateVoiceTranscripts` 并进 `parsedContent`
-  （`[语音] N″ 文本`）——界面、议题分析、数字员工读到的就是同一份文本。
-  接入云 ASR 时只需把识别结果写进这个目录，UI 与分析链路无需改动；`.txt` 不参与容量淘汰（只清 `.wav`）。
+- **语音转写（腾讯云「一句话识别」，`media/asrTencent.ts` + 纯逻辑 `asrTencentPure.ts`）**：
+  选它的理由是**微信语音就是 SILK，而该接口官方支持 `VoiceFormat=silk`** —— 直接把 `VoiceInfo` 里的原始数据
+  base64 直传，**不解码 WAV、不重采样**，链路最短且信息无损（限制：≤60s、base64 后 ≤3MB）。
+  签名用 TC3-HMAC-SHA256，**实现与腾讯官方 Node SDK 的 `sign3` 完全一致**（SignedHeaders 取 `content-type;host`）——
+  自检里存了两组**由官方 SDK 生成的黄金向量**做已知答案测试（见 `scripts/asr-tencent-selftest.mjs`）。
+  凭据：`SecretId` 明文存 `app_config`，**`SecretKey` 用 `safeStorage` 加密后存 `enc:<base64>`**，
+  渲染端只提交新值、只读到「已保存」；解密失败（换机器/换系统账号）按未配置处理并提示重填。
+  产物：识别文本写到语音缓存目录下与 WAV 同名的 `.txt`（`media/voiceTranscript.ts` 读取，
+  消息读取层 enrich 后由 `decorateVoiceTranscripts` 并进 `parsedContent`）——
+  界面、议题分析、数字员工读到同一份文本；`.txt` 不参与容量淘汰（只清 `.wav`）。
+  失败面：错误码/信息/RequestId 原样回给界面（`AuthFailure.*`、`RequestLimitExceeded` 等），识别为空串时报「没听清」。
 - **转写文本如何进入分析与数字员工**：消息读取层在 enrich 后调用 `decorateVoiceTranscripts`，
   把已缓存的转写并进 `parsedContent`（`[语音] N″ 文本`）。这样**界面、议题分析、数字员工读到的是同一份内容**，
   不需要各自去读文件；批量同步路径（`skipEnrich`）不做这次文件探测，避免拖慢上报。
@@ -395,7 +400,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | `ai` `agent` | 生成候选、智能体 CRUD | AI 建议 |
 | `wb` | `listChats/searchChats/messages/create/stop/retry/approve/workspace/skills/trustTool/…` | AI 工作台 |
 | `crypto` | `discover/readiness/warmup/onboard` | **解密一体化**：账号发现、体检、预热解密、一键接入 |
-| `media` | `decryptImage/decryptVideo/resolveEmoji/testImageDecrypt/voiceWav` | 媒体解密（`voiceWav`：语音 SILK → WAV） |
+| `media` | `decryptImage/decryptVideo/resolveEmoji/testImageDecrypt/voiceWav/voiceTranscript/asrStatus/asrSaveSecret` | 媒体解密与云语音转写 |
 | `files` | `policy/prune/remove/reveal` | 渠道文件管理 |
 | `im` | `list/save/remove/toggle/clawQrPoll` | 外部 IM 渠道 |
 | `feishu` `lark` | `notify/audit/contact/status/test` | 飞书通知与云文档 |
@@ -421,6 +426,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
 | 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
 | 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |
+| 语音转写（腾讯云） | `asr.tencent.secretId`、`asr.tencent.secretKey`（safeStorage 密文，存 `enc:<base64>`）、`asr.tencent.region`（ap-guangzhou）、`asr.tencent.engine`（16k_zh）、`asr.tencent.voiceFormat`（silk）、`asr.tencent.timeoutMs`（20000） |
 | 媒体缓存保留 | `wechat.mediaCacheAutoClean`（默认开）、`wechat.mediaCacheKeepDays`（180）、`wechat.mediaCacheMaxMB`（8192）、`wechat.mediaCacheMaxFiles`（50000）、`wechat.report.archiveMigrated`（迁移完成标记）、`wechat.report.pathRepairCursor`（归档路径修复游标） |
 
 ---
@@ -444,6 +450,7 @@ npm run test:send     # 发送前目标唯一性与文本比对（纯函数）
 npm run test:schema   # schema 迁移自检：合成老库上跑三条数据迁移 + 幂等性（不碰真实库）
 npm run test:crypto   # 库解密：合成 SQLCipher 页/WAL 帧，验密钥校验、篡改拒绝、页往返、WAL commit/nTruncate/断帧/跨周期
 npm run test:media-proto # ct-media 路径解析：两段/三段布局、整体编码回归、目录穿越与非法命名
+npm run test:asr      # 腾讯云转写：TC3 签名对官方 SDK 黄金向量、请求体字段、响应解析
 npm run build         # typecheck + electron-vite 三端构建
 ```
 
@@ -517,7 +524,9 @@ npm run build         # typecheck + electron-vite 三端构建
 - **growth 域无外键/级联**：父子表（素材/拆解/产出/发布结果）目前靠应用层保证，删除路径需自行清理。
 - **约束偏松**：核心表 `NOT NULL` 覆盖率低（靠代码纪律保证），布尔/枚举列无 `CHECK`；`AUTOINCREMENT` 用法不统一（growth 域与审计表用，核心表不用）。
 - **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入（图片密钥可从本机模板推导，见 §4.2）。
-- **语音**：能解码播放（`VoiceInfo` → SILK → WAV）；**转写引擎待接腾讯云 ASR**（本地 whisper 已下线）——
-  在云侧接上并写出 `voices/<id>.txt` 之前，语音在分析与数字员工里仍是 `[语音] N″` 占位。
+- **语音转写走云侧**：需要腾讯云凭据（`SecretId/SecretKey`）与开通「语音识别」服务；未配置时语音只播放不转写。
+- **64 位 `svr_id` 的精度坑（已修）**：`VoiceInfo.svr_id` 是 19 位 INTEGER，经 better-sqlite3 读进 JS 会按 double 舍入
+  （实测 `…795967` → `…796000`），而渲染端拿到的 `message.serverId` 正是这种值。
+  语音查找因此做了三档：精确文本 → **数值容差**（`ABS(svr_id - ?) <= 4096`，相邻 svr_id 相差上亿，窗口很安全）→ `local_id + create_time`。
 - **ct-media 不支持 Range**：协议用 `net.fetch(file://)` 直出整文件，没有 Range 响应头 —— 图片/短视频/几秒语音播放没问题，长音频拖动进度条可能不灵。
 - **库密钥只支持手动导入/粘贴**：自动获取（内置 DLL / 外部工具 / 自备组件 / 扫本机文件 / 第三方工具预设）已按决定全部下线，原因与下线前的实测证据见 §4.2。

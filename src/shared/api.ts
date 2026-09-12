@@ -358,6 +358,35 @@ export interface CsApi {
       wxid: string,
       opts?: { serverId?: string; localId?: number; createTime?: number }
     ) => Promise<{ ok: boolean; url?: string; durationMs?: number; error?: string }>
+    /**
+     * 语音转写（腾讯云一句话识别）：SILK 直传，产物写进语音缓存同名 .txt，
+     * 之后由读取层并进消息内容（界面/议题分析/数字员工共用）。
+     */
+    voiceTranscript: (
+      wxid: string,
+      opts?: { serverId?: string; localId?: number; createTime?: number; force?: boolean }
+    ) => Promise<{
+      ok: boolean
+      text?: string
+      cached?: boolean
+      audioDurationMs?: number
+      requestId?: string
+      error?: string
+    }>
+    /** 转写能力状态（凭据是否齐备；不回传 SecretKey 明文） */
+    asrStatus: () => Promise<{
+      ok: boolean
+      available?: boolean
+      secretId?: string
+      hasSecretKey?: boolean
+      region?: string
+      engine?: string
+      voiceFormat?: string
+      reason?: string
+      error?: string
+    }>
+    /** 保存 SecretKey（主进程用 safeStorage 加密后落库） */
+    asrSaveSecret: (secretKey: string) => Promise<{ ok: boolean; error?: string }>
   }
   issue: {
     list: (wxid: string) => Promise<Result<{ issues?: FeedbackIssue[] }>>
