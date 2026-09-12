@@ -20,6 +20,15 @@ import {
   statusFromText,
   statusText
 } from '../src/main/services/lark/baseMapping.ts'
+import {
+  EVIDENCE_MEDIA_PARENT_TYPE,
+  attachmentFieldValue,
+  decideEvidenceMedia,
+  evidenceMediaName,
+  imageMd5Of,
+  isEvidenceImage,
+  maxMediaBytesOf
+} from '../src/main/services/lark/evidenceMedia.ts'
 
 let failed = 0
 const log = (ok, name, detail) => {
@@ -184,6 +193,54 @@ log(
   !Object.keys(evidenceToFields(ev)).some((k) => k === '处理备注' || k === '状态'),
   '证据表只用标准列名（不套议题表的列名映射）'
 )
+
+console.log('\n[9] 证据附件：上传决策（纯函数）')
+const MB = 1024 * 1024
+log(isEvidenceImage(3, undefined), 'local_type=3 → 是图片')
+log(isEvidenceImage(49, 'A'.repeat(32).toLowerCase()), '带合法 image_md5 → 是图片')
+log(!isEvidenceImage(1, undefined), '纯文本 → 不是图片')
+log(imageMd5Of('  ABCDEF0123456789ABCDEF0123456789 ') === 'abcdef0123456789abcdef0123456789', 'md5 归一化（去空格+小写）')
+log(imageMd5Of('not-a-md5') === null, '非法 md5 → null')
+log(
+  decideEvidenceMedia({ localType: 3, imageMd5: 'a'.repeat(32), maxBytes: 10 * MB }).action ===
+    'attach',
+  '正常图片 → 上传'
+)
+log(
+  decideEvidenceMedia({
+    localType: 3,
+    imageMd5: 'a'.repeat(32),
+    cachedToken: 'tok',
+    maxBytes: 10 * MB
+  }).action === 'cached',
+  '已上传过 → 复用 token（不再走网络）'
+)
+const big = decideEvidenceMedia({
+  localType: 3,
+  imageMd5: 'a'.repeat(32),
+  sizeBytes: 12 * MB,
+  maxBytes: 10 * MB
+})
+log(big.action === 'skip' && big.reason === 'too-big', '超过单张上限 → 跳过（保留占位文本）')
+log(
+  decideEvidenceMedia({ localType: 1, maxBytes: 10 * MB }).action === 'skip',
+  '非图片证据 → 不传附件'
+)
+log(
+  decideEvidenceMedia({ localType: 3, imageMd5: 'zz', maxBytes: 10 * MB }).reason === 'no-md5',
+  '图片但没有合法 md5 → no-md5'
+)
+log(maxMediaBytesOf(10) === 10 * MB, '10MB → 字节数')
+log(maxMediaBytesOf(999) === 20 * MB, '超过 20MB 的上限被夹到 20（飞书单次上限）')
+log(maxMediaBytesOf(0) === 1 * MB, '低于 1MB 的配置夹到 1')
+log(evidenceMediaName('abcdef0123456789abcdef0123456789', 'jpg') === 'image_abcdef01.jpg', '附件名只带 md5 前缀（不泄露客户信息）')
+log(evidenceMediaName('abcdef0123456789abcdef0123456789', '.JPEG') === 'image_abcdef01.jpeg', '扩展名归一化')
+log(evidenceMediaName('abcdef0123456789abcdef0123456789', '') === 'image_abcdef01.jpg', '认不出扩展名 → 兜底 jpg')
+log(
+  JSON.stringify(attachmentFieldValue('tok')) === '[{"file_token":"tok"}]',
+  '附件字段值形状 [{file_token}]（飞书要求）'
+)
+log(EVIDENCE_MEDIA_PARENT_TYPE === 'bitable_image', '父类型=bitable_image（多维表格图片）')
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)

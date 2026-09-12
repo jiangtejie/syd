@@ -1191,3 +1191,113 @@ select.st-input {
   border-radius: var(--r-sm);
   padding: 6px 8px;
 }
+
+/* ---- status pills + advanced blocks (sync cards) ---- */
+.sf-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+
+.sf-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--bg-hover);
+  color: var(--text-2);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.sf-pill.is-ok {
+  border-color: var(--success-strong);
+  background: var(--success-soft);
+  color: var(--success-strong);
+}
+
+.sf-pill.is-off {
+  color: var(--text-3);
+}
+
+.sf-pill.is-warn {
+  border-color: var(--warn-text);
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.sf-pill.is-bad {
+  border-color: var(--danger);
+  background: var(--bg-hover);
+  color: var(--danger-hover);
+}
+
+.sf-adv {
+  margin-top: 10px;
+  border-top: 1px dashed var(--border-light);
+  padding-top: 8px;
+}
+
+.sf-adv > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-3);
+  list-style: none;
+}
+
+.sf-adv > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sf-adv > summary::before {
+  content: '\25B8';
+  display: inline-block;
+  width: 12px;
+  transition: transform 0.15s ease;
+}
+
+.sf-adv[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.sf-adv > summary:hover {
+  color: var(--brand);
+}
+
+.sf-adv-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* main action row: primary on the left, secondary/danger pushed right */
+.sf-actions-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sf-actions-split .is-end {
+  margin-left: auto;
+}
+
+/* privacy / risk note: a bit louder than st-hint */
+.sf-note-warn {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--warn-text);
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  font-size: 12px;
+  line-height: 1.65;
+}
+

@@ -45,6 +45,8 @@ export interface LarkApi {
       batchUpdate: (payload: unknown) => Promise<unknown>
     }
   }
+  /** 云文档素材上传(证据图片 → Base 附件列的 file_token) */
+  drive: { v1: { media: { uploadAll: (payload: unknown) => Promise<unknown> } } }
   docx: { document: { rawContent: (payload: unknown) => Promise<unknown> } }
   wiki: { space: { getNode: (payload: unknown) => Promise<unknown> } }
   /** 原始调用逃生口(SDK 自动补 domain 与鉴权头;url 不带前导斜杠) */
@@ -129,6 +131,43 @@ export async function larkCall<T>(
       }
     }
     return { ok: true, data: (res?.data ?? ({} as T)) as T }
+  } catch (e) {
+    return { ok: false, error: larkTransportError(e) }
+  }
+}
+
+/**
+ * 上传素材（drive/v1/medias/upload_all）。
+ *
+ * **不能套 larkCall**：实测 SDK 的 `drive.v1.media.uploadAll` 不返回统一的
+ * `{code, msg, data}` 包装，而是直接把 `{file_token, version}` 放在顶层 ——
+ * 走 larkCall 会拿到一个空的 data，`file_token` 永远是 undefined（第一次实测就是这样翻车的）。
+ */
+export async function larkUploadMedia(payload: {
+  file_name: string
+  parent_type: string
+  parent_node: string
+  size: number
+  file: unknown
+}): Promise<{ ok: true; fileToken: string } | { ok: false; error: string }> {
+  const c = larkApiClient()
+  if (!c) return { ok: false, error: noCredentialHint() }
+  try {
+    const res = (await c.api.drive.v1.media.uploadAll({ data: payload })) as {
+      file_token?: string
+      code?: number
+      msg?: string
+    } | null
+    const code = res?.code
+    if (typeof code === 'number' && code !== 0) {
+      return {
+        ok: false,
+        error: `${res?.msg || '素材上传失败'}(code=${code})${larkErrorHint(code)}`
+      }
+    }
+    const token = (res?.file_token ?? '').trim()
+    if (!token) return { ok: false, error: '素材上传成功但没有返回 file_token' }
+    return { ok: true, fileToken: token }
   } catch (e) {
     return { ok: false, error: larkTransportError(e) }
   }

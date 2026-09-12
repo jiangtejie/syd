@@ -94,6 +94,7 @@
 | 设置页 → 同步历史 | kind 显示中文(议题 / 影子回复 / 证据明细 / 拉取同事改动) |
 | 监控页 | 同步徽标追加「证据 N 条(待推 M)」;同步 toast 追加"证据新增 N" |
 | 设置页 | 「推送聊天原文」改名「影子记录附带更长的聊天原文」并写清它只管影子回复列 |
+| 设置页(第三轮收敛) | 卡片改为**胶囊状态 + 两个开关 + 高级信息折叠**:首屏只显示「已开启/未开启 · 近 7 天·每议题≤20 条·每条≤200 字 · 已推 N · 待推 M · 图片附件开/关」;三个上限、附件上限、表结构与「创建/校验证据表」「清理孤儿行」全部收进「高级信息」;隐私提示升级为琥珀色警示块;**界面上不出现任何 app_token / table_id** |
 
 ## 4. 分阶段与完成情况
 
@@ -101,7 +102,9 @@
 | --- | --- | --- |
 | **P0** | 子表「议题证据」+ 字段补齐 + kind=evidence 映射 + 增量推 + 三个上限 + 同步历史 | ✅ 已实现 |
 | P1 | 关联字段(失败即退化)+ 孤儿行清理 + 监控页待推计数 | ✅ 已实现,**关联字段已实测创建成功** |
-| P2 | 证据图片上传为附件;每议题一篇复盘文档(方案 C) | ⏳ 未做 |
+| **P2a** | 证据**图片**上传为附件(「证据图」列 + 素材上传 + md5 去重 + 补历史) | ✅ 已实现,真实凭证实测通过(见 §9) |
+| P2b | 视频/文件证据附件 | ⏳ 未做(本地证据表没有 video_md5/file_md5 列,要先改数据模型) |
+| P2c | 每议题一篇复盘文档(方案 C) | ⏳ 未做 |
 
 ## 5. 风险与缓解(落地后回看)
 
@@ -142,6 +145,64 @@
 
 ---
 
+## 9. 证据附件(图片)的落地细节
+
+### 9.1 为什么只做图片
+
+证据行来自 `issue_feedback_msg`,它的列只有 `text / image_md5 / local_type` —— **视频与文件消息没有
+md5 落库**,拿不到本地文件,所以这两类仍只写占位标记(要做就得先给证据表加 video_md5/file_md5 列
+并在写证据时带上,属于数据模型改动,单独排期)。语音同理(要先把 SILK 解成 wav 再上传)。
+
+### 9.2 表格侧
+
+- 「议题证据」表新增 **证据图**(附件,type=17);
+- 老表(功能更早版本建的)没有这一列:**开了附件开关时每轮先跑一次 `ensureEvidenceTable`**,
+  `ensureFields` 只增不改,自动补齐;
+- 附件字段值写成 `[{file_token}]`(飞书要求),通过 `batchUpdate` 写回对应记录。
+
+### 9.3 上传链路(三步)
+
+1. **本地解密**:复用监控页看图那条链路 `mediaService.decryptImage({wxid, imageMd5, kind:'orig'})`,
+   产物落在 `<cache>/media/<账号>/<md5>_orig.<ext>`,再用 `resolveMediaUrl()` 反解绝对路径
+   (这个函数从 `mediaArchive` 导出复用,不另写第二份);
+2. **上传素材**:`drive/v1/medias/upload_all`,`parent_type=bitable_image`、`parent_node=Base app_token`;
+3. **写附件列**:拿到 `file_token` 后 `batchUpdate` 写入证据行的「证据图」。
+
+### 9.4 幂等与限额
+
+| 机制 | 做法 |
+| --- | --- |
+| 同一张图只传一次 | `lark_media_map(md5 → file_token)` 缓存;命中直接复用,不走网络 |
+| 同一条证据只写一次附件 | `lark_evidence_attach(msg_id)` 标记;**只有 batchUpdate 成功才标记**,失败下一轮重试 |
+| 单张上限 | 默认 10MB(飞书 upload_all 单次上限 20MB),超限跳过并保留 `[图片]` 占位 |
+| 每轮上限 | 默认 20 张,避免一轮打几百个 multipart;剩下的下一轮继续 |
+| 补齐历史 | 开关常常是后开的:每轮会把「已推送、图片、但没写附件」的历史证据行补上(同样受每轮上限约束) |
+| 换 Base / 清配置 | 清空两张缓存表:file_token 是 Base 级的,换表即失效 |
+
+### 9.5 踩坑(已在代码注释里钉住)
+
+**SDK 的 `drive.v1.media.uploadAll` 不返回统一的 `{code,msg,data}` 包装**,而是直接把
+`{file_token, version}` 放在顶层。第一版复用了 `larkCall()`(它按 `res.data` 取值),
+结果「上传成功但没有返回 file_token」——素材其实传上去了,token 被丢掉了。
+现在单独包了 `larkUploadMedia()` 处理这种返回形状,并把这段写进注释防止后人再踩。
+
+### 9.6 实测(真实凭证,2026-09-12)
+
+| 项 | 结果 |
+| --- | --- |
+| 补列 | ✅ `ensureEvidenceTable` 在既有证据表上补出「证据图」(type=17),`fieldsAdded: ['证据图']` |
+| 解密 | ✅ 本地真实证据图解密成功(165,135 字节) |
+| 上传素材 | ✅ 拿到 `file_token`(并写入 `lark_media_map`,后续复用) |
+| 写附件 | ✅ 建了一条测试记录带上「证据图」→ 成功,随后**已删除**该记录 |
+| 副作用 | 上传素材共留下 2~3 个未被引用的素材(验证过程产生,单个约 160KB),不影响表格数据 |
+
+### 9.7 隐私
+
+图片是**比文字更敏感**的内容(可能是身份证、合同、聊天截图),所以:
+- 附件有**独立开关**,默认关闭,与「推送证据明细」分开;
+- 只有证据明细开关打开、附件开关也打开时才会解密上传;
+- 设置页在该开关旁写明「会先解密到本地缓存再上传」,并给出单张/每轮上限。
+
 ## 附:实现位置
 
 | 文件 | 内容 |
@@ -154,3 +215,8 @@
 | `src/preload/index.ts` + `src/shared/api.ts` + `src/shared/types.ts` | 三个接口与 `LarkEvidenceConfig` / `LarkEvidenceSetup` 类型 |
 | `src/renderer/src/pages/SettingsPage.tsx` | 「议题证据明细同步（子表）」卡片、历史中文名 |
 | `src/renderer/src/pages/MonitorPage.tsx` | 徽标与 toast 的证据信息 |
+| `src/main/services/lark/evidenceMedia.ts` | 附件纯逻辑(是否可传/命名/上限/附件值),自检覆盖 |
+| `src/main/services/lark/mediaUpload.ts` | 解密 → 上传素材 → 记 token 的 IO 链路 |
+| `src/main/services/lark/client.ts` | `larkUploadMedia()`(处理 uploadAll 的特殊返回形状) |
+| `src/main/db/repos/larkMediaRepo.ts` + `schema/base.ts` | `lark_media_map` / `lark_evidence_attach` 两张小表 |
+| `src/main/services/report/mediaArchive.ts` | `resolveMediaUrl` 改为导出(URL → 本地文件,两边共用) |

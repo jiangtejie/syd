@@ -11,6 +11,7 @@ import {
   setEvidenceConfig,
   getFieldMap,
   pullIssuesBack,
+  resetEvidenceMedia,
   setFieldMap,
   setRawEvidence,
   setSyncEnabled,
@@ -110,7 +111,15 @@ export function registerLarkHandlers(): void {
     'cs:lark:baseEvidence',
     (
       _e,
-      patch: { enabled?: boolean; days?: number; maxPerIssue?: number; maxChars?: number } = {}
+      patch: {
+        enabled?: boolean
+        days?: number
+        maxPerIssue?: number
+        maxChars?: number
+        media?: boolean
+        maxMediaMB?: number
+        maxUploadsPerRound?: number
+      } = {}
     ) => {
       try {
         if (patch && Object.keys(patch).length > 0) setEvidenceConfig(patch)
@@ -197,6 +206,10 @@ export function registerLarkHandlers(): void {
   ipcMain.handle('cs:lark:baseClear', () => {
     try {
       setConfig('lark.baseToken', '')
+      setConfig('lark.baseLink', '')
+      setConfig('lark.baseName', '')
+      setConfig('lark.baseTableIssuesName', '')
+      setConfig('lark.canWriteBack', '')
       setConfig('lark.baseTableIssues', '')
       setConfig('lark.baseTableReplies', '')
       setConfig('lark.primaryField', '')
@@ -208,6 +221,9 @@ export function registerLarkHandlers(): void {
       setConfig('lark.evidence.enabled', '0')
       setConfig('lark.sync.evidenceAt', '')
       setConfig('lark.sync.lastEvidence', '')
+      setConfig('lark.evidence.media', '0')
+      // 素材 token / 附件写入状态都是 Base 级的,清配置时一并作废
+      resetEvidenceMedia()
       setConfig('lark.sync.enabled', '0')
       return { ok: true as const, status: snapshot() }
     } catch (e) {

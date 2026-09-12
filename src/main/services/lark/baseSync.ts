@@ -31,6 +31,22 @@ import {
   type FieldMap
 } from './baseMapping'
 import { listEvidenceForSync, listEvidenceIds } from '../../db/repos/issueRepo'
+import {
+  countAttached,
+  countMediaRefs,
+  clearAttached,
+  clearMediaRefs,
+  hasAttached,
+  markAttached
+} from '../../db/repos/larkMediaRepo'
+import { uploadEvidenceImage } from './mediaUpload'
+import {
+  DEFAULT_MAX_MEDIA_MB,
+  DEFAULT_MAX_UPLOADS_PER_ROUND,
+  attachmentFieldValue,
+  imageMd5Of,
+  isEvidenceImage
+} from './evidenceMedia'
 import { parseLarkRef } from './url'
 import { createLogger } from '../logging'
 
@@ -84,6 +100,16 @@ const CFG_EV_DAYS = 'lark.evidence.days'
 const CFG_EV_MAX_PER_ISSUE = 'lark.evidence.maxPerIssue'
 /** 每条内容截断字数(默认 200) */
 const CFG_EV_MAX_CHARS = 'lark.evidence.maxChars'
+/** Base 名与议题表名(验证时记下来,给 UI 显示人话,不显示 token) */
+const CFG_BASE_NAME = 'lark.baseName'
+const CFG_TABLE_ISSUES_NAME = 'lark.baseTableIssuesName'
+/** 用户当初粘贴的完整链接(重新配置时回填;UI 默认只在「高级信息」里露出) */
+const CFG_BASE_LINK = 'lark.baseLink'
+/** 同事能不能回写(状态/跟进人/处理备注三列齐全) */
+const CFG_CAN_WRITE_BACK = 'lark.canWriteBack'
+const CFG_EV_MEDIA = 'lark.evidence.media'
+const CFG_EV_MAX_MB = 'lark.evidence.maxMediaMB'
+const CFG_EV_MAX_UPLOADS = 'lark.evidence.maxUploadsPerRound'
 const CFG_EV_TABLE = 'lark.baseTableEvidence'
 const CFG_EV_LINK = 'lark.evidence.linkField'
 const CFG_EV_LAST_AT = 'lark.sync.evidenceAt'
@@ -103,6 +129,7 @@ const T_TEXT = 1
 const T_NUMBER = 2
 const T_SINGLE = 3
 const T_DATE = 5
+const T_ATTACH = 17
 
 interface FieldSpec {
   name: string
@@ -145,7 +172,9 @@ const EVIDENCE_FIELDS: FieldSpec[] = [
     name: '类型',
     type: T_SINGLE,
     options: ['文本', '图片', '语音', '视频', '表情', '链接/卡片', '名片', '位置']
-  }
+  },
+  // 图片证据的真图(默认不上传:客户发的原图比文字更敏感,单独一个开关管)
+  { name: '证据图', type: T_ATTACH }
 ]
 
 const REPLY_FIELDS: FieldSpec[] = [
@@ -605,11 +634,20 @@ export async function verifyBaseLink(
       setConfig(CFG_EV_LINK, '')
       setConfig(CFG_LAST_AT, '0')
       setConfig(CFG_EV_LAST_AT, '0')
+      // 素材 token 与附件写入状态都是 Base 级的:换了表就一律作废,重新上传
+      clearMediaRefs()
+      clearAttached()
       notes.push(
         `目标换成了另一个多维表格:已清掉旧映射(议题 ${nIssue} · 回复 ${nReply} · 证据 ${nEvidence} 条),下一次同步会全部重新写入新表`
       )
     }
     setConfig(CFG_TOKEN, appToken)
+    // 人话名与原始链接:UI 上显示「Base「智能客服运营跟踪」· 表「数据表」」,
+    // 链接只留在「高级信息」里(重新配置时能回填成完整 URL,而不是一串 token)
+    setConfig(CFG_BASE_NAME, appName || '')
+    setConfig(CFG_TABLE_ISSUES_NAME, issuesTableName || '')
+    setConfig(CFG_BASE_LINK, link.trim())
+    setConfig(CFG_CAN_WRITE_BACK, writeBackOk ? '1' : '0')
     setConfig(CFG_TABLE_ISSUES, issuesTableId)
     setConfig(CFG_TABLE_REPLIES, repliesTableId)
     setConfig(CFG_PRIMARY_FIELD, primaryField || '')
@@ -641,6 +679,14 @@ export interface SyncOutResult {
   failed: number
   /** 因列类型不符被跳过的列次数(>0 时设置页会提示去改列或做映射) */
   skippedFields?: number
+  /** 证据附件(图片):本轮真正上传/写进附件列的条数 */
+  mediaUploaded?: number
+  /** 证据附件:复用已上传素材(没走网络)的条数 */
+  mediaCached?: number
+  /** 证据附件:被跳过的条数(非图片 / 超上限) */
+  mediaSkipped?: number
+  /** 证据附件:上传或写入失败的条数(下一轮会重试) */
+  mediaFailed?: number
   at: number
 }
 
@@ -676,6 +722,10 @@ function readLastPull(): PullResult | null {
 
 export interface BaseSyncStatus {
   configured: boolean
+  /** UI 展示用链接(优先用户当初粘贴的完整链接) */
+  link?: string
+  /** 同事能否回写(三列齐全) */
+  canWriteBack: boolean
   appToken?: string
   issuesTableId?: string
   repliesTableId?: string
@@ -704,11 +754,22 @@ export interface BaseSyncStatus {
   lastEvidence: SyncOutResult | null
   /** 按当前上限,本轮还会推几条证据(0 = 已追平) */
   pendingEvidence: number
+  /** 已上传到 Base 的证据图片素材数(按 md5 去重) */
+  mappedMedia: number
+  /** 已写进证据行的附件条数(≤ mappedMedia,同一张图可被多条证据复用) */
+  attachedEvidence: number
+  /** 多维表格名(验证时记下,UI 显示用) */
+  baseName: string
+  /** 议题表名(链接指定的那张,或自动建的「议题」) */
+  issuesTableName: string
 }
 
 export function baseSyncStatus(): BaseSyncStatus {
   return {
     configured: !!baseConfiguredLink(),
+    // link 给 UI 用:优先回显用户当初粘贴的完整链接(裸 token 对用户没有意义)
+    link: (getConfig(CFG_BASE_LINK) ?? '').trim() || baseConfiguredLink() || undefined,
+    canWriteBack: getConfigBoolean(CFG_CAN_WRITE_BACK, false),
     appToken: baseConfiguredLink() || undefined,
     issuesTableId: (getConfig(CFG_TABLE_ISSUES) ?? '').trim() || undefined,
     repliesTableId: (getConfig(CFG_TABLE_REPLIES) ?? '').trim() || undefined,
@@ -727,7 +788,11 @@ export function baseSyncStatus(): BaseSyncStatus {
     evidence: getEvidenceConfig(),
     mappedEvidence: countSyncRefs('evidence'),
     lastEvidence: readLastEvidence(),
-    pendingEvidence: countPendingEvidence()
+    pendingEvidence: countPendingEvidence(),
+    mappedMedia: countMediaRefs(),
+    attachedEvidence: countAttached(),
+    baseName: (getConfig(CFG_BASE_NAME) ?? '').trim(),
+    issuesTableName: (getConfig(CFG_TABLE_ISSUES_NAME) ?? '').trim()
   }
 }
 
@@ -767,6 +832,11 @@ function readHistory(): Array<Record<string, unknown>> {
   } catch {
     return []
   }
+}
+
+/** 清掉素材与附件缓存(baseClear / 换 Base 用):token 是 Base 级的,换表即失效 */
+export function resetEvidenceMedia(): { media: number; attached: number } {
+  return { media: clearMediaRefs(), attached: clearAttached() }
 }
 
 export function setSyncEnabled(on: boolean): void {
@@ -1169,6 +1239,12 @@ export interface EvidenceConfig {
   maxPerIssue: number
   maxChars: number
   tableId: string
+  /** 是否把图片证据的真图传到「证据图」附件列(默认关:原图比文字更敏感) */
+  media: boolean
+  /** 单张图片上限(MB) */
+  maxMediaMB: number
+  /** 单轮最多上传几张(限流闸门) */
+  maxUploadsPerRound: number
 }
 
 export function getEvidenceConfig(): EvidenceConfig {
@@ -1181,7 +1257,10 @@ export function getEvidenceConfig(): EvidenceConfig {
     days: num(CFG_EV_DAYS, 7, 1, 365),
     maxPerIssue: num(CFG_EV_MAX_PER_ISSUE, 20, 1, 200),
     maxChars: num(CFG_EV_MAX_CHARS, 200, 20, 2000),
-    tableId: (getConfig(CFG_EV_TABLE) ?? '').trim()
+    tableId: (getConfig(CFG_EV_TABLE) ?? '').trim(),
+    media: getConfigBoolean(CFG_EV_MEDIA, false),
+    maxMediaMB: num(CFG_EV_MAX_MB, DEFAULT_MAX_MEDIA_MB, 1, 20),
+    maxUploadsPerRound: num(CFG_EV_MAX_UPLOADS, DEFAULT_MAX_UPLOADS_PER_ROUND, 1, 200)
   }
 }
 
@@ -1190,6 +1269,9 @@ export function setEvidenceConfig(patch: {
   days?: number
   maxPerIssue?: number
   maxChars?: number
+  media?: boolean
+  maxMediaMB?: number
+  maxUploadsPerRound?: number
 }): EvidenceConfig {
   if (typeof patch.enabled === 'boolean') setConfig(CFG_EV_ENABLED, patch.enabled ? '1' : '0')
   if (Number.isFinite(Number(patch.days)))
@@ -1203,6 +1285,17 @@ export function setEvidenceConfig(patch: {
     setConfig(
       CFG_EV_MAX_CHARS,
       String(Math.min(Math.max(Math.round(Number(patch.maxChars)), 20), 2000))
+    )
+  if (typeof patch.media === 'boolean') setConfig(CFG_EV_MEDIA, patch.media ? '1' : '0')
+  if (Number.isFinite(Number(patch.maxMediaMB)))
+    setConfig(
+      CFG_EV_MAX_MB,
+      String(Math.min(Math.max(Math.round(Number(patch.maxMediaMB)), 1), 20))
+    )
+  if (Number.isFinite(Number(patch.maxUploadsPerRound)))
+    setConfig(
+      CFG_EV_MAX_UPLOADS,
+      String(Math.min(Math.max(Math.round(Number(patch.maxUploadsPerRound)), 1), 200))
     )
   return getEvidenceConfig()
 }
@@ -1288,7 +1381,8 @@ export async function syncEvidenceOut(): Promise<SyncOutResult> {
 
   let tableId = cfg.tableId
   try {
-    if (!tableId) {
+    // 开了附件就必须确认「证据图」列存在:表是本功能更早的版本建的,那时还没有这一列
+    if (!tableId || cfg.media) {
       const ensured = await ensureEvidenceTable(
         appToken,
         (getConfig(CFG_TABLE_ISSUES) ?? '').trim()
@@ -1317,13 +1411,17 @@ export async function syncEvidenceOut(): Promise<SyncOutResult> {
     failed: 0,
     at
   }
-  if (picked.length === 0) {
-    setConfig(CFG_EV_LAST_AT, String(at))
-    setConfig(CFG_EV_LAST, JSON.stringify(out))
-    pushHistory('evidence', out)
-    return out
-  }
+  /** 本轮要写附件的证据行(先放新建的行,后面再补历史上已推送但没写附件的) */
+  const attachQueue: Array<{
+    msgId: number
+    recordId: string
+    accountWxid: string
+    localType?: number
+    imageMd5?: string
+  }> = []
 
+  /** 消息 id → 证据行(flush 里要把新建的图片行挑出来写附件,放在 flush 之前以免顺序被误改) */
+  const pickedByMsgId = new Map(picked.map((r) => [r.msgId, r]))
   let pending: Array<{ id: number; fields: Record<string, unknown>; hash: string }> = []
   const flush = async (): Promise<void> => {
     if (pending.length === 0) return
@@ -1354,6 +1452,22 @@ export async function syncEvidenceOut(): Promise<SyncOutResult> {
       })
       out.created++
     })
+    // 新建的行里,图片证据要接着把真图写进附件列
+    if (cfg.media) {
+      batch.forEach((b, idx) => {
+        const recordId = records[idx]?.record_id
+        const src = pickedByMsgId.get(b.id)
+        if (!recordId || !src || !src.accountWxid) return
+        if (!isEvidenceImage(src.localType, src.imageMd5)) return
+        attachQueue.push({
+          msgId: src.msgId,
+          recordId,
+          accountWxid: src.accountWxid,
+          localType: src.localType,
+          imageMd5: src.imageMd5
+        })
+      })
+    }
     await sleep(BATCH_GAP_MS)
   }
 
@@ -1364,11 +1478,113 @@ export async function syncEvidenceOut(): Promise<SyncOutResult> {
   }
   await flush()
 
+  // 附件:先把历史行补上(附件开关常常是后开的),再一起写(每轮限量,剩下的下一轮继续)
+  if (cfg.media) {
+    for (const row of all) {
+      if (attachQueue.length >= cfg.maxUploadsPerRound) break
+      if (!row.accountWxid) continue
+      if (!isEvidenceImage(row.localType, row.imageMd5)) continue
+      if (attachQueue.some((a) => a.msgId === row.msgId)) continue
+      if (hasAttached(row.msgId)) continue
+      const ref = getSyncRef('evidence', row.msgId)
+      if (!ref || ref.tableId !== tableId) continue
+      attachQueue.push({
+        msgId: row.msgId,
+        recordId: ref.recordId,
+        accountWxid: row.accountWxid,
+        localType: row.localType,
+        imageMd5: row.imageMd5
+      })
+    }
+    await attachEvidenceImages({
+      appToken,
+      tableId,
+      queue: attachQueue.slice(0, cfg.maxUploadsPerRound),
+      cfg,
+      out
+    })
+  }
+
   setConfig(CFG_EV_LAST_AT, String(at))
   setConfig(CFG_EV_LAST, JSON.stringify(out))
   if (out.failed > 0) out.ok = false
   pushHistory('evidence', out)
   return out
+}
+
+/**
+ * 把图片证据写进 Base 的「证据图」附件列。
+ *
+ * 两段式:先把图上传成素材拿 file_token(同一张图按 md5 复用,不重复上传),
+ * 再 batchUpdate 记录写附件列。**只有记录更新成功才标记已写**,失败下一轮自动重试。
+ * 全程不致命:附件传不上去不影响这一行的证据文本,只在计数与日志里体现。
+ */
+async function attachEvidenceImages(opts: {
+  appToken: string
+  tableId: string
+  queue: Array<{
+    msgId: number
+    recordId: string
+    accountWxid: string
+    localType?: number
+    imageMd5?: string
+  }>
+  cfg: EvidenceConfig
+  out: SyncOutResult
+}): Promise<void> {
+  const { appToken, tableId, queue, cfg, out } = opts
+  if (queue.length === 0) return
+
+  let batch: Array<{
+    recordId: string
+    msgId: number
+    md5: string
+    token: string
+  }> = []
+  const flush = async (): Promise<void> => {
+    if (batch.length === 0) return
+    const items = batch
+    batch = []
+    const records = items.map((it) => ({
+      record_id: it.recordId,
+      fields: { 证据图: attachmentFieldValue(it.token) }
+    }))
+    const r = await larkCall((api) =>
+      api.bitable.appTableRecord.batchUpdate({
+        path: { app_token: appToken, table_id: tableId },
+        data: { records }
+      })
+    )
+    if (!r.ok) {
+      out.mediaFailed = (out.mediaFailed ?? 0) + items.length
+      syncLog.warn('写入证据附件失败 ' + items.length + ' 条: ' + r.error)
+      return
+    }
+    for (const it of items) markAttached(it.msgId, it.md5, it.token)
+    out.mediaUploaded = (out.mediaUploaded ?? 0) + items.length
+    await sleep(BATCH_GAP_MS)
+  }
+
+  for (const item of queue) {
+    const up = await uploadEvidenceImage({
+      appToken,
+      accountWxid: item.accountWxid,
+      localType: item.localType,
+      imageMd5: item.imageMd5,
+      maxMediaMB: cfg.maxMediaMB
+    })
+    if (!up.ok || !up.fileToken) {
+      if (up.skipped) out.mediaSkipped = (out.mediaSkipped ?? 0) + 1
+      else out.mediaFailed = (out.mediaFailed ?? 0) + 1
+      continue
+    }
+    if (up.cached) out.mediaCached = (out.mediaCached ?? 0) + 1
+    const md5 = imageMd5Of(item.imageMd5)
+    if (!md5) continue
+    batch.push({ recordId: item.recordId, msgId: item.msgId, md5, token: up.fileToken })
+    if (batch.length >= BATCH_SIZE) await flush()
+  }
+  await flush()
 }
 
 /**

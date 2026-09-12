@@ -52,6 +52,11 @@ async function tick(): Promise<void> {
     }
     // 证据明细(默认关闭,开启后同样每轮增量推;append-only 不需要冲突处理)
     const ev = await syncEvidenceOut()
+    if (ev.mediaUploaded || ev.mediaCached) {
+      syncLog.info(
+        `证据附件:写附件 ${ev.mediaUploaded ?? 0} 条 · 复用素材 ${ev.mediaCached ?? 0} 张`
+      )
+    }
     if (ev.created > 0) syncLog.info(`证据明细同步: 新增 ${ev.created} 条`)
     else if (!ev.ok && ev.error) syncLog.debug(`证据明细同步跳过: ${ev.error}`)
   } catch (e) {

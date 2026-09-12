@@ -752,6 +752,9 @@ function MonitorPage(): React.JSX.Element {
                     baseSync.pendingEvidence ? `(待推 ${baseSync.pendingEvidence})` : ''
                   }`
                 : ''}
+              {baseSync.evidence?.media
+                ? ` · 附件 ${baseSync.attachedEvidence ?? 0} 条(素材 ${baseSync.mappedMedia ?? 0} 张)`
+                : ''}
             </span>
           )}
           {anaState?.lastAt && !anaBusy && (
@@ -844,16 +847,16 @@ function MonitorPage(): React.JSX.Element {
       {setupOpen && !baseSync?.configured && (
         <div className="mon-sync-setup">
           <div className="mon-sync-note">
-            粘贴多维表格链接（…/base/xxxx?table=tblxxxx）。<b>带 table= 会直接写进你指定的那张表</b>
-            （只补列、不新建表）;不带 table= 则自动新建「议题」与「数字员工回复」两张表。
-            执行成功后会立刻做一次全量同步,并开启每 2 分钟自动同步。
+            把多维表格的分享链接粘进来就行。<b>链接里带了表格参数，就会写进你指定的那张表</b>
+            （只补列、不新建表）；不带则自动新建「议题」与「数字员工回复」两张表。
+            执行成功后会立刻全量同步一次，并开启每 2 分钟自动同步。
           </div>
           <div className="mon-sync-row">
             <input
               className="mon-input"
               value={setupLink}
               onChange={(e) => setSetupLink(e.target.value)}
-              placeholder="https://xxx.feishu.cn/base/<app_token>?table=<table_id>"
+              placeholder="粘贴多维表格分享链接（…/base/xxxxx）"
             />
             <button
               type="button"

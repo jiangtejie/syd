@@ -841,6 +841,9 @@ const api: PreloadApi = {
           days?: number
           maxPerIssue?: number
           maxChars?: number
+          media?: boolean
+          maxMediaMB?: number
+          maxUploadsPerRound?: number
         }
       ): Promise<{
         ok: boolean

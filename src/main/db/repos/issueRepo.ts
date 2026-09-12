@@ -437,6 +437,8 @@ export function findIssueByKey(
 export interface EvidenceForSync {
   msgId: number
   issueId: number
+  /** 证据所属账号(图片附件上传要按账号读密钥/定位附件目录) */
+  accountWxid: string
   issueTitle: string
   groupName: string
   /** 该议题内证据原始顺序（按 seq，从 1 开始） */
@@ -460,7 +462,7 @@ export function listEvidenceForSync(opts: { sinceMs: number; limit?: number }): 
     .prepare(
       `SELECT m.id AS msg_id, m.issue_id, m.seq, m.msg_time, m.sender_name, m.sender_username,
               m.is_send, m.is_team, m.text, m.image_md5, m.local_type,
-              i.title AS issue_title, i.group_name AS group_name,
+              i.wxid AS account_wxid, i.title AS issue_title, i.group_name AS group_name,
               (SELECT COUNT(*) FROM issue_feedback_msg x WHERE x.issue_id = m.issue_id AND x.seq <= m.seq) AS seq_no
          FROM issue_feedback_msg m
          JOIN issue_feedback i ON i.id = m.issue_id
@@ -474,6 +476,7 @@ export function listEvidenceForSync(opts: { sinceMs: number; limit?: number }): 
   return rows.map((r) => ({
     msgId: Number(r.msg_id),
     issueId: Number(r.issue_id),
+    accountWxid: String(r.account_wxid ?? ''),
     issueTitle: String(r.issue_title ?? ''),
     groupName: String(r.group_name ?? ''),
     seqNo: Number(r.seq_no ?? 0),

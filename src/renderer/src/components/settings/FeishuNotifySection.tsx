@@ -81,7 +81,7 @@ export function FeishuNotifySection(): React.JSX.Element {
         label: res.credential.configured
           ? res.credential.source === 'im'
             ? `复用 IM 渠道账号「${res.credential.accountName ?? '飞书机器人'}」`
-            : `设置页凭证(${res.credential.appIdMasked})`
+            : '设置页凭证'
           : '未配置'
       })
     }

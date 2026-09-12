@@ -873,6 +873,16 @@ export interface LarkBaseStatus {
   lastEvidence?: LarkSyncOut | null
   /** 按当前上限,本轮还会推几条证据 */
   pendingEvidence?: number
+  /** 已上传到 Base 的证据图片素材数(按 md5 去重) */
+  mappedMedia?: number
+  /** 已写进证据行的附件条数 */
+  attachedEvidence?: number
+  /** 多维表格名（UI 显示人话，不显示 token） */
+  baseName?: string
+  /** 议题表名 */
+  issuesTableName?: string
+  /** 同事能否回写（状态/跟进人/处理备注三列齐全） */
+  canWriteBack?: boolean
 }
 
 /** 议题证据明细同步配置(默认关闭:客户原文外发,保守优先) */
@@ -886,6 +896,12 @@ export interface LarkEvidenceConfig {
   maxChars: number
   /** 证据子表 id(未创建为空) */
   tableId: string
+  /** 是否把图片证据的真图传进「证据图」附件列(默认关:原图比文字更敏感) */
+  media: boolean
+  /** 单张图片上限(MB) */
+  maxMediaMB: number
+  /** 单轮最多上传几张(限流闸门) */
+  maxUploadsPerRound: number
 }
 
 /** 证据子表创建/校验结果 */
@@ -937,6 +953,16 @@ export interface LarkSyncOut {
   updated: number
   skipped: number
   failed: number
+  /** 因列类型不符被跳过的列次数 */
+  skippedFields?: number
+  /** 证据附件:本轮写进附件列的条数 */
+  mediaUploaded?: number
+  /** 证据附件:复用已上传素材的条数 */
+  mediaCached?: number
+  /** 证据附件:被跳过的条数(非图片/超上限) */
+  mediaSkipped?: number
+  /** 证据附件:失败条数(下一轮重试) */
+  mediaFailed?: number
   at: number
 }
 

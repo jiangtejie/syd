@@ -12,7 +12,14 @@ import WorkbenchReliabilitySection from '../components/settings/WorkbenchReliabi
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
 import ReportJobsSection from '../components/settings/ReportJobsSection'
 import { LogSection } from '../components/settings/LogSection'
-import { SettingsCard, SwitchRow, FieldRow } from '../components/settings/ui'
+import {
+  AdvancedBlock,
+  FieldRow,
+  PillRow,
+  SettingsCard,
+  StatusPill,
+  SwitchRow
+} from '../components/settings/ui'
 import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
@@ -192,6 +199,29 @@ const SETTINGS_TAB_KEYS: readonly SettingsTab[] = [
 /** 记住上次所选 Tab（localStorage，首次进入默认「微信数据」） */
 const SETTINGS_TAB_KEY = 'cs.settingsTab'
 
+/**
+ * 链接脱敏：只保留域名与 token 首尾几位。
+ * 用户不需要看见 app_token / table_id，排查时展开「高级信息」也有完整链接可复制。
+ */
+function maskBaseLink(link: string | undefined): string {
+  const raw = (link ?? '').trim()
+  if (!raw) return '未配置'
+  const m = /^(https?:[/][/][^/]+)[/](?:base|bitable)[/]([A-Za-z0-9]+)/.exec(raw)
+  if (!m) return raw.length > 12 ? raw.slice(0, 6) + '…' + raw.slice(-4) : raw
+  const tok = m[2]
+  return tok.length > 10 ? m[1] + '/base/' + tok.slice(0, 4) + '…' + tok.slice(-4) : raw
+}
+
+/** 相对时间：比 toLocaleString 更省心（「3 分钟前」比一串日期好读） */
+function fmtAgo(at: number): string {
+  if (!at) return '从未'
+  const diff = Date.now() - at
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3600_000) return Math.floor(diff / 60_000) + ' 分钟前'
+  if (diff < 86400_000) return Math.floor(diff / 3600_000) + ' 小时前'
+  return Math.floor(diff / 86400_000) + ' 天前'
+}
+
 /** 同步历史里的 kind → 中文（证据明细是新增的一类，别只显示英文） */
 const KIND_LABEL: Record<string, string> = {
   issue: '议题',
@@ -213,14 +243,16 @@ function SettingsPage(): React.JSX.Element {
   const [sendStatus, setSendStatus] = useState<SendStatusInfo | null>(null)
   const [aiTesting, setAiTesting] = useState(false)
   const [imgTesting, setImgTesting] = useState(false)
+  /** 飞书凭证状态：只保留「配没配 / 复用谁」这类人话信息，App ID 之类的标识不再往界面上带 */
   const [larkStatus, setLarkStatus] = useState<{
     configured: boolean
     source: 'config' | 'im' | 'none'
-    appIdMasked: string
     accountName?: string
     defaultUrl: string
   } | null>(null)
   const [larkTesting, setLarkTesting] = useState(false)
+  /** 已配置后是否展开凭证表单（默认收起，界面上只显示一句状态） */
+  const [larkReconfig, setLarkReconfig] = useState(false)
   const [larkTestRes, setLarkTestRes] = useState<{ ok: boolean; text: string } | null>(null)
   /** 议题 → 多维表格同步（Base） */
   const [baseStatus, setBaseStatus] = useState<LarkBaseStatus | null>(null)
@@ -237,6 +269,9 @@ function SettingsPage(): React.JSX.Element {
   const [evDays, setEvDays] = useState('')
   const [evMax, setEvMax] = useState('')
   const [evChars, setEvChars] = useState('')
+  /** 附件:单张上限(MB) / 每轮最多张数 */
+  const [evMaxMB, setEvMaxMB] = useState('')
+  const [evMaxUploads, setEvMaxUploads] = useState('')
   const wxid = useWorkbenchStore((s) => s.wxid)
   /** 飞书凭证状态刷新计数(保存配置后 +1 重新读取) */
   const [larkReload, setLarkReload] = useState(0)
@@ -249,7 +284,6 @@ function SettingsPage(): React.JSX.Element {
         setLarkStatus({
           configured: !!res.configured,
           source: res.source ?? 'none',
-          appIdMasked: res.appIdMasked ?? '',
           accountName: res.accountName,
           defaultUrl: res.defaultUrl ?? ''
         })
@@ -275,6 +309,8 @@ function SettingsPage(): React.JSX.Element {
           setEvDays((cur) => cur || String(ev.days))
           setEvMax((cur) => cur || String(ev.maxPerIssue))
           setEvChars((cur) => cur || String(ev.maxChars))
+          setEvMaxMB((cur) => cur || String(ev.maxMediaMB))
+          setEvMaxUploads((cur) => cur || String(ev.maxUploadsPerRound))
         }
       })
       .catch(() => undefined)
@@ -677,6 +713,9 @@ function SettingsPage(): React.JSX.Element {
     days?: number
     maxPerIssue?: number
     maxChars?: number
+    media?: boolean
+    maxMediaMB?: number
+    maxUploadsPerRound?: number
   }): Promise<void> => {
     const api = window.api?.cs?.lark
     if (!api?.baseEvidence) return
@@ -689,6 +728,8 @@ function SettingsPage(): React.JSX.Element {
         setEvDays(String(res.evidence.days))
         setEvMax(String(res.evidence.maxPerIssue))
         setEvChars(String(res.evidence.maxChars))
+        setEvMaxMB(String(res.evidence.maxMediaMB))
+        setEvMaxUploads(String(res.evidence.maxUploadsPerRound))
       }
       if (!res.ok) setBaseNotes({ ok: false, lines: [res.error ?? '保存证据配置失败'] })
       else if (patch.enabled === true && !res.evidence?.enabled) {
@@ -745,6 +786,18 @@ function SettingsPage(): React.JSX.Element {
       })
     } finally {
       setBaseBusy('')
+    }
+  }
+
+  /** 复制多维表格完整链接（高级信息里给排查/转给同事用） */
+  const copyBaseLink = async (): Promise<void> => {
+    const link = (baseStatus?.link ?? '').trim()
+    if (!link) return
+    try {
+      await navigator.clipboard.writeText(link)
+      toast.success('已复制多维表格链接')
+    } catch {
+      toast.error('复制失败：展开高级信息后可手动选中复制')
     }
   }
 
@@ -1218,39 +1271,27 @@ function SettingsPage(): React.JSX.Element {
             title="飞书云文档(读取多维表格/文档)"
             desc="让 AI 能读飞书多维表格(Base)与云文档: 把 /base/ 或 /docx/ 链接发给 AI 即可。只读, 不会修改飞书里的数据。App ID / Secret 留空则自动复用 IM 渠道里的飞书机器人账号。"
           >
+            {/* 凭证细节默认收起:配好之后界面上只留一句人话状态 + 动作按钮 */}
+            <PillRow>
+              <StatusPill
+                tone={larkStatus?.configured ? 'ok' : 'off'}
+                text={
+                  larkStatus === null
+                    ? '读取中…'
+                    : larkStatus.configured
+                      ? larkStatus.source === 'im'
+                        ? `已连接（复用 IM 账号「${larkStatus.accountName ?? '飞书机器人'}」）`
+                        : '已连接（设置页凭证）'
+                      : '未配置飞书应用凭证'
+                }
+              />
+            </PillRow>
             <div className="st-hint">
-              {larkStatus === null
-                ? '读取配置中…'
-                : larkStatus.configured
-                  ? `已配置: ${larkStatus.source === 'im' ? `复用 IM 渠道账号「${larkStatus.accountName ?? '飞书机器人'}」` : '设置页凭证'}(App ID ${larkStatus.appIdMasked})`
-                  : '尚未配置飞书应用凭证 —— AI 读飞书表格/文档会提示去这里配置'}
+              {larkStatus?.configured
+                ? 'AI 可以直接读你发来的多维表格 / 云文档链接（只读，不改动飞书里的数据）。'
+                : 'App ID / Secret 留空则自动复用 IM 渠道里的飞书机器人账号。'}
             </div>
-            <FieldRow label="App ID">
-              <input
-                className="st-input"
-                value={form['lark.appId'] ?? ''}
-                onChange={(e) => patch('lark.appId', e.target.value)}
-                placeholder="cli_… (留空则复用 IM 渠道的飞书账号)"
-              />
-            </FieldRow>
-            <FieldRow label="App Secret">
-              <input
-                className="st-input"
-                type="password"
-                value={form['lark.appSecret'] ?? ''}
-                onChange={(e) => patch('lark.appSecret', e.target.value)}
-                placeholder="应用密钥(本地加密存储)"
-              />
-            </FieldRow>
-            <FieldRow label="默认链接">
-              <input
-                className="st-input"
-                value={form['lark.defaultUrl'] ?? ''}
-                onChange={(e) => patch('lark.defaultUrl', e.target.value)}
-                placeholder="https://xxx.feishu.cn/base/<token>?table=<table_id>"
-              />
-            </FieldRow>
-            <div className="st-actions">
+            <div className="sf-actions-split">
               <button
                 type="button"
                 className="st-btn ghost"
@@ -1259,19 +1300,70 @@ function SettingsPage(): React.JSX.Element {
               >
                 {larkTesting ? '测试中…' : '测试读取'}
               </button>
-              <button
-                type="button"
-                className="st-btn"
-                disabled={!loaded}
-                onClick={() => {
-                  void save(['lark.appId', 'lark.appSecret', 'lark.defaultUrl']).then(() =>
-                    setLarkReload((n) => n + 1)
-                  )
-                }}
-              >
-                保存飞书配置
-              </button>
+              {larkStatus?.configured && !larkReconfig && (
+                <button
+                  type="button"
+                  className="st-btn ghost is-end"
+                  onClick={() => setLarkReconfig(true)}
+                  title="换一个飞书自建应用，或改成复用 IM 渠道账号"
+                >
+                  重新配置凭证
+                </button>
+              )}
             </div>
+            {(!larkStatus?.configured || larkReconfig) && (
+              <>
+                <FieldRow label="App ID">
+                  <input
+                    className="st-input"
+                    value={form['lark.appId'] ?? ''}
+                    onChange={(e) => patch('lark.appId', e.target.value)}
+                    placeholder="cli_…（留空则复用 IM 渠道的飞书账号）"
+                  />
+                </FieldRow>
+                <FieldRow label="App Secret">
+                  <input
+                    className="st-input"
+                    type="password"
+                    value={form['lark.appSecret'] ?? ''}
+                    onChange={(e) => patch('lark.appSecret', e.target.value)}
+                    placeholder="应用密钥（本地加密存储）"
+                  />
+                </FieldRow>
+                <FieldRow label="默认链接">
+                  <input
+                    className="st-input"
+                    value={form['lark.defaultUrl'] ?? ''}
+                    onChange={(e) => patch('lark.defaultUrl', e.target.value)}
+                    placeholder="https://xxx.feishu.cn/base/xxxxx（默认链接，可留空）"
+                  />
+                </FieldRow>
+                <div className="sf-actions-split">
+                  <button
+                    type="button"
+                    className="st-btn"
+                    disabled={!loaded}
+                    onClick={() => {
+                      void save(['lark.appId', 'lark.appSecret', 'lark.defaultUrl']).then(() => {
+                        setLarkReload((n) => n + 1)
+                        setLarkReconfig(false)
+                      })
+                    }}
+                  >
+                    保存飞书配置
+                  </button>
+                  {larkReconfig && (
+                    <button
+                      type="button"
+                      className="st-btn ghost is-end"
+                      onClick={() => setLarkReconfig(false)}
+                    >
+                      取消
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
             {larkTestRes && (
               <div className="st-ai-test">
                 <span className={larkTestRes.ok ? 'st-ok' : 'st-bad'}>
@@ -1281,33 +1373,116 @@ function SettingsPage(): React.JSX.Element {
                 </span>
               </div>
             )}
-            <div className="st-hint">
-              权限前提: 开放平台「权限管理」开通多维表格只读(bitable:app:readonly)与云文档只读
-              (docx:document:readonly)并发布版本; 再把应用加为目标文档的协作者(分享 → 添加协作者 →
-              选本应用), 否则接口会返回 403 / 权限类错误码。
-            </div>
+            {(!larkStatus?.configured || larkReconfig) && (
+              <AdvancedBlock label="权限前提（读不到时先看这里）">
+                <div className="st-hint">
+                  开放平台「权限管理」开通多维表格只读(bitable:app:readonly)与云文档只读
+                  (docx:document:readonly)并发布版本；再把应用加为目标文档的协作者（分享 →
+                  添加协作者 → 选本应用），否则接口会返回 403 / 权限类错误码。
+                </div>
+              </AdvancedBlock>
+            )}
           </SettingsCard>
 
           <SettingsCard
             title="议题同步到多维表格(飞书 Base)"
             desc="把群问题（议题）单向推到飞书多维表格，同事在手机/电脑上就能看到与处理。先「验证并建表」（会自动创建「议题」「数字员工回复」两张表与字段），再打开同步开关。默认只推标题/摘要，不推聊天原文。"
           >
-            <div className="st-hint">
-              {baseStatus === null
-                ? '读取同步状态中…'
-                : `${baseStatus.hint}${baseStatus.mappedIssues > 0 ? ` · 已映射 ${baseStatus.mappedIssues} 条议题` : ''}`}
-            </div>
-            <FieldRow label="多维表格链接">
-              <input
-                className="st-input"
-                value={baseLink}
-                onChange={(e) => setBaseLink(e.target.value)}
-                placeholder="https://xxx.feishu.cn/base/<app_token>?table=<table_id>"
+            {/* 状态用胶囊表达:一眼看清「连上没 / 自动同步开没开 / 推了多少」 */}
+            <PillRow>
+              <StatusPill
+                tone={baseStatus?.configured ? 'ok' : 'off'}
+                text={
+                  baseStatus?.configured
+                    ? baseStatus.baseName
+                      ? `已连接「${baseStatus.baseName}」`
+                      : '已连接多维表格'
+                    : '未连接多维表格'
+                }
               />
-            </FieldRow>
-            <div className="st-actions">
-              {/* 配置类按钮:未配置时直接展示;已配置后收起,避免与日常动作(同步/拉取)挤在一起 */}
-              {(!baseStatus?.configured || baseReconfig) && (
+              <StatusPill
+                tone={baseStatus?.enabled ? 'ok' : 'off'}
+                text={baseStatus?.enabled ? '自动同步已开' : '自动同步已关'}
+                title="每 2 分钟自动把有变更的议题推到多维表格"
+              />
+              {baseStatus?.issuesTableName ? (
+                <StatusPill text={`议题表「${baseStatus.issuesTableName}」`} />
+              ) : null}
+              {baseStatus?.mappedIssues ? (
+                <StatusPill text={`已推 ${baseStatus.mappedIssues} 条议题`} />
+              ) : null}
+              {baseStatus?.configured ? (
+                <StatusPill
+                  tone={baseStatus.canWriteBack ? 'ok' : 'warn'}
+                  text={baseStatus.canWriteBack ? '同事可回写' : '仅单向推送'}
+                  title={
+                    baseStatus.canWriteBack
+                      ? '同事在表格里改「状态 / 跟进人 / 处理备注」会同步回本地'
+                      : '目标表缺「状态/跟进人/处理备注」列，同事的改动不会回到本地（补齐后自动开启）'
+                  }
+                />
+              ) : null}
+              {baseStatus?.lastResult?.failed ? (
+                <StatusPill
+                  tone="bad"
+                  text={`上次失败 ${baseStatus.lastResult.failed} 条`}
+                  title={baseStatus.lastResult.error ?? ''}
+                />
+              ) : null}
+            </PillRow>
+            <div className="st-hint">
+              {baseStatus === null ? '读取同步状态中…' : baseStatus.hint}
+            </div>
+            {/* 链接只在「未配置」或点了「重新配置」时出现:配好之后用户不需要再看到这串 token */}
+            {(!baseStatus?.configured || baseReconfig) && (
+              <FieldRow label="多维表格链接">
+                <input
+                  className="st-input"
+                  value={baseLink}
+                  onChange={(e) => setBaseLink(e.target.value)}
+                  placeholder="粘贴多维表格分享链接（…/base/xxxxx）"
+                />
+              </FieldRow>
+            )}
+            <div className="sf-actions-split">
+              {baseStatus?.configured && !baseReconfig ? (
+                <>
+                  <button
+                    type="button"
+                    className="st-btn"
+                    disabled={baseBusy !== ''}
+                    onClick={() => void syncBaseNow(false)}
+                  >
+                    {baseBusy === 'sync' ? '同步中…' : '立即同步'}
+                  </button>
+                  <button
+                    type="button"
+                    className="st-btn ghost"
+                    disabled={baseBusy !== ''}
+                    onClick={() => void syncBaseNow(true)}
+                    title="忽略上次同步时间，把所有议题核对一遍"
+                  >
+                    全量核对
+                  </button>
+                  <button
+                    type="button"
+                    className="st-btn ghost"
+                    disabled={baseBusy !== ''}
+                    onClick={() => void pullBaseNow()}
+                    title="只把同事在表格里改的状态/跟进人拉回本地（不推送本地变更）"
+                  >
+                    {baseBusy === 'pull' ? '拉取中…' : '拉取同事改动'}
+                  </button>
+                  <button
+                    type="button"
+                    className="st-btn ghost is-end"
+                    onClick={() => setBaseReconfig(true)}
+                    title="换一个多维表格 / 换目标表 / 重新自检字段"
+                  >
+                    重新配置
+                  </button>
+                </>
+              ) : (
                 <>
                   <button
                     type="button"
@@ -1327,53 +1502,17 @@ function SettingsPage(): React.JSX.Element {
                   >
                     {baseBusy === 'verify' ? '执行中…' : '执行并建表'}
                   </button>
-                  <button
-                    type="button"
-                    className="st-btn ghost"
-                    disabled={baseBusy !== '' || !baseStatus?.configured}
-                    onClick={() => void claimBase()}
-                    title="目标表里已有行时，按「议题ID」与本地议题对上，避免同步时重复插入"
-                  >
-                    {baseBusy === 'claim' ? '认领中…' : '认领既有行'}
-                  </button>
+                  {baseReconfig && (
+                    <button
+                      type="button"
+                      className="st-btn ghost is-end"
+                      onClick={() => setBaseReconfig(false)}
+                    >
+                      取消
+                    </button>
+                  )}
                 </>
               )}
-              {baseStatus?.configured && !baseReconfig && (
-                <button
-                  type="button"
-                  className="st-btn ghost"
-                  onClick={() => setBaseReconfig(true)}
-                  title="换一个多维表格 / 换目标表 / 重新自检字段"
-                >
-                  重新配置
-                </button>
-              )}
-              <button
-                type="button"
-                className="st-btn ghost"
-                disabled={baseBusy !== '' || !baseStatus?.configured}
-                onClick={() => void syncBaseNow(false)}
-              >
-                {baseBusy === 'sync' ? '同步中…' : '立即同步'}
-              </button>
-              <button
-                type="button"
-                className="st-btn ghost"
-                disabled={baseBusy !== '' || !baseStatus?.configured}
-                onClick={() => void syncBaseNow(true)}
-                title="忽略上次同步时间，把所有议题核对一遍"
-              >
-                全量核对
-              </button>
-              <button
-                type="button"
-                className="st-btn ghost"
-                disabled={baseBusy !== '' || !baseStatus?.configured}
-                onClick={() => void pullBaseNow()}
-                title="只把同事在表格里改的状态/跟进人拉回本地（不推送本地变更）"
-              >
-                {baseBusy === 'pull' ? '拉取中…' : '拉取同事改动'}
-              </button>
             </div>
             <SwitchRow
               label="定时同步（每 2 分钟）"
@@ -1434,17 +1573,50 @@ function SettingsPage(): React.JSX.Element {
                 </span>
               </div>
             )}
-            <div className="st-hint">
-              权限前提：开放平台给应用开通多维表格**读写**(bitable:app)并发布版本，再把应用加为该
-              Base 的协作者（打开表格 → 分享 → 添加协作者 → 选本应用 →
-              「可编辑」）。只读权限能读表但写不进去， 「预览/执行并建表」会明确告诉你是哪种情况。
-            </div>
+            {/* 排查类信息默认收起:用户平时不需要看链接、列名映射与权限细节 */}
+            <AdvancedBlock
+              label={
+                baseStatus?.configured ? '高级信息（链接 / 表结构 / 历史）' : '高级信息（排查用）'
+              }
+            >
+              {baseStatus?.configured && (
+                <>
+                  <FieldRow label="表格链接">
+                    <input className="st-input" value={maskBaseLink(baseStatus.link)} readOnly />
+                    <button
+                      type="button"
+                      className="st-btn ghost"
+                      onClick={() => void copyBaseLink()}
+                      title="复制完整链接（发给同事或排查时用）"
+                    >
+                      复制
+                    </button>
+                  </FieldRow>
+                  <div className="st-hint">
+                    {`Base「${baseStatus.baseName || '未读取到名称'}」 · 议题表「${baseStatus.issuesTableName || '议题'}」 · 上次同步 ${fmtAgo(baseStatus.lastAt)}`}
+                  </div>
+                  <div className="sf-actions-split">
+                    <button
+                      type="button"
+                      className="st-btn ghost"
+                      disabled={baseBusy !== ''}
+                      onClick={() => void claimBase()}
+                      title="目标表里已有行时，按「议题ID」与本地议题对上，避免同步时重复插入"
+                    >
+                      {baseBusy === 'claim' ? '认领中…' : '认领既有行（表里已有数据时用）'}
+                    </button>
+                  </div>
+                </>
+              )}
+              <div className="st-hint">
+                权限前提：开放平台给应用开通多维表格读写(bitable:app)并发布版本，再把应用加为该 Base
+                的协作者（打开表格 → 分享 → 添加协作者 → 选本应用
+                →「可编辑」）。只读权限能读表但写不进去， 「预览 /
+                执行并建表」会明确告诉你是哪种情况。
+              </div>
 
-            {/* 列名映射:目标表列名与标准列不同时,在这里对齐(留空=用标准名) */}
-            <details className="st-hint" style={{ marginTop: 8 }}>
-              <summary style={{ cursor: 'pointer' }}>
-                列名映射（可选:你的表列名与标准列不同时填写）
-              </summary>
+              {/* 列名映射:目标表列名与标准列不同时,在这里对齐(留空=用标准名) */}
+              <div className="st-subtitle">列名映射（可选：你的表列名与标准列不同时填写）</div>
               <div className="st-grid" style={{ marginTop: 6 }}>
                 {[
                   '议题ID',
@@ -1480,32 +1652,32 @@ function SettingsPage(): React.JSX.Element {
                   </button>
                 </div>
               </div>
-            </details>
 
-            {/* 同步历史:最近 8 轮,便于排查"为什么没同步" */}
-            {(baseStatus?.history ?? []).length > 0 && (
-              <details className="st-hint" style={{ marginTop: 8 }}>
-                <summary style={{ cursor: 'pointer' }}>
-                  最近同步记录（{baseStatus?.history?.length ?? 0} 轮）
-                </summary>
-                <div style={{ marginTop: 6 }}>
-                  {(baseStatus?.history ?? []).slice(0, 8).map((h, i) => (
-                    <div key={i}>
-                      {KIND_LABEL[String(h.kind ?? '')] ?? String(h.kind ?? '')} ·{' '}
-                      {String(h.at ? new Date(Number(h.at)).toLocaleString('zh-CN') : '')} ·{' '}
-                      {h.error
-                        ? `失败:${String(h.error).slice(0, 80)}`
-                        : h.kind === 'pull'
-                          ? `读 ${String(h.scanned ?? 0)} · 采纳 ${String(h.applied ?? 0)} · 冲突保留本地 ${String(h.skippedLocalWin ?? 0)}${h.note ? ` · ${String(h.note)}` : ''}`
-                          : `扫 ${String(h.scanned ?? 0)} · 新增 ${String(h.created ?? 0)} · 更新 ${String(h.updated ?? 0)} · 跳过 ${String(h.skipped ?? 0)}${Number(h.skippedFields ?? 0) > 0 ? ` · ⚠ 因列类型不符跳过 ${String(h.skippedFields)} 次` : ''}`}
-                    </div>
-                  ))}
-                </div>
-              </details>
-            )}
-            {baseStatus?.pullNote && (
-              <div className="st-hint">最近一轮拉取：{baseStatus.pullNote}</div>
-            )}
+              {/* 同步历史:最近 8 轮,便于排查"为什么没同步" */}
+              {(baseStatus?.history ?? []).length > 0 && (
+                <>
+                  <div className="st-subtitle">
+                    最近同步记录（{baseStatus?.history?.length ?? 0} 轮）
+                  </div>
+                  <div>
+                    {(baseStatus?.history ?? []).slice(0, 8).map((h, i) => (
+                      <div key={i}>
+                        {KIND_LABEL[String(h.kind ?? '')] ?? String(h.kind ?? '')} ·{' '}
+                        {String(h.at ? new Date(Number(h.at)).toLocaleString('zh-CN') : '')} ·{' '}
+                        {h.error
+                          ? `失败:${String(h.error).slice(0, 80)}`
+                          : h.kind === 'pull'
+                            ? `读 ${String(h.scanned ?? 0)} · 采纳 ${String(h.applied ?? 0)} · 冲突保留本地 ${String(h.skippedLocalWin ?? 0)}${h.note ? ` · ${String(h.note)}` : ''}`
+                            : `扫 ${String(h.scanned ?? 0)} · 新增 ${String(h.created ?? 0)} · 更新 ${String(h.updated ?? 0)} · 跳过 ${String(h.skipped ?? 0)}${Number(h.skippedFields ?? 0) > 0 ? ` · ⚠ 因列类型不符跳过 ${String(h.skippedFields)} 次` : ''}${Number(h.mediaUploaded ?? 0) + Number(h.mediaCached ?? 0) > 0 ? ` · 附件 ${Number(h.mediaUploaded ?? 0)} 条(素材复用 ${Number(h.mediaCached ?? 0)})` : ''}`}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {baseStatus?.pullNote && (
+                <div className="st-hint">最近一轮拉取：{baseStatus.pullNote}</div>
+              )}
+            </AdvancedBlock>
           </SettingsCard>
 
           {/* 证据明细:客户原话单独一张子表(默认关闭) */}
@@ -1513,92 +1685,165 @@ function SettingsPage(): React.JSX.Element {
             title="议题证据明细同步（子表）"
             desc="把每个议题下的消息逐条推到「议题证据」子表（一行一条），同事在 Base 里能按议题ID/时间分组筛选，看清客户到底说了什么。默认关闭：客户原话属于敏感内容，请确认可外发后再开。"
           >
-            <div className="st-hint">
-              {baseStatus?.evidence
-                ? `生效现状：${baseStatus.evidence.enabled ? '已开启' : '未开启'} · 范围近 ${baseStatus.evidence.days} 天 · 每议题最多 ${baseStatus.evidence.maxPerIssue} 条 · 每条截断 ${baseStatus.evidence.maxChars} 字 · 已推 ${baseStatus.mappedEvidence ?? 0} 条${baseStatus.pendingEvidence ? ` · 本轮待推 ${baseStatus.pendingEvidence} 条` : ' · 已追平'}`
-                : '读取证据同步状态中…'}
-            </div>
-            {baseStatus?.evidence && !baseStatus.evidence.tableId && (
+            {/* 状态用胶囊:开没开、推了多少、还剩多少、附件开没开 */}
+            <PillRow>
+              <StatusPill
+                tone={baseStatus?.evidence?.enabled ? 'ok' : 'off'}
+                text={baseStatus?.evidence?.enabled ? '证据明细已开启' : '证据明细未开启'}
+              />
+              {baseStatus?.evidence ? (
+                <StatusPill
+                  text={`近 ${baseStatus.evidence.days} 天 · 每议题 ≤ ${baseStatus.evidence.maxPerIssue} 条 · 每条 ≤ ${baseStatus.evidence.maxChars} 字`}
+                />
+              ) : null}
+              <StatusPill text={`已推 ${baseStatus?.mappedEvidence ?? 0} 条`} />
+              {baseStatus?.pendingEvidence ? (
+                <StatusPill tone="warn" text={`待推 ${baseStatus.pendingEvidence} 条`} />
+              ) : (
+                <StatusPill tone="ok" text="已追平" />
+              )}
+              <StatusPill
+                tone={baseStatus?.evidence?.media ? 'ok' : 'off'}
+                text={baseStatus?.evidence?.media ? '图片附件已开' : '图片附件未开'}
+                title={
+                  baseStatus?.evidence?.media
+                    ? '图片证据会解密后上传到「证据图」列'
+                    : '只推文字，图片写「[图片]」占位'
+                }
+              />
+            </PillRow>
+            {!baseStatus?.evidence?.tableId && baseStatus?.evidence && (
               <div className="st-hint">
-                {'证据子表还没创建：点「创建 / 校验证据表」会自动新建并补齐字段。'}
+                {
+                  '证据子表还没创建：打开下面的开关后会自动新建并补齐字段，也可以先点「创建 / 校验证据表」。'
+                }
               </div>
             )}
             <SwitchRow
               label="推送证据明细（客户原话）"
-              desc="打开后按下面的三个上限把证据原文写入飞书表格；关闭时一条都不推。"
+              desc="打开后把证据原文写入飞书表格（范围/条数/字数上限在下方「高级信息」里调）；关闭时一条都不推。"
               checked={!!baseStatus?.evidence?.enabled}
               onChange={(v) => void patchBaseEvidence({ enabled: v })}
             />
-            <div className="st-grid">
-              <FieldRow label="范围（天）">
-                <input
-                  className="st-input sm"
-                  value={evDays}
-                  onChange={(e) => setEvDays(e.target.value)}
-                  onBlur={() => void patchBaseEvidence({ days: Number(evDays) })}
-                  placeholder="7"
-                />
-              </FieldRow>
-              <FieldRow label="每议题最多（条）">
-                <input
-                  className="st-input sm"
-                  value={evMax}
-                  onChange={(e) => setEvMax(e.target.value)}
-                  onBlur={() => void patchBaseEvidence({ maxPerIssue: Number(evMax) })}
-                  placeholder="20"
-                />
-              </FieldRow>
-              <FieldRow label="每条截断（字）">
-                <input
-                  className="st-input sm"
-                  value={evChars}
-                  onChange={(e) => setEvChars(e.target.value)}
-                  onBlur={() => void patchBaseEvidence({ maxChars: Number(evChars) })}
-                  placeholder="200"
-                />
-              </FieldRow>
-            </div>
             <div className="st-hint">
-              选取规则：每个议题取「首现 1 条 + 最新若干条」（受上面的条数上限约束），不是全量搬。
-              图片/语音/视频/表情等非文本证据写占位标记（如「[图片]」），内容不落地。
+              {'每个议题取「首现 1 条 + 最新若干条」，不是全量搬；上限在「高级信息」里调。'}
             </div>
-            <div className="st-actions">
-              <button
-                type="button"
-                className="st-btn"
-                disabled={baseBusy !== '' || !baseStatus?.configured}
-                onClick={() => void setupBaseEvidence()}
-                title="在同一个 Base 里创建「议题证据」子表并补齐字段（已存在则只补字段）；会尝试建立与议题表的关联字段，失败不影响同步"
-              >
-                {baseBusy === 'evsetup' ? '处理中…' : '创建 / 校验证据表'}
-              </button>
-              <button
-                type="button"
-                className="st-btn ghost"
-                disabled={baseBusy !== '' || !baseStatus?.configured}
-                onClick={() => void cleanBaseEvidence()}
-                title="对比远程「证据ID」与本地记录，删掉议题已删除后残留的孤儿行"
-              >
-                {baseBusy === 'evclean' ? '清理中…' : '清理孤儿行'}
-              </button>
+            {/* 附件:客户原图比文字更敏感,单独一个开关(默认关) */}
+            <SwitchRow
+              label="上传证据图片（附件）"
+              desc="默认关闭。打开后把图片证据解密出的原图上传到「证据图」附件列，同事在 Base 里能直接看图、可下载；同一张图只上传一次。视频/文件消息本地没有 md5，仍只写占位标记。"
+              checked={!!baseStatus?.evidence?.media}
+              onChange={(v) => void patchBaseEvidence({ media: v })}
+            />
+
+            {/* 隐私:比普通提示更醒目,因为这一条一旦打开就是客户原文外发 */}
+            <div className="sf-note-warn">
+              <b>隐私提醒：</b>
+              开启后客户在群里的原话（含图片原图，若也开了附件）会写入飞书多维表格。
+              建议先在证据表里单独设权限/视图（例如只给处理同事），对敏感业务（手机号、住址、订单号）
+              收紧范围天数，或直接保持关闭。
             </div>
             {baseStatus?.lastEvidence && (
               <div className="st-hint">
-                上次证据同步：
+                {`上次证据同步 ${fmtAgo(baseStatus.lastEvidence.at)}：`}
                 {baseStatus.lastEvidence.error
                   ? baseStatus.lastEvidence.error
-                  : `扫 ${baseStatus.lastEvidence.scanned} · 新增 ${baseStatus.lastEvidence.created} · 更新 ${baseStatus.lastEvidence.updated} · 跳过 ${baseStatus.lastEvidence.skipped}${baseStatus.lastEvidence.failed ? ` · 失败 ${baseStatus.lastEvidence.failed}` : ''}`}
+                  : `扫 ${baseStatus.lastEvidence.scanned} · 新增 ${baseStatus.lastEvidence.created} · 更新 ${baseStatus.lastEvidence.updated} · 跳过 ${baseStatus.lastEvidence.skipped}${baseStatus.lastEvidence.failed ? ` · 失败 ${baseStatus.lastEvidence.failed}` : ''}${baseStatus.lastEvidence.mediaUploaded || baseStatus.lastEvidence.mediaCached ? ` · 附件写 ${baseStatus.lastEvidence.mediaUploaded ?? 0} 条（复用素材 ${baseStatus.lastEvidence.mediaCached ?? 0} 张）` : ''}${baseStatus.lastEvidence.mediaFailed ? ` · 附件失败 ${baseStatus.lastEvidence.mediaFailed}` : ''}`}
               </div>
             )}
-            <div className="st-hint">
-              ⚠ 隐私提示：开启后客户在群里的原话会写入飞书多维表格。建议先在证据表里
-              单独设置权限/视图（例如只给处理同事），并对敏感业务（手机号、住址、订单号）
-              控制范围天数或直接保持关闭。
-            </div>
-            <div className="st-hint">
-              Base 侧建议：在「议题证据」表新建两个视图——「按 议题ID 分组」（分组 + 按时间升序）
-              和「今日新增」（筛选 时间 = 今天），同事排查看证据会快很多。
-            </div>
+
+            {/* 上限、表结构与清理都收进高级信息:首屏只留「开关 + 状态 + 一键动作」 */}
+            <AdvancedBlock label="高级信息（上限设置 / 表结构 / 清理）">
+              <div className="st-subtitle">推送上限</div>
+              <div className="st-grid">
+                <FieldRow label="范围（天）">
+                  <input
+                    className="st-input sm"
+                    value={evDays}
+                    onChange={(e) => setEvDays(e.target.value)}
+                    onBlur={() => void patchBaseEvidence({ days: Number(evDays) })}
+                    placeholder="7"
+                  />
+                </FieldRow>
+                <FieldRow label="每议题最多（条）">
+                  <input
+                    className="st-input sm"
+                    value={evMax}
+                    onChange={(e) => setEvMax(e.target.value)}
+                    onBlur={() => void patchBaseEvidence({ maxPerIssue: Number(evMax) })}
+                    placeholder="20"
+                  />
+                </FieldRow>
+                <FieldRow label="每条截断（字）">
+                  <input
+                    className="st-input sm"
+                    value={evChars}
+                    onChange={(e) => setEvChars(e.target.value)}
+                    onBlur={() => void patchBaseEvidence({ maxChars: Number(evChars) })}
+                    placeholder="200"
+                  />
+                </FieldRow>
+              </div>
+              {baseStatus?.evidence?.media && (
+                <>
+                  <div className="st-subtitle">图片附件</div>
+                  <div className="st-grid">
+                    <FieldRow label="单张上限（MB）">
+                      <input
+                        className="st-input sm"
+                        value={evMaxMB}
+                        onChange={(e) => setEvMaxMB(e.target.value)}
+                        onBlur={() => void patchBaseEvidence({ maxMediaMB: Number(evMaxMB) })}
+                        placeholder="10"
+                      />
+                    </FieldRow>
+                    <FieldRow label="每轮最多（张）">
+                      <input
+                        className="st-input sm"
+                        value={evMaxUploads}
+                        onChange={(e) => setEvMaxUploads(e.target.value)}
+                        onBlur={() =>
+                          void patchBaseEvidence({ maxUploadsPerRound: Number(evMaxUploads) })
+                        }
+                        placeholder="20"
+                      />
+                    </FieldRow>
+                  </div>
+                  <div className="st-hint">
+                    {'上传前先解密到本地缓存（与监控页看图同一条链路），再传素材、写附件列；'}
+                    {'超过单张上限的直接跳过（保留「[图片]」占位），失败的下一轮自动重试。'}
+                  </div>
+                </>
+              )}
+              <div className="st-subtitle">表格结构</div>
+              <div className="st-hint">
+                {`证据子表「议题证据」${baseStatus?.evidence?.tableId ? '已创建' : '尚未创建'} · 已上传素材 ${baseStatus?.mappedMedia ?? 0} 张 · 已写附件 ${baseStatus?.attachedEvidence ?? 0} 条`}
+              </div>
+              <div className="sf-actions-split">
+                <button
+                  type="button"
+                  className="st-btn ghost"
+                  disabled={baseBusy !== '' || !baseStatus?.configured}
+                  onClick={() => void setupBaseEvidence()}
+                  title="在同一个 Base 里创建「议题证据」子表并补齐字段（已存在则只补字段）；会尝试建立与议题表的关联字段，失败不影响同步"
+                >
+                  {baseBusy === 'evsetup' ? '处理中…' : '创建 / 校验证据表'}
+                </button>
+                <button
+                  type="button"
+                  className="st-btn ghost"
+                  disabled={baseBusy !== '' || !baseStatus?.configured}
+                  onClick={() => void cleanBaseEvidence()}
+                  title="对比远程「证据ID」与本地记录，删掉议题已删除后残留的孤儿行"
+                >
+                  {baseBusy === 'evclean' ? '清理中…' : '清理孤儿行'}
+                </button>
+              </div>
+              <div className="st-hint">
+                Base 侧建议：在「议题证据」表建两个视图——「按 议题ID 分组」（分组 + 按时间升序）
+                和「今日新增」（筛选 时间 = 今天），同事排查看证据会快很多。
+              </div>
+            </AdvancedBlock>
           </SettingsCard>
         </div>
       )}

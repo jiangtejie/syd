@@ -129,8 +129,11 @@ function findRawFile(root: string, targetName?: string, md5?: string): string | 
   return null
 }
 
-/** 从 ct-media URL 反解绝对路径（协议布局 <wxid>/<资源名> 或 <wxid>/<子目录>/<文件>） */
-function resolveMediaUrl(url: string): { abs: string; name: string } | null {
+/**
+ * 从 ct-media URL 反解绝对路径（协议布局 <wxid>/<资源名> 或 <wxid>/<子目录>/<文件>）。
+ * 导出给飞书证据附件复用：那边也需要「URL → 本地文件」这一步，不该再写第二份。
+ */
+export function resolveMediaUrl(url: string): { abs: string; name: string } | null {
   try {
     const seg = new URL(url).pathname.split('/').filter(Boolean).map(decodeURIComponent)
     if (seg.length < 2) return null

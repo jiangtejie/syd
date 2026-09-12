@@ -227,6 +227,30 @@ export const CORE_TABLES: string[] = [
     PRIMARY KEY (kind, local_id)
   )`,
 
+  /*
+   * 飞书素材缓存：证据图片上传到 Base 后拿到的 file_token，按 md5 记一份。
+   * 同一张图可能出现在多个议题/多条证据里（转发、重复发送），按 md5 复用 token 只传一次；
+   * md5 不落原图、不落客户信息，只有 token 与文件名。
+   */
+  `CREATE TABLE IF NOT EXISTS lark_media_map (
+    md5 TEXT PRIMARY KEY,
+    file_token TEXT NOT NULL,
+    file_name TEXT,
+    size INTEGER,
+    uploaded_at INTEGER NOT NULL
+  )`,
+  /*
+   * 证据行 ↔ 附件写入状态：一行一条证据，记它那条 Base 记录是否已经写进附件。
+   * 与 lark_media_map 分开是因为语义不同：前者是「这张图传过没有」（跨记录复用），
+   * 后者是「这条证据的附件写了没有」（开启开关后要能把历史行补上）。
+   */
+  `CREATE TABLE IF NOT EXISTS lark_evidence_attach (
+    msg_id INTEGER PRIMARY KEY,
+    md5 TEXT,
+    file_token TEXT,
+    attached_at INTEGER NOT NULL
+  )`,
+
   // 智能体（客服人设）：名称/描述/风格/自定义提示词，供回复建议 LLM 动态使用
   `CREATE TABLE IF NOT EXISTS ai_agent (
     id TEXT PRIMARY KEY,
