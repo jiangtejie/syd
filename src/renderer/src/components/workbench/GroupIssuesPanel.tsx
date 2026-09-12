@@ -31,6 +31,8 @@ const DAYS_OPTIONS = [1, 2, 3, 7]
 const DAYS_KEY = 'cs.gipDays'
 
 function fmtTime(ts: number): string {
+  // 同 fmtTimeShort：空值不能落到 new Date(null)，否则 1970-01-01 08:00 会显示成「1月1日 08:00」
+  if (!ts || !Number.isFinite(ts)) return '—'
   const d = new Date(ts)
   const now = new Date()
   const sameDay = (a: Date, b: Date): boolean =>

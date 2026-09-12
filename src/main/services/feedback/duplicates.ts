@@ -124,6 +124,15 @@ export function mergeDuplicateIssues(
             .filter(Boolean)
         )
       ).slice(0, 6)
+      const mergedMsgs = mergeEvidence(
+        [],
+        members.flatMap((m) => getIssueMsgs(m.id))
+      )
+      // 只让有限数参与取早：脏数据(null)参与 Math.min 会得到 0，而 0 会渲染成 1970-01-01 08:00。
+      // 组内一个可用时间都没有（历史脏数据）时，退回合并后证据里最早的一条。
+      const occurTimes = members
+        .map((m) => m.occurAt)
+        .filter((t): t is number => Number.isFinite(t))
       applyIssueMerge({
         id: keep.id,
         title: src.title,
@@ -131,15 +140,13 @@ export function mergeDuplicateIssues(
         type: src.type,
         severity,
         customers: customers.length > 0 ? customers : undefined,
-        occurAt: members.reduce((mn, m) => Math.min(mn, m.occurAt), keep.occurAt),
+        occurAt:
+          occurTimes.length > 0 ? Math.min(...occurTimes) : (mergedMsgs[0]?.time ?? keep.occurAt),
         // 疑似口径取「有人确认过就算已确认」：合并本身不该把议题重新丢回疑似桶
         needConfirm: members.some((m) => !m.ref.needConfirm) ? 0 : 1,
         assignee: members.map((m) => m.ref.assignee).find((x) => !!x) ?? null,
         reopenCount: members.reduce((mx, m) => Math.max(mx, m.ref.reopenCount ?? 0), 0),
-        msgs: mergeEvidence(
-          [],
-          members.flatMap((m) => getIssueMsgs(m.id))
-        )
+        msgs: mergedMsgs
       })
       archiveDuplicates(drops.map((d) => d.id))
     }

@@ -214,6 +214,8 @@ export const MONITOR_STATUS_LABEL: Record<FeedbackIssueStatus, string> = {
 }
 
 export function fmtTimeShort(ts: number): string {
+  // 空/非有限值直接留白：new Date(null) = 1970-01-01 08:00，会伪装成「1月1日 08:00」这种真实时间
+  if (!ts || !Number.isFinite(ts)) return '—'
   const d = new Date(ts)
   const pad = (n: number): string => String(n).padStart(2, '0')
   const sameDay = (now: Date): boolean =>
@@ -226,6 +228,8 @@ export function fmtTimeShort(ts: number): string {
 }
 
 export function ageText(ts: number, now = Date.now()): string {
+  // 空值参与 now - ts 会算出上万年（NULL 被当成 0），先挡住
+  if (!ts || !Number.isFinite(ts)) return '—'
   const ms = now - ts
   const h = Math.floor(ms / 3600_000)
   if (h < 1) return `${Math.max(1, Math.floor(ms / 60000))} 分钟`

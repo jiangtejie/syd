@@ -433,7 +433,10 @@ export async function analyzeGroupIssues(
             }
             if (prev) {
               // 既有行：保留最早发生时间与既有证据（LLM key 依赖最早证据行，证据被覆盖会导致下轮再漂移）
-              issue.occurAt = Math.min(issue.occurAt, prev.occurAt)
+              // prev.occurAt 可能是 null/缺失（历史脏数据）：Math.min(x, undefined) = NaN，
+              // 而 NaN 落库会被 SQLite 静默写成 NULL → 首现时间变 1970-01-01 08:00。非有限值一律不参与取早。
+              const prevAt = Number(prev.occurAt)
+              if (Number.isFinite(prevAt)) issue.occurAt = Math.min(issue.occurAt, prevAt)
               if (prev.status === 'open') {
                 issue.msgs = mergeEvidence(getIssueMsgs(prev.id), issue.msgs)
               }

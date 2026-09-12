@@ -220,6 +220,9 @@ function decorateIssues(issues: FeedbackIssue[]): void {
 export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
   const db = getDb()
   const now = Date.now()
+  // 首现时间必须是有限数：SQLite 会把 NaN 绑成 NULL（不像 undefined 会抛错），
+  // 一旦写空，前端 new Date(null) 就渲染成 1970-01-01 08:00。落库前最后一道拦截。
+  const occurAt = Number.isFinite(issue.occurAt) ? issue.occurAt : (issue.msgs[0]?.time ?? now)
   const followUp = issue.followUp ? 1 : 0
   const severity = issue.severity ?? '一般'
   const customers = issue.customers && issue.customers.length > 0 ? issue.customers : undefined
@@ -236,7 +239,7 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     issue.type,
     issue.title,
     issue.summary ?? null,
-    issue.occurAt,
+    occurAt,
     issue.method,
     followUp,
     severity,
@@ -257,7 +260,7 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     row.type === issue.type &&
     row.title === issue.title &&
     (row.summary ?? null) === (issue.summary ?? null) &&
-    row.occur_at === issue.occurAt &&
+    row.occur_at === occurAt &&
     (row.follow_up === 1) === !!issue.followUp &&
     normSeverity(row.severity) === severity &&
     JSON.stringify(parseCustomers(row.customers) ?? []) === JSON.stringify(customers ?? [])
@@ -278,7 +281,7 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
     issue.type,
     issue.title,
     issue.summary ?? null,
-    issue.occurAt,
+    occurAt,
     followUp,
     severity,
     customers ? JSON.stringify(customers) : null,
@@ -416,13 +419,18 @@ export function setIssueNote(id: number, note: string | null): boolean {
   return info.changes > 0
 }
 
-/** 按稳定 key 查已有行（供 resolved 判定：存在 open 时自动闭环，不存在则不新建） */
+/**
+ * 按稳定 key 查已有行（供 resolved 判定：存在 open 时自动闭环，不存在则不新建）。
+ * 注意列别名必须写 \`occur_at AS occurAt\`：调用方读的是 camelCase 字段，
+ * 漏了别名会得到 undefined，算术后变 NaN，而 SQLite 会把 NaN 静默存成 NULL —— 首现时间就退化成
+ * 1970-01-01 08:00（前端显示「1月1日 08:00」）。
+ */
 export function findIssueByKey(
   key: string
-): { id: number; status: string; occurAt: number } | undefined {
+): { id: number; status: string; occurAt: number | null } | undefined {
   return getDb()
-    .prepare(`SELECT id, status, occur_at FROM issue_feedback WHERE key = ?`)
-    .get(key) as { id: number; status: string; occurAt: number } | undefined
+    .prepare(`SELECT id, status, occur_at AS occurAt FROM issue_feedback WHERE key = ?`)
+    .get(key) as { id: number; status: string; occurAt: number | null } | undefined
 }
 
 /** 某问题现有证据消息（key 复用时用于合并证据，保住最早锚点行） */
@@ -726,6 +734,10 @@ export function applyIssueMerge(input: {
   msgs: FeedbackIssueMsg[]
 }): void {
   const db = getDb()
+  // 同 upsertIssue：NaN 会被 SQLite 静默写成 NULL；合并后证据按时间升序，可用最早一条兜底
+  const occurAt = Number.isFinite(input.occurAt)
+    ? input.occurAt
+    : (input.msgs[0]?.time ?? Date.now())
   const tx = db.transaction(() => {
     db.prepare(
       `UPDATE issue_feedback SET title = ?, summary = ?, type = ?, severity = ?, customers = ?,
@@ -736,7 +748,7 @@ export function applyIssueMerge(input: {
       input.type,
       input.severity,
       input.customers && input.customers.length > 0 ? JSON.stringify(input.customers) : null,
-      input.occurAt,
+      occurAt,
       input.needConfirm,
       input.assignee,
       input.reopenCount,

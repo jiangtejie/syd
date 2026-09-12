@@ -88,6 +88,9 @@ export function reconcileOpenIssues(
   // 全窗口一次扫描出「客户 → 最后一条被回复」的归属表（同群多议题共用，避免逐条重复扫）
   const replies = attributeStaffReplies(msgs, team)
   for (const p of pending) {
+    // 首现时间脏数据（NULL/NaN）：锚点未知，本轮直接跳过。
+    // 否则下面两个判断都会命中（null 与数字比较恒真、now-null 恒大于上限）→ 议题被误自动搁置。
+    if (!Number.isFinite(Number(p.occurAt))) continue
     // 锚点早于读取窗口：本轮无从判定（既不谎报已回复，也不误清跟进中）
     if (p.occurAt < windowStart - ANCHOR_TOLERANCE_MS) {
       if (now - p.occurAt > AUTO_CLOSE_MAX_AGE_MS) {
