@@ -105,10 +105,19 @@ public class Win32 {
       return true;
     }, IntPtr.Zero);
 
+    // One process snapshot beats one query per pid: a desktop has ~100 distinct
+    // window-owning pids and Process.GetProcessById costs ~5ms each (measured 550ms),
+    // while Process.GetProcesses() hands back every name in ~8ms.
     var names = new Dictionary<int, string>();
+    try {
+      foreach (var p in Process.GetProcesses()) {
+        try { names[p.Id] = p.ProcessName; } catch { }
+        p.Dispose();
+      }
+    } catch { }
     foreach (var rec in list) {
-      if (!names.ContainsKey(rec.pid)) { names[rec.pid] = ProcName(rec.pid); }
-      rec.proc = names[rec.pid];
+      if (names.ContainsKey(rec.pid)) { rec.proc = names[rec.pid]; continue; }
+      rec.proc = ProcName(rec.pid);   // started after the snapshot, or inaccessible
     }
     return list;
   }
