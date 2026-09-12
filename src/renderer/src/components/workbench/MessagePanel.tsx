@@ -167,7 +167,80 @@ function chatRecordText(item: ChatRecordItem): string {
 /**
  * 语音消息（localType 34）：点击才向主进程要 WAV（VoiceInfo 取 SILK → 解码 → 缓存），
  * 避免打开聊天页就对整屏语音做解码。
+ *
+ * 播放条是自绘的，不用 <audio controls>：原生控件在气泡里压不住宽度（进度条被裁一截、
+ * 时长挤成两个小字），观感也和微信气泡完全不搭。自绘之后波形进度、拖拽定位、时间显示
+ * 都由我们说了算，配合协议侧的 Range 响应，进度条是真的能拖动的。
  */
+
+/** 播放 / 暂停 / 重试图标（内联 SVG：不引图标库、不用字体符号，缩放不糊） */
+function IconPlay(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+      <path d="M8.6 5.3v13.4L19 12z" fill="currentColor" />
+    </svg>
+  )
+}
+
+function IconPause(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+      <rect x="7" y="5.5" width="3.4" height="13" rx="1.1" fill="currentColor" />
+      <rect x="13.6" y="5.5" width="3.4" height="13" rx="1.1" fill="currentColor" />
+    </svg>
+  )
+}
+
+function IconRetry(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+      <path
+        d="M19.2 12a7.2 7.2 0 1 1-2.6-5.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+      <path d="M17.6 2.4l.7 4.7-4.7.7z" fill="currentColor" />
+    </svg>
+  )
+}
+
+/**
+ * 波形柱高度（百分比）。用消息 id 做种子而不是随机数：同一段语音每次重渲染都得是同一个形状，
+ * 否则播放中每次 state 更新整排柱子都会跳一下。
+ */
+function voiceWaveHeights(seed: string, count = 26): number[] {
+  let h = 2166136261
+  for (let i = 0; i < seed.length; i += 1) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 16777619)
+  }
+  const out: number[] = []
+  for (let i = 0; i < count; i += 1) {
+    h ^= h >>> 15
+    h = Math.imul(h, 2246822507)
+    h ^= h >>> 13
+    h = Math.imul(h, 3266489909)
+    h ^= h >>> 16
+    const r = (h >>> 0) / 4294967296
+    // 两端收窄、中间饱满：一排等高的柱子看着像进度条，不像语音
+    const shape = 0.5 + 0.5 * Math.sin(((i + 0.5) / count) * Math.PI)
+    out.push(Math.round(32 + r * 40 + shape * 28))
+  }
+  return out
+}
+
+/** 秒 → m:ss（语音基本不会超 1 小时，超了也顺手支持 h:mm:ss） */
+function formatClock(sec: number): string {
+  const total = Math.max(0, Math.floor(sec))
+  const s = total % 60
+  const m = Math.floor(total / 60)
+  if (m < 60) return m + ':' + String(s).padStart(2, '0')
+  return (
+    Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0') + ':' + String(s).padStart(2, '0')
+  )
+}
+
 function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
   const [stage, setStage] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
   const [url, setUrl] = useState('')
@@ -176,9 +249,28 @@ function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
   const [text, setText] = useState<string | null>(transcriptOf(message.parsedContent))
   const [asr, setAsr] = useState<'idle' | 'running' | 'failed'>('idle')
   const [asrError, setAsrError] = useState('')
-  const seconds = message.voiceDuration
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const trackRef = useRef<HTMLDivElement | null>(null)
+  // 解码是异步的：点播放/拖进度时音频还没就绪，先把意图存下来，metadata 到了再兑现
+  const wantPlayRef = useRef(false)
+  const pendingSeekRef = useRef<number | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
+  /** 拖拽中的预览比例（null = 没在拖） */
+  const [scrub, setScrub] = useState<number | null>(null)
+  /** 解码后读到的真实时长（秒）：消息里没有 voiceDuration 时兜底 */
+  const [mediaSec, setMediaSec] = useState(0)
+
+  const msgSeconds = message.voiceDuration
     ? Math.max(1, Math.round(message.voiceDuration / 1000))
-    : undefined
+    : 0
+  const totalSeconds = msgSeconds || mediaSec
+  const wave = useMemo(
+    () =>
+      voiceWaveHeights(String(message.serverId || message.localId || message.createTime || 'v')),
+    [message.serverId, message.localId, message.createTime]
+  )
 
   const transcribe = (): void => {
     if (asr === 'running') return
@@ -211,7 +303,8 @@ function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
       })
   }
 
-  const load = (): void => {
+  /** 取 WAV（必要时开播）。seekRatio 用于「还没解码就先拖了进度条」：解码完直接跳到那儿 */
+  const load = (autoPlay: boolean, seekRatio: number | null = null): void => {
     if (stage === 'loading' || stage === 'ready') return
     const wxid = useWorkbenchStore.getState().wxid
     if (!wxid) {
@@ -219,7 +312,10 @@ function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
       setError('未选择账号')
       return
     }
+    wantPlayRef.current = autoPlay
+    pendingSeekRef.current = seekRatio
     setStage('loading')
+    setError('')
     window.api?.cs?.media
       ?.voiceWav(wxid, {
         serverId: message.serverId,
@@ -241,50 +337,232 @@ function VoiceBubble({ message }: { message: ChatMessage }): React.JSX.Element {
       })
   }
 
-  const transcriptNode = (
+  /** 定位到某个比例（0..1）：UI 与 audio.currentTime 一起走 */
+  const seekToRatio = (ratio: number, durationHint?: number): void => {
+    const el = audioRef.current
+    const dur =
+      durationHint ??
+      (el && Number.isFinite(el.duration) && el.duration > 0 ? el.duration : totalSeconds)
+    const r = Math.min(1, Math.max(0, ratio))
+    setProgress(r)
+    if (dur > 0) setElapsed(r * dur)
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return
+    // 留 50ms 余量：正好设成 duration 会被浏览器弹回 0，表现为「一拖到末尾就重播」
+    el.currentTime = Math.min(r * el.duration, Math.max(el.duration - 0.05, 0))
+  }
+
+  /** metadata/可播放：补真实时长，并兑现「待定位」「待播放」两个意图 */
+  const onReady = (): void => {
+    const el = audioRef.current
+    if (!el) return
+    const dur = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0
+    if (dur > 0) {
+      setMediaSec(dur)
+      const ratio = pendingSeekRef.current
+      if (ratio !== null) {
+        pendingSeekRef.current = null
+        seekToRatio(ratio, dur)
+      }
+    }
+    if (wantPlayRef.current) {
+      wantPlayRef.current = false
+      el.play().catch(() => setPlaying(false))
+    }
+  }
+
+  const toggle = (): void => {
+    if (stage === 'idle' || stage === 'failed') {
+      load(true)
+      return
+    }
+    if (stage === 'loading') return
+    const el = audioRef.current
+    if (!el) return
+    if (el.paused) el.play().catch(() => setPlaying(false))
+    else el.pause()
+  }
+
+  const ratioAt = (clientX: number): number => {
+    const rect = trackRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0) return 0
+    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+  }
+
+  const onTrackPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    e.currentTarget.focus()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const ratio = ratioAt(e.clientX)
+    setScrub(ratio)
+    // 还没解码就先拖：记下位置，解码完直接跳过去（不自动开播）
+    if (stage === 'idle' || stage === 'failed') load(false, ratio)
+  }
+
+  const onTrackPointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (scrub === null) return
+    setScrub(ratioAt(e.clientX))
+  }
+
+  const onTrackPointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (scrub === null) return
+    const ratio = ratioAt(e.clientX)
+    setScrub(null)
+    if (stage === 'ready') seekToRatio(ratio)
+    else pendingSeekRef.current = ratio
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* 已经释放过：忽略 */
+    }
+  }
+
+  const onTrackKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    const step = 5 / (totalSeconds || 1)
+    if (e.key === 'ArrowRight') seekToRatio(progress + step)
+    else if (e.key === 'ArrowLeft') seekToRatio(progress - step)
+    else if (e.key === 'Home') seekToRatio(0)
+    else if (e.key === 'End') seekToRatio(1)
+    else return
+    e.preventDefault()
+  }
+
+  const shownRatio = scrub ?? progress
+  const shownSeconds = scrub !== null ? scrub * totalSeconds : elapsed
+  const playTitle =
+    stage === 'loading'
+      ? '正在解码语音…'
+      : stage === 'failed'
+        ? '解码失败，点击重试' + (error ? '：' + error : '')
+        : playing
+          ? '暂停'
+          : '播放'
+
+  /** 转写区：有文本就展示，没有就给入口。转写中 / 失败都收敛在这一个按钮上 */
+  const transcriptNode = text ? (
+    <p className="wb-msg-voice-text" title="腾讯云 ASR 转写文本">
+      {text}
+    </p>
+  ) : (
     <>
-      {text ? (
-        <span className="wb-msg-voice-text" title="腾讯云 ASR 转写文本">
-          {text}
-        </span>
-      ) : (
-        <button
-          type="button"
-          className="wb-msg-voice-asr"
-          onClick={transcribe}
-          disabled={asr === 'running'}
-          title="用腾讯云一句话识别转写这条语音（需在设置里配置 SecretId/SecretKey）"
-        >
-          {asr === 'running' ? '转写中…' : '转写'}
-        </button>
+      <button
+        type="button"
+        className="wb-msg-voice-asr"
+        onClick={transcribe}
+        disabled={asr === 'running'}
+        title="用腾讯云一句话识别转写这条语音（需在设置里配置 SecretId/SecretKey）"
+      >
+        {asr === 'running' ? (
+          <>
+            <span className="wb-msg-voice-spin is-dark" aria-hidden="true" />
+            转写中…
+          </>
+        ) : (
+          <>
+            <span className="wb-msg-voice-asr-glyph" aria-hidden="true">
+              文
+            </span>
+            转写为文字
+          </>
+        )}
+      </button>
+      {asr === 'failed' && asrError && (
+        <span className="wb-msg-voice-err">转写失败：{asrError}</span>
       )}
-      {asr === 'failed' && asrError && <span className="wb-msg-voice-err">{asrError}</span>}
     </>
   )
 
-  if (stage === 'ready' && url) {
-    return (
-      <div className="wb-msg-voice">
-        <audio className="wb-msg-voice-audio" src={url} controls autoPlay />
-        {seconds !== undefined && <span className="wb-msg-voice-dur">{seconds}″</span>}
-        {transcriptNode}
-      </div>
-    )
-  }
   return (
     <div className="wb-msg-voice">
-      <button
-        type="button"
-        className="wb-msg-voice-btn"
-        onClick={load}
-        disabled={stage === 'loading'}
-        title={stage === 'failed' ? error : '解码并播放'}
+      <div
+        className="wb-msg-voice-head"
+        // 气泡宽度跟着语音长度走：短语音不必撑成一条，长语音也不该挤成一小坨
+        style={{ minWidth: 172 + Math.min(68, msgSeconds * 6) }}
       >
-        <span className="wb-msg-voice-icon">{stage === 'loading' ? '…' : '▶'}</span>
-        {stage === 'loading' ? '解码中' : stage === 'failed' ? '播放失败' : '语音'}
-      </button>
-      {seconds !== undefined && <span className="wb-msg-voice-dur">{seconds}″</span>}
-      {stage === 'failed' && error && <span className="wb-msg-voice-err">{error}</span>}
+        <button
+          type="button"
+          className={
+            'wb-msg-voice-play' +
+            (playing ? ' is-playing' : '') +
+            (stage === 'failed' ? ' is-failed' : '')
+          }
+          onClick={toggle}
+          disabled={stage === 'loading'}
+          title={playTitle}
+          aria-label={playTitle}
+        >
+          {stage === 'loading' ? (
+            <span className="wb-msg-voice-spin" aria-hidden="true" />
+          ) : stage === 'failed' ? (
+            <IconRetry />
+          ) : playing ? (
+            <IconPause />
+          ) : (
+            <IconPlay />
+          )}
+        </button>
+        <div
+          ref={trackRef}
+          className="wb-msg-voice-wave"
+          role="slider"
+          tabIndex={0}
+          aria-label="语音进度"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(totalSeconds)}
+          aria-valuenow={Math.round(shownSeconds)}
+          title="点击或拖拽定位"
+          onPointerDown={onTrackPointerDown}
+          onPointerMove={onTrackPointerMove}
+          onPointerUp={onTrackPointerUp}
+          onPointerCancel={onTrackPointerUp}
+          onKeyDown={onTrackKeyDown}
+        >
+          {wave.map((h, i) => (
+            <span
+              key={i}
+              className={
+                'wb-msg-voice-bar' + (i + 0.5 <= shownRatio * wave.length ? ' is-played' : '')
+              }
+              style={{ height: h + '%' }}
+            />
+          ))}
+        </div>
+        <span className="wb-msg-voice-time">
+          {totalSeconds > 0
+            ? formatClock(shownSeconds) + ' / ' + formatClock(totalSeconds)
+            : formatClock(shownSeconds)}
+        </span>
+      </div>
+      {stage === 'ready' && url && (
+        <audio
+          ref={audioRef}
+          className="wb-msg-voice-audio"
+          src={url}
+          preload="auto"
+          onLoadedMetadata={onReady}
+          onCanPlay={onReady}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onTimeUpdate={() => {
+            const el = audioRef.current
+            if (!el) return
+            setElapsed(el.currentTime)
+            if (Number.isFinite(el.duration) && el.duration > 0) {
+              setProgress(Math.min(1, el.currentTime / el.duration))
+            }
+          }}
+          onEnded={() => {
+            setPlaying(false)
+            setProgress(0)
+            setElapsed(0)
+          }}
+          onError={() => {
+            setPlaying(false)
+            setError('音频加载失败')
+            setStage('failed')
+          }}
+        />
+      )}
+      {stage === 'failed' && error && <span className="wb-msg-voice-err">播放失败：{error}</span>}
       {transcriptNode}
     </div>
   )

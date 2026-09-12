@@ -72,3 +72,74 @@ function safeDecode(s: string): string {
     return s
   }
 }
+
+/** 媒体扩展名 → MIME。Range 响应是自己拼的，Content-Type 必须自带 */
+const MEDIA_MIME: Record<string, string> = {
+  wav: 'audio/wav',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  mkv: 'video/x-matroska',
+  avi: 'video/x-msvideo',
+  mov: 'video/quicktime'
+}
+
+/** 由文件名推 Content-Type（认不出就 octet-stream，不影响播放器按内容嗅探） */
+export function mimeForMediaFile(fileName: string): string {
+  const dot = fileName.lastIndexOf('.')
+  const ext = dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : ''
+  return MEDIA_MIME[ext] ?? 'application/octet-stream'
+}
+
+/** 闭区间字节范围（HTTP 语义：end 可取到 size-1） */
+export interface MediaByteRange {
+  start: number
+  end: number
+}
+
+/**
+ * 解析单段 Range 请求头。返回值三态：
+ *   null      —— 没有 Range 头（或不是 bytes 单位）→ 调用方回 200 全量
+ *   'invalid' —— 语法能认但落在文件外 → 调用方回 416
+ *   { start, end } —— 调用方回 206 + Content-Range
+ *
+ * 为什么需要它：<audio>/<video> 把「支持 Range」当作可寻址的前提。此前 ct-media 一律
+ * 走 net.fetch(file://)，响应既没有 206 也没有 Accept-Ranges，Chromium 只能当一次性流处理，
+ * 于是语音气泡上的进度条拖不动、时长也可能读不出来。这里把判定做成纯函数，自检里能直接断言。
+ */
+export function parseRangeHeader(
+  header: string | null | undefined,
+  size: number
+): MediaByteRange | null | 'invalid' {
+  const raw = (header ?? '').trim()
+  if (!raw) return null
+  const m = /^bytes\s*=\s*(.+)$/i.exec(raw)
+  if (!m) return null
+  // 多段只认第一段：Chromium 的媒体栈只发单段，多段（multipart/byteranges）不做
+  const spec = m[1].split(',')[0].trim()
+  if (!spec) return 'invalid'
+  if (!Number.isFinite(size) || size <= 0) return 'invalid'
+  const dash = spec.indexOf('-')
+  if (dash < 0) return 'invalid'
+  const startText = spec.slice(0, dash).trim()
+  const endText = spec.slice(dash + 1).trim()
+  if (startText === '') {
+    // 后缀式：bytes=-N（最后 N 字节）
+    if (!/^\d+$/.test(endText)) return 'invalid'
+    const suffix = Number(endText)
+    if (!Number.isFinite(suffix) || suffix <= 0) return 'invalid'
+    return { start: Math.max(0, size - suffix), end: size - 1 }
+  }
+  if (!/^\d+$/.test(startText)) return 'invalid'
+  const start = Number(startText)
+  if (!Number.isFinite(start) || start >= size) return 'invalid'
+  if (endText === '') return { start, end: size - 1 }
+  if (!/^\d+$/.test(endText)) return 'invalid'
+  const end = Number(endText)
+  if (!Number.isFinite(end) || end < start) return 'invalid'
+  return { start, end: Math.min(end, size - 1) }
+}

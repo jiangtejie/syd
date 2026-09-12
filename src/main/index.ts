@@ -13,12 +13,13 @@ import {
 } from 'electron'
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
-import { existsSync } from 'fs'
+import { Readable } from 'stream'
+import { createReadStream, existsSync, statSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getDb, closeDb, getLastMigrateResult } from './db/database'
 import { getGrowthMediaDir, getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
-import { parseMediaPath } from './services/media/mediaProtocol'
+import { mimeForMediaFile, parseMediaPath, parseRangeHeader } from './services/media/mediaProtocol'
 import { migrateStoredSecrets } from './services/secrets'
 import { listTables } from './db/schema'
 import { startDbHousekeeping, stopDbHousekeeping } from './db/housekeeping'
@@ -106,13 +107,58 @@ function createTray(): void {
 }
 
 /**
+ * 把一个已校验过的本地媒体文件回给渲染层，并支持 HTTP Range。
+ *
+ * 为什么必须支持 Range：<audio>/<video> 只有在响应能 206 + Accept-Ranges 时才把资源当
+ * 「可寻址」处理。此前一律 net.fetch(file://)，Chromium 只能当一次性流，语音气泡上
+ * 进度条拖不动、时长也可能读不出来。图片走同样的路径（多了 Accept-Ranges 无副作用）。
+ */
+async function serveMediaFile(file: string, rangeHeader: string | null): Promise<Response> {
+  let size = 0
+  try {
+    size = statSync(file).size
+  } catch {
+    return new Response('Not found', { status: 404 })
+  }
+  const range = parseRangeHeader(rangeHeader, size)
+  if (range === 'invalid') {
+    return new Response('Range Not Satisfiable', {
+      status: 416,
+      headers: { 'Content-Range': `bytes */${size}` }
+    })
+  }
+  if (!range) {
+    const res = await net.fetch(pathToFileURL(file).toString())
+    const headers = new Headers(res.headers)
+    headers.set('Accept-Ranges', 'bytes')
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers
+    })
+  }
+  const body = Readable.toWeb(
+    createReadStream(file, { start: range.start, end: range.end })
+  ) as unknown as ReadableStream
+  return new Response(body, {
+    status: 206,
+    headers: {
+      'Content-Type': mimeForMediaFile(file),
+      'Content-Length': String(range.end - range.start + 1),
+      'Content-Range': `bytes ${range.start}-${range.end}/${size}`,
+      'Accept-Ranges': 'bytes'
+    }
+  })
+}
+
+/**
  * 自定义 media 协议：把缓存目录的已解密媒体以 ct-media://media/<wxid>/<文件名> 暴露给渲染层。
  * dev 渲染源是 http://localhost，file:// 子资源会被 Chromium 拦截，故统一走协议。
  * 语音走三段布局 `/voices/<id>.wav`（SILK 解码产物，命名规则与图片不同）。
  * 安全：文件名按布局分别强校验，wxid 仅允许常规字符，并限制在缓存根目录内。
  */
 function registerMediaProtocol(): void {
-  protocol.handle('ct-media', (request) => {
+  protocol.handle('ct-media', async (request) => {
     try {
       const { pathname } = new URL(request.url)
       const { hit, badShape } = parseMediaPath(pathname)
@@ -123,7 +169,7 @@ function registerMediaProtocol(): void {
       if (!file.startsWith(base + sep) || !existsSync(file)) {
         return new Response('Not found', { status: 404 })
       }
-      return net.fetch(pathToFileURL(file).toString())
+      return await serveMediaFile(file, request.headers.get('range'))
     } catch {
       return new Response('Bad request', { status: 400 })
     }

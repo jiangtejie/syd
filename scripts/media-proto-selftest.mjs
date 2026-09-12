@@ -25,7 +25,8 @@ buildSync({
   format: 'cjs',
   outfile: bundle
 })
-const { parseMediaPath, toMediaUrl, toVoiceMediaUrl } = require(bundle)
+const { parseMediaPath, toMediaUrl, toVoiceMediaUrl, parseRangeHeader, mimeForMediaFile } =
+  require(bundle)
 
 let failed = 0
 const log = (ok, name, detail) => {
@@ -112,6 +113,70 @@ const MD5 = 'a'.repeat(32)
     threw = true
   }
   log(!threw && r?.hit === null, '畸形 % 转义不抛异常且判非法')
+}
+
+// 7) Range 解析：<audio> 靠 206 + Content-Range 才能拖进度条，三态必须严格区分
+{
+  const SIZE = 1000
+
+  // 7.1 无 Range 头 → null（回 200 全量）
+  log(parseRangeHeader(null, SIZE) === null, '无 Range 头 → null（200 全量）')
+  log(parseRangeHeader('', SIZE) === null, '空 Range 头 → null')
+  log(parseRangeHeader('items=0-1', SIZE) === null, '非 bytes 单位 → null（不做 Range）')
+
+  // 7.2 常规三段：Chromium 起播发的是 `bytes=0-`
+  const open = parseRangeHeader('bytes=0-', SIZE)
+  log(
+    open?.start === 0 && open?.end === SIZE - 1,
+    'bytes=0- → 整段（Chromium 起播请求）',
+    JSON.stringify(open)
+  )
+  const mid = parseRangeHeader('bytes=100-199', SIZE)
+  log(mid?.start === 100 && mid?.end === 199, 'bytes=100-199 → 闭区间原样', JSON.stringify(mid))
+  const tail = parseRangeHeader('bytes=500-', SIZE)
+  log(tail?.start === 500 && tail?.end === SIZE - 1, 'bytes=500- → 到文件尾', JSON.stringify(tail))
+
+  // 7.3 end 越界要收敛到 size-1，而不是照抄请求值（照抄会让 Content-Length 虚高）
+  const over = parseRangeHeader('bytes=900-99999', SIZE)
+  log(over?.start === 900 && over?.end === SIZE - 1, 'end 越界 → 收敛到 size-1', JSON.stringify(over))
+
+  // 7.4 后缀式：bytes=-N 取末尾 N 字节（WAV 头尾探测会用到）
+  const suffix = parseRangeHeader('bytes=-200', SIZE)
+  log(
+    suffix?.start === SIZE - 200 && suffix?.end === SIZE - 1,
+    'bytes=-200 → 末尾 200 字节',
+    JSON.stringify(suffix)
+  )
+  const suffixOver = parseRangeHeader('bytes=-99999', SIZE)
+  log(suffixOver?.start === 0, 'bytes=-超出文件 → 收敛到 0', JSON.stringify(suffixOver))
+
+  // 7.5 语法合法但落在文件外 → 'invalid'（调用方回 416）
+  const invalids = [
+    ['bytes=1000-', 'start == size'],
+    ['bytes=2000-3000', 'start 越界'],
+    ['bytes=300-200', 'end < start'],
+    ['bytes=-0', '后缀 0 字节'],
+    ['bytes=abc-def', '非数字'],
+    ['bytes=1', '缺连字符']
+  ]
+  for (const [header, label] of invalids) {
+    log(parseRangeHeader(header, SIZE) === 'invalid', `Range 非法 → 416：${label}`, header)
+  }
+  log(parseRangeHeader('bytes=0-9', 0) === 'invalid', '空文件上的 Range → 416')
+  // 宽松处理：`bytes=` 连范围都没有，按「没有 Range」回全量，比回 416 更不容易让播放器卡死
+  log(parseRangeHeader('bytes=', SIZE) === null, '空 spec → 当作没有 Range（200 全量）')
+
+  // 7.6 多段只取第一段（Chromium 媒体栈只发单段，不实现 multipart/byteranges）
+  const multi = parseRangeHeader('bytes=10-19,30-39', SIZE)
+  log(multi?.start === 10 && multi?.end === 19, '多段 Range 只取第一段', JSON.stringify(multi))
+}
+
+// 8) MIME：Range 响应要自带 Content-Type（net.fetch 那条路是 Chromium 嗅探的）
+{
+  log(mimeForMediaFile('123.wav') === 'audio/wav', 'wav → audio/wav')
+  log(mimeForMediaFile('a'.repeat(32) + '_orig.jpg') === 'image/jpeg', 'jpg → image/jpeg')
+  log(mimeForMediaFile('a'.repeat(32) + '_thumb.MP4') === 'video/mp4', '扩展名大小写不敏感')
+  log(mimeForMediaFile('nope') === 'application/octet-stream', '认不出的扩展名 → octet-stream')
 }
 
 rmSync(bundleDir, { recursive: true, force: true })

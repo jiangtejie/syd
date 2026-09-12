@@ -477,57 +477,185 @@
   color: var(--text-2);
 }
 
+/* ── 语音气泡：自绘播放器 ──
+   为什么不用 <audio controls>：原生控件在气泡里宽度不可控（进度条会被裁掉一截、时长挤成两个小字），
+   观感也和微信气泡完全不搭。这里用「圆形播放键 + 波形进度 + 时间」自己拼，配色全部走 rgba，
+   白气泡（接收）与绿气泡（发送）下都成立。 */
 .wb-msg-voice {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-width: 110px;
-  padding: 2px 0;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 196px;
+  max-width: 360px;
+  padding: 1px 0;
 }
 
-.wb-msg-voice-btn {
+.wb-msg-voice-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 圆形播放/暂停键：绿底白图标，一眼能找到 */
+.wb-msg-voice-play {
+  flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.03);
-  color: inherit;
-  font-size: 13px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--on-brand);
   cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.12s ease;
 }
 
-.wb-msg-voice-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.07);
+.wb-msg-voice-play:hover:not(:disabled) {
+  background: var(--brand-hover);
 }
 
-.wb-msg-voice-btn:disabled {
+.wb-msg-voice-play:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.wb-msg-voice-play:disabled {
   cursor: default;
-  opacity: 0.7;
 }
 
-.wb-msg-voice-icon {
-  font-size: 12px;
+.wb-msg-voice-play.is-failed {
+  background: var(--danger);
 }
 
-.wb-msg-voice-dur {
-  font-size: 12px;
+.wb-msg-voice-play.is-failed:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+/* 播放图标视觉重心偏左，补 1px 让它看着居中 */
+.wb-msg-voice-play svg {
+  display: block;
+  margin-left: 1px;
+}
+
+.wb-msg-voice-play.is-playing svg {
+  margin-left: 0;
+}
+
+/* 波形进度：柱子高度由消息 id 决定（稳定），已播部分换色 → 进度一眼可见，且可点可拖 */
+.wb-msg-voice-wave {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 2px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.wb-msg-voice-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 1px;
+  background: rgba(0, 0, 0, 0.16);
+  transition:
+    background 0.12s linear,
+    transform 0.12s ease;
+}
+
+.wb-msg-voice-bar.is-played {
+  background: var(--brand);
+}
+
+.wb-msg-voice-wave:hover .wb-msg-voice-bar {
+  background: rgba(0, 0, 0, 0.26);
+}
+
+.wb-msg-voice-wave:hover .wb-msg-voice-bar.is-played {
+  background: var(--brand-hover);
+}
+
+/* 绿气泡上用绿色波形对比度太低，改成深色系 */
+.is-send .wb-msg-voice-bar {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.is-send .wb-msg-voice-bar.is-played {
+  background: rgba(0, 0, 0, 0.66);
+}
+
+.is-send .wb-msg-voice-wave:hover .wb-msg-voice-bar {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.is-send .wb-msg-voice-wave:hover .wb-msg-voice-bar.is-played {
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.wb-msg-voice-time {
+  flex: none;
+  font-size: 11.5px;
+  line-height: 1;
   color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
+.is-send .wb-msg-voice-time {
+  color: rgba(0, 0, 0, 0.55);
+}
+
+/* 解码中：白圈转起来（播放键是绿底，白圈最清晰） */
+.wb-msg-voice-spin {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: var(--on-brand);
+  border-radius: 50%;
+  animation: wb-voice-spin 0.7s linear infinite;
+}
+
+.wb-msg-voice-spin.is-dark {
+  width: 11px;
+  height: 11px;
+  border-color: rgba(0, 0, 0, 0.18);
+  border-top-color: rgba(0, 0, 0, 0.6);
+}
+
+@keyframes wb-voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 转写按钮：虚线胶囊，比正文轻，但不至于看不见 */
 .wb-msg-voice-asr {
-  padding: 2px 10px;
-  border: 1px dashed rgba(0, 0, 0, 0.2);
-  border-radius: 999px;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 6px;
+  border: 1px dashed rgba(0, 0, 0, 0.22);
+  border-radius: var(--r-pill);
   background: transparent;
   color: inherit;
   font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.78;
   cursor: pointer;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease;
 }
 
 .wb-msg-voice-asr:hover:not(:disabled) {
+  opacity: 1;
   background: rgba(0, 0, 0, 0.05);
 }
 
@@ -536,24 +664,52 @@
   opacity: 0.7;
 }
 
+.wb-msg-voice-asr-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.1);
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* 转写文本：左侧竖线的引用块样式，和正文明确区分（并且可选中复制） */
 .wb-msg-voice-text {
-  flex-basis: 100%;
-  font-size: 13px;
-  line-height: 1.5;
+  margin: 0;
+  padding: 5px 8px 5px 10px;
+  border-left: 2px solid rgba(0, 0, 0, 0.14);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: rgba(0, 0, 0, 0.04);
+  font-size: 12.5px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
   opacity: 0.92;
+  user-select: text;
+}
+
+.is-send .wb-msg-voice-text {
+  border-left-color: rgba(0, 0, 0, 0.22);
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .wb-msg-voice-err {
-  flex-basis: 100%;
   font-size: 11px;
-  color: #c0392b;
+  line-height: 1.5;
+  color: var(--danger);
 }
 
+/* 绿底上红色偏糊，错误文字换成更深的红 */
+.is-send .wb-msg-voice-err {
+  color: #8c1d1d;
+}
+
+/* 播放用的 <audio> 本身不出现在布局里：控件全在上面自绘 */
 .wb-msg-voice-audio {
-  height: 32px;
-  max-width: 260px;
+  display: none;
 }
 
 .wb-msg-chathistory {
