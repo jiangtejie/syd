@@ -4,7 +4,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type Database from 'better-sqlite3-multiple-ciphers'
 import { createLogger } from '../logging'
-import { decorateVoiceTranscripts } from '../media/asr'
+import { decorateVoiceTranscripts } from '../media/voiceTranscript'
 import { openWxDbFile } from './wxDb'
 import { findFileCached, locateWeChatDbs } from './dbLocator'
 import {

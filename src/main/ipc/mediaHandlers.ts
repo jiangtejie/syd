@@ -3,7 +3,6 @@ import { decryptImage, decryptVideo, testImageDecrypt } from '../services/media/
 import type { DecryptImageOptions, DecryptVideoOptions } from '../services/media/mediaService'
 import { resolveEmojiLocal, type ResolveEmojiInput } from '../services/media/emojiService'
 import { getVoiceWav } from '../services/media/voice'
-import { asrStatus, transcribeVoice } from '../services/media/asr'
 import { getDecryptedKey } from '../services/keyStoreService'
 
 /** 图片/视频 .dat 解密 IPC（M3）：渲染进程传 wxid + md5 → 返回可访问的 ct-media:// URL */
@@ -48,30 +47,6 @@ export function registerMediaHandlers(): void {
       }
     }
   )
-
-  // 语音转写（本地 whisper.cpp，外部可执行文件 + 本地模型，全程离线）
-  ipcMain.handle(
-    'cs:media:voiceTranscript',
-    async (
-      _e,
-      wxid: string,
-      opts?: { serverId?: string; localId?: number; createTime?: number; force?: boolean }
-    ) => {
-      if (!wxid || typeof wxid !== 'string') return { ok: false as const, error: '缺少账号' }
-      try {
-        return await transcribeVoice({ wxid, ...(opts || {}) })
-      } catch (err) {
-        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
-      }
-    }
-  )
-  ipcMain.handle('cs:media:asrStatus', () => {
-    try {
-      return { ok: true as const, ...asrStatus() }
-    } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
-    }
-  })
 
   // 动画/商店表情本地化：cdn/模板 URL 下载缓存 → ct-media 本地地址（渲染端裂图后重试用）
   ipcMain.handle('cs:media:resolveEmoji', async (_e, wxid: string, input: ResolveEmojiInput) => {

@@ -12,7 +12,6 @@ import { locateWeChatDbs } from './dbLocator'
 import { decryptWxDbFile, getPlainDbPath, verifyWxDbKey } from './decrypt'
 import { getCachePath } from '../paths'
 import { deriveImageKeys } from '../media/imageKeys'
-import { asrStatus } from '../media/asr'
 import { mediaCachePolicy, mediaCacheStats } from '../media/mediaCache'
 import { createLogger } from '../logging'
 
@@ -28,7 +27,7 @@ const log = createLogger('crypto-center')
  */
 
 export interface ReadinessStep {
-  id: 'account' | 'key' | 'dbs' | 'images' | 'voice' | 'asr' | 'cache'
+  id: 'account' | 'key' | 'dbs' | 'images' | 'voice' | 'cache'
   label: string
   status: 'ok' | 'warn' | 'fail' | 'skip'
   detail: string
@@ -52,7 +51,6 @@ export interface AccountReadiness {
   dbs: DbProbe[]
   images: { xorKey: boolean; aesKey: boolean }
   voice: { mediaDbs: number; cachedWav: number }
-  asr: { available: boolean; reason?: string }
   cache: {
     policy: { autoClean: boolean; keepDays: number; maxMB: number; maxFiles: number }
     files: number
@@ -164,7 +162,6 @@ export function accountReadiness(wxid: string): AccountReadiness {
   const { storage, dbs } = probeDbs(id, accountDir)
   const xorKey = (getConfig(`img:${id}:xorKey`) ?? '').trim()
   const aesKey = (getConfig(`img:${id}:aesKey`) ?? '').trim()
-  const asr = asrStatus()
   const cache = mediaCacheStats()
   const policy = mediaCachePolicy()
 
@@ -245,16 +242,6 @@ export function accountReadiness(wxid: string): AccountReadiness {
           detail: '未找到 media_*.db（可能还没收到过语音）'
         }
   )
-  steps.push(
-    asr.available
-      ? { id: 'asr', label: '语音转写', status: 'ok', detail: 'whisper 已就绪' }
-      : {
-          id: 'asr',
-          label: '语音转写',
-          status: 'skip',
-          detail: asr.reason ?? '未配置（不影响语音播放）'
-        }
-  )
   steps.push({
     id: 'cache',
     label: '解密/媒体缓存',
@@ -277,7 +264,6 @@ export function accountReadiness(wxid: string): AccountReadiness {
     dbs,
     images: { xorKey: !!xorKey, aesKey: !!aesKey },
     voice: { mediaDbs, cachedWav },
-    asr: { available: asr.available, reason: asr.reason },
     cache: { policy, files: cache.files, bytes: cache.bytes, archiveBytes: cache.archiveBytes },
     steps
   }
@@ -508,7 +494,7 @@ export async function onboardAccount(opts: {
 
   // 5) 体检收尾（把语音/转写/缓存的状态一并带出来）
   const ready = accountReadiness(wxid)
-  const extra = ready.steps.filter((s) => s.id === 'voice' || s.id === 'asr' || s.id === 'cache')
+  const extra = ready.steps.filter((s) => s.id === 'voice' || s.id === 'cache')
   steps.push(...extra)
   return { ok: steps.every((s) => s.status !== 'fail'), wxid, accountDir, steps }
 }

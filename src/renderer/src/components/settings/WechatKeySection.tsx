@@ -59,14 +59,9 @@ function WechatKeySection(): React.JSX.Element {
   const [showXor, setShowXor] = useState(false)
   const [showAes, setShowAes] = useState(false)
   const [ffmpegPath, setFfmpegPath] = useState('')
-  // 本地语音转写（whisper.cpp 外部可执行文件 + 本地模型）：与 ffmpeg 同一套「外部工具」思路
-  const [asrWhisper, setAsrWhisper] = useState('')
-  const [asrModel, setAsrModel] = useState('')
-  const [asrLang, setAsrLang] = useState('zh')
-  const [asrStatus, setAsrStatus] = useState<{ available: boolean; reason?: string } | null>(null)
   const [status, setStatus] = useState<KeyStatusInfo | null>(null)
   const [lastError, setLastError] = useState('')
-  const [busy, setBusy] = useState<'import' | 'test' | 'connect' | 'img' | 'asr' | null>(null)
+  const [busy, setBusy] = useState<'import' | 'test' | 'connect' | 'img' | null>(null)
 
   const loadStatus = useCallback(async (id: string) => {
     if (!id.trim() || !keyStoreApi) {
@@ -81,9 +76,6 @@ function WechatKeySection(): React.JSX.Element {
     setXorKey(cfg?.[`img:${id.trim()}:xorKey`] ?? '')
     setAesKey(cfg?.[`img:${id.trim()}:aesKey`] ?? '')
     setFfmpegPath(cfg?.['media.ffmpegPath'] ?? '')
-    setAsrWhisper(cfg?.['asr.whisperPath'] ?? '')
-    setAsrModel(cfg?.['asr.modelPath'] ?? '')
-    setAsrLang(cfg?.['asr.language'] ?? 'zh')
   }, [])
 
   // wxid 输入后自动查询密钥状态（600ms 防抖）
@@ -205,24 +197,6 @@ function WechatKeySection(): React.JSX.Element {
       if (r.aesVerified === true) parts.push('AES 校验通过')
       else if (r.aesVerified === false) parts.push(`AES 未通过校验：${r.error ?? '与模板不匹配'}`)
       toast.success(parts.join(' · '))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  /** 保存语音转写配置并即时探测一次（whisper/模型是否存在） */
-  const saveAsr = async (): Promise<void> => {
-    setBusy('asr')
-    try {
-      await Promise.all([
-        configApi?.set('asr.whisperPath', asrWhisper.trim()),
-        configApi?.set('asr.modelPath', asrModel.trim()),
-        configApi?.set('asr.language', asrLang.trim() || 'zh')
-      ])
-      const st = await mediaApi?.asrStatus?.()
-      setAsrStatus({ available: st?.available === true, reason: st?.reason })
-      if (st?.available) toast.success('语音转写已就绪（本地 whisper，离线）')
-      else toast.error(st?.reason || '语音转写不可用')
     } finally {
       setBusy(null)
     }
@@ -386,52 +360,6 @@ function WechatKeySection(): React.JSX.Element {
           placeholder="留空则按 WECHAT_CS_FFMPEG 环境变量 / PATH 查找"
         />
       </label>
-      {/* 本地语音转写：外部 whisper 可执行文件 + 本地模型，全程离线（不内置模型，避免安装包膨胀） */}
-      <div className="st-subtitle">语音转写（本地 whisper.cpp，离线）</div>
-      <label className="st-row">
-        <span className="st-label">whisper 可执行文件</span>
-        <input
-          className="st-input"
-          value={asrWhisper}
-          onChange={(e) => setAsrWhisper(e.target.value)}
-          placeholder="如 D:\whisper\whisper-cli.exe（留空=不转写）"
-        />
-      </label>
-      <label className="st-row">
-        <span className="st-label">模型文件（ggml-*.bin）</span>
-        <input
-          className="st-input"
-          value={asrModel}
-          onChange={(e) => setAsrModel(e.target.value)}
-          placeholder="如 D:\whisper\ggml-medium.bin"
-        />
-      </label>
-      <label className="st-row">
-        <span className="st-label">语言</span>
-        <input
-          className="st-input"
-          value={asrLang}
-          onChange={(e) => setAsrLang(e.target.value)}
-          placeholder="zh（留空=自动判定）"
-        />
-      </label>
-      <div className="st-actions">
-        <button
-          type="button"
-          className="st-btn"
-          disabled={busy !== null}
-          onClick={() => void saveAsr()}
-        >
-          {busy === 'asr' ? '检测中…' : '保存并检测'}
-        </button>
-        <span className="st-hint">
-          {asrStatus
-            ? asrStatus.available
-              ? '已就绪：语音气泡点「转写」即可（24kHz→16kHz 由应用内重采样）'
-              : asrStatus.reason || '不可用'
-            : '不配置也不影响语音播放；转写结果会缓存并进入议题分析与数字员工的判断依据'}
-        </span>
-      </div>
 
       <div className="st-actions">
         <button
