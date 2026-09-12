@@ -111,6 +111,67 @@ $mDeep = Get-WxHeaderMatch -Lines $deep -Target $target -Names $names
 Check ($mDeep.direct -lt 0.6) 'a chat name in the message area is outside the header strip' ('direct=' + [Math]::Round($mDeep.direct, 2))
 
 Write-Host ''
+Write-Host '[6] guards added for the "click blind" and "press Enter blind" failure modes'
+# click points are clamped into the window; OwnerPid 0 skips the on-screen verification
+$rc = @(1000, 500, 800, 700)
+$inside = Resolve-WxClickPoint -Rect $rc -X 1130 -Y 552 -OwnerPid 0
+Check ($inside[0] -eq 1130 -and $inside[1] -eq 552) 'a point inside the window is used as-is' ($inside -join ',')
+$outside = Resolve-WxClickPoint -Rect $rc -X 5000 -Y 9000 -OwnerPid 0
+Check ($outside[0] -le 1792 -and $outside[1] -le 1192 -and $outside[0] -ge 1008 -and $outside[1] -ge 508) 'a point outside the window is clamped inside it' ($outside -join ',')
+Check ($null -eq (Resolve-WxClickPoint -Rect @(0, 0, 10, 10) -X 5 -Y 5 -OwnerPid 0)) 'a window too small to click safely returns nothing (caller aborts)'
+
+# the chat input read back before Enter
+$body = $fx.headerLinesOk[1].text
+Check (Test-WxTextLanded -Text ('Q ' + $body) -Target $body) 'an OCR line with an icon prefix still counts as landed'
+$composerHit = @([pscustomobject]@{ text = $body; x = 520; y = 640; w = 400; h = 12 })
+Check (Test-WxComposerHasBody -Lines $composerHit -Text $body -WinW 802 -WinH 771) 'body found in the composer band => Enter may be pressed'
+$composerEmpty = @([pscustomobject]@{ text = 'send'; x = 700; y = 720; w = 30; h = 12 })
+Check (-not (Test-WxComposerHasBody -Lines $composerEmpty -Text $body -WinW 802 -WinH 771)) 'empty composer => refuse to press Enter'
+$composerAbove = @([pscustomobject]@{ text = $body; x = 520; y = 560; w = 400; h = 12 })
+Check (-not (Test-WxComposerHasBody -Lines $composerAbove -Text $body -WinW 802 -WinH 771)) 'an old message bubble above the band can not stand in for the composer'
+# a long body only shows a fragment in the input box (head when short, tail once it scrolls)
+$long = 'HEAD-MARKER ' + $body + ' TAIL-MARKER'
+$composerHead = @([pscustomobject]@{ text = ($body.Substring(0, 9)); x = 520; y = 640; w = 200; h = 12 })
+Check (Test-WxComposerHasBody -Lines $composerHead -Text ('prefix ' + $body) -WinW 802 -WinH 771) 'a long body shown as a visible HEAD still counts'
+$composerTail = @([pscustomobject]@{ text = 'TAIL-MARKER'; x = 520; y = 640; w = 200; h = 12 })
+Check (Test-WxComposerHasBody -Lines $composerTail -Text $long -WinW 802 -WinH 771) 'a scrolled-to-tail body still counts (fragment containment)'
+$composerOther = @([pscustomobject]@{ text = 'DIFFERENT-DRAFT-TEXT 9999'; x = 520; y = 640; w = 200; h = 12 })
+Check (-not (Test-WxComposerHasBody -Lines $composerOther -Text $long -WinW 802 -WinH 771)) 'unrelated text in the box does NOT count'
+
+Write-Host ''
+Write-Host '[8] dynamic layout anchors (search box found by looking, not by a fixed offset)'
+$top = To-Lines $fx.topBandLines
+$boxLine = Find-WxSearchBoxLine -Lines @($top) -WinW 802 -WinH 771
+Check ($null -ne $boxLine) 'search box found in the top band'
+Check ($null -ne $boxLine -and $boxLine.x -eq 88) 'the leftmost short run wins, not the icons or the chat title' ('x=' + $boxLine.x + ' text=[' + $boxLine.text + ']')
+Check ((Find-WxPaneLeft -Lines @($top) -WinW 802 -WinH 771) -eq 446) 'conversation pane edge comes from the chat title'
+$noHeader = @($fx.topBandLines | Where-Object { $_.x -lt 400 })
+Check ((Find-WxPaneLeft -Lines (To-Lines $noHeader) -WinW 802 -WinH 771) -eq 0) 'no title on screen => 0 so callers fall back to the width share'
+$paneLeft = Find-WxPaneLeft -Lines @($top) -WinW 802 -WinH 771
+$composerDyn = @([pscustomobject]@{ text = $target; x = 452; y = 630; w = 84; h = 12 })
+Check (Test-WxComposerHasBody -Lines $composerDyn -Text $target -WinW 802 -WinH 771 -PaneLeft $paneLeft) 'composer check works with the dynamically found pane edge'
+Check (-not (Test-WxComposerHasBody -Lines $composerDyn -Text $target -WinW 802 -WinH 771 -PaneLeft 600)) 'text left of the pane edge is not counted as the composer'
+Check ($null -eq (Find-WxSearchBoxLine -Lines @() -WinW 802 -WinH 771)) 'empty screen => no anchor, caller falls back'
+Check ($null -eq (Find-WxSearchBoxLine -Lines @($top) -WinW 0 -WinH 0)) 'unknown window size => refuse to guess'
+
+Write-Host ''
+Write-Host '[7] human pacing: no fixed metronome, but never absurd either'
+$lo = 999; $hi = -999; $zero = $true; $above = $true
+for ($i = 0; $i -lt 300; $i++) {
+  $v = Get-WxJitter -Base 100 -Spread 40
+  if ($v -lt $lo) { $lo = $v }
+  if ($v -gt $hi) { $hi = $v }
+  if ($v -ne 100) { $zero = $false }
+}
+Check ($lo -ge 60 -and $hi -le 140) 'jitter stays inside base +/- spread' ("range $lo..$hi")
+Check (-not $zero) 'jitter is actually random (not the fixed base)'
+Check ((Get-WxJitter -Base 500 -Spread 0) -eq 500) 'zero spread means no jitter'
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+Start-WxPause -Base 120 -Spread 20 -Hesitate $false
+$sw.Stop()
+Check ($sw.ElapsedMilliseconds -ge 90) 'a pause really waits (no busy loop)' ("$($sw.ElapsedMilliseconds)ms")
+
+Write-Host ''
 if ($script:failed -eq 0) {
   Write-Host 'all checks passed'
   exit 0

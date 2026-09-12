@@ -2,7 +2,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { join } from 'path'
 import { app } from 'electron'
-import { existsSync, statSync, writeFileSync, rmSync, mkdirSync } from 'fs'
+import { existsSync, statSync, writeFileSync, rmSync, mkdirSync, readFileSync } from 'fs'
 import { getConfig } from '../../db/repos/config'
 
 /**
@@ -43,6 +43,36 @@ function shotDir(): string {
     return dir
   } catch {
     return app.getPath('temp')
+  }
+}
+
+/**
+ * 注入脚本写在截图旁边的阶段标记(见 wechat-inject.ps1 的 Set-WxPhase)。
+ * 进程被杀/超时后靠它区分「一个字都还没输入」与「回车已经按下」——
+ * 前者可以安全重试,后者再发一次就是重复消息。
+ */
+function readPhase(): string {
+  try {
+    return readFileSync(join(shotDir(), 'wx-phase.txt'), 'utf8').trim()
+  } catch {
+    return ''
+  }
+}
+
+function clearPhase(): void {
+  try {
+    rmSync(join(shotDir(), 'wx-phase.txt'), { force: true })
+  } catch {
+    /* 没有残留也无所谓 */
+  }
+}
+
+/** 状态未知(可能已发出):绝不自动重试,交人工确认 */
+function unknownStateResult(): InjectResult {
+  return {
+    ok: false,
+    error:
+      '发送状态未知:注入过程被中断,但回车已经按下过——请到该会话确认是否已发出(系统不会自动重试)'
   }
 }
 
@@ -89,6 +119,21 @@ export function humanizeInjectError(raw: string | undefined): string | undefined
   }
   if (/clipboard busy/i.test(raw)) {
     return '系统剪贴板正被占用,请稍等几秒重试'
+  }
+  if (/workstation is locked/i.test(raw)) {
+    return '电脑已锁屏:锁屏期间无法操作微信,请解锁后再重试(排队中的发送不会被消耗)'
+  }
+  if (/not clickable/i.test(raw)) {
+    return '微信窗口不可点击(可能已移出屏幕/被遮挡/太小):请把微信窗口摆好后再重试'
+  }
+  if (/body text is not in the chat input/i.test(raw)) {
+    return '正文没能进到聊天输入框(回车未按下,什么都没发出):请重试;若反复出现请检查微信是否卡住'
+  }
+  if (/user is actively typing/i.test(raw)) {
+    return '检测到你正在操作,这次发送已让路(避免和你的输入打架):等你停下来再点一次即可'
+  }
+  if (/user took the mouse/i.test(raw)) {
+    return '发送过程中鼠标被移走了,已中止(还没输入任何内容):请勿在发送期间操作,稍后重试'
   }
   if (/multiple wechat windows/i.test(raw)) {
     // 脚本只在「真的多开」(多个微信进程各有一个主窗口)时返回,并带上实例明细:
@@ -138,6 +183,7 @@ export async function sendToChat(
   // 会话名过长时截断（搜索框有长度限制）
   const target = targetName.length > 30 ? targetName.slice(0, 30) : targetName
   const namesFile = writeNamesFile(ctx.names)
+  clearPhase()
   try {
     const args = [
       '-Action',
@@ -161,6 +207,9 @@ export async function sendToChat(
       opened: r.opened as string | undefined
     }
   } catch (e) {
+    // 超时/被杀:脚本可能已经把回车按下去了,这种状态不能重试
+    const phase = readPhase()
+    if (phase === 'enter' || phase === 'done') return unknownStateResult()
     const raw = e instanceof Error ? e.message : String(e)
     return { ok: false, error: humanizeInjectError(raw) ?? raw }
   } finally {
@@ -213,6 +262,7 @@ export async function sendFileToChat(
   if (err) return { ok: false, error: err }
   const target = targetName.length > 30 ? targetName.slice(0, 30) : targetName
   const namesFile = writeNamesFile(ctx.names)
+  clearPhase()
   try {
     const args = [
       '-Action',
@@ -238,6 +288,8 @@ export async function sendFileToChat(
       opened: r.opened as string | undefined
     }
   } catch (e) {
+    const phase = readPhase()
+    if (phase === 'enter' || phase === 'done') return unknownStateResult()
     const raw = e instanceof Error ? e.message : String(e)
     return { ok: false, error: humanizeInjectError(raw) ?? raw }
   } finally {

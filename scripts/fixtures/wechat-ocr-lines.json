@@ -293,5 +293,57 @@
     "最常使用 (real label)",
     "常使用 (OCR dropped the first char)",
     "常用"
+  ],
+  "_topBandLines": "real capture (window 802x771): icon rail glyph, search box row, two icon noises, conversation header, first message, first session-list row",
+  "topBandLines": [
+    {
+      "text": "0",
+      "x": 20,
+      "y": 48,
+      "w": 36,
+      "h": 30
+    },
+    {
+      "text": "Q ，",
+      "x": 88,
+      "y": 50,
+      "w": 23,
+      "h": 12
+    },
+    {
+      "text": "O",
+      "x": 395,
+      "y": 47,
+      "w": 18,
+      "h": 18
+    },
+    {
+      "text": "前 后 惴 小 伙 伴 （ 1 1 ）",
+      "x": 446,
+      "y": 48,
+      "w": 112,
+      "h": 14
+    },
+    {
+      "text": "0 贺 玲 ： [ 文 件 ] 供 应 “ ． 〉",
+      "x": 446,
+      "y": 86,
+      "w": 144,
+      "h": 14
+    },
+    {
+      "text": "0",
+      "x": 724,
+      "y": 48,
+      "w": 10,
+      "h": 14
+    },
+    {
+      "text": "前 后 端 小 伙 伴",
+      "x": 126,
+      "y": 96,
+      "w": 84,
+      "h": 12
+    }
   ]
 }

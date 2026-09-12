@@ -187,7 +187,11 @@ async function verifyFileSend(
  */
 function isRetryableInjectError(error: string | undefined): boolean {
   if (!error) return false
-  return /焦点被抢|剪贴板|未检测到微信窗口|未在限时内响应|超时|微信搜索框没能打开|截图\/识别失败|focus stolen|clipboard busy|window not found|search box did not open|wrong chat opened|screenshot failed|ocr failed|timed? ?out/i.test(
+  // 状态未知(可能已经发出去了)绝不重试:那样就是重复消息
+  if (/状态未知/.test(error)) return false
+  // 「正文没进输入框」「窗口不可点击」都发生在回车之前 → 重试是安全的；
+  // 锁屏不算错误而是环境问题,重试多半还是锁着,交人工。
+  return /焦点被抢|剪贴板|未检测到微信窗口|未在限时内响应|超时|微信搜索框没能打开|截图\/识别失败|正文没能进到聊天输入框|微信窗口不可点击|focus stolen|clipboard busy|window not found|search box did not open|wrong chat opened|screenshot failed|ocr failed|body text is not in the chat input|not clickable|timed? ?out/i.test(
     error
   )
 }

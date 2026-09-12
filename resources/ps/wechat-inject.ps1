@@ -73,6 +73,8 @@ public class Win32 {
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
   [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+  [StructLayout(LayoutKind.Sequential)] public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+  [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
   [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
   [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr h);
   [DllImport("user32.dll")] private static extern void SwitchToThisWindow(IntPtr h, bool alt);
@@ -112,6 +114,16 @@ public class Win32 {
   }
 
   public static long GetForeground() { return GetForegroundWindow().ToInt64(); }
+
+  // Milliseconds since the last keyboard/mouse input of ANY source. Used to stand back
+  // while the operator is working: typing into a window we are also driving ends up with
+  // their characters inside our search box (and our click inside their workflow).
+  public static int IdleMs() {
+    var li = new LASTINPUTINFO();
+    li.cbSize = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO));
+    if (!GetLastInputInfo(ref li)) { return int.MaxValue; }
+    return unchecked((int)((uint)Environment.TickCount - li.dwTime));
+  }
 
   // SetForegroundWindow is refused while our process sits in the background (the user
   // just clicked Send in the app, so it IS in the background). Raising the window
@@ -156,21 +168,57 @@ function Invoke-ClipboardWithRetry([scriptblock]$fn) {
   return $false
 }
 
+# Text we last put on the clipboard. Restoring the operator's clipboard must only happen
+# while OUR text is still there - anything else means they copied something new meanwhile.
+$script:WxLastClipText = ''
+
+function Set-WxTextClipboard {
+  param([string]$Text)
+  if (-not (Invoke-ClipboardWithRetry { [System.Windows.Forms.Clipboard]::SetText($Text) })) { return $false }
+  $script:WxLastClipText = $Text
+  return $true
+}
+
 function Set-ImageFileClipboard([string]$p) {
   $img = [System.Drawing.Image]::FromFile($p)
   try { [System.Windows.Forms.Clipboard]::SetImage($img) } finally { $img.Dispose() }
+  $script:WxLastClipText = ''
 }
 
 function Set-FileDropClipboard([string]$p) {
   $list = New-Object System.Collections.Specialized.StringCollection
   [void]$list.Add($p)
   [System.Windows.Forms.Clipboard]::SetFileDropList($list)
+  $script:WxLastClipText = ''
 }
 
 function KeyDown([int]$vk) { [void][Win32]::keybd_event([byte]$vk, 0, 0, [UIntPtr]::Zero) }
 function KeyUp([int]$vk)   { [void][Win32]::keybd_event([byte]$vk, 0, 2, [UIntPtr]::Zero) }
 
-function Send-KeySeq([string]$seq) {
+# Empty whatever input currently has the keyboard (the search box keeps the previous
+# query, and a chat keeps a draft). Ctrl+A alone is not dependable inside WeChat's
+# inputs, so the sweep of backspaces is what actually guarantees an empty field.
+function Clear-WxField {
+  Send-KeySeq 'ctrl+a'
+  Start-WxPause -Base 170 -Spread 70 -Hesitate $false
+  Send-KeySeq 'delete'
+  Start-WxPause -Base 130 -Spread 60 -Hesitate $false
+  # Ctrl+A + Delete is not dependable inside WeChat inputs; sweep whatever is left with
+  # backspaces (sent in a fast burst, the way a held-down Backspace behaves).
+  Send-KeySeq (('backspace,' * 24).TrimEnd(',')) -Quick
+  Start-WxPause -Base 170 -Spread 80 -Hesitate $false
+}
+
+# Send the keystrokes the way a hand does: a key is held for tens of milliseconds, the
+# gap to the next key is not constant, and roughly every eighth action there is a short
+# "hesitation" pause. Everything still happens inside the same window, so the flow is
+# not slower in any way that matters - it just stops looking like a metronome.
+function Send-KeySeq {
+  param([string]$seq, [switch]$Quick)
+  # Quick is for bulk repeats (the backspace sweep): a human holding Backspace deletes
+  # in a burst, so those must NOT be paced like deliberate key presses.
+  $hold = 45; $gap = 30; $modHold = 18; $modGap = 25
+  if ($Quick) { $hold = 14; $gap = 10; $modHold = 8; $modGap = 8 }
   foreach ($k in $seq -split ',') {
     $k = $k.Trim().ToLower()
     if ($k -eq '') { continue }
@@ -179,28 +227,93 @@ function Send-KeySeq([string]$seq) {
       $keyVk = $VK[$Matches[2].Trim()]
       if ($null -eq $keyVk) { continue }
       KeyDown $modVk
+      Start-Sleep -Milliseconds (Get-WxJitter -Base $modHold -Spread ([int]($modHold / 2)))
       KeyDown $keyVk
+      Start-Sleep -Milliseconds (Get-WxJitter -Base $hold -Spread ([int]($hold / 2)))
       KeyUp $keyVk
+      Start-Sleep -Milliseconds (Get-WxJitter -Base $modGap -Spread ([int]($modGap / 2)))
       KeyUp $modVk
     } else {
       $keyVk = $VK[$k]
       if ($null -eq $keyVk) { continue }
       KeyDown $keyVk
+      Start-Sleep -Milliseconds (Get-WxJitter -Base $hold -Spread ([int]($hold / 2)))
       KeyUp $keyVk
     }
+    Start-Sleep -Milliseconds (Get-WxJitter -Base $gap -Spread ([int]($gap / 2)))
+  }
+  if ((-not $Quick) -and (Get-Random -Minimum 1 -Maximum 9) -eq 1) {
+    Start-Sleep -Milliseconds (Get-WxJitter -Base 380 -Spread 220)
   }
 }
 
-# Empty whatever input currently has the keyboard (the search box keeps the previous
-# query, and a chat keeps a draft). Ctrl+A alone is not dependable inside WeChat's
-# inputs, so the sweep of backspaces is what actually guarantees an empty field.
-function Clear-WxField {
-  Send-KeySeq 'ctrl+a'
-  Start-Sleep -Milliseconds 150
-  Send-KeySeq 'delete'
-  Start-Sleep -Milliseconds 100
-  for ($i = 0; $i -lt 30; $i++) { Send-KeySeq 'backspace' }
-  Start-Sleep -Milliseconds 150
+# Did the operator take the mouse away from where we left it? Checked right before the
+# body goes in, so backing off costs nothing (nothing has been typed into the chat yet).
+function Test-WxCursorMoved {
+  param([int[]]$Origin, [int]$Tolerance = 60)
+  if ($null -eq $Origin -or $Origin.Count -lt 2) { return $false }
+  $now = [WxUi32]::Cursor()
+  return ([Math]::Abs($now[0] - $Origin[0]) -gt $Tolerance -or [Math]::Abs($now[1] - $Origin[1]) -gt $Tolerance)
+}
+
+# Where the send currently is, written next to the screenshots. If the process is killed
+# (the caller's 30s timeout) the app can read it and tell "nothing was typed yet" from
+# "Enter was already pressed" - the difference between a safe retry and a duplicate message.
+function Set-WxPhase {
+  param([string]$ShotDir, [string]$Phase)
+  if ([string]::IsNullOrWhiteSpace($ShotDir)) { return }
+  try { [System.IO.File]::WriteAllText((Join-Path $ShotDir 'wx-phase.txt'), $Phase) } catch { }
+}
+
+# Keep the operator's clipboard: the injection needs it for the session name and the
+# body, but silently eating whatever they had copied is both rude and a real bug when
+# they are about to paste it themselves.
+function Save-WxClipboard {
+  try {
+    if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
+      return @{ kind = 'image'; data = [System.Windows.Forms.Clipboard]::GetImage() }
+    }
+    if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) {
+      return @{ kind = 'files'; data = [System.Windows.Forms.Clipboard]::GetFileDropList() }
+    }
+    if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+      return @{ kind = 'text'; data = [System.Windows.Forms.Clipboard]::GetText() }
+    }
+  } catch { }
+  return $null
+}
+
+# Only put it back if the clipboard still holds what WE put there - if the operator
+# copied something in the meantime, theirs wins.
+function Restore-WxClipboard {
+  param($Saved, [string]$OurText = '')
+  if ($null -eq $Saved) { return }
+  if ([string]::IsNullOrEmpty($OurText)) { $OurText = $script:WxLastClipText }
+  if ($Saved.kind -eq 'text') {
+    # put it back only while our own text is still on the clipboard
+    $now = ''
+    try { $now = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+    if (-not [string]::IsNullOrEmpty($OurText) -and $now -ne $OurText) { return }
+    if ([string]::IsNullOrEmpty($OurText) -and $now -ne '') { return }
+  }
+  try {
+    if ($Saved.kind -eq 'image') { [System.Windows.Forms.Clipboard]::SetImage($Saved.data) }
+    elseif ($Saved.kind -eq 'files') { [System.Windows.Forms.Clipboard]::SetFileDropList($Saved.data) }
+    else { [System.Windows.Forms.Clipboard]::SetText([string]$Saved.data) }
+  } catch { }
+}
+
+# Stand back while the operator is typing/clicking. A background send that fights the
+# person in front of the screen is how focus-steal failures (and stray characters in the
+# search box) happen in the first place.
+function Wait-WxUserIdle {
+  param([int]$MinIdleMs = 1200, [int]$TimeoutMs = 8000)
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  while ($sw.ElapsedMilliseconds -lt $TimeoutMs) {
+    if ([Win32]::IdleMs() -ge $MinIdleMs) { return $true }
+    Start-Sleep -Milliseconds 250
+  }
+  return ([Win32]::IdleMs() -ge $MinIdleMs)
 }
 
 # Text that came out of OCR goes into error messages: drop quotes/braces and cap the
@@ -307,38 +420,100 @@ function Open-WxSession {
   if (-not (Initialize-WxOcr)) {
     return @{ ok = $false; error = 'OCR unavailable (Windows Chinese OCR language feature is missing)' }
   }
+  # Locked workstation: there is no desktop to read or click, and every screenshot would
+  # come back black. Say so instead of failing with a confusing cascade.
+  if ([Win32]::GetForegroundWindow() -eq [IntPtr]::Zero) {
+    return @{ ok = $false; error = 'Workstation is locked' }
+  }
 
-  # Bring the window up and open its search box.
-  # Measured behaviour of WeChat 4.x (Qt): SetForegroundWindow is refused for a
-  # background process - and even when it "succeeds" the client never gets its real
-  # activation, so it silently swallows every keystroke. A mouse click is what
-  # activates it, so the search box is opened by clicking it instead of Ctrl+F.
+  # Stand back while the operator is working: taking the keyboard away from someone who
+  # is typing is how their characters end up in our search box (and how "focus stolen"
+  # happens). Wait for a pause, and give up rather than fight them.
+  if (-not (Wait-WxUserIdle -MinIdleMs 1200 -TimeoutMs 6000)) {
+    return @{ ok = $false; error = 'User is actively typing, send postponed' }
+  }
+
+  Set-WxPhase -ShotDir $ShotDir -Phase 'searching'
+  # Bring the window up, then open its search box the way a person would.
+  #
+  # Measured behaviour of WeChat 4.x (Qt), all of it load-bearing:
+  #  - SetForegroundWindow is refused for a background process, and even when it
+  #    "succeeds" the client never gets its real activation: it silently swallows keys.
+  #  - a mouse click IS the activation, but the click that activates a background window
+  #    is consumed by the activation itself and never reaches the widget underneath.
+  #    (In production WeChat sits behind the app, so that first click is ALWAYS eaten -
+  #    which is exactly why "click the search box once" used to do nothing.)
+  # So: click a harmless spot to activate, then click the search box for real.
   Restore-WeChatWindow $hwnd
   [Win32]::Raise($hwnd)
   [void][Win32]::SetForegroundWindow($hwnd)
-  Start-Sleep -Milliseconds 300
+  Start-WxPause -Base 320 -Spread 120 -Hesitate $false
   $rect = [WxUi32]::Rect($hwnd)
-  # top-left of the middle pane: the search box sits just right of the icon rail
-  Invoke-WxClick -X ($rect[0] + 130) -Y ($rect[1] + 52)
-  Start-Sleep -Milliseconds 600
+  # Find the search box by looking at the window, not by assuming a fixed offset: the
+  # layout moves between versions, window sizes and pane widths, and a stale offset means
+  # clicking somewhere that is not the field at all. The fallback offset is kept as a
+  # second opinion for the retry below.
+  $fallback = Resolve-WxClickPoint -Rect $rect -X ($rect[0] + 130) -Y ($rect[1] + 52) -OwnerPid $Win.pid
+  $boxPt = $null
+  $boxSource = 'fallback'
+  $probePath = Join-Path $ShotDir 'wx-before-search.png'
+  $probeShot = Get-WxWindowShot -Hwnd ([int64]$Win.hwnd) -OutPath $probePath
+  if ($null -ne $probeShot) {
+    $probeLines = Get-WxOcrLines -Path $probeShot.path -Scale $probeShot.scale
+    if ($null -ne $probeLines) {
+      $boxLine = Find-WxSearchBoxLine -Lines @($probeLines) -WinW $rect[2] -WinH $rect[3]
+      if ($null -ne $boxLine) {
+        $boxPt = Resolve-WxClickPoint -Rect $rect -X ($rect[0] + $boxLine.x + 24) -Y ($rect[1] + $boxLine.y + [int]($boxLine.h / 2)) -OwnerPid $Win.pid
+        if ($null -ne $boxPt) { $boxSource = 'ocr' }
+      }
+    }
+  }
+  if ($null -eq $boxPt) { $boxPt = $fallback }
+  if ($null -eq $boxPt) { return @{ ok = $false; error = 'WeChat search box is not clickable (window too small or covered)' } }
+  $searchX = $boxPt[0]
+  $searchY = $boxPt[1]
+  $atClick = [WxUi32]::At($searchX, $searchY)
+  # First click activates the window (that click is eaten by the activation), the second
+  # one really opens and focuses the field - so no separate title-bar click is needed.
+  Invoke-WxClick -X $searchX -Y $searchY
+  Start-WxPause -Base 800 -Spread 250 -Hesitate $false
+  Invoke-WxClick -X $searchX -Y $searchY
+  Start-WxPause -Base 620 -Spread 180 -Hesitate $false
+  # Diagnostics: did that first click actually open the dropdown? (If the click was eaten
+  # by window activation this is False, and the shot below shows exactly what happened.)
+  $openAfterClick = $false
+  $afterClickPath = Join-Path $ShotDir 'wx-after-click.png'
+  $shot0 = Get-WxWindowShot -Hwnd ([int64]$Win.hwnd) -OutPath $afterClickPath
+  if ($null -ne $shot0) {
+    $lines0 = Get-WxOcrLines -Path $shot0.path -Scale $shot0.scale
+    if ($null -ne $lines0) { $openAfterClick = Test-WxSearchDropdown -Lines @($lines0) }
+  }
 
   $shot = $null
   $row = $null
   $sawDropdown = $false
-  for ($attempt = 1; $attempt -le 2; $attempt++) {
-    if ($attempt -gt 1) {
-      # The click may have missed (layout/DPI): fall back to the keyboard shortcut.
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    if ($attempt -eq 2) {
+      # The OCR point may have been the wrong run: try the classic offset instead.
+      if ($null -ne $fallback -and ($fallback[0] -ne $searchX -or $fallback[1] -ne $searchY)) {
+        Invoke-WxClick -X $fallback[0] -Y $fallback[1]
+      } else {
+        Invoke-WxClick -X $searchX -Y $searchY
+      }
+      Start-WxPause -Base 620 -Spread 180 -Hesitate $false
+    } elseif ($attempt -gt 2) {
+      # Last resort: the keyboard shortcut.
       Send-KeySeq 'esc'
-      Start-Sleep -Milliseconds 200
+      Start-WxPause -Base 220 -Spread 90 -Hesitate $false
       Send-KeySeq 'ctrl+f'
-      Start-Sleep -Milliseconds 500
+      Start-WxPause -Base 520 -Spread 160 -Hesitate $false
     }
     Clear-WxField
-    if (-not (Invoke-ClipboardWithRetry { [System.Windows.Forms.Clipboard]::SetText($Target) })) {
+    if (-not (Set-WxTextClipboard -Text $Target)) {
       return @{ ok = $false; error = 'Clipboard busy (target)' }
     }
     Send-KeySeq 'ctrl+v'
-    Start-Sleep -Milliseconds 900
+    Start-WxPause -Base 900 -Spread 250
 
     if ([Win32]::GetForegroundWindow() -ne $hwnd) {
       return @{ ok = $false; error = 'Focus stolen, send cancelled' }
@@ -349,28 +524,36 @@ function Open-WxSession {
     $lines = Get-WxOcrLines -Path $shot.path -Scale $shot.scale
     if ($null -eq $lines) { return @{ ok = $false; error = 'OCR failed on the search screenshot' } }
 
-    # The search box has to hold OUR text before the rows mean anything.
-    $boxOk = $false
+    # Did the query land? Do NOT ask the input field: OCR of that one line is not reliable
+    # (it regularly reads as the magnifier glyph only, while the text it contains shows up
+    # in the result rows instead). The dropdown's own rows are the honest signal:
+    #   - a row we can click, or
+    #   - any row that resembles the target  => the typed text got through.
+    $dropdownOpen = Test-WxSearchDropdown -Lines @($lines)
+    $queryLanded = $false
     foreach ($l in @($lines)) {
-      if ($l.y -le 80 -and $l.x -le 320 -and (Test-WxSearchBoxMatches -Text $l.text -Target $Target)) {
-        $boxOk = $true
+      if ($l.y -le 100) { continue }
+      if ((Get-WxNameScore $l.text $Target) -ge 0.5) { $queryLanded = $true }
+    }
+    if ($dropdownOpen) {
+      $row = Select-WxSearchRow -Lines @($lines) -Target $Target -IsGroup $IsGroup
+      if ($null -ne $row -or $queryLanded) {
+        $sawDropdown = $true
+        break
       }
     }
-    if ($boxOk -and (Test-WxSearchDropdown -Lines @($lines))) {
-      $sawDropdown = $true
-      $row = Select-WxSearchRow -Lines @($lines) -Target $Target -IsGroup $IsGroup
-      break
-    }
-    if ($boxOk) {
-      # Text is in the box but no result section: the target really has no match.
-      $sawDropdown = $true
-      break
+    $lastBoxText = ''
+    foreach ($l in @($lines)) {
+      if ($l.y -le 80 -and $l.x -le 320) { $lastBoxText = $lastBoxText + ' ' + $l.text }
     }
     [void][Win32]::SetForegroundWindow($hwnd)
     Start-Sleep -Milliseconds 250
   }
   if (-not $sawDropdown) {
-    return @{ ok = $false; error = 'Search box did not open in WeChat' }
+    $diag = ' (clicked at ' + $searchX + ',' + $searchY + ' [' + $boxSource + '] -> ' + (ConvertTo-WxMsgText $atClick) +
+            '; openedAfterClick=' + $openAfterClick + '; box=[' + (ConvertTo-WxMsgText $lastBoxText) +
+            ']; attempts=' + $attempt + ')'
+    return @{ ok = $false; error = ('Search box did not open in WeChat' + $diag) }
   }
   if ($null -eq $row) {
     # Diagnostics stay in the raw error; the app shows a humanized Chinese message.
@@ -384,10 +567,13 @@ function Open-WxSession {
     return @{ ok = $false; error = ('Target row not found in search results (box=[' + (ConvertTo-WxMsgText $boxText) + '] lines=' + @($lines).Count + ' seen=' + (ConvertTo-WxMsgText $seen) + ')') }
   }
 
-  $clickX = $shot.rect[0] + $row.x + 40
-  $clickY = $shot.rect[1] + $row.y + [int]($row.h / 2)
-  Invoke-WxClick -X $clickX -Y $clickY
-  Start-Sleep -Milliseconds 900
+  $rowPoint = Resolve-WxClickPoint -Rect $shot.rect -X ($shot.rect[0] + $row.x + 40) -Y ($shot.rect[1] + $row.y + [int]($row.h / 2)) -OwnerPid $Win.pid
+  if ($null -eq $rowPoint) { return @{ ok = $false; error = 'Search result row is not clickable (window moved?)' } }
+  Invoke-WxClick -X $rowPoint[0] -Y $rowPoint[1]
+  # Remember where the pointer came to rest: used later to notice the operator grabbing
+  # the mouse mid-send (in which case we back off instead of fighting them).
+  $cursorAfterClick = [WxUi32]::Cursor()
+  Start-WxPause -Base 900 -Spread 260
 
   if ([Win32]::GetForegroundWindow() -ne $hwnd) {
     return @{ ok = $false; error = 'Focus stolen, send cancelled' }
@@ -407,30 +593,64 @@ function Open-WxSession {
            ' (score ' + $direct + ', closest known session "' + (ConvertTo-WxMsgText $m.bestName) + '" ' + $other + ')'
     return @{ ok = $false; error = $err }
   }
-  return @{ ok = $true; opened = (ConvertTo-WxMsgText $m.text); score = $direct }
+  Set-WxPhase -ShotDir $ShotDir -Phase 'opened'
+  return @{
+    ok = $true; opened = (ConvertTo-WxMsgText $m.text); score = $direct
+    cursor = $cursorAfterClick; box = $boxSource
+  }
 }
 
 # Full text injection: open the session (verified) -> paste body -> Enter.
 function Invoke-SendText {
   param($Win, [string]$Target, [string]$Text, $Open)
 
-  $opened = Open-WxSession -Win $Win -Target $Target -IsGroup $Open.isGroup -Names $Open.names -ShotDir $Open.shotDir
-  if (-not $opened.ok) { return $opened }
+  $shotDir = $Open.shotDir
+  Set-WxPhase -ShotDir $shotDir -Phase 'start'
+  $savedClip = Save-WxClipboard
+  try {
+    $opened = Open-WxSession -Win $Win -Target $Target -IsGroup $Open.isGroup -Names $Open.names -ShotDir $shotDir
+    if (-not $opened.ok) { return $opened }
 
-  $hwnd = [IntPtr]([int64]$Win.hwnd)
-  if ([Win32]::GetForegroundWindow() -ne $hwnd) {
-    return @{ ok = $false; error = 'Focus stolen, send cancelled' }
+    $hwnd = [IntPtr]([int64]$Win.hwnd)
+    if ([Win32]::GetForegroundWindow() -ne $hwnd) {
+      return @{ ok = $false; error = 'Focus stolen, send cancelled' }
+    }
+    if (Test-WxCursorMoved -Origin $opened.cursor -Tolerance 60) {
+      return @{ ok = $false; error = 'User took the mouse during send, cancelled' }
+    }
+
+    # The chat input owns the keyboard after a chat is opened. Clearing it first keeps a
+    # leftover draft out of the message (and off the customer's screen).
+    Clear-WxField
+    if (-not (Set-WxTextClipboard -Text $Text)) {
+      return @{ ok = $false; error = 'Clipboard busy (text)' }
+    }
+    Set-WxPhase -ShotDir $shotDir -Phase 'typing'
+    Send-KeySeq 'ctrl+v'
+    Start-WxPause -Base 420 -Spread 170
+    # Read the chat input back before pressing Enter: Enter is the point of no return, and
+    # an empty or wrong input is either a silent no-send or somebody else's leftover text.
+    $rect = [WxUi32]::Rect($hwnd)
+    $beforeEnter = Join-Path $shotDir 'wx-before-enter.png'
+    $shotB = Get-WxWindowShot -Hwnd ([int64]$Win.hwnd) -OutPath $beforeEnter
+    if ($null -eq $shotB) { return @{ ok = $false; error = 'Screenshot failed' } }
+    $linesB = Get-WxOcrLines -Path $shotB.path -Scale $shotB.scale
+    if ($null -eq $linesB) { return @{ ok = $false; error = 'OCR failed on the input screenshot' } }
+    $paneLeft = Find-WxPaneLeft -Lines @($linesB) -WinW $rect[2] -WinH $rect[3]
+    if (-not (Test-WxComposerHasBody -Lines @($linesB) -Text $Text -WinW $rect[2] -WinH $rect[3] -PaneLeft $paneLeft)) {
+      Send-KeySeq 'esc'
+      return @{ ok = $false; error = 'Body text is not in the chat input, Enter not pressed' }
+    }
+    # Past this point the message is going out: the phase file is what tells the app that
+    # a killed/timed-out process must NOT be retried blindly.
+    Set-WxPhase -ShotDir $shotDir -Phase 'enter'
+    Send-KeySeq 'enter'
+    Set-WxPhase -ShotDir $shotDir -Phase 'done'
+    return @{ ok = $true; title = $Win.title; sent = $true; opened = $opened.opened }
+  } finally {
+    Start-WxPause -Base 320 -Spread 160 -Hesitate $false
+    Restore-WxClipboard -Saved $savedClip
   }
-  # The chat input owns the keyboard after a chat is opened. Clearing it first keeps a
-  # leftover draft out of the message (and off the customer's screen).
-  Clear-WxField
-  if (-not (Invoke-ClipboardWithRetry { [System.Windows.Forms.Clipboard]::SetText($Text) })) {
-    return @{ ok = $false; error = 'Clipboard busy (text)' }
-  }
-  Send-KeySeq 'ctrl+v'
-  Start-Sleep -Milliseconds 400
-  Send-KeySeq 'enter'
-  return @{ ok = $true; title = $Win.title; sent = $true; opened = $opened.opened }
 }
 
 # One file/image: open the session (verified) -> clipboard(bitmap|file list) -> paste -> Enter
@@ -440,33 +660,47 @@ function Invoke-SendFile {
   if (-not (Test-Path -LiteralPath $Path)) {
     return @{ ok = $false; error = 'File not found: ' + $Path }
   }
-  $opened = Open-WxSession -Win $Win -Target $Target -IsGroup $Open.isGroup -Names $Open.names -ShotDir $Open.shotDir
-  if (-not $opened.ok) { return $opened }
+  $shotDir = $Open.shotDir
+  Set-WxPhase -ShotDir $shotDir -Phase 'start'
+  $savedClip = Save-WxClipboard
+  try {
+    $opened = Open-WxSession -Win $Win -Target $Target -IsGroup $Open.isGroup -Names $Open.names -ShotDir $shotDir
+    if (-not $opened.ok) { return $opened }
 
-  $hwnd = [IntPtr]([int64]$Win.hwnd)
-  if ([Win32]::GetForegroundWindow() -ne $hwnd) {
-    return @{ ok = $false; error = 'Focus stolen, send cancelled' }
-  }
-
-  # Clear a leftover draft first: the file has to be the only thing in the message.
-  Clear-WxField
-
-  $ext = [System.IO.Path]::GetExtension($Path).ToLower()
-  $pasteAsImage = ($FileKind -eq 'image') -and ($ext -in '.png', '.jpg', '.jpeg', '.bmp', '.gif')
-  if ($pasteAsImage) {
-    Add-Type -AssemblyName System.Drawing
-    if (-not (Invoke-ClipboardWithRetry { Set-ImageFileClipboard $Path })) {
-      return @{ ok = $false; error = 'Clipboard busy (image)' }
+    $hwnd = [IntPtr]([int64]$Win.hwnd)
+    if ([Win32]::GetForegroundWindow() -ne $hwnd) {
+      return @{ ok = $false; error = 'Focus stolen, send cancelled' }
     }
-  } else {
-    if (-not (Invoke-ClipboardWithRetry { Set-FileDropClipboard $Path })) {
-      return @{ ok = $false; error = 'Clipboard busy (file)' }
+    if (Test-WxCursorMoved -Origin $opened.cursor -Tolerance 60) {
+      return @{ ok = $false; error = 'User took the mouse during send, cancelled' }
     }
+
+    # Clear a leftover draft first: the file has to be the only thing in the message.
+    Clear-WxField
+
+    $ext = [System.IO.Path]::GetExtension($Path).ToLower()
+    $pasteAsImage = ($FileKind -eq 'image') -and ($ext -in '.png', '.jpg', '.jpeg', '.bmp', '.gif')
+    if ($pasteAsImage) {
+      Add-Type -AssemblyName System.Drawing
+      if (-not (Invoke-ClipboardWithRetry { Set-ImageFileClipboard $Path })) {
+        return @{ ok = $false; error = 'Clipboard busy (image)' }
+      }
+    } else {
+      if (-not (Invoke-ClipboardWithRetry { Set-FileDropClipboard $Path })) {
+        return @{ ok = $false; error = 'Clipboard busy (file)' }
+      }
+    }
+    Set-WxPhase -ShotDir $shotDir -Phase 'typing'
+    Send-KeySeq 'ctrl+v'
+    Start-WxPause -Base ($(if ($pasteAsImage) { 1200 } else { 900 })) -Spread 250
+    Set-WxPhase -ShotDir $shotDir -Phase 'enter'
+    Send-KeySeq 'enter'
+    Set-WxPhase -ShotDir $shotDir -Phase 'done'
+    return @{ ok = $true; title = $Win.title; sent = $true; asImage = $pasteAsImage; opened = $opened.opened }
+  } finally {
+    Start-WxPause -Base 320 -Spread 160 -Hesitate $false
+    Restore-WxClipboard -Saved $savedClip
   }
-  Send-KeySeq 'ctrl+v'
-  Start-Sleep -Milliseconds ($(if ($pasteAsImage) { 1200 } else { 900 }))
-  Send-KeySeq 'enter'
-  return @{ ok = $true; title = $Win.title; sent = $true; asImage = $pasteAsImage; opened = $opened.opened }
 }
 
 # Session names the app knows (one per line, UTF-8): used to tell the chat we opened
@@ -528,7 +762,14 @@ try {
         shotDir = $shotDir
       }
       if ($Action -eq 'open') {
-        $out = Open-WxSession -Win $win -Target $Target -IsGroup $open.isGroup -Names $open.names -ShotDir $open.shotDir
+        # diagnostics use the clipboard too - do not eat whatever the operator had copied
+        $saved = Save-WxClipboard
+        try {
+          $out = Open-WxSession -Win $win -Target $Target -IsGroup $open.isGroup -Names $open.names -ShotDir $open.shotDir
+        } finally {
+          Start-WxPause -Base 200 -Spread 100 -Hesitate $false
+          Restore-WxClipboard -Saved $saved
+        }
       } elseif ($Action -eq 'send') {
         $out = Invoke-SendText -Win $win -Target $Target -Text $Text -Open $open
       } else {
