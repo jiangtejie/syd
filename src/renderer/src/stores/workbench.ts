@@ -22,19 +22,34 @@ export type DataSource = 'wx' | 'empty'
 
 /** 工作台页面（应用外壳导航） */
 export type WorkbenchPage =
-  | 'workbench'
-  | 'monitor'
-  | 'chat'
-  | 'customers'
-  | 'duty'
-  | 'dashboard'
-  | 'settings'
-  | 'export'
-  | 'growth'
+  'workbench' | 'monitor' | 'chat' | 'customers' | 'duty' | 'settings' | 'export' | 'growth'
+
+/** 「监控」下的两个页签（原「问题监控」与「运营看板」两页合并为一个导航项） */
+export type MonitorTab = 'issues' | 'ops'
+
+const MONITOR_TAB_KEY = 'cs.monitorTab'
+
+function readMonitorTab(): MonitorTab {
+  try {
+    return localStorage.getItem(MONITOR_TAB_KEY) === 'ops' ? 'ops' : 'issues'
+  } catch {
+    return 'issues'
+  }
+}
+
+function persistMonitorTab(tab: MonitorTab): void {
+  try {
+    localStorage.setItem(MONITOR_TAB_KEY, tab)
+  } catch {
+    /* 隐私模式等场景下写不了，忽略 */
+  }
+}
 
 interface WorkbenchState {
   /** 当前页面 */
   page: WorkbenchPage
+  /** 监控页当前页签（问题监控 / 运营看板）；记忆在 localStorage，重开停在原页签 */
+  monitorTab: MonitorTab
   /** 当前微信账号 wxid */
   wxid: string | null
   /** 数据来源（mock=示例数据 / wx=真实微信库） */
@@ -145,6 +160,7 @@ interface WorkbenchState {
   locateIssueAt: (sessionId: string, targetMs: number) => Promise<void>
   /** 页面导航 */
   setPage: (page: WorkbenchPage) => void
+  setMonitorTab: (tab: MonitorTab) => void
   /** 从客户页/看板跳转到指定会话（切到对话页并选中） */
   gotoSession: (sessionId: string) => void
 }
@@ -212,6 +228,7 @@ let sessionsInFlight: { wxid: string; promise: Promise<void> } | null = null
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   // 启动默认停在左侧导航第一个菜单(App.tsx NAV_ITEMS[0] = AI 工作台)
   page: 'workbench',
+  monitorTab: readMonitorTab(),
   wxid: null,
   source: 'empty',
   sessions: [],
@@ -924,6 +941,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   setPage: (page: WorkbenchPage) => {
     set({ page })
+  },
+
+  setMonitorTab: (tab: MonitorTab) => {
+    persistMonitorTab(tab)
+    set({ monitorTab: tab })
   },
 
   gotoSession: (sessionId: string) => {

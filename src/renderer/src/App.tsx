@@ -7,10 +7,9 @@ import WorkbenchChatPage from './pages/WorkbenchChatPage'
  * 非首屏页面懒加载:此前 9 个页面 + echarts(1.1MB) 全部打进唯一 chunk,
  * 冷启动要解析 4.26MB。默认页(对话/AI 工作台)保持同步加载,其余按需拉取。
  */
-const MonitorPage = lazy(() => import('./pages/MonitorPage'))
+const MonitorShell = lazy(() => import('./pages/MonitorShell'))
 const CustomersPage = lazy(() => import('./pages/CustomersPage'))
 const DutyPage = lazy(() => import('./pages/DutyPage'))
-const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const ExportPage = lazy(() => import('./pages/ExportPage'))
 const GrowthPage = lazy(() => import('./pages/GrowthPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
@@ -32,15 +31,7 @@ import './pages/shell.css'
  */
 
 type NavIconName =
-  | 'workbench'
-  | 'monitor'
-  | 'chat'
-  | 'customers'
-  | 'duty'
-  | 'dashboard'
-  | 'export'
-  | 'growth'
-  | 'settings'
+  'workbench' | 'monitor' | 'chat' | 'customers' | 'duty' | 'export' | 'growth' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -96,15 +87,6 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
           <circle cx="15" cy="13" r="1" />
         </svg>
       )
-    case 'dashboard':
-      return (
-        <svg {...attrs}>
-          <rect x="3" y="3" width="7" height="7" rx="1.2" />
-          <rect x="14" y="3" width="7" height="7" rx="1.2" />
-          <rect x="14" y="14" width="7" height="7" rx="1.2" />
-          <rect x="3" y="14" width="7" height="7" rx="1.2" />
-        </svg>
-      )
     case 'growth':
       return (
         <svg {...attrs}>
@@ -132,8 +114,8 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
 
 const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }> = [
   { key: 'workbench', icon: 'workbench', label: 'AI' },
+  // 「运营看板」已并入「监控」的页签（见 pages/MonitorShell.tsx），导航不再单列
   { key: 'monitor', icon: 'monitor', label: '监控' },
-  { key: 'dashboard', icon: 'dashboard', label: '运营看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
   { key: 'customers', icon: 'customers', label: '客户' },
   { key: 'duty', icon: 'duty', label: '值班' },
@@ -141,7 +123,8 @@ const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }>
   { key: 'export', icon: 'export', label: '数据' }
 ]
 
-const VALID_PAGES = new Set(NAV_ITEMS.map((i) => i.key))
+/** 可跳转的页面键：导航项 + 历史别名（'dashboard' 现在会落到「监控 · 运营看板」页签） */
+const VALID_PAGES = new Set<string>([...NAV_ITEMS.map((i) => i.key), 'dashboard'])
 
 const wxApi = window.api?.cs?.wx
 
@@ -229,6 +212,7 @@ function NavAccountBadge(): React.JSX.Element {
 function App(): React.JSX.Element {
   const page = useWorkbenchStore((s) => s.page)
   const setPage = useWorkbenchStore((s) => s.setPage)
+  const setMonitorTab = useWorkbenchStore((s) => s.setMonitorTab)
   const sessions = useWorkbenchStore((s) => s.sessions)
   const unread = sessions.reduce((n, s) => n + s.unreadCount, 0)
 
@@ -241,10 +225,18 @@ function App(): React.JSX.Element {
   // 菜单导航（Ctrl+, 打开设置等）
   useEffect(() => {
     const unsubscribe = window.api?.cs?.app?.onNavigate?.((target) => {
-      if (VALID_PAGES.has(target as WorkbenchPage)) setPage(target as WorkbenchPage)
+      if (!VALID_PAGES.has(target)) return
+      // 历史页面键 'dashboard'（页面已并入「监控」）：唯一知道这个别名的地方就是这里，
+      // 类型层不再保留 'dashboard'，以后误用会被编译期拦住。
+      if (target === 'dashboard') {
+        setMonitorTab('ops')
+        setPage('monitor')
+        return
+      }
+      setPage(target as WorkbenchPage)
     })
     return unsubscribe
-  }, [setPage])
+  }, [setPage, setMonitorTab])
 
   // 新问题提示音(全局监听 issue:changed,added>0 即响;开关在 设置→偏好与数据→通用)
   useEffect(() => installIssueAlertSound(), [])
@@ -318,14 +310,7 @@ function App(): React.JSX.Element {
             {page === 'monitor' && (
               <div className="app-page">
                 <Suspense fallback={<PageLoading />}>
-                  <MonitorPage />
-                </Suspense>
-              </div>
-            )}
-            {page === 'dashboard' && (
-              <div className="app-page">
-                <Suspense fallback={<PageLoading />}>
-                  <DashboardPage />
+                  <MonitorShell />
                 </Suspense>
               </div>
             )}

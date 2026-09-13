@@ -532,12 +532,8 @@ function DashboardPage(): React.JSX.Element {
     : 0
 
   return (
-    <div className="page-scroll">
-      <h2 className="page-title">运营看板</h2>
-      <div className="page-subtitle">
-        {source === 'wx' ? '会话与消息指标来自真实微信库' : '未连接微信数据'} ·
-        发送统计为真实审计数据（send_log）
-      </div>
+    <div className="db-page">
+      {/* 页面标题与页签由 MonitorShell 提供；本页的口径脚注留在页尾。注意别用 .db-panel——那是卡片样式 */}
 
       {sendStatus?.halted && (
         <div className="db-alert">

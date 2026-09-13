@@ -47,11 +47,43 @@
   padding-bottom: 24px;
 }
 
+/* ── 监控外壳(pages/MonitorShell.tsx)：标题 + 两个页签 + 只挂载当前面板 ── */
+.mon-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* 页签外观走全局 ui-tab；这里只留本页尺寸（与导出页 exp-tab 同一手法） */
+.mon-tab {
+  font-size: 12.5px;
+  padding: 5px 14px;
+}
+
+/* 面板容器：不可见的作用域钩子，避免与 .db-panel(卡片样式) 撞名 */
+.mon-panel,
+.db-page {
+  min-width: 0;
+}
+
+.mon-loading {
+  padding: 24px 8px;
+  font-size: 13px;
+  color: var(--text-3);
+}
 .mon-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+/* 面板自己的动作条（工具栏 + 同步/AI 状态）：贴在右侧，标题行归外壳 */
+.mon-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 2px;
 }
 
 .mon-toolbar {

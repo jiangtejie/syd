@@ -12,7 +12,7 @@ const PAGE_NAMES: Record<string, string> = {
   chat: '对话',
   customers: '客户',
   duty: '值班',
-  dashboard: '运营看板',
+  // 「运营看板」已并入「监控」页签（见 pages/MonitorShell.tsx），不再有独立页面键
   export: '数据',
   settings: '设置'
 }

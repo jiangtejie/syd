@@ -690,9 +690,9 @@ function MonitorPage(): React.JSX.Element {
   }
 
   return (
-    <div className="page-scroll mon-page">
-      <div className="mon-head">
-        <h2 className="page-title">问题监控</h2>
+    <div className="mon-panel">
+      {/* 页面标题与页签由 MonitorShell 提供，这里只留本页自己的动作条（右对齐，状态贴右） */}
+      <div className="mon-actions">
         <div className="mon-toolbar">
           <select
             className="ui-select mon-select"
