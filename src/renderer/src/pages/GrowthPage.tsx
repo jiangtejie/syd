@@ -148,9 +148,13 @@ export default function GrowthPage(): React.JSX.Element {
           <span className={'gth-seg-hint'}>AI 工作台 = 任务式爆改(对话驱动)</span>
         </div>
       </div>
-      {/* 四个统计卡(仓库素材/采集订阅/媒体文件/数据服务商)说的是"管线健康度"，
-          与「AI 工作台」这一屏要做的事(对话改稿)无关 —— 该页不显示，省下的高度给对话区。 */}
-      {tab === 'ai' ? null : <StatsBar stats={stats} />}
+      {/* 四个统计卡(仓库素材/采集订阅/媒体文件/数据服务商)说的是"采集管线健康度"，
+          只在管线相关的三屏显示(数据服务/采集源/素材仓库)。
+          「AI 工作台」是对话改稿、「舆情」有自己的情绪统计行(gth-buzz-stats)，都不需要这四个卡；
+          AI 工作台省下的高度还给对话区(见 growth-ai.css 的 .gai-page)。 */}
+      {tab === 'provider' || tab === 'sources' || tab === 'warehouse' ? (
+        <StatsBar stats={stats} />
+      ) : null}
       {tab === 'provider' ? (
         <>
           <ProviderPanel onChanged={loadStats} />
