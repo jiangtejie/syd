@@ -41,7 +41,7 @@ function refererFor(platform: string): string {
   return ''
 }
 
-function extOf(url: string, mime: string): string {
+function extFromUrlOrMime(url: string, mime: string): string {
   const fromMime = MIME_EXT[mime]
   if (fromMime) return fromMime
   const m = /\\.(jpe?g|png|webp|gif)(\?|$)/i.exec(url)
@@ -73,7 +73,7 @@ async function downloadOne(
     const buf = Buffer.from(await res.arrayBuffer())
     if (buf.length === 0 || buf.length > MAX_BYTES) return null
     const mime = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
-    const ext = extOf(url, mime)
+    const ext = extFromUrlOrMime(url, mime)
     if (!ext) return null
     const sha = createHash('sha1').update(buf).digest('hex')
     const sub = sha.slice(0, 2)

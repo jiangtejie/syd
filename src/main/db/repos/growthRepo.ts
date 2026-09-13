@@ -161,7 +161,7 @@ export function insertContent(input: {
       input.usage ?? 'ref',
       JSON.stringify(interactions),
       JSON.stringify(input.extra ?? {}),
-      scoreOf(interactions),
+      interactionScoreOf(interactions),
       'new',
       input.note ?? '',
       now,
@@ -171,7 +171,7 @@ export function insertContent(input: {
 }
 
 /** 互动 → 启发式爆款分(权重 Phase 1 支持配置) */
-export function scoreOf(i: GrowthInteractions): number {
+export function interactionScoreOf(i: GrowthInteractions): number {
   return Math.round(i.likes + i.collects * 2 + i.comments * 2 + i.shares * 3)
 }
 

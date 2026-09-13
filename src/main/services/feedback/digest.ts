@@ -3,7 +3,8 @@ import { listIssues } from '../../db/repos/issueRepo'
 import { listTeamMembers } from '../../db/repos/teamRepo'
 import { replyStats } from '../../db/repos/agentReplyRepo'
 import { getFeishuNotifyConfig, sendDigestText } from '../lark/notify'
-import { ageText, renderDigest, type DigestData, type DigestItem } from './digestText'
+import { waitText, renderDigest, type DigestData, type DigestItem } from './digestText'
+import { startOfDay } from '../../../shared/monitorMetrics'
 import { createLogger } from '../logging'
 import type { FeedbackIssue } from '../../../shared/types'
 
@@ -69,12 +70,6 @@ export function setDigestConfig(patch: {
   return { ok: true, config: getDigestConfig() }
 }
 
-function startOfDay(ts: number): number {
-  const d = new Date(ts)
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
-}
-
 function dateKey(ts: number): string {
   const d = new Date(ts)
   const p = (n: number): string => String(n).padStart(2, '0')
@@ -92,7 +87,7 @@ function toItem(i: FeedbackIssue, names: Map<string, string>, now: number): Dige
     group: i.groupName || i.groupUsername,
     type: i.type,
     title: (i.title ?? '').slice(0, 30),
-    ageText: ageText(now - i.occurAt),
+    waitText: waitText(now - i.occurAt),
     assignee: i.assignee ? names.get(i.assignee) || i.assignee : undefined
   }
 }

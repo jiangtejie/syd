@@ -17,6 +17,7 @@ import { larkCall } from './client'
 import { mapFieldName, FieldMap } from './baseMapping'
 import { clearAttached, clearMediaRefs } from '../../db/repos/larkMediaRepo'
 import { parseLarkRef } from './url'
+import { fetchFields, invalidateFields } from './fields'
 import { createLogger } from '../logging'
 
 export const syncLog = createLogger('lark')
@@ -269,21 +270,8 @@ export async function listFields(
   appToken: string,
   tableId: string
 ): Promise<Array<{ name: string; type: number; primary: boolean }>> {
-  const r = await larkCall<{
-    items?: Array<{ field_name?: string; type?: number; is_primary?: boolean }>
-  }>((api) =>
-    api.bitable.appTableField.list({
-      path: { app_token: appToken, table_id: tableId },
-      params: { page_size: 100 }
-    })
-  )
-  if (!r.ok) throw new Error(r.error)
-  return (r.data.items ?? []).map((f, idx) => ({
-    name: (f.field_name ?? '').trim(),
-    type: Number(f.type ?? 0),
-    // 飞书未回 is_primary 时按「第一列即主字段」的约定判定
-    primary: f.is_primary === true || idx === 0
-  }))
+  const rows = await fetchFields(appToken, tableId)
+  return rows.map((f) => ({ name: f.name, type: f.type, primary: f.primary }))
 }
 
 /**
@@ -320,6 +308,8 @@ export async function ensureFields(
     added.push(spec.name)
     await sleep(BATCH_GAP_MS)
   }
+  // 建过列 → 让列缓存失效,下一轮(以及本次之后的分支)读到的是新结构
+  if (added.length > 0) invalidateFields(appToken, tableId)
   return { added, conflicts }
 }
 

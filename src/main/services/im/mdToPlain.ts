@@ -4,6 +4,8 @@
  * (如 `| a | b |`、`> [!WARNING]`),回发前做一次轻量降级转换。
  */
 
+import { clipPlain } from '../../util/text'
+
 const CALLOUT_ICON: Record<string, string> = {
   NOTE: 'ℹ️',
   TIP: '💡',
@@ -109,8 +111,7 @@ export function feishuPlainText(md: string): string {
     .trim()
 }
 
-/** 长文本截断(用户可读,带尾注) */
+/** 长文本截断(用户可读,带尾注) —— 实现走主进程统一截断工具 util/text */
 export function clipForChannel(s: string, max = 200): string {
-  const t = (s ?? '').trim()
-  return t.length > max ? `${t.slice(0, max)}…` : t
+  return clipPlain(s, max)
 }

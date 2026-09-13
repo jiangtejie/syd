@@ -1,5 +1,6 @@
 import { getConfig } from '../../db/repos/config'
 import { larkCall } from './client'
+import { fetchFields, invalidateFields, type LarkFieldMeta } from './fields'
 import { createLogger } from '../logging'
 import { getPersonConfig, setPersonConfig } from './personMap'
 
@@ -42,27 +43,10 @@ export const SYSTEM_MANUAL_STEPS: string[] = [
   '视图微调:看板视图可拖动卡片排序;表单视图可设置必填项与说明后分享给同事'
 ]
 
-interface FieldRow {
-  field_name?: string
-  field_id?: string
-  type?: number
-  property?: Record<string, unknown>
-}
-
 interface ViewRow {
   view_name?: string
   view_id?: string
   view_type?: string
-}
-
-async function listFields(appToken: string, tableId: string): Promise<FieldRow[]> {
-  const r = await larkCall<{ items?: FieldRow[] }>((api) =>
-    api.bitable.appTableField.list({
-      path: { app_token: appToken, table_id: tableId },
-      params: { page_size: 200 }
-    })
-  )
-  return r.ok ? (r.data.items ?? []) : []
 }
 
 async function listViews(appToken: string, tableId: string): Promise<ViewRow[]> {
@@ -82,15 +66,17 @@ async function ensureField(
   data: Record<string, unknown>,
   steps: UpgradeStep[]
 ): Promise<void> {
-  const have = await listFields(appToken, tableId)
+  const have = await fetchFields(appToken, tableId)
   const name = String(data.field_name ?? '')
-  if (have.some((f) => f.field_name === name)) {
+  if (have.some((f) => f.name === name)) {
     steps.push({ label, action: 'skipped', detail: '已存在' })
     return
   }
   const r = await larkCall((api) =>
     api.bitable.appTableField.create({ path: { app_token: appToken, table_id: tableId }, data })
   )
+  // 建过列 → 列缓存作废（否则紧随其后的视图/字段步骤会按旧结构判断）
+  if (r.ok) invalidateFields(appToken, tableId)
   steps.push(r.ok ? { label, action: 'created' } : { label, action: 'failed', detail: r.error })
 }
 
@@ -113,8 +99,8 @@ async function ensureView(
   steps.push(r.ok ? { label, action: 'created' } : { label, action: 'failed', detail: r.error })
 }
 
-function fieldIdOf(fields: FieldRow[], name: string): string {
-  return String(fields.find((f) => f.field_name === name)?.field_id ?? '')
+function fieldIdOf(fields: LarkFieldMeta[], name: string): string {
+  return String(fields.find((f) => f.name === name)?.fieldId ?? '')
 }
 
 /** 把议题表升级成「工单台」:编号/等待时长/超时预警/标签 + 四个视图 */
@@ -175,7 +161,7 @@ async function upgradeIssueTable(
     )
   }
 
-  const fields = await listFields(appToken, tableId)
+  const fields = await fetchFields(appToken, tableId)
   const statusId = fieldIdOf(fields, '状态')
   const occurId = fieldIdOf(fields, '首现时间')
   if (statusId) {
@@ -244,8 +230,8 @@ async function upgradeEvidenceTable(
   issueTableId: string,
   steps: UpgradeStep[]
 ): Promise<void> {
-  const fields = await listFields(appToken, evidenceTableId)
-  const link = fields.find((f) => f.field_name === '关联议题')
+  const fields = await fetchFields(appToken, evidenceTableId)
+  const link = fields.find((f) => f.name === '关联议题')
   if (!link) {
     steps.push({ label: '关联:关联议题(跳过)', action: 'skipped', detail: '没有找到该列' })
   } else if (Number(link.type) === 21) {
@@ -256,7 +242,7 @@ async function upgradeEvidenceTable(
         path: {
           app_token: appToken,
           table_id: evidenceTableId,
-          field_id: String(link.field_id ?? '')
+          field_id: link.fieldId
         },
         data: {
           field_name: '关联议题',
@@ -300,7 +286,7 @@ async function upgradeReplyTable(
   tableId: string,
   steps: UpgradeStep[]
 ): Promise<void> {
-  const fields = await listFields(appToken, tableId)
+  const fields = await fetchFields(appToken, tableId)
   const statusId = fieldIdOf(fields, '状态')
   if (!statusId) {
     steps.push({ label: '视图:回复表看板(跳过)', action: 'skipped', detail: '没有状态列' })

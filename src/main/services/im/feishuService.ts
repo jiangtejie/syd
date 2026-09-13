@@ -693,7 +693,7 @@ function mediaKeyOf(
 }
 
 /** 文件扩展名推断:优先原文件名,失败按魔数(图片)/bin */
-function extOf(buf: Buffer, kind: 'image' | 'file', name?: string): string {
+function extFromBuffer(buf: Buffer, kind: 'image' | 'file', name?: string): string {
   const fromName = name ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() || '' : ''
   if (kind === 'file' && /^[a-z0-9]{1,8}$/.test(fromName)) return fromName
   if (kind === 'image') {
@@ -842,7 +842,7 @@ async function handleInboundMedia(
       await safeReply(rt, messageId, `⚠️ ${maxFileHint()}。`)
       return
     }
-    const ext = extOf(buf, kind, meta.name)
+    const ext = extFromBuffer(buf, kind, meta.name)
     const now = new Date()
     const day = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
       now.getDate()

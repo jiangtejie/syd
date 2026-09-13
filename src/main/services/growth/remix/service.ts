@@ -11,7 +11,7 @@ import {
   getContentDetail,
   getContentItem,
   setDecomp,
-  scoreOf,
+  interactionScoreOf,
   updateContentFields
 } from '../../../db/repos/growthRepo'
 import {
@@ -188,7 +188,7 @@ export function recordPublish(
   const item = getContentItem(contentId)
   if (!item) throw new Error('素材不存在')
   insertMetricSnapshot(contentId, { ...input, outputId: input.outputId ?? null })
-  const base = scoreOf(item.interactions)
+  const base = interactionScoreOf(item.interactions)
   const score = Math.round(base + input.likes + input.follows * 2 + input.leads * 30 + input.amount)
   updateContentFields(contentId, { score })
   const metric = listMetricViews(contentId, 1)[0]

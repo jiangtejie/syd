@@ -1,6 +1,8 @@
 import { getConfig } from '../../db/repos/config'
+import { clipOneLine } from '../../util/text'
 import { larkCall, type LarkCallResult } from './client'
 import { larkKindText, parseLarkRef, type LarkRef } from './url'
+import { fetchFields } from './fields'
 
 /**
  * 飞书云文档只读数据面(多维表格 / 云文档 / 知识库节点解析)。
@@ -68,29 +70,16 @@ export async function listFields(
   appToken: string,
   tableId: string
 ): Promise<LarkResult<{ fields: LarkField[] }>> {
-  const out: LarkField[] = []
-  let pageToken: string | undefined
-  for (let page = 0; page < 4; page += 1) {
-    const r = await call<{
-      items?: Array<{ field_id?: string; field_name?: string; type?: number }>
-      has_more?: boolean
-      page_token?: string
-    }>((api) =>
-      api.bitable.appTableField.list({
-        path: { app_token: appToken, table_id: tableId },
-        params: { page_size: 100, ...(pageToken ? { page_token: pageToken } : {}) }
-      })
-    )
-    if (!r.ok) return r
-    for (const it of r.data.items ?? []) {
-      if (it.field_name) {
-        out.push({ fieldId: it.field_id ?? '', name: it.field_name, type: it.type ?? 0 })
-      }
+  // 实现收敛到 ./fields(带 30s 缓存),这里只做类型与结果包装
+  try {
+    const rows = await fetchFields(appToken, tableId)
+    return {
+      ok: true,
+      data: { fields: rows.map((f) => ({ fieldId: f.fieldId, name: f.name, type: f.type })) }
     }
-    pageToken = r.data.page_token
-    if (!r.data.has_more || !pageToken) break
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
-  return { ok: true, data: { fields: out } }
 }
 
 export async function listRecords(input: {
@@ -188,20 +177,15 @@ export function cellText(v: unknown): string {
   return String(v)
 }
 
-function clip(s: string, n: number): string {
-  const t = s.replace(/\s+/g, ' ').trim()
-  return t.length > n ? `${t.slice(0, n)}…` : t
-}
-
 /** 记录 → Markdown 表格(列/单元格裁剪; 表头用字段名) */
 export function renderRecords(records: LarkRecord[], fields: LarkField[]): string {
   if (records.length === 0) return '(该数据表在当前视图下没有记录)'
   const names = fields.length > 0 ? fields.map((f) => f.name) : Object.keys(records[0].fields)
   const cols = names.slice(0, MAX_COLS)
-  const head = `| ${cols.map((c) => clip(c, 24)).join(' | ')} |`
+  const head = `| ${cols.map((c) => clipOneLine(c, 24)).join(' | ')} |`
   const sep = `| ${cols.map(() => '---').join(' | ')} |`
   const rows = records.map((r) => {
-    const cells = cols.map((c) => clip(cellText(r.fields[c]), CELL_CHARS) || ' ')
+    const cells = cols.map((c) => clipOneLine(cellText(r.fields[c]), CELL_CHARS) || ' ')
     return `| ${cells.join(' | ')} |`
   })
   const extra =

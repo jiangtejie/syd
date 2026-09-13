@@ -1,4 +1,5 @@
 import { listIssuesByGroup, searchIssues } from '../../db/repos/issueRepo'
+import { clipMultiline } from '../../util/text'
 import { listTeamMembers } from '../../db/repos/teamRepo'
 import { issueStatusLabel } from './issueLabel'
 import { fmtStamp } from '../../../shared/monitorMetrics'
@@ -21,12 +22,6 @@ export interface AgentTool {
   schema: string
   /** 本地执行（须同步或返回 Promise） */
   run: (ctx: AgentToolCtx, args: Record<string, unknown>) => Promise<string>
-}
-
-const MAX_TEXT = 4000
-
-function clip(text: string): string {
-  return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}\n…(已截断)` : text
 }
 
 export const SUGGEST_TOOLS: AgentTool[] = [
@@ -94,7 +89,7 @@ export async function runSuggestionTool(
   const tool = SUGGEST_TOOLS.find((t) => t.name === name)
   if (!tool) return `未知工具：${name}。可用工具：${SUGGEST_TOOLS.map((t) => t.name).join('、')}`
   try {
-    return clip(await tool.run(ctx, args ?? {}))
+    return clipMultiline(await tool.run(ctx, args ?? {}), 4000)
   } catch (e) {
     return `工具执行失败：${e instanceof Error ? e.message : String(e)}`
   }

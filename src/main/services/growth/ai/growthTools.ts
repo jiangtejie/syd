@@ -4,6 +4,7 @@
  */
 
 import { tool, zodSchema, type ToolSet } from 'ai'
+import { clipValue } from '../../../util/text'
 import { z } from 'zod'
 import { createAiProvider } from '../../ai/provider'
 import { describeModelError } from '../../ai/modelErrors'
@@ -40,11 +41,6 @@ const STYLE_HINT: Record<string, string> = {
   auto: '沿用素材原有风格'
 }
 
-function clip(v: unknown, n = 400): string {
-  const s = typeof v === 'string' ? v : JSON.stringify(v ?? '')
-  return s.length > n ? s.slice(0, n) + '…' : s
-}
-
 export function itemBrief(contentId: number): string {
   const d = getContentDetail(contentId)
   if (!d) return '素材不存在'
@@ -65,7 +61,7 @@ export function itemBrief(contentId: number): string {
       String(d.assets.filter((a) => a.kind === 'cover' || a.kind === 'image').length) +
       ' 张'
   )
-  if (d.decomp?.structure) lines.push('拆解卡: ' + clip(d.decomp.structure, 700))
+  if (d.decomp?.structure) lines.push('拆解卡: ' + clipValue(d.decomp.structure, 700))
   else lines.push('拆解卡: 尚未生成')
   return lines.join('\n')
 }
@@ -97,17 +93,17 @@ export function storeBrief(storeId: number | null): string {
     ]) {
       const v = p[k]
       if (v === undefined || v === null || v === '') continue
-      lines.push(k + ': ' + clip(v, 300))
+      lines.push(k + ': ' + clipValue(v, 300))
     }
   } catch {
     /* ignore */
   }
-  if (s.poi && s.poi !== '[]') lines.push('POI: ' + clip(s.poi, 200))
+  if (s.poi && s.poi !== '[]') lines.push('POI: ' + clipValue(s.poi, 200))
   return lines.join('\n')
 }
 
 async function approve(ctx: GrowthToolCtx, name: string, args: unknown): Promise<string | null> {
-  const ok = await requestToolApproval(ctx.sessionId, name, clip(args, 500), 120_000)
+  const ok = await requestToolApproval(ctx.sessionId, name, clipValue(args, 500), 120_000)
   return ok ? null : '用户拒绝了本次操作, 请说明原因或换一种方式。'
 }
 

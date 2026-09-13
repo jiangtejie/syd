@@ -6,7 +6,7 @@
  * 日报是唯一「每天主动出现在管理层眼前」的东西，数字口径错了没人会去核对 —— 所以在这里钉死：
  * 等待时长换行、空口径不出现、空日报也要发得出一句话、条数与顺序稳定。
  */
-import { ageText, renderDigest } from '../src/main/services/feedback/digestText.ts'
+import { waitText, renderDigest } from '../src/main/services/feedback/digestText.ts'
 
 let failed = 0
 const log = (ok, name, detail) => {
@@ -15,13 +15,13 @@ const log = (ok, name, detail) => {
 }
 
 console.log('\n[1] 等待时长文案')
-log(ageText(0) === '0分钟', '0 → 0分钟', ageText(0))
-log(ageText(18 * 60_000) === '18分钟', '18 分钟', ageText(18 * 60_000))
-log(ageText(60 * 60_000) === '1小时', '整点不带分钟', ageText(60 * 60_000))
-log(ageText(5 * 3600_000 + 20 * 60_000) === '5小时20分', '小时+分钟', ageText(5 * 3600_000 + 20 * 60_000))
-log(ageText(26 * 3600_000) === '1天2小时', '跨天', ageText(26 * 3600_000))
-log(ageText(48 * 3600_000) === '2天', '整两天', ageText(48 * 3600_000))
-log(ageText(-1000) === '0分钟', '负数兜底为 0')
+log(waitText(0) === '0分钟', '0 → 0分钟', waitText(0))
+log(waitText(18 * 60_000) === '18分钟', '18 分钟', waitText(18 * 60_000))
+log(waitText(60 * 60_000) === '1小时', '整点不带分钟', waitText(60 * 60_000))
+log(waitText(5 * 3600_000 + 20 * 60_000) === '5小时20分', '小时+分钟', waitText(5 * 3600_000 + 20 * 60_000))
+log(waitText(26 * 3600_000) === '1天2小时', '跨天', waitText(26 * 3600_000))
+log(waitText(48 * 3600_000) === '2天', '整两天', waitText(48 * 3600_000))
+log(waitText(-1000) === '0分钟', '负数兜底为 0')
 
 const base = {
   dateLabel: '09-12',
@@ -33,10 +33,10 @@ const base = {
   overdue: 2,
   doubt: 1,
   topBacklog: [
-    { group: '保利星荟店对接群', type: '物流', title: '孜然粉到货', ageText: '2天3小时', assignee: '陈西西' },
-    { group: '南部店物配对接群', type: '售后', title: '鸡爪到不了', ageText: '1天5小时' }
+    { group: '保利星荟店对接群', type: '物流', title: '孜然粉到货', waitText: '2天3小时', assignee: '陈西西' },
+    { group: '南部店物配对接群', type: '售后', title: '鸡爪到不了', waitText: '1天5小时' }
   ],
-  waiting: [{ group: '南部店物配对接群', type: '售后', title: '鸡爪到不了', ageText: '1天5小时' }],
+  waiting: [{ group: '南部店物配对接群', type: '售后', title: '鸡爪到不了', waitText: '1天5小时' }],
   topAssignees: [
     { name: '陈西西', open: 4 },
     { name: '黄巧', open: 2 }

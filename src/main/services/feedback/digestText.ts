@@ -12,7 +12,7 @@ export interface DigestItem {
   type: string
   title: string
   /** 已等待时长文案，如「2天3小时」 */
-  ageText: string
+  waitText: string
   assignee?: string
 }
 
@@ -44,7 +44,7 @@ export interface DigestData {
 }
 
 /** 等待时长文案：2天3小时 / 5小时20分 / 18分钟 */
-export function ageText(ms: number): string {
+export function waitText(ms: number): string {
   const m = Math.max(0, Math.floor(ms / 60_000))
   if (m < 60) return `${m}分钟`
   const h = Math.floor(m / 60)
@@ -56,7 +56,7 @@ export function ageText(ms: number): string {
 
 function itemLine(n: number, it: DigestItem): string {
   const who = it.assignee ? ` · 跟进:${it.assignee}` : ''
-  return `${n}. [${it.group || '-'}] ${it.type}·${it.title}（等了 ${it.ageText}）${who}`
+  return `${n}. [${it.group || '-'}] ${it.type}·${it.title}（等了 ${it.waitText}）${who}`
 }
 
 export function renderDigest(d: DigestData): string {

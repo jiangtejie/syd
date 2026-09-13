@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { clipMultiline } from '../../../util/text'
 import { getDb } from '../../../db/database'
 import { getConfig } from '../../../db/repos/config'
 import { listAccounts as listKeyAccounts } from '../../keyStoreService'
@@ -14,12 +15,6 @@ import type { ToolCtx, ToolDef } from '../chat/skills'
  * - 均不依赖 AI 引擎,直接读 repo/服务;无 wxid 依赖的项 IM 通道也可用;
  * - 注册表元数据见 cap/registry.ts SOFTWARE_CAPS,此处只提供可执行 def。
  */
-
-const MAX_TEXT = 4000
-
-function clip(s: string): string {
-  return s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT)}\n…(已截断)` : s
-}
 
 interface WxSessionLite {
   username: string
@@ -133,7 +128,7 @@ function defOf(
     description,
     run: async (ctx: ToolCtx) => {
       try {
-        return clip(await run((ctx.wxid || '').trim()))
+        return clipMultiline(await run((ctx.wxid || '').trim()), 4000)
       } catch (e) {
         return `执行失败:${e instanceof Error ? e.message : String(e)}`
       }

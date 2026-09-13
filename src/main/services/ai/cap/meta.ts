@@ -1,4 +1,5 @@
 import { catalogText, listCaps, resolveCapDef, type CapInfo } from './registry'
+import { clipMultiline } from '../../../util/text'
 import { mountCaps, unmountCaps, mountedNames } from './mounts'
 
 /**
@@ -37,10 +38,6 @@ export function metaToolDefs(): Array<{
   ]
 }
 
-function clipText(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max)}\n…(过长已截断)` : s
-}
-
 /** 能力详情(挂载成功提示给模型) */
 function detailOf(cap: CapInfo, name: string): string {
   const head = `能力「${name}」已就绪:${cap.oneLine};适用:${cap.when}`
@@ -75,7 +72,7 @@ export async function runMetaTool(
     if (added.length > 0) {
       lines.push('(已挂载,直接调用对应工具即可;不再需要时可调用 unmount_capability)')
     }
-    return { full: clipText(lines.join('\n'), 3500), changed: added.length > 0 }
+    return { full: clipMultiline(lines.join('\n'), 3500), changed: added.length > 0 }
   }
   if (name === 'unmount_capability') {
     const capName = String(args?.name ?? '').trim()

@@ -22,7 +22,7 @@ export interface GeneratedImage {
 
 export class ImageSetupError extends Error {}
 
-function extOf(mime: string): string {
+function extFromMime(mime: string): string {
   if (mime.includes('jpeg') || mime.includes('jpg')) return '.jpg'
   if (mime.includes('webp')) return '.webp'
   return '.png'
@@ -34,7 +34,7 @@ async function storeBuffer(
   contentId: number,
   prompt: string
 ): Promise<GeneratedImage> {
-  const ext = extOf(mime)
+  const ext = extFromMime(mime)
   const sha = createHash('sha1').update(buf).digest('hex')
   const sub = sha.slice(0, 2)
   const relPath = sub + '/' + sha + ext

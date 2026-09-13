@@ -54,7 +54,7 @@ export interface MonitorOptions {
   backlogHours?: number
 }
 
-function startOfDay(ts: number): number {
+export function startOfDay(ts: number): number {
   const d = new Date(ts)
   d.setHours(0, 0, 0, 0)
   return d.getTime()
