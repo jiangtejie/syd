@@ -699,7 +699,7 @@ select.st-input {
   margin-bottom: 0;
 }
 
-/* ── 工作台:业务技能(SKILL.md)网格卡片 ── */
+/* ── 设置 → 技能 tab:业务技能(SKILL.md)网格卡片 ── */
 /* 业务技能独占整行(宽度随窗口自适应),不用双列栅格 */
 .wb-skills-full {
   grid-template-columns: minmax(0, 1fr);

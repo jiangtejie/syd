@@ -584,7 +584,9 @@ function SettingsPage(): React.JSX.Element {
             ['send', '发送与频控'],
             ['other', '偏好与数据'],
             ['im', 'IM 渠道'],
-            ['workbench', 'AI'],
+            // tab key 仍叫 workbench（改名会让已记住 tab 的用户被重置回默认），但这一屏现在只有
+            // 「业务技能(SKILL.md)」一张卡，所以对外名称用「技能」——以前叫 "AI"，和「AI 助手」撞名又看不出内容。
+            ['workbench', '技能'],
             ['report', '定时任务'],
             ['logs', '日志']
           ] as Array<[SettingsTab, string]>

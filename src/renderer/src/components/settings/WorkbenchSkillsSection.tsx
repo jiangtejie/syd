@@ -4,7 +4,7 @@ import { SettingsCard, Switch } from './ui'
 import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 /**
- * 设置 → 工作台 tab:SKILL.md 业务技能管理(轻量:无市场/无安装向导)。
+ * 设置 → 技能 tab(tab key 仍为 workbench):SKILL.md 业务技能管理(轻量:无市场/无安装向导)。
  * 目录:userData/skills/<name>/SKILL.md;按「同时启用上限」(默认 3,可调 1~6)执行。
  */
 
