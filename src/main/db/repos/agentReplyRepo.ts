@@ -22,6 +22,11 @@ export interface AgentReplyInput {
   decision: ReplyDecision
   scriptId?: number
   intent?: string
+  /** 意图来源：script/rule/llm/none */
+  intentSource?: string
+  intentConfidence?: number
+  /** 命中词（顿号分隔） */
+  intentEvidence?: string
   replyText?: string
   riskLevel?: string
   status?: ReplyStatus
@@ -39,6 +44,11 @@ export interface AgentReply {
   decision: ReplyDecision
   scriptId?: number
   intent: string
+  /** 意图来源：script（命中话术）/rule（规则层）/llm（模型复核）/none（未归类） */
+  intentSource: string
+  intentConfidence: number
+  /** 命中词（顿号分隔），复盘时用来复现判定 */
+  intentEvidence: string
   replyText: string
   riskLevel: string
   status: ReplyStatus
@@ -61,6 +71,9 @@ interface ReplyRow {
   decision: string
   script_id: number | null
   intent: string
+  intent_source: string | null
+  intent_confidence: number | null
+  intent_evidence: string | null
   reply_text: string
   risk_level: string
   status: string
@@ -84,6 +97,9 @@ function toReply(r: ReplyRow): AgentReply {
     decision: (r.decision || 'skip') as ReplyDecision,
     scriptId: r.script_id ?? undefined,
     intent: r.intent,
+    intentSource: r.intent_source ?? '',
+    intentConfidence: Number(r.intent_confidence ?? 0),
+    intentEvidence: r.intent_evidence ?? '',
     replyText: r.reply_text,
     riskLevel: r.risk_level,
     status: (r.status || 'shadow') as ReplyStatus,
@@ -106,8 +122,9 @@ export function insertReply(input: AgentReplyInput): number | null {
     .prepare(
       'INSERT OR IGNORE INTO agent_reply' +
         ' (account_wxid, group_username, group_name, trigger_seq, trigger_time, trigger_text,' +
-        '  decision, script_id, intent, reply_text, risk_level, status, reason, created_at, updated_at)' +
-        ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        '  decision, script_id, intent, intent_source, intent_confidence, intent_evidence,' +
+        '  reply_text, risk_level, status, reason, created_at, updated_at)' +
+        ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     .run(
       input.accountWxid,
@@ -119,6 +136,9 @@ export function insertReply(input: AgentReplyInput): number | null {
       input.decision,
       input.scriptId ?? null,
       input.intent ?? '',
+      input.intentSource ?? '',
+      input.intentConfidence ?? 0,
+      input.intentEvidence ?? '',
       input.replyText ?? '',
       input.riskLevel ?? 'A',
       input.status ?? 'shadow',
@@ -216,4 +236,49 @@ export function replyStats(
     handoff,
     noMatchRate: total > 0 ? 1 - script / total : 0
   }
+}
+
+/** 待识别意图的 where 片段：空意图，或上次判成「未归类」（词表升级后可重跑） */
+const NEEDS_INTENT_WHERE =
+  " (intent IS NULL OR intent = '' OR intent_source IS NULL OR intent_source = '' OR intent_source = 'none')" +
+  " AND trigger_text <> ''"
+
+/** 待识别意图的历史记录(补全/重跑动作的数据源):按时间倒序 */
+export function listRepliesMissingIntent(limit = 200): AgentReply[] {
+  const rows = getDb()
+    .prepare('SELECT * FROM agent_reply WHERE' + NEEDS_INTENT_WHERE + ' ORDER BY id DESC LIMIT ?')
+    .all(Math.min(Math.max(Math.round(limit), 1), 2000)) as ReplyRow[]
+  return rows.map(toReply)
+}
+
+/** 待识别的条数(界面按钮上显示「补全 N 条」) */
+export function countRepliesMissingIntent(): number {
+  const r = getDb()
+    .prepare('SELECT COUNT(*) AS c FROM agent_reply WHERE' + NEEDS_INTENT_WHERE)
+    .get() as { c: number }
+  return Number(r?.c ?? 0)
+}
+
+/** 回填一条的意图(只写意图相关列,不动决策与发送状态) */
+export function setReplyIntent(
+  id: number,
+  v: { intent: string; source: string; confidence: number; evidence: string }
+): void {
+  getDb()
+    .prepare(
+      'UPDATE agent_reply SET intent = ?, intent_source = ?, intent_confidence = ?,' +
+        ' intent_evidence = ?, updated_at = ? WHERE id = ?'
+    )
+    .run(v.intent, v.source, v.confidence, v.evidence, Date.now(), id)
+}
+
+/** 按来源统计意图识别质量(界面用:规则/模型/未归类各多少条) */
+export function intentSourceCounts(wxid: string): Array<{ source: string; n: number }> {
+  const rows = getDb()
+    .prepare(
+      'SELECT intent_source AS source, COUNT(*) AS n FROM agent_reply' +
+        ' WHERE account_wxid = ? GROUP BY intent_source ORDER BY n DESC'
+    )
+    .all(wxid) as Array<{ source: string; n: number }>
+  return rows.map((r) => ({ source: r.source || 'none', n: Number(r.n ?? 0) }))
 }

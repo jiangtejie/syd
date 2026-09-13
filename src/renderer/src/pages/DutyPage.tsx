@@ -38,6 +38,14 @@ const DECISION_LABEL: Record<string, string> = {
   skip: '不介入'
 }
 
+/** 意图来源 → 徽标文案（与主进程 intent.ts 的 INTENT_SOURCE_TEXT 保持一致） */
+const INTENT_SOURCE_LABEL: Record<string, string> = {
+  script: '话术',
+  rule: '规则',
+  llm: '模型',
+  none: '未归类'
+}
+
 /** 话术模式列表 ←→ 文本（一行一条：kw: 关键词 / re: 正则） */
 function patternsToText(list: DutyScriptPattern[]): string {
   return list.map((p) => `${p.type}: ${p.value}`).join('\n')
@@ -237,6 +245,25 @@ function DutyPage(): React.JSX.Element {
     await loadAll()
   }
 
+  /** 补全历史记录的意图：只跑规则层（零成本），补完刷新列表 */
+  const backfillIntent = async (): Promise<void> => {
+    if (!api) return
+    setBusy('intent')
+    const res = await api.backfillIntent(2000).catch(() => null)
+    setBusy('')
+    if (!res?.ok) {
+      toast.error(res?.error || '补全失败')
+      return
+    }
+    const top = (res.byIntent ?? [])
+      .slice(0, 4)
+      .map((x) => x.intent + ' ' + x.n)
+      .join(' · ')
+    const filled = String(res.filled ?? 0)
+    toast.success('已补全 ' + filled + ' 条意图' + (top ? '：' + top : ''))
+    await loadAll()
+  }
+
   /** 导入推荐话术（一期模板）：只承诺动作不承诺事实，风险 C 的只做转人工 */
   const seedStarters = async (): Promise<void> => {
     if (!wxid || !api) return
@@ -296,6 +323,19 @@ function DutyPage(): React.JSX.Element {
         >
           {busy === 'run' ? '执行中…' : '立即跑一轮'}
         </button>
+        {(status?.missingIntent ?? 0) > 0 && (
+          <button
+            type="button"
+            className="dt-btn"
+            disabled={busy !== ''}
+            onClick={() => void backfillIntent()}
+            title="历史上走 LLM 兜底的那批记录意图是空的（所以 Base 的意图列一片空白）。这里用规则层离线补齐，不改决策与发送状态。"
+          >
+            {busy === 'intent'
+              ? '补全中…'
+              : '补全历史意图（' + (status?.missingIntent ?? 0) + ' 条）'}
+          </button>
+        )}
         <button
           type="button"
           className="dt-btn"
@@ -347,7 +387,22 @@ function DutyPage(): React.JSX.Element {
                 </span>
                 <span className="dt-group">{r.groupName || r.groupUsername}</span>
                 <span className="dt-time">{fmtTime(r.triggerTime ?? r.createdAt)}</span>
-                {r.intent && <span className="dt-intent">{r.intent}</span>}
+                {r.intent && (
+                  <span
+                    className="dt-intent"
+                    title={
+                      '意图来源：' +
+                      (INTENT_SOURCE_LABEL[r.intentSource ?? 'none'] ?? '未归类') +
+                      (r.intentConfidence ? ' · 置信度 ' + r.intentConfidence : '') +
+                      (r.intentEvidence ? ' · 命中：' + r.intentEvidence : '')
+                    }
+                  >
+                    {r.intent}
+                    <span className="dt-intent-src">
+                      {INTENT_SOURCE_LABEL[r.intentSource ?? 'none'] ?? '未归类'}
+                    </span>
+                  </span>
+                )}
                 {r.riskLevel && r.riskLevel !== 'A' && (
                   <span className="dt-risk">{RISK_LABEL[r.riskLevel] ?? r.riskLevel}</span>
                 )}

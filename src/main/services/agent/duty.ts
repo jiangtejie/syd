@@ -6,7 +6,7 @@ import {
   saveDutyState,
   type GroupReplyMode
 } from '../../db/repos/agentGroupRepo'
-import { insertReply } from '../../db/repos/agentReplyRepo'
+import { countRepliesMissingIntent, insertReply } from '../../db/repos/agentReplyRepo'
 import { getTeamUsernamesCached } from '../../db/repos/teamRepo'
 import { isGroupExcluded } from '../feedback/groupScope'
 import { isRuleText, isTeamMsg, msgToText, readGroupMessages } from '../feedback/shared'
@@ -14,6 +14,7 @@ import { enrichMessages, getSessions } from '../wechat/wxService'
 import { generateSuggestions } from '../ai/suggest'
 import { fmtStamp } from '../../../shared/monitorMetrics'
 import { matchReply } from './matcher'
+import { classifyIntent, classifyIntentByRules } from './intent'
 import { createLogger } from '../logging'
 import type { ChatMessage } from '../../../shared/types'
 
@@ -177,6 +178,7 @@ export async function runDutyPass(
         out.skipped++
         // 客户发了图片/语音：数字员工读不懂，但这往往是真诉求 → 记一条「需人工看一眼」
         if (decision.skipReason === 'non-text') {
+          const it = classifyIntentByRules(msgToText(newest))
           insertReply({
             accountWxid: wxid,
             groupUsername: g.username,
@@ -185,6 +187,10 @@ export async function runDutyPass(
             triggerTime: newest.createTime,
             triggerText: msgToText(newest).slice(0, 500),
             decision: 'handoff',
+            intent: it.intent,
+            intentSource: it.source,
+            intentConfidence: it.confidence,
+            intentEvidence: it.evidence.join('、'),
             status: 'queued',
             reason: decision.reason
           })
@@ -201,6 +207,9 @@ export async function runDutyPass(
           decision: 'handoff',
           scriptId: decision.script.id,
           intent: decision.script.intent,
+          intentSource: 'script',
+          intentConfidence: 1,
+          intentEvidence: '命中话术',
           replyText: decision.replyText,
           riskLevel: decision.script.riskLevel,
           status: 'queued',
@@ -219,6 +228,9 @@ export async function runDutyPass(
           decision: 'script',
           scriptId: decision.script.id,
           intent: decision.script.intent,
+          intentSource: 'script',
+          intentConfidence: 1,
+          intentEvidence: '命中话术',
           replyText: decision.replyText,
           riskLevel: decision.script.riskLevel,
           status: 'shadow',
@@ -250,6 +262,12 @@ export async function runDutyPass(
         } else if (!shadowLlm) {
           reason = `${decision.reason}；影子期未开启 LLM 预演`
         }
+        // 意图:未命中话术时也必须给结论(以前这里是空的,Base 的意图列因此大片空白)。
+        // 先规则层(零成本);规则拿不准、且本轮 LLM 还有额度时才请模型复核一次。
+        const it = await classifyIntent(text, {
+          wxid,
+          allowLlm: shadowLlm && llmUsed < LLM_CAP_PER_PASS
+        })
         insertReply({
           accountWxid: wxid,
           groupUsername: g.username,
@@ -258,6 +276,10 @@ export async function runDutyPass(
           triggerTime: newest.createTime,
           triggerText: text.slice(0, 500),
           decision: 'llm',
+          intent: it.intent,
+          intentSource: it.source,
+          intentConfidence: it.confidence,
+          intentEvidence: it.evidence.join('、'),
           replyText: draft,
           status: 'shadow',
           reason
@@ -287,6 +309,8 @@ export function dutyStatus(wxid: string): {
   overrides: number
   scripts: number
   shadowLlm: boolean
+  /** 意图为空、可一键补全的历史记录数 */
+  missingIntent: number
 } {
   const switches = listGroupSwitches(wxid)
   return {
@@ -295,7 +319,9 @@ export function dutyStatus(wxid: string): {
     defaultMode: defaultMode(),
     overrides: switches.length,
     scripts: listScripts(wxid, { enabledOnly: true }).length,
-    shadowLlm: getConfigBoolean(CFG_SHADOW_LLM, true)
+    shadowLlm: getConfigBoolean(CFG_SHADOW_LLM, true),
+    /** 意图为空、可一键补全的历史记录数 */
+    missingIntent: countRepliesMissingIntent()
   }
 }
 
@@ -334,12 +360,13 @@ export function previewOnMessages(
     }
     const d = matchReply({ text, fromTeam, nonText: !isRuleText(m), vars }, scripts)
     if (d.action === 'skip') continue
+    const it = d.action === 'llm' ? classifyIntentByRules(text) : null
     out.push({
       time: m.createTime,
       sender: m.senderNickname || m.senderUsername || '',
       text: text.slice(0, 120),
       action: d.action,
-      intent: d.action === 'llm' ? '' : d.script.intent,
+      intent: it ? it.intent : d.action === 'llm' ? '' : d.script.intent,
       reply: d.action === 'llm' ? '' : d.replyText,
       reason: d.reason
     })

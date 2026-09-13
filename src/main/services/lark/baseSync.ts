@@ -2,6 +2,7 @@ import { getConfig, getConfigBoolean, setConfig } from '../../db/repos/config'
 import {
   clearSyncRefs,
   countSyncRefs,
+  invalidateSyncHashes,
   dropSyncRef,
   getSyncRef,
   listSyncRefs,
@@ -192,6 +193,7 @@ const REPLY_FIELDS: FieldSpec[] = [
   { name: '触发消息', type: T_TEXT },
   { name: '判定', type: T_SINGLE, options: ['命中话术', 'LLM 兜底', '转人工'] },
   { name: '意图', type: T_TEXT },
+  { name: '意图来源', type: T_SINGLE, options: ['话术', '规则', '模型', '未归类'] },
   { name: '拟回复', type: T_TEXT },
   { name: '风险', type: T_SINGLE, options: ['A 可自动', 'B 需确认', 'C 禁自动'] },
   { name: '状态', type: T_SINGLE, options: ['影子（待看）', '已采纳', '已驳回'] },
@@ -985,8 +987,9 @@ export async function syncIssuesOut(
       })
     )
     if (!r.ok) {
-      // 记录被同事删了/表换了：清掉映射，下一轮按新建处理
-      if (/not.?found|record.?id|1254/i.test(r.error)) {
+      // 记录被同事删了/表换了：清掉映射，下一轮按新建处理。
+      // 判定要窄:字段类错误码同样是 1254xxx,误判会导致重复插入(回复表那边实测踩过)。
+      if (/RecordIdNotFound|record.?not.?found|记录不存在/i.test(r.error)) {
         saveSyncRef('issue', issue.id, appToken, tableId, ref.recordId, '')
         pendingCreates.push({ id: issue.id, fields, hash })
         continue
@@ -1692,6 +1695,22 @@ export async function syncRepliesOut(
     return { ...empty, error: '尚未创建「数字员工回复」表:请在设置页点「执行并建表」后再同步' }
   }
 
+  // 列补齐:回复表的列由我们维护(「意图来源」等是后加的),同步前先确保存在 ——
+  // 少一列会让整条记录被飞书拒收(实测 58 条全失败),宁可每轮多一次 listFields。
+  try {
+    const ensured = await ensureFields(appToken, tableId, REPLY_FIELDS)
+    const added = ensured.added ?? []
+    if (added.length > 0) {
+      // 刚建的列:当轮写入可能被飞书忽略,而我们的内容 hash 已经记下了 → 之后一直跳过。
+      // 所以补列后主动作废 hash,让下一轮把每条记录重写一遍,把新列填上。
+      const n = invalidateSyncHashes('reply')
+      syncLog.info('回复表补列 ' + added.join('、') + ';已作废 ' + n + ' 条内容 hash 以便重写')
+      await sleep(800)
+    }
+  } catch (e) {
+    syncLog.warn('回复表补列失败(继续同步): ' + (e instanceof Error ? e.message : String(e)))
+  }
+
   const since = opts.force ? 0 : Number(getConfig(CFG_LAST_REPLIES_AT) ?? 0) || 0
   const rows = listRepliesChangedSince(wxid, since)
   const out: SyncOutResult = {
@@ -1758,7 +1777,10 @@ export async function syncRepliesOut(
       })
     )
     if (!r.ok) {
-      if (/not.?found|record.?id|1254/i.test(r.error)) {
+      // 只有「记录真的没了」才丢映射重新建。
+      // 早先这里用了过宽的 /1254/ —— 飞书的**字段**类错误码也是 1254xxx,
+      // 于是「列缺失」被误判成「记录没了」→ 丢映射 → 下一轮重复插入(实测 58 条变 116 条)。
+      if (/RecordIdNotFound|record.?not.?found|记录不存在/i.test(r.error)) {
         dropSyncRef('reply', row.id)
         pending.push({ id: row.id, fields, hash })
         continue

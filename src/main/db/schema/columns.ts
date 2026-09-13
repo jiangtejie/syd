@@ -13,6 +13,24 @@ export interface ColumnMigration {
 
 export const COLUMN_MIGRATIONS: ColumnMigration[] = [
   {
+    table: 'agent_reply',
+    column: 'intent_source',
+    ddl: "TEXT NOT NULL DEFAULT ''",
+    note: '意图来源：script（命中话术）/rule（规则层）/llm（模型复核）/none（未归类）'
+  },
+  {
+    table: 'agent_reply',
+    column: 'intent_confidence',
+    ddl: 'REAL NOT NULL DEFAULT 0',
+    note: '意图置信度 0~1：低于阈值时界面可提示「待确认」，也用于统计识别质量'
+  },
+  {
+    table: 'agent_reply',
+    column: 'intent_evidence',
+    ddl: "TEXT NOT NULL DEFAULT ''",
+    note: '意图命中词（顿号分隔）：同事质疑判定时能当场复现，而不是「模型说的」'
+  },
+  {
     table: 'issue_feedback',
     column: 'auto_done',
     ddl: 'INTEGER NOT NULL DEFAULT 0',

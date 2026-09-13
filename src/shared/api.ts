@@ -594,6 +594,15 @@ export interface CsApi {
     save: (input: AiAgentInput) => Promise<Result<{ agent?: AiAgent }>>
   }
   duty: {
+    /** 补全历史记录的意图（只跑规则层，零成本；不动决策与发送状态） */
+    backfillIntent: (limit?: number) => Promise<
+      Result<{
+        scanned?: number
+        filled?: number
+        byIntent?: Array<{ intent: string; n: number }>
+        remaining?: number
+      }>
+    >
     /** 值班总览：开关/模式/话术数 + 近 7 天决策分布 */
     status: (wxid: string) => Promise<Result<{ status?: DutyStatus; stats?: DutyStats }>>
     /** 话术库 */
@@ -812,9 +821,7 @@ export interface CsApi {
       error?: string
     }>
     /** 列名映射（传 null 仅读取） */
-    baseFieldMap: (
-      map?: Record<string, string> | null
-    ) => Promise<{
+    baseFieldMap: (map?: Record<string, string> | null) => Promise<{
       ok: boolean
       fieldMap?: Record<string, string>
       status?: LarkBaseStatus

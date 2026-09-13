@@ -193,6 +193,10 @@ export const CORE_TABLES: string[] = [
     decision TEXT NOT NULL DEFAULT '',
     script_id INTEGER,
     intent TEXT NOT NULL DEFAULT '',
+    -- 意图的来源(话术/规则/模型)与置信度、命中词:复盘时要能回答「这个意图是怎么来的」
+    intent_source TEXT NOT NULL DEFAULT '',
+    intent_confidence REAL NOT NULL DEFAULT 0,
+    intent_evidence TEXT NOT NULL DEFAULT '',
     reply_text TEXT NOT NULL DEFAULT '',
     risk_level TEXT NOT NULL DEFAULT 'A',
     status TEXT NOT NULL DEFAULT 'shadow',

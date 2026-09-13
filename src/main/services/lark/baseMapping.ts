@@ -168,6 +168,14 @@ export function diffCollab(
   }
 }
 
+/** 意图来源 → Base 单选文案（与 services/agent/intent.ts 的枚举一一对应） */
+export const INTENT_SOURCE_TEXT: Record<'script' | 'rule' | 'llm' | 'none', string> = {
+  script: '话术',
+  rule: '规则',
+  llm: '模型',
+  none: '未归类'
+}
+
 // ── 人员列(飞书成员)──
 
 /** 人员字段的写入值:飞书要求 [{id: open_id}] */
@@ -291,6 +299,8 @@ export interface ReplyLike {
   triggerText: string
   decision: string
   intent: string
+  /** 意图来源：script|rule|llm|none（界面与 Base 上用来区分「话术给的」还是「识别出来的」） */
+  intentSource?: string
   replyText: string
   riskLevel: string
   status: string
@@ -310,7 +320,9 @@ export function replyToFields(r: ReplyLike, triggerChars = 120): Record<string, 
     客户群: r.groupName || r.groupUsername,
     触发消息: (r.triggerText ?? '').slice(0, triggerChars),
     判定: DECISION_TEXT[r.decision] ?? r.decision,
-    意图: r.intent || '',
+    // 意图永不为空：识别不出来就给「其他」，同事一眼能看出哪类问题还没话术覆盖
+    意图: (r.intent ?? '').trim() || '其他',
+    意图来源: INTENT_SOURCE_TEXT[(r.intentSource || 'none') as keyof typeof INTENT_SOURCE_TEXT],
     拟回复: (r.replyText ?? '').slice(0, 900),
     风险: riskText(r.riskLevel),
     状态: r.status === 'sent' ? '已发送' : r.status === 'rejected' ? '已驳回' : '影子（待看）',

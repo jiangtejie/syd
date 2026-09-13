@@ -135,6 +135,18 @@ export function clearSyncRefs(kind: LarkSyncKind): number {
   return Number(r.changes ?? 0)
 }
 
+/**
+ * 作废某一类的内容 hash（不删映射）：下一轮会把每条记录重写一遍。
+ * 用途：表里**新加了列**时必须这样 —— 否则老记录的 hash 一致会被跳过，新列永远是空的
+ * （实测：新建的单选列在当轮写入被飞书忽略，而 hash 已记录，之后一直跳过）。
+ */
+export function invalidateSyncHashes(kind: LarkSyncKind): number {
+  const r = getDb()
+    .prepare('UPDATE lark_sync_map SET content_hash = ? WHERE kind = ?')
+    .run('', kind)
+  return Number(r.changes ?? 0)
+}
+
 export function countSyncRefs(kind: LarkSyncKind): number {
   const r = getDb().prepare('SELECT COUNT(*) AS c FROM lark_sync_map WHERE kind = ?').get(kind) as {
     c: number

@@ -784,6 +784,12 @@ export interface DutyReply {
   decision: 'script' | 'llm' | 'handoff' | 'skip'
   scriptId?: number
   intent: string
+  /** 意图来源：script（命中话术）/rule（规则层）/llm（模型复核）/none（未归类） */
+  intentSource?: string
+  /** 意图置信度 0~1 */
+  intentConfidence?: number
+  /** 命中词（顿号分隔） */
+  intentEvidence?: string
   replyText: string
   riskLevel: string
   status: 'shadow' | 'queued' | 'approved' | 'sent' | 'failed' | 'rejected'
@@ -803,6 +809,8 @@ export interface DutyStatus {
   overrides: number
   scripts: number
   shadowLlm: boolean
+  /** 意图为空、可一键补全的历史记录数 */
+  missingIntent: number
 }
 
 export interface DutyStats {

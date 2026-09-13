@@ -22,6 +22,7 @@ import {
   type ReplyStatus
 } from '../db/repos/agentReplyRepo'
 import { previewOnMessages, runDutyPass, dutyStatus } from '../services/agent/duty'
+import { backfillReplyIntents } from '../services/agent/intent'
 import { STARTER_SCRIPTS } from '../services/agent/starters'
 import { isGroupExcluded } from '../services/feedback/groupScope'
 import { isTeamMsg, msgToText, readGroupMessages } from '../services/feedback/shared'
@@ -38,6 +39,22 @@ import { fail } from './_util'
  */
 
 export function registerDutyHandlers(): void {
+  /** 补全历史记录的意图（只跑规则层，零成本；不动决策与发送状态） */
+  ipcMain.handle('cs:duty:backfillIntent', (_e, limit?: number) => {
+    try {
+      const r = backfillReplyIntents(limit ?? 500)
+      return {
+        ok: true as const,
+        scanned: r.scanned,
+        filled: r.filled,
+        byIntent: r.byIntent,
+        remaining: r.remaining
+      }
+    } catch (err) {
+      return fail(err)
+    }
+  })
+
   // 值班总览：开关、模式、话术数、近 7 天决策分布
   ipcMain.handle('cs:duty:status', (_e, wxid: string) => {
     if (!wxid) return { ok: false as const, error: '缺少账号' }

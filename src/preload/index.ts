@@ -652,6 +652,7 @@ const api: PreloadApi = {
         ipcRenderer.invoke('cs:agent:save', input)
     },
     duty: {
+      backfillIntent: (limit?: number) => ipcRenderer.invoke('cs:duty:backfillIntent', limit),
       status: (wxid: string) => ipcRenderer.invoke('cs:duty:status', wxid),
       scripts: (wxid: string) => ipcRenderer.invoke('cs:duty:scripts', wxid),
       scriptSave: (wxid, input) => ipcRenderer.invoke('cs:duty:scriptSave', wxid, input),
