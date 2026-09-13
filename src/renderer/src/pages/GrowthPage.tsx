@@ -148,7 +148,9 @@ export default function GrowthPage(): React.JSX.Element {
           <span className={'gth-seg-hint'}>AI 工作台 = 任务式爆改(对话驱动)</span>
         </div>
       </div>
-      <StatsBar stats={stats} />
+      {/* 四个统计卡(仓库素材/采集订阅/媒体文件/数据服务商)说的是"管线健康度"，
+          与「AI 工作台」这一屏要做的事(对话改稿)无关 —— 该页不显示，省下的高度给对话区。 */}
+      {tab === 'ai' ? null : <StatsBar stats={stats} />}
       {tab === 'provider' ? (
         <>
           <ProviderPanel onChanged={loadStats} />

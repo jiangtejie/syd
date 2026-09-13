@@ -4,7 +4,9 @@
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 320px;
   gap: 12px;
-  height: calc(100vh - 210px);
+  /* 210px = 应用头 + 页面标题 + 分段页签 + 四个统计卡(实测 115.5 + 14 下边距 = 129.5px)。
+     统计卡在 AI 工作台这一屏不再渲染(见 GrowthPage)，所以这里把这 129.5px 还给对话区。 */
+  height: calc(100vh - 80px);
   min-height: 460px;
   /* 动效 token（与 growth.css 的 .gth-page 同源；本页不在 .gth-page 内，
      原先引用 var(--m-*) 的动效声明因变量未定义而整体失效） */
