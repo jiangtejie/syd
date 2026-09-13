@@ -157,7 +157,7 @@ IPC 收敛:cs:feishu:tasks:list 取消,统一为 cs:feishu:audit:list(limit, onl
 ### 未做(可选后续)
 
 - 营销域 13 个工具并入统一注册表(需先把 AI SDK `tool()` 重写为 `ToolDef`,并把「当前营销任务」绑定到会话);
-- 飞书交互卡片按钮确认(替代「回复确认」文本);
+- ~~飞书交互卡片按钮确认(替代「回复确认」文本)~~ → **已落地(2026-09,见 §3.8)**;
 - 组织联系人数据权限放开后,权限名单/白名单可直接从通讯录勾选(代码已就绪,受平台数据权限限制);
 - 95 个 prettier 格式 warning 的全量格式化(会产生较大 diff,建议单独一轮)。
 至此 P0/P1/P2/P3 全部落地;剩余为可选增强:营销域工具并入统一注册表、桌面端取消任务、交互卡片确认。
@@ -232,3 +232,21 @@ IPC 收敛:cs:feishu:tasks:list 取消,统一为 cs:feishu:audit:list(limit, onl
 | 上下文膨胀 | 工具数量上升挤压历史预算 | 沿用注册表的"目录 + 按需挂载" |
 | 双引擎分叉 | 客服/营销两套引擎导致同一指令表现不一致 | P1 统一装配层 |
 | 群消息泄漏 | 群里 @ 即响应会把内部数据暴露给外部群成员 | 默认拒群,只开私聊白名单 |
+
+## 3.8 交互卡片确认(2026-09,已实现)
+
+写类工具在飞书会话里挂起等待人工确认时,此前只发一条「回复「确认」执行」的文本。本轮改为**按钮卡片**,
+文本方式保留为兜底(卡片发不出去时自动回落)。
+
+| 层 | 文件 | 内容 |
+| --- | --- | --- |
+| 卡片构建/解析(纯函数) | `src/main/services/im/cards.ts` | `approvalCard({toolName,args,runId,operatorOpenId})` 生成「确认执行/取消」两个按钮;`parseApprovalAction(value)` 认领本卡片(动作标识 `tool_approval`);`actionValueOf` / `operatorOpenIdOf` 宽松提取回调字段 |
+| 发送 | `src/main/services/im/feishuService.ts` \`sendCardReply\` | 用渠道账号自己的客户端按 `msg_type: 'interactive'` 回复原消息 |
+| 回调 | 同一个文件的 `onCardAction` | 注册到长连接 `card.action.trigger`;**只允许发起人点按钮**(卡片 value 带 `op`,回调里比对 `operator.operator_id.open_id`);命中后 `confirmToolRun(runId, allow)` 并回 toast;确认态失效时提示「已失效」 |
+| 状态 | `feishuConfirm` | 由 `{runId}` 扩展为 `{runId, operatorOpenId}`;队列项 `PendingItem` 增 `senderOpenId` 透传到 `runAiTurn` |
+
+自检:`scripts/lark-sync-selftest.mjs` 第 [15] 节 21 例 —— 卡片结构/按钮 value 契约/发起人字段/参数截断/
+解析端的各种非法输入(别的卡片、缺 runId、非法动作、非对象)/回调字段提取的两种形状。
+
+平台前提(与其它飞书能力一致,代码已就绪):应用需在开放平台开通卡片交互能力并发布版本,
+长连接才能收到 `card.action.trigger`。未开通时按钮点了没反应,但**文本「确认/取消」仍然可用**。

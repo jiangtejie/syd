@@ -68,6 +68,33 @@ export async function sendImText(input: {
   return { ok: true, chunks: chunks.length, messageId: firstId }
 }
 
+/**
+ * 发送交互卡片（机器人身份）。card 为卡片 JSON 对象（构建见 services/im/cards.ts）。
+ * 卡片按钮点击会以 card.action.trigger 回调回来，不经消息通道。
+ */
+export async function sendImCard(input: {
+  receiveIdType: FeishuReceiveIdType
+  receiveId: string
+  card: Record<string, unknown>
+}): Promise<FeishuSendOutcome> {
+  const receiveId = (input.receiveId ?? '').trim()
+  if (!receiveId) return { ok: false, chunks: 0, error: '缺少接收方 id(open_id / chat_id)' }
+  const r = await call<{ message_id?: string }>((api) =>
+    api.request({
+      method: 'POST',
+      url: 'open-apis/im/v1/messages',
+      params: { receive_id_type: input.receiveIdType },
+      data: {
+        receive_id: receiveId,
+        msg_type: 'interactive',
+        content: JSON.stringify(input.card)
+      }
+    })
+  )
+  if (!r.ok) return { ok: false, chunks: 0, error: r.error }
+  return { ok: true, chunks: 1, messageId: r.data.message_id }
+}
+
 export interface FeishuChat {
   chatId: string
   name: string

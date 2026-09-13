@@ -35,6 +35,12 @@ import { fmtHms, fmtStamp, fmtTimeShort } from '../src/shared/monitorMetrics.ts'
 import { isRecordMissingError } from '../src/main/services/lark/errorClass.ts'
 import { collectFieldPages } from '../src/main/services/lark/fieldPages.ts'
 import { buildGroupIssuesText } from '../src/main/services/lark/issueDigest.ts'
+import {
+  actionValueOf,
+  approvalCard,
+  operatorOpenIdOf,
+  parseApprovalAction
+} from '../src/main/services/im/cards.ts'
 // 人员列的两个纯函数放在 baseMapping(与证据映射同源),这里直接离线导入
 
 let failed = 0
@@ -366,6 +372,40 @@ console.log('\n[14] 群问题 → 飞书摘要文案（工作台「发到飞书�
   })
   log(many.includes('仅列前 2 条，共 4 条未闭环'), '超出上限时给尾注', many.split('\n').slice(-1)[0])
   log(many.split('\n').filter((l) => /^\d+\. /.test(l)).length === 2, '真的只列 2 条')
+}
+
+console.log('\n[15] 工具审批卡片（按钮 value 是发送端与回调端的唯一契约）')
+{
+  const card = approvalCard({ toolName: '发送微信消息', args: '给「保利星荟店对接群」发：好的', runId: 'run-1', operatorOpenId: 'ou_me' })
+  const els = card.elements
+  const action = els.find((e) => e.tag === 'action')
+  log(card.header.template === 'orange' && card.header.title.content.includes('需要你确认'), '卡片头是「需要你确认」', card.header.title.content)
+  log(Array.isArray(action.actions) && action.actions.length === 2, '两个按钮', String(action.actions.length))
+  log(action.actions[0].value.k === 'tool_approval' && action.actions[0].value.d === 'allow', '确认按钮 value 带动作标识')
+  log(action.actions[1].value.d === 'deny', '取消按钮 value 为 deny')
+  log(action.actions[0].value.op === 'ou_me' && action.actions[1].value.op === 'ou_me', '两个按钮都带发起人(只允许本人确认)')
+  log(els.some((e) => e.tag === 'div' && e.text.content.includes('参数：')), '参数段落')
+  log(els.some((e) => e.tag === 'note' && e.elements[0].content.includes('回复「确认」')), '备注说明按钮与文本两条路都能用')
+
+  const noArgs = approvalCard({ toolName: 'X', runId: 'run-2' })
+  log(!noArgs.elements.some((e) => e.tag === 'div' && String(e.text.content).includes('参数：')), '无参数时不出现参数段')
+  log(noArgs.elements.find((e) => e.tag === 'action').actions[0].value.op === undefined, '未指定发起人时不写 op(沿用不校验)')
+  const longArgs = approvalCard({ toolName: 'X', args: 'x'.repeat(500), runId: 'r' })
+  log(longArgs.elements.find((e) => e.tag === 'div' && String(e.text.content).startsWith('参数：')).text.content.length < 260, '参数截断到 200 字内')
+
+  log(parseApprovalAction({ k: 'tool_approval', runId: 'r1', d: 'allow' }).allow === true, '解析:确认')
+  log(parseApprovalAction({ k: 'tool_approval', runId: 'r1', d: 'deny' }).allow === false, '解析:取消')
+  log(parseApprovalAction({ k: 'tool_approval', runId: 'r1', d: 'allow', op: 'ou_x' }).operatorOpenId === 'ou_x', '解析:带发起人')
+  log(parseApprovalAction({ k: 'other', runId: 'r1', d: 'allow' }) === null, '别的卡片的 value 不认领')
+  log(parseApprovalAction({ k: 'tool_approval', d: 'allow' }) === null, '缺 runId → null')
+  log(parseApprovalAction({ k: 'tool_approval', runId: 'r1', d: 'maybe' }) === null, '非法动作 → null')
+  log(parseApprovalAction(null) === null && parseApprovalAction('x') === null, '非对象 → null')
+
+  const payload = { operator: { operator_id: { open_id: 'ou_a' } }, action: { value: { k: 'tool_approval' } } }
+  log(actionValueOf(payload).k === 'tool_approval', '从回调里取 value')
+  log(operatorOpenIdOf(payload) === 'ou_a', '从回调里取操作者(operator_id.open_id)')
+  log(operatorOpenIdOf({ operator: { open_id: 'ou_b' } }) === 'ou_b', '兼容 operator.open_id 形状')
+  log(operatorOpenIdOf({}) === '', '取不到返回空串')
 }
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)

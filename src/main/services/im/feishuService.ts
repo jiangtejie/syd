@@ -28,6 +28,7 @@ import { ensureBoundBusinessMounts } from '../ai/cap/mounts'
 import { openSecret } from '../secrets'
 import { maxFileBytes, maxFileHint } from './channelFiles'
 import { clipForChannel, feishuPlainText, isStopCommand } from './mdToPlain'
+import { actionValueOf, approvalCard, operatorOpenIdOf, parseApprovalAction } from './cards'
 import { toolCnName } from '../../../shared/types'
 import type { AiChatEvent } from '../../../shared/types'
 
@@ -77,7 +78,7 @@ interface Runtime {
       message: {
         reply: (opts: {
           path: { message_id: string }
-          data: { msg_type: 'text'; content: string }
+          data: { msg_type: 'text' | 'interactive'; content: string }
         }) => Promise<unknown>
       }
     }
@@ -105,6 +106,8 @@ interface PendingItem {
   messageId: string
   /** 审计/任务行 id(进度与结果都回填到这一行) */
   logId?: number | null
+  /** 发起人 open_id(工具审批卡片只允许发起人点按钮) */
+  senderOpenId?: string
 }
 
 /** sessionId → 待续答内容(覆盖式:同会话多条只留最新) */
@@ -112,7 +115,7 @@ const pendingQueue = new Map<number, PendingItem>()
 /** 正在执行 drain 的会话(防重复起循环) */
 const draining = new Set<number>()
 /** 高危工具二次确认:引擎已挂起等待桌面确认,由本会话用户在飞书里答复 */
-const feishuConfirm = new Map<string, { runId: string }>()
+const feishuConfirm = new Map<string, { runId: string; operatorOpenId?: string }>()
 /** 等待引擎空闲的最长时间:超过则放弃排队并提示 */
 const IDLE_WAIT_MS = 5 * 60_000
 
@@ -486,7 +489,47 @@ export async function startFeishuAccount(
         msg.chat_type ?? ''
       )
     }
-    dispatcher.register({ 'im.message.receive_v1': onReceive })
+    /**
+     * 交互卡片回调:工具审批的「确认/取消」按钮（替代回复「确认」的文本方式）。
+     * 安全:确认态以 sessionId 为键、卡片 value 里带发起人 open_id —— 只有发起人能点。
+     * 返回对象会作为回调应答(飞书据此弹 toast)。
+     */
+    const onCardAction = (data: unknown): Record<string, unknown> => {
+      const parsed = parseApprovalAction(actionValueOf(data))
+      if (!parsed) return {}
+      const from = operatorOpenIdOf(data)
+      let sessionKey = ''
+      for (const [k, v] of feishuConfirm.entries()) {
+        if (v.runId === parsed.runId) {
+          sessionKey = k
+          break
+        }
+      }
+      if (!sessionKey) {
+        return { toast: { type: 'info', content: '这条确认已失效(超时或已处理)' } }
+      }
+      const pending = feishuConfirm.get(sessionKey)
+      if (pending?.operatorOpenId && from && pending.operatorOpenId !== from) {
+        imLog(accountId, `卡片确认被非发起人点击:from=${from} 发起人=${pending.operatorOpenId}`)
+        return { toast: { type: 'error', content: '只有发起这条指令的人可以确认' } }
+      }
+      feishuConfirm.delete(sessionKey)
+      confirmToolRun(parsed.runId, parsed.allow)
+      imLog(
+        accountId,
+        `卡片确认:${parsed.allow ? '同意' : '拒绝'} run=${parsed.runId} from=${from || '未知'}`
+      )
+      return {
+        toast: {
+          type: parsed.allow ? 'success' : 'info',
+          content: parsed.allow ? '已确认,继续执行…' : '已取消本次操作'
+        }
+      }
+    }
+    dispatcher.register({
+      'im.message.receive_v1': onReceive,
+      'card.action.trigger': onCardAction
+    })
 
     // 连接生命周期回调:真实状态(不要乐观置 connected)
     const wsc = new lark.WSClient({
@@ -643,7 +686,12 @@ async function handleInbound(
     if (prevItem) {
       auditFinish(prevItem.logId ?? null, { status: 'cancelled', error: '被新指令取代' })
     }
-    pendingQueue.set(sessionId, { text: capped, messageId: replyMessageId, logId })
+    pendingQueue.set(sessionId, {
+      text: capped,
+      messageId: replyMessageId,
+      logId,
+      senderOpenId
+    })
     if (draining.has(sessionId)) return
     draining.add(sessionId)
     void drainInbound(sessionId, rt).finally(() => draining.delete(sessionId))
@@ -930,7 +978,8 @@ async function drainInbound(sessionId: number, rt: Runtime): Promise<void> {
       item.text,
       rt,
       item.messageId,
-      item.logId ?? null
+      item.logId ?? null,
+      item.senderOpenId ?? ''
     )
     feishuConfirm.delete(String(sessionId))
     if (out === null) {
@@ -966,7 +1015,9 @@ async function runAiTurn(
   text: string,
   rt: Runtime,
   replyMessageId: string,
-  auditId: number | null = null
+  auditId: number | null = null,
+  /** 发起人 open_id:审批卡片只允许他点按钮(空 = 不校验，沿用文本确认行为) */
+  operatorOpenId = ''
 ): Promise<string | null> {
   return await new Promise<string | null>((resolve) => {
     let finished = false
@@ -1012,12 +1063,21 @@ async function runAiTurn(
       if (finished) return
       if (evt.type === 'tool' && evt.toolStatus === 'pending' && evt.text) {
         // 引擎挂起等人工确认:在本会话内询问,用户答复后由 handleInbound 消费
-        feishuConfirm.set(String(sessionId), { runId: evt.text })
-        const prompt = `⚠️ 需要你确认:智能体要执行「${
+        feishuConfirm.set(String(sessionId), { runId: evt.text, operatorOpenId })
+        const card = approvalCard({
+          toolName: evt.tool ? toolCnName(evt.tool) : '未知操作',
+          args: evt.args ? clipForChannel(evt.args, 200) : '',
+          runId: evt.text,
+          operatorOpenId
+        })
+        const fallback = `⚠️ 需要你确认:智能体要执行「${
           evt.tool ? toolCnName(evt.tool) : '未知操作'
         }」${evt.args ? `\n参数:${clipForChannel(evt.args, 200)}` : ''}\n回复「确认」执行,回复「取消」拒绝。`
-        void safeReply(rt, replyMessageId, prompt).catch(() => {
-          /* 发送失败由 safeReply 内部记录 */
+        void sendCardReply(rt, replyMessageId, card).catch(() => {
+          // 卡片发不出去(权限/版本等)时退回文本确认,不让审批链断掉
+          void safeReply(rt, replyMessageId, fallback).catch(() => {
+            /* 发送失败由 safeReply 内部记录 */
+          })
         })
         return
       }
@@ -1081,6 +1141,18 @@ async function safeReply(rt: Runtime, messageId: string, text: string): Promise<
       )
     }
   }
+}
+
+/** 原消息回复一张交互卡片(工具审批按钮用);失败由调用方回落文本确认 */
+async function sendCardReply(
+  rt: Runtime,
+  messageId: string,
+  card: Record<string, unknown>
+): Promise<void> {
+  await rt.client.im.message.reply({
+    path: { message_id: messageId },
+    data: { msg_type: 'interactive', content: JSON.stringify(card) }
+  })
 }
 
 /** 原消息回复:先做 Markdown → 飞书可读纯文本降级,再长文本分片 */
