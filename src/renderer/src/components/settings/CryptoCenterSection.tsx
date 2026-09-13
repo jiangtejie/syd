@@ -94,7 +94,7 @@ function CryptoCenterSection(): React.JSX.Element {
       <div className="st-actions">
         <button
           type="button"
-          className="st-btn"
+          className="ui-btn is-primary"
           disabled={busy !== null}
           onClick={() => void onboard()}
         >
@@ -102,7 +102,7 @@ function CryptoCenterSection(): React.JSX.Element {
         </button>
         <button
           type="button"
-          className="st-btn ghost"
+          className="ui-btn"
           disabled={busy !== null || !wxid}
           onClick={() => void doWarmup()}
         >
@@ -110,7 +110,7 @@ function CryptoCenterSection(): React.JSX.Element {
         </button>
         <button
           type="button"
-          className="st-btn ghost"
+          className="ui-btn"
           disabled={busy !== null || !wxid}
           onClick={() => void check()}
         >

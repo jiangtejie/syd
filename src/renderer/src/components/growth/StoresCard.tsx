@@ -182,7 +182,7 @@ export default function StoresCard(): React.JSX.Element {
         </FieldRow>
         <FieldRow label="保存">
           <button
-            className="gth-btn primary"
+            className="ui-btn is-primary gth-btn"
             type="button"
             disabled={busy}
             onClick={() => void saveBrand()}
@@ -197,7 +197,7 @@ export default function StoresCard(): React.JSX.Element {
         desc="AI 只能使用这里配置的事实; 缺失字段会主动追问或用占位符, 不会编造。地址/电话等敏感信息建议人工核对后再填。"
       >
         <div className="gth-btn-row" style={{ marginBottom: 10 }}>
-          <button className="gth-btn primary sm" type="button" onClick={startNew}>
+          <button className="ui-btn is-primary gth-btn sm" type="button" onClick={startNew}>
             + 新增门店
           </button>
           <span className="gth-sub">共 {stores.length} 家</span>
@@ -224,11 +224,15 @@ export default function StoresCard(): React.JSX.Element {
                     </div>
                   </div>
                   <div className="gth-actions">
-                    <button className="gth-btn sm" type="button" onClick={() => startEdit(s)}>
+                    <button
+                      className="ui-btn gth-btn sm"
+                      type="button"
+                      onClick={() => startEdit(s)}
+                    >
                       编辑
                     </button>
                     <button
-                      className="gth-btn sm danger"
+                      className="ui-btn is-danger gth-btn sm"
                       type="button"
                       onClick={() => void remove(s)}
                     >
@@ -247,7 +251,7 @@ export default function StoresCard(): React.JSX.Element {
               <label className="gth-field">
                 <span className="gth-field-label">品牌名</span>
                 <input
-                  className="gth-input"
+                  className="ui-input gth-input"
                   value={form.brandName ?? ''}
                   onChange={(e) => setForm((f) => ({ ...f, brandName: e.target.value }))}
                   placeholder="如 萍姐火锅"
@@ -258,7 +262,7 @@ export default function StoresCard(): React.JSX.Element {
                   门店名<span className="req">*</span>
                 </span>
                 <input
-                  className="gth-input"
+                  className="ui-input gth-input"
                   value={form.name ?? ''}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder="如 萍姐火锅(春熙路店)"
@@ -267,7 +271,7 @@ export default function StoresCard(): React.JSX.Element {
               <label className="gth-field">
                 <span className="gth-field-label">城市</span>
                 <input
-                  className="gth-input"
+                  className="ui-input gth-input"
                   value={form.city ?? ''}
                   onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
                   placeholder="成都"
@@ -276,7 +280,7 @@ export default function StoresCard(): React.JSX.Element {
               <label className="gth-field">
                 <span className="gth-field-label">业态</span>
                 <input
-                  className="gth-input"
+                  className="ui-input gth-input"
                   value={form.bizType ?? ''}
                   onChange={(e) => setForm((f) => ({ ...f, bizType: e.target.value }))}
                   placeholder="火锅"
@@ -285,7 +289,7 @@ export default function StoresCard(): React.JSX.Element {
               <label className="gth-field wide">
                 <span className="gth-field-label">详细地址</span>
                 <input
-                  className="gth-input"
+                  className="ui-input gth-input"
                   value={form.address ?? ''}
                   onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
                   placeholder="成都市锦江区…"
@@ -295,7 +299,7 @@ export default function StoresCard(): React.JSX.Element {
                 <label className="gth-field" key={k.key}>
                   <span className="gth-field-label">{k.label}</span>
                   <input
-                    className="gth-input"
+                    className="ui-input gth-input"
                     value={form[k.key] ?? ''}
                     onChange={(e) => setForm((f) => ({ ...f, [k.key]: e.target.value }))}
                     placeholder={k.placeholder}
@@ -305,14 +309,14 @@ export default function StoresCard(): React.JSX.Element {
             </div>
             <div className="gth-btn-row" style={{ marginTop: 10 }}>
               <button
-                className="gth-btn primary"
+                className="ui-btn is-primary gth-btn"
                 type="button"
                 disabled={busy}
                 onClick={() => void save()}
               >
                 {editing ? '保存修改' : '创建门店'}
               </button>
-              <button className="gth-btn" type="button" onClick={() => setOpen(false)}>
+              <button className="ui-btn gth-btn" type="button" onClick={() => setOpen(false)}>
                 取消
               </button>
             </div>

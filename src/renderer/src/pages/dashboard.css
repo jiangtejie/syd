@@ -105,34 +105,6 @@
   margin-top: 12px;
 }
 
-.db-chip {
-  font-size: 12px;
-  color: var(--text-2);
-  background: var(--border-light);
-  border-radius: 10px;
-  padding: 2px 10px;
-}
-
-.db-chip-sent {
-  color: var(--brand);
-  background: var(--success-soft);
-}
-
-.db-chip-failed {
-  color: var(--danger);
-  background: var(--danger-soft);
-}
-
-.db-chip-rejected {
-  color: #b8860b;
-  background: #fdf3d7;
-}
-
-.db-chip-halted {
-  color: #c92a2a;
-  background: var(--danger-soft);
-}
-
 /* 失败原因列表 */
 .db-reasons {
   display: flex;
@@ -338,35 +310,6 @@
 
 .db-sec-title {
   margin-bottom: 0;
-}
-
-.db-seg {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  overflow: hidden;
-}
-
-.db-seg-btn {
-  border: none;
-  background: var(--bg-hover);
-  color: var(--text-3);
-  font-size: 12px;
-  padding: 5px 12px;
-  cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
-}
-
-.db-seg-btn + .db-seg-btn {
-  border-left: 1px solid var(--border);
-}
-
-.db-seg-btn.on {
-  background: var(--brand);
-  color: var(--on-brand);
-  font-weight: 600;
 }
 
 .db-footnote {

@@ -327,7 +327,7 @@ export function FeishuNotifySection(): React.JSX.Element {
         />
         <button
           type="button"
-          className="st-btn ghost"
+          className="ui-btn"
           disabled={digestBusy !== ''}
           onClick={() => void sendDigest()}
         >
@@ -369,7 +369,7 @@ export function FeishuNotifySection(): React.JSX.Element {
             <div className="mcp-item-ops">
               <button
                 type="button"
-                className="st-btn ghost danger sm"
+                className="ui-btn is-danger is-sm"
                 onClick={() => void removeTarget(t)}
               >
                 移除
@@ -394,12 +394,7 @@ export function FeishuNotifySection(): React.JSX.Element {
 
       {kind === 'chat' ? (
         <div className="st-actions">
-          <button
-            type="button"
-            className="st-btn ghost"
-            disabled={busy}
-            onClick={() => void loadChats()}
-          >
+          <button type="button" className="ui-btn" disabled={busy} onClick={() => void loadChats()}>
             {busy ? '读取中…' : '读取机器人所在群'}
           </button>
           {chats && (
@@ -416,7 +411,7 @@ export function FeishuNotifySection(): React.JSX.Element {
                   </option>
                 ))}
               </select>
-              <button type="button" className="st-btn" onClick={() => void addChat()}>
+              <button type="button" className="ui-btn is-primary" onClick={() => void addChat()}>
                 添加
               </button>
             </>
@@ -435,14 +430,14 @@ export function FeishuNotifySection(): React.JSX.Element {
             />
             <button
               type="button"
-              className="st-btn ghost"
+              className="ui-btn"
               disabled={busy}
               onClick={() => void resolveEmail()}
             >
               解析
             </button>
             {resolved && (
-              <button type="button" className="st-btn" onClick={() => void addUser()}>
+              <button type="button" className="ui-btn is-primary" onClick={() => void addUser()}>
                 添加 {resolved.name}
               </button>
             )}
@@ -455,7 +450,12 @@ export function FeishuNotifySection(): React.JSX.Element {
       )}
 
       <div className="st-actions">
-        <button type="button" className="st-btn" disabled={busy} onClick={() => void sendTest()}>
+        <button
+          type="button"
+          className="ui-btn is-primary"
+          disabled={busy}
+          onClick={() => void sendTest()}
+        >
           {busy ? '发送中…' : '发送测试消息'}
         </button>
       </div>

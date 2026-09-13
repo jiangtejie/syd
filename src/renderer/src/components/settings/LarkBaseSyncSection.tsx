@@ -502,7 +502,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
             <>
               <button
                 type="button"
-                className="st-btn"
+                className="ui-btn is-primary"
                 disabled={baseBusy !== ''}
                 onClick={() => void syncBaseNow(false)}
               >
@@ -510,7 +510,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
               </button>
               <button
                 type="button"
-                className="st-btn ghost"
+                className="ui-btn"
                 disabled={baseBusy !== ''}
                 onClick={() => void syncBaseNow(true)}
                 title="忽略上次同步时间，把所有议题核对一遍"
@@ -519,7 +519,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
               </button>
               <button
                 type="button"
-                className="st-btn ghost"
+                className="ui-btn"
                 disabled={baseBusy !== ''}
                 onClick={() => void pullBaseNow()}
                 title="只把同事在表格里改的状态/跟进人拉回本地（不推送本地变更）"
@@ -528,7 +528,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
               </button>
               <button
                 type="button"
-                className="st-btn ghost is-end"
+                className="ui-btn is-end"
                 onClick={() => setBaseReconfig(true)}
                 title="换一个多维表格 / 换目标表 / 重新自检字段"
               >
@@ -539,7 +539,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
             <>
               <button
                 type="button"
-                className="st-btn ghost"
+                className="ui-btn"
                 disabled={baseBusy !== ''}
                 onClick={() => void previewBase()}
                 title="只自检、不改动：先看目标表、将新建哪些列、有没有类型冲突"
@@ -548,7 +548,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
               </button>
               <button
                 type="button"
-                className="st-btn"
+                className="ui-btn is-primary"
                 disabled={baseBusy !== ''}
                 onClick={() => void verifyBase()}
                 title="按链接执行：用你指定的表（或新建「议题」表）并补齐字段，然后写一条测试记录验证写权限"
@@ -558,7 +558,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
               {baseReconfig && (
                 <button
                   type="button"
-                  className="st-btn ghost is-end"
+                  className="ui-btn is-end"
                   onClick={() => setBaseReconfig(false)}
                 >
                   取消
@@ -636,7 +636,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
                 <input className="st-input" value={maskBaseLink(baseStatus.link)} readOnly />
                 <button
                   type="button"
-                  className="st-btn ghost"
+                  className="ui-btn"
                   onClick={() => void copyBaseLink()}
                   title="复制完整链接（发给同事或排查时用）"
                 >
@@ -649,7 +649,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
               <div className="sf-actions-split">
                 <button
                   type="button"
-                  className="st-btn ghost"
+                  className="ui-btn"
                   disabled={baseBusy !== ''}
                   onClick={() => void claimBase()}
                   title="目标表里已有行时，按「议题ID」与本地议题对上，避免同步时重复插入"
@@ -674,7 +674,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
           <div className="sf-actions-split">
             <button
               type="button"
-              className="st-btn"
+              className="ui-btn is-primary"
               disabled={sysBusy !== '' || !baseStatus?.configured}
               onClick={() => void upgradeSystem()}
               title="只新增：不动你已有的列与数据；按钮列/仪表盘/自动化飞书没开放接口，会列在结果里让你手动点"
@@ -684,7 +684,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
             {sysReport && sysReport.manual.length > 0 && (
               <button
                 type="button"
-                className="st-btn ghost is-end"
+                className="ui-btn is-end"
                 onClick={() => void copyManualSteps()}
                 title="复制「需要手动点」的清单（按钮列/自动化/仪表盘/日期格式）"
               >
@@ -728,7 +728,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
               <div className="sf-actions-split">
                 <button
                   type="button"
-                  className="st-btn ghost"
+                  className="ui-btn"
                   disabled={sysBusy !== ''}
                   onClick={() => void refreshPerson()}
                   title="按应用可见的通讯录解析「称呼 → open_id」，一天刷一次就够"
@@ -786,7 +786,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
             <div className="st-actions">
               <button
                 type="button"
-                className="st-btn"
+                className="ui-btn is-primary"
                 disabled={baseBusy !== ''}
                 onClick={() => void saveBaseFieldMap()}
               >
@@ -964,7 +964,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
           <div className="sf-actions-split">
             <button
               type="button"
-              className="st-btn ghost"
+              className="ui-btn"
               disabled={baseBusy !== '' || !baseStatus?.configured}
               onClick={() => void setupBaseEvidence()}
               title="在同一个 Base 里创建「议题证据」子表并补齐字段（已存在则只补字段）；会尝试建立与议题表的关联字段，失败不影响同步"
@@ -973,7 +973,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
             </button>
             <button
               type="button"
-              className="st-btn ghost"
+              className="ui-btn"
               disabled={baseBusy !== '' || !baseStatus?.configured}
               onClick={() => void cleanBaseEvidence()}
               title="对比远程「证据ID」与本地记录，删掉议题已删除后残留的孤儿行"

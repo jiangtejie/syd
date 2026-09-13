@@ -586,10 +586,10 @@ export default function GrowthAiWorkbench({
       <aside className="gai-tasks">
         <div className="gai-tasks-head">
           <span>爆改任务</span>
-          <button className="gth-btn sm primary" type="button" onClick={openPick}>
+          <button className="ui-btn is-primary gth-btn sm" type="button" onClick={openPick}>
             + 新建
           </button>
-          <button className="gth-btn sm" type="button" onClick={() => void loadTasks()}>
+          <button className="ui-btn gth-btn sm" type="button" onClick={() => void loadTasks()}>
             刷新
           </button>
         </div>
@@ -643,7 +643,7 @@ export default function GrowthAiWorkbench({
                 {task.contentTitle || task.title}
               </div>
               <select
-                className="gth-select"
+                className="ui-select gth-select"
                 style={{ width: 150 }}
                 value={task.goal}
                 onChange={(e) => void patchTask({ goal: e.target.value })}
@@ -655,7 +655,7 @@ export default function GrowthAiWorkbench({
                 ))}
               </select>
               <select
-                className="gth-select"
+                className="ui-select gth-select"
                 style={{ width: 160 }}
                 value={task.storeId === null ? '' : String(task.storeId)}
                 onChange={(e) =>
@@ -672,7 +672,7 @@ export default function GrowthAiWorkbench({
               <span className="gth-badge gray">{STAGE_LABEL[task.stage] ?? task.stage}</span>
               {task.status === 'drafting' ? (
                 <button
-                  className="gth-btn sm"
+                  className="ui-btn gth-btn sm"
                   type="button"
                   onClick={() => void patchTask({ status: 'done' })}
                   title="标记任务完成"
@@ -681,7 +681,7 @@ export default function GrowthAiWorkbench({
                 </button>
               ) : (
                 <button
-                  className="gth-btn sm"
+                  className="ui-btn gth-btn sm"
                   type="button"
                   onClick={() => void patchTask({ status: 'drafting' })}
                 >
@@ -689,7 +689,7 @@ export default function GrowthAiWorkbench({
                 </button>
               )}
               <button
-                className="gth-btn sm danger"
+                className="ui-btn is-danger gth-btn sm"
                 type="button"
                 onClick={() => void removeTask(task)}
               >
@@ -719,14 +719,14 @@ export default function GrowthAiWorkbench({
                   <span>需要确认: {approval.tool}</span>
                   <span className="gai-approval-text">{approval.text}</span>
                   <button
-                    className="gth-btn sm primary"
+                    className="ui-btn is-primary gth-btn sm"
                     type="button"
                     onClick={() => void resolveApproval(true)}
                   >
                     允许
                   </button>
                   <button
-                    className="gth-btn sm"
+                    className="ui-btn gth-btn sm"
                     type="button"
                     onClick={() => void resolveApproval(false)}
                   >
@@ -741,7 +741,7 @@ export default function GrowthAiWorkbench({
 
             <div className="gai-composer">
               <textarea
-                className="gai-input"
+                className="ui-textarea gai-input"
                 rows={3}
                 value={input}
                 placeholder="直接说改什么, 例如: 换 5 个标题突出人均; 正文改成探店风 120 字; 生成一张暖色火锅氛围封面…"
@@ -752,12 +752,12 @@ export default function GrowthAiWorkbench({
               />
               <div className="gai-composer-btns">
                 {sending ? (
-                  <button className="gth-btn" type="button" onClick={stop}>
+                  <button className="ui-btn gth-btn" type="button" onClick={stop}>
                     停止
                   </button>
                 ) : (
                   <button
-                    className="gth-btn primary"
+                    className="ui-btn is-primary gth-btn"
                     type="button"
                     disabled={!input.trim()}
                     onClick={() => void send()}
@@ -784,7 +784,11 @@ export default function GrowthAiWorkbench({
             <div className="gai-out-card" key={o.id}>
               <div className="gai-out-variant">
                 {VARIANT_LABEL[o.variant] ?? o.variant}
-                <button className="gth-btn sm" type="button" onClick={() => void revert(o.id)}>
+                <button
+                  className="ui-btn gth-btn sm"
+                  type="button"
+                  onClick={() => void revert(o.id)}
+                >
                   回退
                 </button>
               </div>
@@ -808,7 +812,7 @@ export default function GrowthAiWorkbench({
                 <>
                   <div className="gth-copy-text">{o.copy}</div>
                   <button
-                    className="gth-btn sm"
+                    className="ui-btn gth-btn sm"
                     type="button"
                     onClick={() => void copyText(o.copy)}
                   >
@@ -861,7 +865,7 @@ export default function GrowthAiWorkbench({
                       <div className="gai-cand-line" key={String(i)}>
                         <span>{line}</span>
                         <button
-                          className="gth-btn sm primary"
+                          className="ui-btn is-primary gth-btn sm"
                           type="button"
                           onClick={() => void resolveCandidate(c.id, 'select')}
                         >
@@ -875,14 +879,14 @@ export default function GrowthAiWorkbench({
                   <div className="gth-copy-text">{c.copy}</div>
                   <div className="gai-cand-btns">
                     <button
-                      className="gth-btn sm primary"
+                      className="ui-btn is-primary gth-btn sm"
                       type="button"
                       onClick={() => void resolveCandidate(c.id, 'select')}
                     >
                       采用
                     </button>
                     <button
-                      className="gth-btn sm"
+                      className="ui-btn gth-btn sm"
                       type="button"
                       onClick={() => void copyText(c.copy)}
                     >
@@ -904,7 +908,7 @@ export default function GrowthAiWorkbench({
                         title={a.note || a.prompt}
                       />
                       <button
-                        className="gth-btn sm primary"
+                        className="ui-btn is-primary gth-btn sm"
                         type="button"
                         onClick={() => void resolveCandidate(c.id, 'select')}
                       >
@@ -915,7 +919,7 @@ export default function GrowthAiWorkbench({
                 </div>
               ) : null}
               <button
-                className="gth-btn sm danger"
+                className="ui-btn is-danger gth-btn sm"
                 type="button"
                 onClick={() => void resolveCandidate(c.id, 'delete')}
               >
@@ -937,14 +941,18 @@ export default function GrowthAiWorkbench({
             <div className="gai-pick-head">
               <span className="t">新建爆改任务</span>
               <span className="s">选一条爆款素材, AI 先拆解结构, 再按你的要求爆改</span>
-              <button className="gth-btn sm" type="button" onClick={() => setPickOpen(false)}>
+              <button
+                className="ui-btn gth-btn sm"
+                type="button"
+                onClick={() => setPickOpen(false)}
+              >
                 关闭
               </button>
             </div>
             <div className="gai-pick-filters">
               <input
                 autoFocus
-                className="gth-input"
+                className="ui-input gth-input"
                 placeholder="搜索素材标题 / 作者"
                 value={pickKeyword}
                 onChange={(e) => setPickKeyword(e.target.value)}
@@ -953,14 +961,14 @@ export default function GrowthAiWorkbench({
                 }}
               />
               <button
-                className="gth-btn sm"
+                className="ui-btn gth-btn sm"
                 type="button"
                 onClick={() => void loadMaterials(pickKeyword)}
               >
                 搜索
               </button>
               <select
-                className="gth-select"
+                className="ui-select gth-select"
                 value={pickStoreId}
                 onChange={(e) => setPickStoreId(Number(e.target.value))}
               >
@@ -972,7 +980,7 @@ export default function GrowthAiWorkbench({
                 ))}
               </select>
               <select
-                className="gth-select"
+                className="ui-select gth-select"
                 value={pickGoal}
                 onChange={(e) => setPickGoal(e.target.value)}
               >

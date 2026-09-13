@@ -199,7 +199,7 @@ function AgentSettingsSection(): React.JSX.Element {
         <div className="st-row ag-actions">
           <button
             type="button"
-            className="st-btn"
+            className="ui-btn is-primary"
             disabled={saving || !dirty}
             onClick={() => void save()}
           >

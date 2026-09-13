@@ -715,7 +715,7 @@ function SettingsPage(): React.JSX.Element {
                 {modelFree && modelCandidates.length > 0 && (
                   <button
                     type="button"
-                    className="st-btn ghost"
+                    className="ui-btn"
                     onClick={() => setModelFree(false)}
                     title="从下拉列表选择模型"
                   >
@@ -724,7 +724,7 @@ function SettingsPage(): React.JSX.Element {
                 )}
                 <button
                   type="button"
-                  className="st-btn ghost"
+                  className="ui-btn"
                   disabled={aiModelsLoading || !form['ai.baseUrl'].trim()}
                   onClick={() => void fetchAiModels()}
                   title="调用 {Base URL}/models 拉取当前通道可用模型"
@@ -744,7 +744,7 @@ function SettingsPage(): React.JSX.Element {
             <div className="st-actions">
               <button
                 type="button"
-                className="st-btn ghost"
+                className="ui-btn"
                 disabled={aiTesting}
                 onClick={() => void testAi()}
               >
@@ -752,7 +752,7 @@ function SettingsPage(): React.JSX.Element {
               </button>
               <button
                 type="button"
-                className="st-btn"
+                className="ui-btn is-primary"
                 disabled={!loaded}
                 onClick={() =>
                   void save([
@@ -881,7 +881,7 @@ function SettingsPage(): React.JSX.Element {
               />
             </FieldRow>
             <FieldRow label="连通性测试">
-              <button type="button" className="st-btn" onClick={() => void testImage()}>
+              <button type="button" className="ui-btn is-primary" onClick={() => void testImage()}>
                 {imgTesting ? '测试中…' : '测试生图(会生成 1 张测试图)'}
               </button>
             </FieldRow>
@@ -946,7 +946,7 @@ function SettingsPage(): React.JSX.Element {
             <div className="sf-actions-split">
               <button
                 type="button"
-                className="st-btn ghost"
+                className="ui-btn"
                 disabled={larkTesting}
                 onClick={() => void testLark()}
               >
@@ -955,7 +955,7 @@ function SettingsPage(): React.JSX.Element {
               {larkStatus?.configured && !larkReconfig && (
                 <button
                   type="button"
-                  className="st-btn ghost is-end"
+                  className="ui-btn is-end"
                   onClick={() => setLarkReconfig(true)}
                   title="换一个飞书自建应用，或改成复用 IM 渠道账号"
                 >
@@ -993,7 +993,7 @@ function SettingsPage(): React.JSX.Element {
                 <div className="sf-actions-split">
                   <button
                     type="button"
-                    className="st-btn"
+                    className="ui-btn is-primary"
                     disabled={!loaded}
                     onClick={() => {
                       void save(['lark.appId', 'lark.appSecret', 'lark.defaultUrl']).then(() => {
@@ -1007,7 +1007,7 @@ function SettingsPage(): React.JSX.Element {
                   {larkReconfig && (
                     <button
                       type="button"
-                      className="st-btn ghost is-end"
+                      className="ui-btn is-end"
                       onClick={() => setLarkReconfig(false)}
                     >
                       取消
@@ -1118,7 +1118,7 @@ function SettingsPage(): React.JSX.Element {
               <div className="st-actions">
                 <button
                   type="button"
-                  className="st-btn"
+                  className="ui-btn is-primary"
                   onClick={() =>
                     void save([
                       'send.dailyLimit',
@@ -1160,7 +1160,7 @@ function SettingsPage(): React.JSX.Element {
               <div className="st-actions">
                 <button
                   type="button"
-                  className="st-btn danger"
+                  className="ui-btn is-danger is-solid"
                   disabled={!sendStatus?.halted}
                   onClick={() => void resetCircuit()}
                 >
@@ -1207,11 +1207,7 @@ function SettingsPage(): React.JSX.Element {
               </div>
               <div className="st-actions">
                 {cacheEffective?.isDefault === false && (
-                  <button
-                    type="button"
-                    className="st-btn ghost"
-                    onClick={() => void resetCachePath()}
-                  >
+                  <button type="button" className="ui-btn" onClick={() => void resetCachePath()}>
                     恢复默认
                   </button>
                 )}
@@ -1382,7 +1378,7 @@ function SettingsPage(): React.JSX.Element {
               <div className="st-actions">
                 <button
                   type="button"
-                  className={`st-btn${clearArmed ? ' danger' : ' ghost'}`}
+                  className={`ui-btn${clearArmed ? ' is-danger is-solid' : ''}`}
                   onClick={() => void clearCache()}
                 >
                   {clearArmed ? '再点一次确认清理' : '清理缓存'}

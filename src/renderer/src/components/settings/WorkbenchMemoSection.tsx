@@ -69,7 +69,12 @@ function WorkbenchMemoSection(): React.JSX.Element {
         />
       </label>
       <div className="st-row ag-actions">
-        <button type="button" className="st-btn" disabled={saving} onClick={() => void save()}>
+        <button
+          type="button"
+          className="ui-btn is-primary"
+          disabled={saving}
+          onClick={() => void save()}
+        >
           {saving ? '保存中…' : '保存备忘'}
         </button>
         {errorTip && <span className="st-bad">{errorTip}</span>}

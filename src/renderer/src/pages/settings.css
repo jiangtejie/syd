@@ -1,6 +1,6 @@
-/* 璁剧疆椤碉紙棰滆壊/鍦嗚宸?token 鍖栵紝寮曠敤 assets/base.css 鐨勫叏灞€璁捐鍙橀噺锛?*/
+/* 设置页（颜色/圆角已 token 化，引用 assets/base.css 的全局设计变量） */
 
-/* Tab 瀵艰埅锛堟寜鏉垮潡鍒囨崲锛屽噺灏戞嫢鎸わ級 */
+/* Tab 导航（按板块切换，减少拥挤） */
 .st-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -37,12 +37,12 @@
   font-weight: 500;
 }
 
-/* Tab 闈㈡澘鍐呭 */
+/* Tab 面板内容 */
 .st-tab-panel {
   max-width: 1520px;
 }
 
-/* 鍙屽垪绱у噾缃戞牸锛氬灞忓浐瀹氫袱鍒?瀵归綈鏁撮綈)銆佺獎灞忚嚜鍔ㄤ竴鍒?*/
+/* 双列紧凑网格：宽屏固定两列(对齐整齐)、窄屏自动一列 */
 .st-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -62,7 +62,7 @@
   max-width: 1520px;
 }
 
-/* 缃戞牸鍐呯殑鍗＄墖鍘绘帀搴曢儴澶栬竟璺濓紝鐢?gap 鎺у埗闂磋窛 */
+/* 网格内的卡片去掉底部外边距，用 gap 控制间距 */
 .st-grid > .st-section {
   margin-bottom: 0;
   max-width: none;
@@ -74,7 +74,7 @@
   margin-bottom: 12px;
 }
 
-/* 鍗＄墖鍐呬簩绾у垎鍖烘爣棰橈紙濡傘€屽浘鐗囪В瀵嗐€嶏級 */
+/* 卡片内二级分区标题（如「图片解密」） */
 .st-subtitle {
   font-size: 12px;
   font-weight: 600;
@@ -138,33 +138,6 @@ select.st-input {
   margin-top: 12px;
 }
 
-.st-btn {
-  padding: 6px 16px;
-  border: none;
-  border-radius: var(--r-md);
-  background: var(--brand);
-  color: var(--on-brand);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.st-btn:hover:not(:disabled) {
-  background: var(--brand-hover);
-}
-
-.st-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.st-btn.danger {
-  background: var(--danger);
-}
-
-.st-btn.danger:hover:not(:disabled) {
-  background: var(--danger-hover);
-}
-
 .st-hint {
   font-size: 12px;
   color: var(--text-3);
@@ -210,7 +183,7 @@ select.st-input {
   word-break: break-all;
 }
 
-/* AI 妯″瀷鍚嶇О琛岋細杈撳叆妗?+ 鑾峰彇妯″瀷鎸夐挳 */
+/* AI 模型名称行：输入框 + 获取模型按钮 */
 .st-mrow {
   flex: 1;
   display: flex;
@@ -304,20 +277,8 @@ select.st-input {
   flex: none;
 }
 
-/* 娆＄骇鎸夐挳 */
-.st-btn.ghost {
-  background: var(--bg-panel);
-  color: var(--brand);
-  border: 1px solid var(--brand);
-  flex-shrink: 0;
-  padding: 6px 16px;
-}
-
-.st-btn.ghost:hover:not(:disabled) {
-  background: var(--brand-soft);
-}
-
-/* 瀵嗛挜鐘舵€佸崱鐗?*/
+/* 次级按钮 */
+/* 密钥状态卡片 */
 .st-keystatus {
   margin-top: 14px;
   border: 1px solid var(--border-light);
@@ -349,7 +310,7 @@ select.st-input {
   padding: 10px 12px;
 }
 
-/* 缂撳瓨鐩綍鍗＄墖锛氱偣鍑绘暣琛屾墦寮€鐩綍閫夋嫨 */
+/* 缓存目录卡片：点击整行打开目录选择 */
 .st-cache-pick {
   display: flex;
   align-items: center;
@@ -408,7 +369,7 @@ select.st-input {
   text-decoration: underline;
 }
 
-/* 鐗堟湰鍙疯 */
+/* 版本号行 */
 .st-version {
   margin-top: 14px;
   padding-top: 10px;
@@ -418,7 +379,7 @@ select.st-input {
   text-align: center;
 }
 
-/* 鈹€鈹€ MCP 鏈嶅姟鍣ㄧ鐞?鈹€鈹€ */
+/* ── MCP 服务器管理 ── */
 
 .mcp-item {
   display: flex;
@@ -484,34 +445,19 @@ select.st-input {
   gap: 6px;
 }
 
-.st-btn.sm {
-  padding: 3px 10px;
-  font-size: 11.5px;
-}
-
-.st-btn.ghost.danger {
-  background: transparent;
-  color: var(--danger);
-  border: 1px solid var(--danger-line);
-}
-
-.st-btn.ghost.danger:hover {
-  background: var(--danger-soft);
-}
-
 .mcp-edit {
   margin-top: 12px;
   border-top: 1px dashed var(--border-light);
   padding-top: 8px;
 }
 
-/* 闃堝€煎皬鏃惰緭鍏?璁剧疆-鍋忓ソ涓庢暟鎹? */
+/* 阈值小时输入(设置-偏好与数据) */
 .st-th-input {
   width: 92px !important;
   flex: none;
 }
 
-/* 鈹€鈹€ 缁熶竴浜鸿锛堝崟涓€鏅鸿兘浣擄級缂栬緫甯冨眬 鈹€鈹€ */
+/* ── 统一人设（单一智能体）编辑布局 ── */
 .ag-single {
   margin-top: 10px;
   display: flex;

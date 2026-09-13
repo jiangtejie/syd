@@ -291,22 +291,21 @@
   gap: 8px;
   align-items: flex-end;
 }
+/* 外观来自全局 ui-textarea；这里只留输入框在本页的布局与圆角/光晕主题 */
 .gai-input {
   flex: 1;
   resize: none;
   font-size: 13px;
   line-height: 1.6;
-  font-family: inherit;
   padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-panel);
-  color: var(--text-1);
-  outline: none;
+  border-radius: var(--r-lg);
+  transition:
+    border-color var(--m-1) var(--ease-out),
+    box-shadow var(--m-2) var(--ease-out);
 }
 .gai-input:focus {
   border-color: var(--brand-line);
-  box-shadow: 0 0 0 2px var(--brand-soft);
+  box-shadow: var(--glow);
 }
 .gai-composer-btns {
   display: flex;
@@ -497,7 +496,9 @@
   border-radius: var(--r-sm);
   background: transparent;
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 .gai-pick-row:hover:not(:disabled) {
   border-color: var(--brand-line);
@@ -555,8 +556,12 @@
   animation: gth-fade-in var(--m-2) var(--ease-out) both;
   background: rgba(0, 0, 0, 0.42);
 }
-.gai-pick { animation: gth-pop var(--m-2) var(--ease-spring) both; }
-.gai-tasks-head { position: relative; }
+.gai-pick {
+  animation: gth-pop var(--m-2) var(--ease-spring) both;
+}
+.gai-tasks-head {
+  position: relative;
+}
 .gai-task {
   border-radius: var(--r-md);
   transition:
@@ -577,9 +582,15 @@
   border-left-color: var(--brand);
   box-shadow: var(--lift-1);
 }
-.gai-task-cover { transition: transform var(--m-2) var(--ease-out); }
-.gai-task:hover .gai-task-cover { transform: scale(1.04); }
-.gai-msg { animation: gth-fade-up var(--m-2) var(--ease-out) both; }
+.gai-task-cover {
+  transition: transform var(--m-2) var(--ease-out);
+}
+.gai-task:hover .gai-task-cover {
+  transform: scale(1.04);
+}
+.gai-msg {
+  animation: gth-fade-up var(--m-2) var(--ease-out) both;
+}
 .gai-out-card {
   transition:
     transform var(--m-2) var(--ease-out),
@@ -592,9 +603,17 @@
   box-shadow: var(--lift-2);
   border-color: var(--brand-line);
 }
-.gai-out-img { transition: transform var(--m-2) var(--ease-out); }
-.gai-out-img:hover { transform: scale(1.03); }
-.gai-thinking { display: inline-flex; align-items: center; gap: 5px; }
+.gai-out-img {
+  transition: transform var(--m-2) var(--ease-out);
+}
+.gai-out-img:hover {
+  transform: scale(1.03);
+}
+.gai-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 .gai-thinking i {
   width: 5px;
   height: 5px;
@@ -602,10 +621,20 @@
   background: currentColor;
   animation: gth-dot 1.05s ease-in-out infinite;
 }
-.gai-thinking i:nth-child(2) { animation-delay: 0.14s; }
-.gai-thinking i:nth-child(3) { animation-delay: 0.28s; }
-.gai-pick-row { transition: background var(--m-1) var(--ease-out), border-color var(--m-1) var(--ease-out); }
-.gai-pick-row:hover:not(:disabled) { transform: translateX(2px); }
+.gai-thinking i:nth-child(2) {
+  animation-delay: 0.14s;
+}
+.gai-thinking i:nth-child(3) {
+  animation-delay: 0.28s;
+}
+.gai-pick-row {
+  transition:
+    background var(--m-1) var(--ease-out),
+    border-color var(--m-1) var(--ease-out);
+}
+.gai-pick-row:hover:not(:disabled) {
+  transform: translateX(2px);
+}
 .gai-tasks-skel .gth-list {
   border: none;
   box-shadow: none;
@@ -615,7 +644,9 @@
   padding: 10px 6px;
   border-bottom: none;
 }
-.gai-page { gap: 14px; }
+.gai-page {
+  gap: 14px;
+}
 .gai-tasks,
 .gai-main,
 .gai-output {
@@ -624,16 +655,19 @@
   box-shadow: var(--lift-1);
   animation: gth-fade-up var(--m-3) var(--ease-out) both;
 }
-.gai-main { animation-delay: 60ms; }
-.gai-output { animation-delay: 120ms; }
+.gai-main {
+  animation-delay: 60ms;
+}
+.gai-output {
+  animation-delay: 120ms;
+}
 .gai-head {
   background: linear-gradient(180deg, rgba(7, 193, 96, 0.06), transparent);
   padding: 10px 14px;
 }
 .gai-chat {
   background:
-    radial-gradient(70% 180px at 50% 0%, rgba(7, 193, 96, 0.05), transparent 72%),
-    var(--bg);
+    radial-gradient(70% 180px at 50% 0%, rgba(7, 193, 96, 0.05), transparent 72%), var(--bg);
 }
 .gai-msg {
   border-radius: var(--r-lg);
@@ -647,14 +681,15 @@
   background: var(--bg-panel);
   border: 1px solid var(--border-light);
 }
-.gai-composer { background: var(--bg-panel); }
-.gai-input { border-radius: var(--r-lg); transition: border-color var(--m-1) var(--ease-out), box-shadow var(--m-2) var(--ease-out); }
-.gai-input:focus {
-  border-color: var(--brand-line);
-  box-shadow: var(--glow);
+.gai-composer {
+  background: var(--bg-panel);
 }
-.gai-out-head { color: var(--text-1); }
-.gai-out-card { border-radius: var(--r-md); }
+.gai-out-head {
+  color: var(--text-1);
+}
+.gai-out-card {
+  border-radius: var(--r-md);
+}
 .gai-approval {
   border-radius: var(--r-md);
   animation: gth-pop var(--m-2) var(--ease-spring) both;

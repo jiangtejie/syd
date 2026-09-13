@@ -4,6 +4,7 @@ out
 .DS_Store
 .eslintcache
 *.log*
+*.tsbuildinfo
 
 # 开发期临时明文库（解密微信 DB 测试产物，勿提交）
 scripts/.tmp-plain/

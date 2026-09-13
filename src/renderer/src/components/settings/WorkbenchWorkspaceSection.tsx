@@ -56,12 +56,12 @@ export function WorkbenchWorkspaceSection(): React.JSX.Element {
           placeholder="目录绝对路径,如 D:\\work\\助理工作区"
           onChange={(e) => setDir(e.target.value)}
         />
-        <button type="button" className="st-btn ghost" onClick={() => void pick()}>
+        <button type="button" className="ui-btn" onClick={() => void pick()}>
           选择目录
         </button>
         <button
           type="button"
-          className="st-btn"
+          className="ui-btn is-primary"
           disabled={dir.trim() === saved}
           onClick={() => void save()}
         >

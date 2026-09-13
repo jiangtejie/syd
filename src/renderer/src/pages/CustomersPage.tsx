@@ -73,7 +73,7 @@ function ProfileDrawer({
           <div className="cu-drawer-title">
             <div className="cu-name-row">
               <span className="cu-name">{customer.name}</span>
-              <span className={`cu-tag-chip${customer.isGroup ? ' is-group' : ''}`}>
+              <span className={`ui-chip is-sm ${customer.isGroup ? 'is-solid' : 'is-ok is-line'}`}>
                 {customer.isGroup ? '群聊' : '个人'}
               </span>
               {customer.unreadCount > 0 && (
@@ -91,7 +91,7 @@ function ProfileDrawer({
           <div className="cu-section-title">状态标签（微信数据实时判断）</div>
           <div className="cu-tags">
             {customer.statusTags.map((t) => (
-              <span key={t} className="cu-tag-chip">
+              <span key={t} className="ui-chip is-sm is-ok is-line">
                 {t}
               </span>
             ))}
@@ -491,7 +491,7 @@ function CustomersPage(): React.JSX.Element {
             </span>
             <span className="cu-cell-tags">
               {c.statusTags.slice(0, 2).map((t) => (
-                <span key={t} className="cu-tag-chip">
+                <span key={t} className="ui-chip is-sm is-ok is-line">
                   {t}
                 </span>
               ))}

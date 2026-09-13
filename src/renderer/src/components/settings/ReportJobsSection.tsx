@@ -293,7 +293,7 @@ export default function ReportJobsSection(): React.JSX.Element {
         desc="把本地微信聊天记录增量上报到你配置的 PostgreSQL(与 chat-sync 表结构兼容),供外部系统/智能体查询。任务按「来源账号」唯一;口令以系统加密存储,界面不显示明文。"
       >
         <div className="st-actions wb-skills-toolbar">
-          <button type="button" className="st-btn" onClick={startNew}>
+          <button type="button" className="ui-btn is-primary" onClick={startNew}>
             ＋ 新建上报任务
           </button>
           <span className="st-hint rp-warn">
@@ -359,7 +359,7 @@ export default function ReportJobsSection(): React.JSX.Element {
                 {busyId === j.id ? (
                   <button
                     type="button"
-                    className="st-btn ghost danger sm"
+                    className="ui-btn is-danger is-sm"
                     onClick={() => void cancelRun(j)}
                   >
                     停止
@@ -367,29 +367,25 @@ export default function ReportJobsSection(): React.JSX.Element {
                 ) : (
                   <button
                     type="button"
-                    className="st-btn ghost sm"
+                    className="ui-btn is-sm"
                     disabled={busyId !== null}
                     onClick={() => void runNow(j)}
                   >
                     立即执行
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="st-btn ghost sm"
-                  onClick={() => void openHistory(j)}
-                >
+                <button type="button" className="ui-btn is-sm" onClick={() => void openHistory(j)}>
                   历史
                 </button>
-                <button type="button" className="st-btn ghost sm" onClick={() => editJob(j)}>
+                <button type="button" className="ui-btn is-sm" onClick={() => editJob(j)}>
                   编辑
                 </button>
-                <button type="button" className="st-btn ghost sm" onClick={() => void toggle(j)}>
+                <button type="button" className="ui-btn is-sm" onClick={() => void toggle(j)}>
                   {j.enabled ? '停用' : '启用'}
                 </button>
                 <button
                   type="button"
-                  className="st-btn ghost danger sm"
+                  className="ui-btn is-danger is-sm"
                   onClick={() => void remove(j)}
                 >
                   删除
@@ -540,7 +536,7 @@ export default function ReportJobsSection(): React.JSX.Element {
           <div className="st-actions">
             <button
               type="button"
-              className="st-btn ghost sm"
+              className="ui-btn is-sm"
               disabled={testing}
               onClick={() => void testConn()}
             >
@@ -591,10 +587,15 @@ export default function ReportJobsSection(): React.JSX.Element {
             onChange={(v) => patchForm({ enabled: v })}
           />
           <div className="st-actions">
-            <button type="button" className="st-btn ghost" onClick={() => setOpen(false)}>
+            <button type="button" className="ui-btn" onClick={() => setOpen(false)}>
               取消
             </button>
-            <button type="button" className="st-btn" disabled={saving} onClick={() => void save()}>
+            <button
+              type="button"
+              className="ui-btn is-primary"
+              disabled={saving}
+              onClick={() => void save()}
+            >
               {saving ? '保存中…' : '保存任务'}
             </button>
           </div>

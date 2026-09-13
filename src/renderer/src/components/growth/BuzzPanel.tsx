@@ -423,7 +423,7 @@ export default function BuzzPanel({
           <label className={'fld'}>
             <span className={'lb'}>门店</span>
             <select
-              className={'gth-select'}
+              className={'ui-select gth-select'}
               value={storeId}
               onChange={(e) => setStoreId(Number(e.target.value))}
             >
@@ -439,7 +439,7 @@ export default function BuzzPanel({
           <label className={'fld'}>
             <span className={'lb'}>平台</span>
             <select
-              className={'gth-select'}
+              className={'ui-select gth-select'}
               value={platform}
               onChange={(e) => setPlatform(e.target.value)}
             >
@@ -471,7 +471,7 @@ export default function BuzzPanel({
           <label className={'fld'}>
             <span className={'lb'}>状态</span>
             <select
-              className={'gth-select'}
+              className={'ui-select gth-select'}
               value={status}
               onChange={(e) => setStatus(e.target.value)}
             >
@@ -507,7 +507,7 @@ export default function BuzzPanel({
                 />
               </svg>
               <input
-                className={'gth-input'}
+                className={'ui-input gth-input'}
                 placeholder={'搜索标题 / 正文 / 作者'}
                 value={kwDraft}
                 onChange={(e) => setKwDraft(e.target.value)}
@@ -547,7 +547,7 @@ export default function BuzzPanel({
           ) : null}
           <div className={'acts'}>
             <button
-              className={'gth-btn sm'}
+              className={'ui-btn gth-btn sm'}
               type={'button'}
               disabled={batchRunning || pendingCount === 0}
               onClick={() => void runBatch()}
@@ -557,7 +557,7 @@ export default function BuzzPanel({
                 : '一键诊断待处理' + (pendingCount > 0 ? '(' + String(pendingCount) + ')' : '')}
             </button>
             <button
-              className={'gth-btn primary sm'}
+              className={'ui-btn is-primary gth-btn sm'}
               type={'button'}
               onClick={() => setAddOpen(true)}
             >
@@ -570,7 +570,7 @@ export default function BuzzPanel({
       {error ? (
         <div className={'gth-error'}>
           <span className={'msg'}>{error}</span>
-          <button className={'gth-btn sm'} type={'button'} onClick={() => void load()}>
+          <button className={'ui-btn gth-btn sm'} type={'button'} onClick={() => void load()}>
             重试
           </button>
         </div>
@@ -684,14 +684,14 @@ export default function BuzzPanel({
               <span className={'gth-badge gray'}>{STATUS_LABEL[m.status] ?? m.status}</span>
               <span className={'gth-actions'}>
                 <button
-                  className={'gth-btn sm'}
+                  className={'ui-btn gth-btn sm'}
                   type={'button'}
                   onClick={() => void openDetail(m.id)}
                 >
                   详情
                 </button>
                 <button
-                  className={'gth-btn sm'}
+                  className={'ui-btn gth-btn sm'}
                   type={'button'}
                   disabled={busy === m.id}
                   onClick={() => void runDiagnose(m.id)}
@@ -699,7 +699,7 @@ export default function BuzzPanel({
                   {busy === m.id ? '…' : '诊断'}
                 </button>
                 <button
-                  className={'gth-btn sm'}
+                  className={'ui-btn gth-btn sm'}
                   type={'button'}
                   disabled={!m.url}
                   onClick={() => void openUrl(m.url)}
@@ -724,14 +724,18 @@ export default function BuzzPanel({
           >
             <div className={'gth-card-head'}>
               <span className={'gth-card-title'}>添加舆情监控</span>
-              <button className={'gth-btn sm'} type={'button'} onClick={() => setAddOpen(false)}>
+              <button
+                className={'ui-btn gth-btn sm'}
+                type={'button'}
+                onClick={() => setAddOpen(false)}
+              >
                 关闭
               </button>
             </div>
             <div className={'gth-field'}>
               <span className={'gth-field-label'}>关联门店</span>
               <select
-                className={'gth-select'}
+                className={'ui-select gth-select'}
                 value={addStoreId}
                 onChange={(e) => setAddStoreId(Number(e.target.value))}
               >
@@ -747,7 +751,7 @@ export default function BuzzPanel({
               <span className={'gth-field-label'}>抖音 / 小红书 链接或分享口令</span>
               <textarea
                 autoFocus
-                className={'gth-input gth-input--area'}
+                className={'ui-textarea gth-input gth-input--area'}
                 rows={5}
                 placeholder={'支持: 抖音分享链接 / 口令文本 / 小红书笔记链接'}
                 value={addText}
@@ -759,7 +763,7 @@ export default function BuzzPanel({
             </div>
             <div className={'gth-btn-row'}>
               <button
-                className={'gth-btn primary'}
+                className={'ui-btn is-primary gth-btn'}
                 type={'button'}
                 disabled={adding}
                 onClick={() => void submitAdd()}
@@ -790,7 +794,7 @@ export default function BuzzPanel({
                 {STATUS_LABEL[detail.mention.status] ?? detail.mention.status}
               </span>
               <span style={{ flex: 1 }} />
-              <button className={'gth-btn sm'} type={'button'} onClick={closeDetail}>
+              <button className={'ui-btn gth-btn sm'} type={'button'} onClick={closeDetail}>
                 关闭
               </button>
             </header>
@@ -829,7 +833,7 @@ export default function BuzzPanel({
                 </div>
                 <div className={'links'}>
                   <button
-                    className={'gth-btn sm'}
+                    className={'ui-btn gth-btn sm'}
                     type={'button'}
                     disabled={!detail.mention.url}
                     onClick={() => void openUrl(detail.mention.url)}
@@ -885,7 +889,7 @@ export default function BuzzPanel({
                   </span>
                   <span style={{ flex: 1 }} />
                   <button
-                    className={'gth-btn sm primary'}
+                    className={'ui-btn is-primary gth-btn sm'}
                     type={'button'}
                     disabled={busy === detail.mention.id}
                     onClick={() => void runDiagnose(detail.mention.id)}
@@ -999,7 +1003,7 @@ export default function BuzzPanel({
                         </span>
                         <span className={'content'}>{c.content}</span>
                         <button
-                          className={'gth-btn sm danger'}
+                          className={'ui-btn is-danger gth-btn sm'}
                           type={'button'}
                           onClick={() => {
                             void (async () => {
@@ -1021,7 +1025,7 @@ export default function BuzzPanel({
                   </div>
                 )}
                 <textarea
-                  className={'gth-input gth-input--area'}
+                  className={'ui-textarea gth-input gth-input--area'}
                   rows={4}
                   placeholder={
                     '赞数|作者|内容\n例如:\n128|吃货小王|牛肉很新鲜, 但等位等了 40 分钟\n32|小李|服务态度不错'
@@ -1031,7 +1035,7 @@ export default function BuzzPanel({
                 />
                 <div className={'gth-btn-row'}>
                   <button
-                    className={'gth-btn primary sm'}
+                    className={'ui-btn is-primary gth-btn sm'}
                     type={'button'}
                     disabled={busy === detail.mention.id || !cmtDraft.trim()}
                     onClick={() => void submitComments()}
@@ -1048,7 +1052,9 @@ export default function BuzzPanel({
                   {STATUS_KEYS.map((k) => (
                     <button
                       key={k}
-                      className={'gth-btn sm' + (detail.mention.status === k ? ' primary' : '')}
+                      className={
+                        'ui-btn gth-btn sm' + (detail.mention.status === k ? ' is-primary' : '')
+                      }
                       type={'button'}
                       onClick={() => void patch(detail.mention.id, { status: k })}
                     >
@@ -1057,7 +1063,7 @@ export default function BuzzPanel({
                   ))}
                   <span style={{ flex: 1 }} />
                   <select
-                    className={'gth-select'}
+                    className={'ui-select gth-select'}
                     value={detail.mention.storeId ?? 0}
                     onChange={(e) =>
                       void patch(detail.mention.id, { storeId: Number(e.target.value) })
@@ -1072,7 +1078,7 @@ export default function BuzzPanel({
                   </select>
                 </div>
                 <textarea
-                  className={'gth-input gth-input--area'}
+                  className={'ui-textarea gth-input gth-input--area'}
                   rows={2}
                   placeholder={'处置备注: 谁在什么时候做了什么(留痕用)'}
                   value={noteDraft}
@@ -1080,7 +1086,7 @@ export default function BuzzPanel({
                 />
                 <div className={'gth-btn-row'}>
                   <button
-                    className={'gth-btn sm primary'}
+                    className={'ui-btn is-primary gth-btn sm'}
                     type={'button'}
                     disabled={busy === detail.mention.id}
                     onClick={() => void toWorkbench(detail.mention.id)}
@@ -1088,14 +1094,14 @@ export default function BuzzPanel({
                     {busy === detail.mention.id ? '创建中…' : '转 AI 工作台生成回应'}
                   </button>
                   <button
-                    className={'gth-btn sm'}
+                    className={'ui-btn gth-btn sm'}
                     type={'button'}
                     onClick={() => void patch(detail.mention.id, { note: noteDraft })}
                   >
                     保存备注
                   </button>
                   <button
-                    className={'gth-btn sm danger'}
+                    className={'ui-btn is-danger gth-btn sm'}
                     type={'button'}
                     onClick={() => void removeOne(detail.mention.id)}
                   >

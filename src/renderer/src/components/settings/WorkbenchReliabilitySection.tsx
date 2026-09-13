@@ -66,7 +66,7 @@ function WorkbenchReliabilitySection(): React.JSX.Element {
             <span>
               成功 {stats.ok} / 失败 {stats.fail} / 共 {stats.total}
             </span>
-            <button type="button" className="st-btn ghost sm" onClick={() => void reload()}>
+            <button type="button" className="ui-btn is-sm" onClick={() => void reload()}>
               刷新
             </button>
           </div>

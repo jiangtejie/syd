@@ -82,12 +82,7 @@ export function ContactPicker(props: {
   return (
     <>
       <div className="st-actions">
-        <button
-          type="button"
-          className="st-btn ghost"
-          disabled={busy}
-          onClick={() => void loadScope()}
-        >
+        <button type="button" className="ui-btn" disabled={busy} onClick={() => void loadScope()}>
           {busy ? '读取中…' : '读取组织联系人'}
         </button>
         {withDepartments && departments.length > 0 && (
@@ -110,7 +105,7 @@ export function ContactPicker(props: {
         <div className="st-actions">
           <button
             type="button"
-            className="st-btn ghost"
+            className="ui-btn"
             onClick={() =>
               void api?.openAuthUrl(authUrl).then((r) => {
                 if (!r?.ok) toast.error(r?.error || '打开失败')
@@ -130,7 +125,7 @@ export function ContactPicker(props: {
                 <span className="mcp-desc">{u.email || u.openId}</span>
               </div>
               <div className="mcp-item-ops">
-                <button type="button" className="st-btn ghost sm" onClick={() => onPick(u)}>
+                <button type="button" className="ui-btn is-sm" onClick={() => onPick(u)}>
                   {pickLabel}
                 </button>
               </div>

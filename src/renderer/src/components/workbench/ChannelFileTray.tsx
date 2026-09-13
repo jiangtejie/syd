@@ -242,18 +242,18 @@ export function ChannelFileTray(): React.JSX.Element {
                 {items?.length ?? 0} 项 · 合计 {fmtSize(totals?.bytes ?? 0)}
               </span>
               <span className="wb-files-spacer" />
-              <button type="button" className="st-btn ghost sm" onClick={() => void load()}>
+              <button type="button" className="ui-btn is-sm" onClick={() => void load()}>
                 刷新
               </button>
               <button
                 type="button"
-                className="st-btn ghost sm"
+                className="ui-btn is-sm"
                 disabled={(items?.length ?? 0) === 0}
                 onClick={() => void clearFilter()}
               >
                 清空当前
               </button>
-              <button type="button" className="st-btn ghost sm" onClick={() => void pruneNow()}>
+              <button type="button" className="ui-btn is-sm" onClick={() => void pruneNow()}>
                 清理过期/孤儿
               </button>
             </div>
@@ -292,7 +292,7 @@ export function ChannelFileTray(): React.JSX.Element {
                   <div className="wb-file-ops">
                     <button
                       type="button"
-                      className="st-btn ghost sm"
+                      className="ui-btn is-sm"
                       title="在文件夹中显示"
                       onClick={() => void filesApi?.reveal(f.id)}
                     >
@@ -300,7 +300,7 @@ export function ChannelFileTray(): React.JSX.Element {
                     </button>
                     <button
                       type="button"
-                      className="st-btn ghost danger sm"
+                      className="ui-btn is-danger is-sm"
                       title="删除文件"
                       onClick={() => void removeOne(f)}
                     >
@@ -356,7 +356,7 @@ export function ChannelFileTray(): React.JSX.Element {
                   {acctKeepDays.trim() !== '' && (
                     <button
                       type="button"
-                      className="st-btn ghost sm"
+                      className="ui-btn is-sm"
                       onClick={() => void clearAcctOverride()}
                     >
                       清除覆盖
@@ -364,7 +364,11 @@ export function ChannelFileTray(): React.JSX.Element {
                   )}
                 </>
               )}
-              <button type="button" className="st-btn sm" onClick={() => void savePolicy()}>
+              <button
+                type="button"
+                className="ui-btn is-primary is-sm"
+                onClick={() => void savePolicy()}
+              >
                 保存策略
               </button>
             </div>

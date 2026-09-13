@@ -142,7 +142,7 @@ function SearchInput({
 
   return (
     <input
-      className={'gth-input'}
+      className={'ui-input gth-input'}
       style={{ maxWidth }}
       value={draft}
       placeholder={placeholder}
@@ -191,7 +191,7 @@ function ErrBar({ msg, onRetry }: ErrBarProps): React.JSX.Element {
         {msg}
       </span>
       {onRetry ? (
-        <button className={'gth-btn sm'} type={'button'} onClick={onRetry}>
+        <button className={'ui-btn gth-btn sm'} type={'button'} onClick={onRetry}>
           重试
         </button>
       ) : null}
@@ -384,7 +384,7 @@ function ProviderPanel({ onChanged }: { onChanged: () => void }): React.JSX.Elem
             供应商标识<span className={'req'}>*</span>
           </span>
           <input
-            className="gth-input"
+            className="ui-input gth-input"
             list={'gth-vendors'}
             value={provider}
             placeholder={'选择或输入, 如 chanmama / newhong'}
@@ -403,7 +403,7 @@ function ProviderPanel({ onChanged }: { onChanged: () => void }): React.JSX.Elem
           <span className={'gth-field-label'}>API Key</span>
           <span className={'gth-key-wrap'}>
             <input
-              className={'gth-input'}
+              className={'ui-input gth-input'}
               type={showKey ? 'text' : 'password'}
               value={apiKey}
               placeholder={'数据服务订阅后获取'}
@@ -429,7 +429,7 @@ function ProviderPanel({ onChanged }: { onChanged: () => void }): React.JSX.Elem
         <div className={'gth-field'}>
           <span className={'gth-field-label'}>&nbsp;</span>
           <button
-            className={'gth-btn primary'}
+            className={'ui-btn is-primary gth-btn'}
             type={'button'}
             disabled={saving || !loaded}
             onClick={() => void save()}
@@ -612,7 +612,7 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
         <div className={'gth-card-head'}>
           <span className={'gth-card-title'}>采集订阅</span>
           <span className={'gth-card-sub'}>城市 × 业态 × 关键词/账号/话题/榜单</span>
-          <button className={'gth-btn primary sm'} type={'button'} onClick={openNew}>
+          <button className={'ui-btn is-primary gth-btn sm'} type={'button'} onClick={openNew}>
             + 添加订阅
           </button>
         </div>
@@ -634,7 +634,7 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
             <div className={'gth-field'}>
               <span className={'gth-field-label'}>订阅名</span>
               <input
-                className={'gth-input'}
+                className={'ui-input gth-input'}
                 value={form.name}
                 placeholder={'默认同目标'}
                 onChange={(e) => setF('name', e.target.value)}
@@ -643,7 +643,7 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
             <div className={'gth-field'}>
               <span className={'gth-field-label'}>目标类型</span>
               <select
-                className={'gth-select'}
+                className={'ui-select gth-select'}
                 value={form.targetKind}
                 onChange={(e) => setF('targetKind', e.target.value)}
               >
@@ -659,7 +659,7 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
                 订阅目标<span className={'req'}>*</span>
               </span>
               <input
-                className={'gth-input'}
+                className={'ui-input gth-input'}
                 value={form.target}
                 placeholder={'如: 成都火锅 / 竞品账号名 / 同城美食话题'}
                 onChange={(e) => setF('target', e.target.value)}
@@ -671,7 +671,7 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
             <div className={'gth-field'}>
               <span className={'gth-field-label'}>城市</span>
               <input
-                className={'gth-input'}
+                className={'ui-input gth-input'}
                 value={form.city}
                 placeholder={'如 成都'}
                 onChange={(e) => setF('city', e.target.value)}
@@ -680,7 +680,7 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
             <div className={'gth-field'}>
               <span className={'gth-field-label'}>业态</span>
               <input
-                className={'gth-input'}
+                className={'ui-input gth-input'}
                 value={form.bizType}
                 placeholder={'如 火锅'}
                 onChange={(e) => setF('bizType', e.target.value)}
@@ -689,7 +689,7 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
             <div className={'gth-field'}>
               <span className={'gth-field-label'}>供应商</span>
               <input
-                className={'gth-input'}
+                className={'ui-input gth-input'}
                 list={'gth-vendors'}
                 value={form.vendor}
                 placeholder={'如 chanmama'}
@@ -699,7 +699,7 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
             <div className={'gth-field'}>
               <span className={'gth-field-label'}>采集间隔</span>
               <select
-                className={'gth-select'}
+                className={'ui-select gth-select'}
                 value={form.intervalHours}
                 onChange={(e) => setF('intervalHours', Number(e.target.value))}
               >
@@ -713,10 +713,18 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
             <div className={'gth-field'}>
               <span className={'gth-field-label'}>&nbsp;</span>
               <div className={'gth-btn-row'}>
-                <button className={'gth-btn primary'} type={'button'} onClick={() => void save()}>
+                <button
+                  className={'ui-btn is-primary gth-btn'}
+                  type={'button'}
+                  onClick={() => void save()}
+                >
                   {editing ? '保存修改' : '创建订阅'}
                 </button>
-                <button className={'gth-btn'} type={'button'} onClick={() => setFormOpen(false)}>
+                <button
+                  className={'ui-btn gth-btn'}
+                  type={'button'}
+                  onClick={() => setFormOpen(false)}
+                >
                   取消
                 </button>
               </div>
@@ -770,7 +778,7 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
                   </div>
                   <div className={'gth-actions'}>
                     <button
-                      className={'gth-btn sm'}
+                      className={'ui-btn gth-btn sm'}
                       type={'button'}
                       disabled={runningId !== null}
                       title={runningId !== null ? '有其他任务进行中' : undefined}
@@ -778,11 +786,17 @@ function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JSX.Eleme
                     >
                       {runningId === s.id ? '采集中…' : '立即采集'}
                     </button>
-                    <button className={'gth-btn sm'} type={'button'} onClick={() => openEdit(s)}>
+                    <button
+                      className={'ui-btn gth-btn sm'}
+                      type={'button'}
+                      onClick={() => openEdit(s)}
+                    >
                       编辑
                     </button>
                     <button
-                      className={'gth-btn sm danger' + (confirmId === s.id ? ' solid' : '')}
+                      className={
+                        'ui-btn is-danger gth-btn sm' + (confirmId === s.id ? ' is-solid' : '')
+                      }
                       type={'button'}
                       onClick={() => void remove(s)}
                     >
@@ -943,10 +957,10 @@ function Lightbox({ imgs, index, onClose, onIndex }: LightboxProps): React.JSX.E
         </>
       ) : null}
       <div className="gth-lightbox-bar" onClick={(e) => e.stopPropagation()}>
-        <button className="gth-btn sm" type="button" onClick={() => void copy()}>
+        <button className="ui-btn gth-btn sm" type="button" onClick={() => void copy()}>
           复制当前图
         </button>
-        <button className="gth-btn sm" type="button" onClick={onClose}>
+        <button className="ui-btn gth-btn sm" type="button" onClick={onClose}>
           关闭 (Esc)
         </button>
       </div>
@@ -1008,7 +1022,11 @@ function MediaGallery({
           <div className="gth-empty" style={{ padding: '18px 10px' }}>
             视频素材(本地不保存视频文件)
             <div style={{ marginTop: 8 }}>
-              <button className="gth-btn sm" type="button" onClick={() => void copyRemoteVideo()}>
+              <button
+                className="ui-btn gth-btn sm"
+                type="button"
+                onClick={() => void copyRemoteVideo()}
+              >
                 复制视频链接
               </button>
             </div>
@@ -1087,7 +1105,7 @@ function MediaGallery({
         </div>
       ) : null}
       <button
-        className="gth-btn sm gth-gallery-copy"
+        className="ui-btn gth-btn sm gth-gallery-copy"
         type="button"
         disabled={!cur}
         onClick={() => void copyCurrent()}
@@ -1144,7 +1162,7 @@ const IngestBar = memo(function IngestBar({
     <>
       <input
         ref={inputRef}
-        className={'gth-input'}
+        className={'ui-input gth-input'}
         value={value}
         placeholder={'粘贴小红书/抖音分享链接或口令, Enter 入库(自动识别平台与 ID · 去重防重复)'}
         onChange={(e) => setValue(e.target.value)}
@@ -1153,7 +1171,7 @@ const IngestBar = memo(function IngestBar({
         }}
       />
       <button
-        className={'gth-btn primary'}
+        className={'ui-btn is-primary gth-btn'}
         type={'button'}
         disabled={busy || !value.trim()}
         onClick={submit}
@@ -1511,7 +1529,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
       <div className={'gth-ingest'}>
         <IngestBar busy={busyIngest} inputRef={ingestRef} onSubmit={ingestLink} />
         <button
-          className={'gth-btn'}
+          className={'ui-btn gth-btn'}
           type={'button'}
           disabled={uploading}
           title={'导入门店自有图片/视频(不进公域, 供爆改使用)'}
@@ -1532,7 +1550,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
         <div className={'gth-btn-row'} style={{ marginBottom: 10 }}>
           <SearchInput value={keyword} onApply={setKeyword} placeholder={'标题/正文/作者 检索'} />
           <select
-            className={'gth-select'}
+            className={'ui-select gth-select'}
             style={{ width: 120 }}
             value={origin}
             onChange={(e) => setOrigin(e.target.value)}
@@ -1544,7 +1562,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
             <option value={'manual'}>手工</option>
           </select>
           <select
-            className={'gth-select'}
+            className={'ui-select gth-select'}
             style={{ width: 120 }}
             value={usage}
             onChange={(e) => setUsage(e.target.value)}
@@ -1555,7 +1573,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
             <option value={'licensed'}>已授权</option>
           </select>
           <select
-            className={'gth-select'}
+            className={'ui-select gth-select'}
             style={{ width: 120 }}
             value={status}
             onChange={(e) => setStatus(e.target.value)}
@@ -1567,7 +1585,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
             <option value={'archived'}>已归档</option>
           </select>
           <select
-            className={'gth-select'}
+            className={'ui-select gth-select'}
             style={{ width: 120 }}
             value={sort}
             onChange={(e) => setSort(e.target.value as 'created' | 'score' | 'likes')}
@@ -1585,7 +1603,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
           </button>
           {filterActive ? (
             <button
-              className={'gth-btn sm'}
+              className={'ui-btn gth-btn sm'}
               type={'button'}
               onClick={() => {
                 setKeyword('')
@@ -1603,7 +1621,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
           <div className={'gth-batchbar'}>
             <span>已选 {selected.size} 条</span>
             <select
-              className={'gth-select'}
+              className={'ui-select gth-select'}
               style={{ width: 130 }}
               value={''}
               disabled={batchBusy}
@@ -1617,7 +1635,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
               <option value={'licensed'}>已授权</option>
             </select>
             <select
-              className={'gth-select'}
+              className={'ui-select gth-select'}
               style={{ width: 130 }}
               value={''}
               disabled={batchBusy}
@@ -1632,14 +1650,18 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
               <option value={'archived'}>已归档</option>
             </select>
             <button
-              className={'gth-btn sm danger'}
+              className={'ui-btn is-danger gth-btn sm'}
               type={'button'}
               disabled={batchBusy}
               onClick={() => void batchRemove()}
             >
               批量删除
             </button>
-            <button className={'gth-btn sm'} type={'button'} onClick={() => setSelected(new Set())}>
+            <button
+              className={'ui-btn gth-btn sm'}
+              type={'button'}
+              onClick={() => setSelected(new Set())}
+            >
               取消选择
             </button>
           </div>
@@ -1654,7 +1676,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
               steps={['换个关键词, 或点击「清除筛选」查看全部']}
               extra={
                 <button
-                  className={'gth-btn sm'}
+                  className={'ui-btn gth-btn sm'}
                   type={'button'}
                   onClick={() => {
                     setKeyword('')
@@ -1678,7 +1700,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
               ]}
               extra={
                 <button
-                  className={'gth-btn sm'}
+                  className={'ui-btn gth-btn sm'}
                   type={'button'}
                   onClick={() => ingestRef.current?.focus()}
                 >
@@ -1754,7 +1776,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
             {hasMore ? (
               <div className={'gth-more'}>
                 <button
-                  className={'gth-btn'}
+                  className={'ui-btn gth-btn'}
                   type={'button'}
                   disabled={loadingMore}
                   onClick={() => void load(false)}
@@ -1798,7 +1820,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
               <span className={'gth-card-sub'}>#{detail.id}</span>
               <span className={'gth-detail-btns'}>
                 <button
-                  className={'gth-btn sm'}
+                  className={'ui-btn gth-btn sm'}
                   type={'button'}
                   disabled={patchBusy}
                   onClick={() => void exportPkg(detail.id)}
@@ -1806,7 +1828,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
                   导出发布包
                 </button>
                 <button
-                  className={'gth-btn sm'}
+                  className={'ui-btn gth-btn sm'}
                   type={'button'}
                   disabled={patchBusy}
                   title={'本地图片缺失时按源链接重新下载'}
@@ -1815,7 +1837,9 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
                   重下图片
                 </button>
                 <button
-                  className={'gth-btn sm danger' + (confirmRemove === detail.id ? ' solid' : '')}
+                  className={
+                    'ui-btn is-danger gth-btn sm' + (confirmRemove === detail.id ? ' is-solid' : '')
+                  }
                   type={'button'}
                   disabled={patchBusy}
                   onClick={() => void removeItem(detail.id)}
@@ -1823,7 +1847,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
                   {confirmRemove === detail.id ? '确认删除?' : '删除'}
                 </button>
                 <button
-                  className={'gth-btn sm'}
+                  className={'ui-btn gth-btn sm'}
                   type={'button'}
                   title={'收起详情'}
                   onClick={() => {
@@ -1907,7 +1931,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
                 <label className={'gth-ops-fld'}>
                   <span className={'lb'}>用途</span>
                   <select
-                    className={'gth-select'}
+                    className={'ui-select gth-select'}
                     value={detail.usage}
                     disabled={patchBusy}
                     onChange={(e) => void patch(detail.id, { usage: e.target.value })}
@@ -1920,7 +1944,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
                 <label className={'gth-ops-fld'}>
                   <span className={'lb'}>状态</span>
                   <select
-                    className={'gth-select'}
+                    className={'ui-select gth-select'}
                     value={detail.status}
                     disabled={patchBusy}
                     onChange={(e) => void patch(detail.id, { status: e.target.value })}
@@ -1936,7 +1960,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
                 <label className={'gth-ops-fld grow'}>
                   <span className={'lb'}>内部备注</span>
                   <textarea
-                    className={'gth-input gth-input--area'}
+                    className={'ui-textarea gth-input gth-input--area'}
                     rows={2}
                     value={noteDraft}
                     disabled={patchBusy}
@@ -1945,7 +1969,7 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
                   />
                 </label>
                 <button
-                  className={'gth-btn sm'}
+                  className={'ui-btn gth-btn sm'}
                   type={'button'}
                   disabled={patchBusy || noteDraft === detail.note}
                   onClick={() => void patch(detail.id, { note: noteDraft })}
@@ -2055,7 +2079,12 @@ export default function GrowthPage(): React.JSX.Element {
             {stats?.lastCrawlAt ? (
               <span className={'gth-hero-chip'}>最近采集 {fmt(stats.lastCrawlAt)}</span>
             ) : null}
-            <button className={'gth-btn sm'} type={'button'} onClick={loadStats} title={'刷新指标'}>
+            <button
+              className={'ui-btn gth-btn sm'}
+              type={'button'}
+              onClick={loadStats}
+              title={'刷新指标'}
+            >
               刷新
             </button>
           </div>

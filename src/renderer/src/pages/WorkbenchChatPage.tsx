@@ -517,7 +517,7 @@ function WbApprovals(): React.JSX.Element | null {
           <div className="wb-approval-ops">
             <button
               type="button"
-              className="st-btn sm"
+              className="ui-btn is-primary is-sm"
               title="仅本次允许执行"
               onClick={() => void approve(a.runId, true)}
             >
@@ -525,7 +525,7 @@ function WbApprovals(): React.JSX.Element | null {
             </button>
             <button
               type="button"
-              className="st-btn ghost sm"
+              className="ui-btn is-sm"
               title="本会话本轮后续调用该工具不再询问"
               onClick={() => void trustTool(a.runId, a.tool, 'session')}
             >
@@ -533,7 +533,7 @@ function WbApprovals(): React.JSX.Element | null {
             </button>
             <button
               type="button"
-              className="st-btn ghost sm"
+              className="ui-btn is-sm"
               title="加入全局「始终允许」名单,之后不再询问(可在 设置 → AI 助手 中撤销)"
               onClick={() => void trustTool(a.runId, a.tool, 'global')}
             >
@@ -541,7 +541,7 @@ function WbApprovals(): React.JSX.Element | null {
             </button>
             <button
               type="button"
-              className="st-btn ghost danger sm"
+              className="ui-btn is-danger is-sm"
               onClick={() => void approve(a.runId, false)}
             >
               拒绝
@@ -1173,7 +1173,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
   return (
     <div className="wb-page">
       <aside className="wb-side">
-        <button type="button" className="st-btn wb-new" onClick={createChat}>
+        <button type="button" className="ui-btn is-primary wb-new" onClick={createChat}>
           ＋ 新会话
         </button>
         <div className="wb-side-tip">
@@ -1302,7 +1302,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
         <div className="wb-side-foot">
           <button
             type="button"
-            className="st-btn ghost sm"
+            className="ui-btn is-sm"
             disabled={activeId === null || messages.length === 0}
             title="把当前会话导出为 Markdown(含工具痕迹与思考过程)"
             onClick={() => void exportCurrent()}
@@ -1311,7 +1311,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="st-btn ghost danger sm"
+            className="ui-btn is-danger is-sm"
             disabled={chats === null || chats.length === 0}
             title="删除当前账号下的全部工作台会话(不可恢复)"
             onClick={() => void clearAllChats()}
@@ -1333,7 +1333,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             </span>
             <button
               type="button"
-              className="st-btn ghost sm"
+              className="ui-btn is-sm"
               disabled={!activeId}
               title={
                 wsDir ? '更换工作区目录' : '选择文件夹作为本会话的工作区,智能体可读写其中文本文件'
@@ -1346,7 +1346,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               <>
                 <button
                   type="button"
-                  className="st-btn ghost sm"
+                  className="ui-btn is-sm"
                   title="在文件管理器中打开"
                   onClick={() => void window.api?.cs?.wb?.openWorkspace(activeId!)}
                 >
@@ -1354,7 +1354,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                 </button>
                 <button
                   type="button"
-                  className="st-btn ghost sm"
+                  className="ui-btn is-sm"
                   title="解除绑定(文件不会被删除)"
                   onClick={() => void unbindWorkspace()}
                 >
@@ -1581,13 +1581,13 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               Enter 发送 · Shift+Enter 换行 · Ctrl+N 新建 · Ctrl+Shift+E 导出 · Ctrl+L 聚焦输入
             </span>
             {activeBusy ? (
-              <button type="button" className="st-btn" onClick={() => void stopStore()}>
+              <button type="button" className="ui-btn is-primary" onClick={() => void stopStore()}>
                 停止生成
               </button>
             ) : (
               <button
                 type="button"
-                className="st-btn"
+                className="ui-btn is-primary"
                 disabled={!canSend || !draft.trim()}
                 onClick={send}
               >

@@ -154,22 +154,6 @@
   min-width: 0;
 }
 
-.cu-tag-chip {
-  font-size: 11px;
-  color: var(--success-strong);
-  background: var(--success-soft);
-  border: 1px solid var(--success-line);
-  padding: 1px 7px;
-  border-radius: 9px;
-  white-space: nowrap;
-}
-
-.cu-tag-chip.is-group {
-  color: var(--on-brand);
-  background: var(--brand);
-  border-color: var(--brand);
-}
-
 .cu-cell-kind {
   font-size: 12px;
   white-space: nowrap;

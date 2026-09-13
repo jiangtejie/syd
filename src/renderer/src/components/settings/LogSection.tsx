@@ -251,12 +251,7 @@ export function LogSection(): React.JSX.Element {
           placeholder="关键字过滤(如 message_id / 失败 / acct=1)"
           spellCheck={false}
         />
-        <button
-          type="button"
-          className="st-btn ghost"
-          disabled={loading}
-          onClick={() => void load()}
-        >
+        <button type="button" className="ui-btn" disabled={loading} onClick={() => void load()}>
           {loading ? '读取中…' : '刷新'}
         </button>
         <label className="lg-auto">
@@ -277,16 +272,16 @@ export function LogSection(): React.JSX.Element {
           自动刷新(3s)
         </label>
         {!auto && <span className="lg-auto-hint">已暂停 · 无定时刷新,查看请点「刷新」</span>}
-        <button type="button" className="st-btn ghost" onClick={() => void copyAll()}>
+        <button type="button" className="ui-btn" onClick={() => void copyAll()}>
           复制结果
         </button>
-        <button type="button" className="st-btn ghost" onClick={() => void exportFile()}>
+        <button type="button" className="ui-btn" onClick={() => void exportFile()}>
           导出文件
         </button>
-        <button type="button" className="st-btn ghost" onClick={() => void openFolder()}>
+        <button type="button" className="ui-btn" onClick={() => void openFolder()}>
           打开日志目录
         </button>
-        <button type="button" className="st-btn ghost danger" onClick={() => void clearLogs()}>
+        <button type="button" className="ui-btn is-danger" onClick={() => void clearLogs()}>
           清空日志
         </button>
       </div>
@@ -322,7 +317,7 @@ export function LogSection(): React.JSX.Element {
           onChange={(e) => setDbKeepDays(Number(e.target.value))}
           title="本地库的审计表（IM 审计 / 飞书发送 / 发送日志）保留天数；0 = 不清理"
         />
-        <button type="button" className="st-btn ghost sm" onClick={() => void savePolicy()}>
+        <button type="button" className="ui-btn is-sm" onClick={() => void savePolicy()}>
           应用策略
         </button>
         <span className="lg-meta">

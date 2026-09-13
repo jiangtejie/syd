@@ -304,7 +304,7 @@ export function ImSection(): React.JSX.Element {
     <div className="im-section">
       <div className="im-head">
         <div className="st-title">IM 渠道（飞书机器人 / 微信 ClawBot）</div>
-        <button type="button" className="st-btn" onClick={startNew}>
+        <button type="button" className="ui-btn is-primary" onClick={startNew}>
           ＋ 接入 IM 账号
         </button>
       </div>
@@ -378,15 +378,15 @@ export function ImSection(): React.JSX.Element {
                 </span>
               </div>
               <div className="mcp-item-ops">
-                <button type="button" className="st-btn ghost sm" onClick={() => editAccount(a)}>
+                <button type="button" className="ui-btn is-sm" onClick={() => editAccount(a)}>
                   编辑
                 </button>
-                <button type="button" className="st-btn ghost sm" onClick={() => void toggle(a)}>
+                <button type="button" className="ui-btn is-sm" onClick={() => void toggle(a)}>
                   {a.enabled ? '停用' : '启用'}
                 </button>
                 <button
                   type="button"
-                  className="st-btn ghost danger sm"
+                  className="ui-btn is-danger is-sm"
                   onClick={() => void remove(a)}
                 >
                   删除
@@ -509,7 +509,7 @@ export function ImSection(): React.JSX.Element {
                     <div className="im-scan-cell">
                       <button
                         type="button"
-                        className="st-btn ghost sm"
+                        className="ui-btn is-sm"
                         disabled={scanFetching}
                         onClick={() => void startScan()}
                       >
@@ -648,10 +648,15 @@ export function ImSection(): React.JSX.Element {
             onChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
           />
           <div className="st-actions">
-            <button type="button" className="st-btn ghost" onClick={() => setOpen(false)}>
+            <button type="button" className="ui-btn" onClick={() => setOpen(false)}>
               取消
             </button>
-            <button type="button" className="st-btn" disabled={saving} onClick={() => void save()}>
+            <button
+              type="button"
+              className="ui-btn is-primary"
+              disabled={saving}
+              onClick={() => void save()}
+            >
               {saving ? '保存中…' : '保存账号'}
             </button>
           </div>
@@ -688,12 +693,12 @@ export function ImSection(): React.JSX.Element {
             <div className="st-actions">
               {scanErr ? (
                 <>
-                  <button type="button" className="st-btn ghost" onClick={closeScan}>
+                  <button type="button" className="ui-btn" onClick={closeScan}>
                     取消
                   </button>
                   <button
                     type="button"
-                    className="st-btn"
+                    className="ui-btn is-primary"
                     disabled={scanFetching}
                     onClick={() => void startScan()}
                   >
@@ -701,7 +706,7 @@ export function ImSection(): React.JSX.Element {
                   </button>
                 </>
               ) : (
-                <button type="button" className="st-btn ghost" onClick={closeScan}>
+                <button type="button" className="ui-btn" onClick={closeScan}>
                   取消
                 </button>
               )}

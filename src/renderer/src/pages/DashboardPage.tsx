@@ -48,6 +48,14 @@ const RESULT_LABEL: Record<string, string> = {
   halted: '熔断拦截'
 }
 
+/** 发送结果 → 统一徽标语气(ui-chip 的 is-ok/is-warn/is-bad) */
+const RESULT_TONE: Record<string, string> = {
+  sent: 'ok',
+  failed: 'bad',
+  rejected: 'warn',
+  halted: 'bad'
+}
+
 /** 相对时间文案（纯函数，now 由外部传入避免渲染期取时间） */
 function fmtAge(now: number, ts: number): string {
   if (!now || !ts) return ''
@@ -713,17 +721,17 @@ function DashboardPage(): React.JSX.Element {
             <span className="db-panel-hint">真实微信消息库</span>
           </span>
           {source === 'wx' && (
-            <span className="db-seg">
+            <span className="ui-seg">
               <button
                 type="button"
-                className={`db-seg-btn${range === 7 ? ' on' : ''}`}
+                className={`ui-seg-btn${range === 7 ? ' is-on' : ''}`}
                 onClick={() => setRange(7)}
               >
                 近 7 日
               </button>
               <button
                 type="button"
-                className={`db-seg-btn${range === 30 ? ' on' : ''}`}
+                className={`ui-seg-btn${range === 30 ? ' is-on' : ''}`}
                 onClick={() => setRange(30)}
               >
                 近 30 日
@@ -800,7 +808,7 @@ function DashboardPage(): React.JSX.Element {
                     {Object.entries(RESULT_LABEL)
                       .filter(([k]) => (totals[k] ?? 0) > 0)
                       .map(([k, label]) => (
-                        <span key={k} className={`db-chip db-chip-${k}`}>
+                        <span key={k} className={`ui-chip is-${RESULT_TONE[k] ?? 'warn'}`}>
                           {label} {totals[k]}
                         </span>
                       ))}

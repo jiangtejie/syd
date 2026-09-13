@@ -162,3 +162,53 @@
 > ⚠ 这是本轮**唯一**「验证到 harness 级别、没逐页目视」的改动：如果有页面出现默认样式回归（例如某处裸 `<ul>` 出现圆点、
 > 某处裸 `<button>` 变灰底），把 `main.tsx` 的第一行改回 `import './assets/tailwind.css'` 并恢复依赖即可回退（reset.css 保留不影响）。
 
+## 4.3 第四轮：结构拆分 + 控件族收敛（本轮已做，全部过 typecheck / eslint(0/0) / build / 自检）
+
+### 1. `baseSync.ts` 拆成三层（技术债 #6，本轮最大的一块）
+
+| 文件 | 行数 | 装什么 |
+| --- | --- | --- |
+| `src/main/services/lark/baseCore.ts` | 671 | 配置键、字段定义(ISSUE/EVIDENCE/REPLY_FIELDS)、链接解析、列名映射、Base/表/字段读写原语(`findTable/listFields/ensureFields/ensureTable`)、结果类型、历史环 |
+| `src/main/services/lark/baseEvidence.ts` | 457 | 议题证据子表：配置、按需建表、每议题挑选(`pickPerIssue`)、append-only 推送、图片证据上传成附件、孤儿行清理 |
+| `src/main/services/lark/baseSync.ts` | 694（原 1826） | 议题推送/回拉、回复影子记录、状态与历史、一句话提示 |
+
+- 依赖方向 **baseCore ← baseEvidence ← baseSync**，只向上依赖，因此不会循环引用；`baseSync` 末尾用 `export … from` 转发，
+  **对外模块表面完全不变** —— `src/main/ipc/larkHandlers.ts` 一行都不用改（typecheck 兜住了这一点）。
+- 搬移无损的证据（不是「感觉没问题」）：用脚本把 HEAD 版 `baseSync.ts` 与拆分后的三个文件按声明逐个比对 ——
+  **94 个声明里 93 个逐字节相同**，唯一差异是 `pickPerIssue` 的泛型签名被 prettier 换行。
+- 顺带修掉一个隐患：`syncRepliesOut` 里注释提到 `verifyBaseLink` 导致自动生成的 import 多带一个未使用符号（eslint 会报），已收敛。
+
+### 2. 控件族收敛：`.st-btn` 家族（A1/A5 最大一块）
+
+- `.st-btn` 定义在 `settings.css`，却被 **15 个文件、105 处**调用（设置页/工作台/IM/渠道文件/报表…）——
+  既是重复实现，也是「页面 CSS 定义共享类」的架构错位。
+- 统一映射到 `ui-btn`：`ghost`→默认（次要操作）、无修饰→`is-primary`（主操作）、`danger`→`is-danger`(+ `is-solid` 实心红)、
+  `sm`→`is-sm`；`settings.css` 删除 57 行外观规则，页面只留布局（如 `.sf-actions-split .is-end`）。
+- 新增两个基元补全设计系统：`ui-btn.is-sm / .is-solid`、`ui-chip`（语气 `is-ok/is-warn/is-bad` + `is-solid/is-line/is-sm`）、
+  `ui-seg`+`ui-seg-btn`（互斥分段控件，`.is-on`）。
+- 顺带迁移：`dashboard.css` 的 `.db-seg/.db-chip`（−59 行）、`customers.css` 的 `.cu-tag-chip`（−17 行）、
+  `workbench-chat.css` 最后 1 条 `.st-btn`。发送结果的四种 chip 收敛成 `ok/warn/bad` 三档语气（`halted` 与 `failed` 同为红）。
+- 核对方式仍是「真实 CSS 渲染 + 截图」：把 `reset.css + base.css` 直接挂到一张对照页，渲染
+  8 种按钮 / 7 种 chip / 分段控件 / 设置卡片与右栏底宽按钮两处旧排版，目视确认后删除临时页。
+
+### 3. 注释乱码（A3）清零
+
+- 发现 `settings.css / monitor.css / shell.css / workbench.css` 共 **26 行注释是 UTF-8 字节被当 GBK 解读**的乱码
+  （例：`/* 鈹€鈹€ 缇ら棶棰橀潰鏉匡細… */`）。
+- 修复路径可逆：把乱码字符按 GBK 反向映射回字节、再按 UTF-8 解码 —— 18 行自动还原成功；
+  另 8 行因早期转换丢过一个字节（留下 `?`）无法自动还原，按残句手工重建。
+- 现状：全仓库（src/docs/scripts，324 个文件）**乱码 0 行**。
+
+### 4. 顺手清理
+
+- `.gitignore` 加 `*.tsbuildinfo`（`npm run typecheck` 会生成 composite 缓存，之前是未跟踪噪声）；
+- 删除遗留临时脚本 `scripts/.tmp-forms.cjs`。
+
+### 仍未做（下一轮候选，都是「结构性/体量」而非「重复实现」）
+
+1. **巨型文件分段**：`GrowthPage.tsx` 1986 行、`growth.css` 2033 行、`workbench.css` 2453 行、`workbench-chat.css` 1917 行
+   —— 按注释里的 `══` 分节拆成「入口 + 若干节文件」，CSS 用 `@import` 保序，产物字节数应完全一致（可逐字节比对验证）；
+2. **T3：61 处 `eslint-disable`**（多为 `react-hooks/set-state-in-effect`）—— 先抽一个 `useSyncedEffect` 小 hook 试点 2~3 处，
+   验证规则是否在调用点仍然触发；不达标就保留现状（注释已写明理由）；
+3. **A2：图表硬编码色**（`DashboardPage` 里的 `#07c160/#5b8ff9/#fa5151`）→ 收敛到 CSS 变量导出的主题常量。
+

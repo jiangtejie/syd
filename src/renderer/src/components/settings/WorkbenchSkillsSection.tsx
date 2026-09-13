@@ -85,7 +85,7 @@ export default function WorkbenchSkillsSection(): React.JSX.Element {
         desc="在技能目录放置 skills/名称/SKILL.md(frontmatter 需含 name/description),启用后 AI 会按该技能口径回答;同时启用上限默认 3 个,可在右上角调至 1~6(注入预算随上限放大,无代码执行)。新会话即时生效。"
       >
         <div className="st-actions wb-skills-toolbar">
-          <button type="button" className="st-btn ghost sm" onClick={() => void openDir()}>
+          <button type="button" className="ui-btn is-sm" onClick={() => void openDir()}>
             打开技能目录
           </button>
           {dir && <span className="st-hint wb-skills-dir">{dir}</span>}

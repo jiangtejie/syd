@@ -318,7 +318,7 @@ function WechatKeySection(): React.JSX.Element {
           onChange={(e) => setDbPath(e.target.value)}
           placeholder="如 C:\Users\xxx\Documents\xwechat_files"
         />
-        <button type="button" className="st-btn ghost" onClick={() => void browse()}>
+        <button type="button" className="ui-btn" onClick={() => void browse()}>
           浏览…
         </button>
       </label>
@@ -334,7 +334,7 @@ function WechatKeySection(): React.JSX.Element {
         />
         <button
           type="button"
-          className="st-btn ghost"
+          className="ui-btn"
           onClick={() => setShowKey((v) => !v)}
           title={showKey ? '隐藏' : '显示'}
         >
@@ -345,7 +345,7 @@ function WechatKeySection(): React.JSX.Element {
       <div className="st-actions">
         <button
           type="button"
-          className="st-btn"
+          className="ui-btn is-primary"
           disabled={busy !== null}
           onClick={() => void doImport()}
         >
@@ -353,7 +353,7 @@ function WechatKeySection(): React.JSX.Element {
         </button>
         <button
           type="button"
-          className="st-btn ghost"
+          className="ui-btn"
           disabled={busy !== null || !keyReady}
           onClick={() => void doTest()}
         >
@@ -361,7 +361,7 @@ function WechatKeySection(): React.JSX.Element {
         </button>
         <button
           type="button"
-          className="st-btn ghost"
+          className="ui-btn"
           disabled={busy !== null || !keyReady}
           onClick={() => void doConnect()}
         >
@@ -413,7 +413,7 @@ function WechatKeySection(): React.JSX.Element {
       <div className="st-actions">
         <button
           type="button"
-          className="st-btn"
+          className="ui-btn is-primary"
           disabled={busy !== null}
           onClick={() => void saveAsrConfig()}
         >
@@ -439,7 +439,7 @@ function WechatKeySection(): React.JSX.Element {
           onChange={(e) => setXorKey(e.target.value)}
           placeholder="如 0x3b / 3b / 59"
         />
-        <button type="button" className="st-btn ghost" onClick={() => setShowXor((v) => !v)}>
+        <button type="button" className="ui-btn" onClick={() => setShowXor((v) => !v)}>
           {showXor ? '隐藏' : '显示'}
         </button>
       </label>
@@ -452,7 +452,7 @@ function WechatKeySection(): React.JSX.Element {
           onChange={(e) => setAesKey(e.target.value)}
           placeholder="16 字符文本（取前 16 字符）或 32 位十六进制"
         />
-        <button type="button" className="st-btn ghost" onClick={() => setShowAes((v) => !v)}>
+        <button type="button" className="ui-btn" onClick={() => setShowAes((v) => !v)}>
           {showAes ? '隐藏' : '显示'}
         </button>
       </label>
@@ -469,7 +469,7 @@ function WechatKeySection(): React.JSX.Element {
       <div className="st-actions">
         <button
           type="button"
-          className="st-btn ghost"
+          className="ui-btn"
           disabled={busy !== null || !keyReady}
           onClick={() => void deriveImgKeys()}
           title="读账号目录下的 *_t.dat 模板：本地推导 XOR 密钥，并用模板探测段校验 AES（不读内存、不需要额外组件）"
@@ -478,7 +478,7 @@ function WechatKeySection(): React.JSX.Element {
         </button>
         <button
           type="button"
-          className="st-btn"
+          className="ui-btn is-primary"
           disabled={busy !== null}
           onClick={() => void saveImgKeys()}
         >
@@ -489,7 +489,7 @@ function WechatKeySection(): React.JSX.Element {
       <div className="st-actions">
         <button
           type="button"
-          className="st-btn ghost"
+          className="ui-btn"
           disabled={busy !== null}
           onClick={() => void testImageKey()}
         >
