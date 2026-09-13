@@ -1,0 +1,41 @@
+/* ══════════ 监控外壳(pages/MonitorShell.tsx) ══════════
+   为什么单独一个文件：monitor.css 由 MonitorPage 导入，跟着「问题监控」的懒加载块走。
+   如果用户上次停在「运营看板」页签，monitor.css 根本不会加载，外壳就会掉样式
+   （.mon-head 不 flex → 标题和页签竖排）。所以外壳的样式必须由 MonitorShell 自己导入。 */
+
+.mon-page {
+  max-width: 1760px;
+  padding-bottom: 24px;
+}
+
+.mon-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mon-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* 页签外观走全局 ui-tab；这里只留本页尺寸（与导出页 exp-tab 同一手法） */
+.mon-tab {
+  font-size: 12.5px;
+  padding: 5px 14px;
+}
+
+/* 面包板容器：不可见的作用域钩子，避免与 .db-panel(卡片样式) 撞名 */
+.mon-panel,
+.db-page {
+  min-width: 0;
+}
+
+.mon-loading {
+  padding: 24px 8px;
+  font-size: 13px;
+  color: var(--text-3);
+}

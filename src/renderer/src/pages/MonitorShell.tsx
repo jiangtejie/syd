@@ -1,3 +1,4 @@
+import './monitor-shell.css'
 import { Suspense, lazy } from 'react'
 import { useWorkbenchStore, type MonitorTab } from '../stores/workbench'
 
