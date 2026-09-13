@@ -1,0 +1,874 @@
+import { fmt, fmtNum, ORIGIN_LABEL, USAGE_LABEL } from './meta'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from '../../stores/toast'
+import { confirmAsk } from '../../stores/confirmDialog'
+import SkeletonRows from './SkeletonRows'
+import { growthApi } from './meta'
+import { Badge, SearchInput, EmptyState, ErrBar } from './common'
+import { MediaGallery } from './MediaGallery'
+import { remoteImageUrlsOf, remoteVideoUrlOf } from './meta'
+import type { GrowthContentDetailView, GrowthContentItem } from '../../../../shared/growth'
+
+const KIND_LABEL: Record<string, string> = {
+  image_text: '图文',
+  video: '视频',
+  unknown: '未知'
+}
+
+export interface WarehousePanelProps {
+  onChanged: () => void
+}
+
+/**
+ * 链接入库条:输入草稿内聚在自身 state。
+ * 若放在 WarehousePanel 顶层,每敲一个字符都会重渲染下面 100 行素材表。
+ */
+export const IngestBar = memo(function IngestBar({
+  busy,
+  inputRef,
+  onSubmit
+}: {
+  busy: boolean
+  inputRef: React.RefObject<HTMLInputElement | null>
+  onSubmit: (text: string) => Promise<boolean>
+}): React.JSX.Element {
+  const [value, setValue] = useState('')
+  const submit = (): void => {
+    const v = value.trim()
+    if (!v || busy) return
+    void onSubmit(v).then((ok) => {
+      if (ok) setValue('') // 失败保留原文,便于修正后重试
+    })
+  }
+  return (
+    <>
+      <input
+        ref={inputRef}
+        className={'ui-input gth-input'}
+        value={value}
+        placeholder={'粘贴小红书/抖音分享链接或口令, Enter 入库(自动识别平台与 ID · 去重防重复)'}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') submit()
+        }}
+      />
+      <button
+        className={'ui-btn is-primary gth-btn'}
+        type={'button'}
+        disabled={busy || !value.trim()}
+        onClick={submit}
+      >
+        {busy ? '解析中…' : '链接入库'}
+      </button>
+    </>
+  )
+})
+
+export function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
+  const PAGE_SIZE = 100
+  const [items, setItems] = useState<GrowthContentItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadErr, setLoadErr] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [origin, setOrigin] = useState('')
+  const [usage, setUsage] = useState('')
+  const [status, setStatus] = useState('')
+  const [noDecomp, setNoDecomp] = useState(false)
+  const [sort, setSort] = useState<'created' | 'score' | 'likes'>('created')
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [busyIngest, setBusyIngest] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [detailId, setDetailId] = useState<number | null>(null)
+  const [detail, setDetail] = useState<GrowthContentDetailView | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [patchBusy, setPatchBusy] = useState(false)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [confirmRemove, setConfirmRemove] = useState<number | null>(null)
+  const reqRef = useRef(0)
+  /** 已加载列表的同步镜像: 供分页游标使用, 避免把 items.length 放进 load 依赖导致重置循环 */
+  const itemsRef = useRef<GrowthContentItem[]>([])
+  const ingestRef = useRef<HTMLInputElement | null>(null)
+  const detailRef = useRef<HTMLDivElement | null>(null)
+
+  /** 拉取素材: reset=true 覆盖(筛选/排序/首载), false 追加下一页 */
+  const load = useCallback(
+    async (reset = false): Promise<void> => {
+      if (!growthApi) return
+      const seq = ++reqRef.current
+      if (reset) setLoading(true)
+      else setLoadingMore(true)
+      setLoadErr('')
+      try {
+        const offset = reset ? 0 : itemsRef.current.length
+        const filter: Record<string, unknown> = { limit: PAGE_SIZE, offset }
+        const k = keyword.trim()
+        if (k) filter.keyword = k
+        if (origin) filter.origin = origin
+        if (usage) filter.usage = usage
+        if (status) filter.status = status
+        if (noDecomp) filter.noDecomp = true
+        if (sort !== 'created') filter.sort = sort
+        const res = await growthApi.listContent(filter as never)
+        if (seq !== reqRef.current) return
+        if (!res.ok) {
+          setLoadErr(res.error || '读取素材失败')
+          return
+        }
+        const page = res.items ?? []
+        const next = reset ? page : itemsRef.current.concat(page)
+        itemsRef.current = next
+        setItems(next)
+        setTotal(res.total ?? page.length)
+      } catch (e) {
+        if (seq === reqRef.current) setLoadErr(e instanceof Error ? e.message : '读取素材失败')
+      } finally {
+        if (seq === reqRef.current) {
+          setLoading(false)
+          setLoadingMore(false)
+        }
+      }
+    },
+    [keyword, origin, usage, status, noDecomp, sort]
+  )
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 筛选/排序变化与首载统一重拉(全仓同款模式)
+    void load(true)
+  }, [load])
+
+  /**
+   * 详情面板跟着列表走：详情那条已经不在当前列表里（被删掉、或改了筛选/排序后不属于这个视野）就收起来。
+   * 只在「没有更多分页且不在加载」时判断 —— 否则翻页途中会误判成"不在列表里"而把详情关掉。
+   */
+  useEffect(() => {
+    if (detailId == null || loading || loadingMore) return
+    if (items.length < total) return
+    if (items.some((i) => i.id === detailId)) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 列表刷新后同步关闭已失效的详情(全仓同款模式)
+    setDetailId(null)
+    setDetail(null)
+  }, [items, total, loading, loadingMore, detailId])
+
+  /** 强制重拉详情: 不走 openDetail 的「同一行再点收起」逻辑 */
+  const refreshDetail = async (id: number): Promise<void> => {
+    if (!growthApi) return
+    try {
+      const res = await growthApi.getContent(id)
+      if (res.ok && res.item) {
+        const item = res.item as GrowthContentDetailView
+        setDetail({ ...item, remixOutputs: item.remixOutputs ?? [], metrics: item.metrics ?? [] })
+        setNoteDraft(item.note ?? '')
+      }
+    } catch {
+      /* 详情刷新失败不影响列表主流程 */
+    }
+  }
+
+  const hasMore = items.length < total
+
+  const openDetail = async (id: number): Promise<void> => {
+    if (!growthApi) return
+    if (detailId === id) {
+      setDetailId(null)
+      setDetail(null)
+      return
+    }
+    setDetailId(id)
+    setDetail(null)
+    setDetailLoading(true)
+    try {
+      const res = await growthApi.getContent(id)
+      if (!res.ok) {
+        toast.error(res.error || '读取详情失败')
+        return
+      }
+      if (res.item) {
+        // 防御: 兼容旧主进程返回(可能缺 remixOutputs/metrics 字段)
+        const item = res.item as GrowthContentDetailView
+        setDetail({ ...item, remixOutputs: item.remixOutputs ?? [], metrics: item.metrics ?? [] })
+        setNoteDraft(item.note ?? '')
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '读取详情失败')
+    } finally {
+      setDetailLoading(false)
+      // 详情在列表下方: 打开后滚动定位, 避免用户找不到
+      setTimeout(
+        () => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+        80
+      )
+    }
+  }
+
+  const toggleSelect = (id: number): void => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const allSelected = items.length > 0 && items.every((it) => selected.has(it.id))
+
+  const toggleAll = (): void => {
+    setSelected(allSelected ? new Set() : new Set(items.map((it) => it.id)))
+  }
+
+  const batchApply = async (patch: { usage?: string; status?: string }): Promise<void> => {
+    if (!growthApi || selected.size === 0) return
+    setBatchBusy(true)
+    try {
+      const res = await growthApi.batchPatch(Array.from(selected), patch)
+      if (!res.ok) {
+        toast.error(res.error || '批量更新失败')
+        return
+      }
+      toast.success('已更新 ' + String(res.updated ?? 0) + ' 条')
+      setSelected(new Set())
+      void load(true)
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  const batchRemove = async (): Promise<void> => {
+    if (!growthApi || selected.size === 0) return
+    const okDel = await confirmAsk({
+      title: '批量删除素材',
+      message: '将删除选中的 ' + String(selected.size) + ' 条素材记录(本地图片文件保留)。',
+      confirmText: '删除',
+      danger: true
+    })
+    if (!okDel) return
+    setBatchBusy(true)
+    try {
+      const res = await growthApi.batchRemove(Array.from(selected))
+      if (!res.ok) {
+        toast.error(res.error || '批量删除失败')
+        return
+      }
+      toast.success('已删除 ' + String(res.removed ?? 0) + ' 条')
+      setSelected(new Set())
+      itemsRef.current = []
+      if (detailId && selected.has(detailId)) {
+        setDetailId(null)
+        setDetail(null)
+      }
+      void load(true)
+      onChanged()
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  const uploadLocal = async (): Promise<void> => {
+    if (!growthApi) return
+    setUploading(true)
+    try {
+      const res = await growthApi.uploadLocal()
+      if (!res.ok) {
+        if (res.error !== '已取消选择') toast.error(res.error || '导入失败')
+        return
+      }
+      toast.success(
+        '已导入 ' +
+          String(res.added ?? 0) +
+          ' 个文件' +
+          (res.skipped && res.skipped.length > 0
+            ? '(跳过 ' + String(res.skipped.length) + ' 个)'
+            : '')
+      )
+      void load(true)
+      onChanged()
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const redownload = async (id: number): Promise<void> => {
+    if (!growthApi) return
+    setPatchBusy(true)
+    try {
+      const res = await growthApi.redownloadMedia(id)
+      if (!res.ok) {
+        toast.error(res.error || '重新下载失败')
+        return
+      }
+      toast.success(
+        '已重新下载 ' +
+          String(res.added ?? 0) +
+          ' 张' +
+          ((res.failed ?? 0) > 0 ? ', 失败 ' + String(res.failed) + ' 张' : '')
+      )
+      await refreshDetail(id)
+      void load(true)
+      onChanged()
+    } finally {
+      setPatchBusy(false)
+    }
+  }
+
+  const exportPkg = async (id: number): Promise<void> => {
+    if (!growthApi) return
+    setPatchBusy(true)
+    try {
+      const res = await growthApi.exportPackage(id)
+      if (!res.ok) {
+        if (res.error !== '已取消导出') toast.error(res.error || '导出失败')
+        return
+      }
+      toast.success('发布包已导出(' + String(res.files ?? 0) + ' 个文件)')
+      const openFolder = window.api?.cs?.export?.openFolder
+      if (res.dir && openFolder) void openFolder(res.dir)
+    } finally {
+      setPatchBusy(false)
+    }
+  }
+
+  const ingestLink = useCallback(
+    async (text: string): Promise<boolean> => {
+      const link = text.trim()
+      if (!growthApi || !link) return false
+      setBusyIngest(true)
+      try {
+        const res = await growthApi.ingestLink(link)
+        if (!res.ok) {
+          toast.error(res.error || '入库失败')
+          return false
+        }
+        toast.success(res.existed ? '该链接已入库(去重命中)' : '入库成功')
+        void load(true)
+        onChanged()
+        return true
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : '入库失败')
+        return false
+      } finally {
+        setBusyIngest(false)
+      }
+    },
+    [load, onChanged]
+  )
+
+  const patch = async (
+    id: number,
+    patchData: { usage?: string; status?: string; note?: string }
+  ): Promise<void> => {
+    if (!growthApi) return
+    setPatchBusy(true)
+    try {
+      const res = await growthApi.patchContent(id, patchData)
+      if (!res.ok) {
+        toast.error(res.error || '更新失败')
+        return
+      }
+      toast.success('已更新')
+      await refreshDetail(id)
+      void load(true)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '更新失败')
+    } finally {
+      setPatchBusy(false)
+    }
+  }
+
+  const removeItem = async (id: number): Promise<void> => {
+    if (confirmRemove !== id) {
+      setConfirmRemove(id)
+      setTimeout(() => setConfirmRemove((v) => (v === id ? null : v)), 2500)
+      return
+    }
+    if (!growthApi) return
+    const res = await growthApi.removeContent(id)
+    if (!res.ok) toast.error(res.error || '删除失败')
+    else {
+      toast.success('素材已删除')
+      onChanged()
+    }
+    setConfirmRemove(null)
+    setDetailId(null)
+    setDetail(null)
+    setSelected((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+    void load(true)
+  }
+
+  const filterActive = !!keyword.trim() || !!origin || !!usage
+
+  const rowTitle = (it: GrowthContentItem): string =>
+    it.title || (it.text ? it.text.slice(0, 80) : it.note || '(无标题素材)')
+
+  return (
+    <>
+      <div className={'gth-ingest'}>
+        <IngestBar busy={busyIngest} inputRef={ingestRef} onSubmit={ingestLink} />
+        <button
+          className={'ui-btn gth-btn'}
+          type={'button'}
+          disabled={uploading}
+          title={'导入门店自有图片/视频(不进公域, 供爆改使用)'}
+          onClick={() => void uploadLocal()}
+        >
+          {uploading ? '导入中…' : '上传本地素材'}
+        </button>
+      </div>
+
+      <div className={'page-card gth-card'}>
+        <div className={'gth-card-head'}>
+          <span className={'gth-card-title'}>素材列表</span>
+          <span className={'gth-card-sub'}>
+            共 {total} 条{items.length < total ? ' · 已加载 ' + String(items.length) : ''} ·
+            互动=赞/藏/评/转
+          </span>
+        </div>
+        <div className={'gth-btn-row'} style={{ marginBottom: 10 }}>
+          <SearchInput value={keyword} onApply={setKeyword} placeholder={'标题/正文/作者 检索'} />
+          <select
+            className={'ui-select gth-select'}
+            style={{ width: 120 }}
+            value={origin}
+            onChange={(e) => setOrigin(e.target.value)}
+          >
+            <option value={''}>全部平台</option>
+            <option value={'xhs'}>小红书</option>
+            <option value={'douyin'}>抖音</option>
+            <option value={'self'}>自有</option>
+            <option value={'manual'}>手工</option>
+          </select>
+          <select
+            className={'ui-select gth-select'}
+            style={{ width: 120 }}
+            value={usage}
+            onChange={(e) => setUsage(e.target.value)}
+          >
+            <option value={''}>全部用途</option>
+            <option value={'ref'}>内部参考</option>
+            <option value={'own'}>自有素材</option>
+            <option value={'licensed'}>已授权</option>
+          </select>
+          <select
+            className={'ui-select gth-select'}
+            style={{ width: 120 }}
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+          >
+            <option value={''}>全部状态</option>
+            <option value={'new'}>新入库</option>
+            <option value={'ready'}>可爆改</option>
+            <option value={'used'}>已爆改/已用</option>
+            <option value={'archived'}>已归档</option>
+          </select>
+          <select
+            className={'ui-select gth-select'}
+            style={{ width: 120 }}
+            value={sort}
+            onChange={(e) => setSort(e.target.value as 'created' | 'score' | 'likes')}
+          >
+            <option value={'created'}>最新入库</option>
+            <option value={'score'}>爆款分优先</option>
+            <option value={'likes'}>点赞最多</option>
+          </select>
+          <button
+            className={'gth-chip' + (noDecomp ? ' is-on' : '')}
+            type={'button'}
+            onClick={() => setNoDecomp((v) => !v)}
+          >
+            仅未拆解
+          </button>
+          {filterActive ? (
+            <button
+              className={'ui-btn gth-btn sm'}
+              type={'button'}
+              onClick={() => {
+                setKeyword('')
+                setOrigin('')
+                setUsage('')
+                setStatus('')
+                setNoDecomp(false)
+              }}
+            >
+              清除筛选
+            </button>
+          ) : null}
+        </div>
+        {selected.size > 0 ? (
+          <div className={'gth-batchbar'}>
+            <span>已选 {selected.size} 条</span>
+            <select
+              className={'ui-select gth-select'}
+              style={{ width: 130 }}
+              value={''}
+              disabled={batchBusy}
+              onChange={(e) => {
+                if (e.target.value) void batchApply({ usage: e.target.value })
+              }}
+            >
+              <option value={''}>批量改用途…</option>
+              <option value={'ref'}>内部参考</option>
+              <option value={'own'}>自有素材</option>
+              <option value={'licensed'}>已授权</option>
+            </select>
+            <select
+              className={'ui-select gth-select'}
+              style={{ width: 130 }}
+              value={''}
+              disabled={batchBusy}
+              onChange={(e) => {
+                if (e.target.value) void batchApply({ status: e.target.value })
+              }}
+            >
+              <option value={''}>批量改状态…</option>
+              <option value={'new'}>新入库</option>
+              <option value={'ready'}>可爆改</option>
+              <option value={'used'}>已爆改/已用</option>
+              <option value={'archived'}>已归档</option>
+            </select>
+            <button
+              className={'ui-btn is-danger gth-btn sm'}
+              type={'button'}
+              disabled={batchBusy}
+              onClick={() => void batchRemove()}
+            >
+              批量删除
+            </button>
+            <button
+              className={'ui-btn gth-btn sm'}
+              type={'button'}
+              onClick={() => setSelected(new Set())}
+            >
+              取消选择
+            </button>
+          </div>
+        ) : null}
+        {loadErr ? <ErrBar msg={loadErr} onRetry={() => void load(true)} /> : null}
+        {loading ? (
+          <SkeletonRows rows={7} cols={2} />
+        ) : items.length === 0 ? (
+          filterActive ? (
+            <EmptyState
+              title={'没有符合筛选条件的素材'}
+              steps={['换个关键词, 或点击「清除筛选」查看全部']}
+              extra={
+                <button
+                  className={'ui-btn gth-btn sm'}
+                  type={'button'}
+                  onClick={() => {
+                    setKeyword('')
+                    setOrigin('')
+                    setUsage('')
+                    setStatus('')
+                    setNoDecomp(false)
+                  }}
+                >
+                  清除筛选
+                </button>
+              }
+            />
+          ) : (
+            <EmptyState
+              title={'素材仓库还是空的'}
+              steps={[
+                '粘贴小红书/抖音分享链接或口令, 或点「上传本地素材」导入门店实拍',
+                '到「AI 工作台」点「+ 新建」选这条素材, 与 AI 对话逐项爆改成品牌文案',
+                '在「采集源」页配置订阅, 由数据服务定时批量拉取爆款素材'
+              ]}
+              extra={
+                <button
+                  className={'ui-btn gth-btn sm'}
+                  type={'button'}
+                  onClick={() => ingestRef.current?.focus()}
+                >
+                  去粘贴入库
+                </button>
+              }
+            />
+          )
+        ) : (
+          <div className={'gth-list'}>
+            <div className={'gth-row gth-row--item is-head'}>
+              <span>
+                <input
+                  type={'checkbox'}
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  title={'全选当前页'}
+                />
+              </span>
+              <span>标题 / 内容</span>
+              <span>平台 / 形态</span>
+              <span className={'gth-num'}>互动(赞/藏/评/转)</span>
+              <span>入库时间</span>
+              <span>爆款分</span>
+              <span className={'gth-col-right'}>用途</span>
+            </div>
+            {items.map((it, i) => (
+              <div
+                className={
+                  'gth-row gth-row--item clickable' + (detailId === it.id ? ' is-active' : '')
+                }
+                key={it.id}
+                style={{ '--i': i } as React.CSSProperties}
+                onClick={() => void openDetail(it.id)}
+              >
+                <span onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type={'checkbox'}
+                    checked={selected.has(it.id)}
+                    onChange={() => toggleSelect(it.id)}
+                    title={'选中以批量操作'}
+                  />
+                </span>
+                <div className={'gth-main'}>
+                  <div className={'t'}>
+                    <span className={'txt'} title={rowTitle(it)}>
+                      {rowTitle(it)}
+                    </span>
+                  </div>
+                  <div className={'s'}>
+                    {[it.authorName, it.tags.slice(0, 3).join(', ')].filter(Boolean).join(' · ') ||
+                      '—'}
+                  </div>
+                </div>
+                <div>
+                  <Badge>
+                    {ORIGIN_LABEL[it.origin] ?? it.origin} · {KIND_LABEL[it.kind] ?? it.kind}
+                  </Badge>
+                </div>
+                <div className={'gth-num'}>
+                  {fmtNum(it.interactions.likes)}/{fmtNum(it.interactions.collects)}/
+                  {fmtNum(it.interactions.comments)}/{fmtNum(it.interactions.shares)}
+                </div>
+                <div className={'gth-num'}>{fmt(it.createdAt)}</div>
+                <div className={'gth-num'}>{it.score > 0 ? it.score : '—'}</div>
+                <div className={'gth-col-right'}>
+                  <Badge tone={it.usage === 'ref' ? 'gray' : 'green'}>
+                    {USAGE_LABEL[it.usage] ?? it.usage}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+            {hasMore ? (
+              <div className={'gth-more'}>
+                <button
+                  className={'ui-btn gth-btn'}
+                  type={'button'}
+                  disabled={loadingMore}
+                  onClick={() => void load(false)}
+                >
+                  {loadingMore
+                    ? '加载中…'
+                    : '加载更多(还有 ' + String(total - items.length) + ' 条)'}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {detailLoading ? (
+        <div className={'page-card gth-card gth-detail-loading'}>加载详情…</div>
+      ) : null}
+      {detail ? (
+        <div className={'gth-detail'} ref={detailRef}>
+          <div className={'page-card gth-card'}>
+            <div className={'gth-card-head'}>
+              <span className={'gth-card-title'}>图文</span>
+              <span className={'gth-card-sub'}>
+                {
+                  (detail.assets ?? []).filter((a) => a.kind === 'cover' || a.kind === 'image')
+                    .length
+                }{' '}
+                张
+              </span>
+            </div>
+            <MediaGallery
+              key={'gallery-' + String(detail.id)}
+              assets={detail.assets ?? []}
+              remoteImageUrls={remoteImageUrlsOf(detail)}
+              remoteVideoUrl={remoteVideoUrlOf(detail)}
+            />
+          </div>
+          <div className={'page-card gth-card gth-kv-card'}>
+            <div className={'gth-card-head'}>
+              <span className={'gth-card-title'}>素材详情</span>
+              <span className={'gth-card-sub'}>#{detail.id}</span>
+              <span className={'gth-detail-btns'}>
+                <button
+                  className={'ui-btn gth-btn sm'}
+                  type={'button'}
+                  disabled={patchBusy}
+                  onClick={() => void exportPkg(detail.id)}
+                >
+                  导出发布包
+                </button>
+                <button
+                  className={'ui-btn gth-btn sm'}
+                  type={'button'}
+                  disabled={patchBusy}
+                  title={'本地图片缺失时按源链接重新下载'}
+                  onClick={() => void redownload(detail.id)}
+                >
+                  重下图片
+                </button>
+                <button
+                  className={
+                    'ui-btn is-danger gth-btn sm' + (confirmRemove === detail.id ? ' is-solid' : '')
+                  }
+                  type={'button'}
+                  disabled={patchBusy}
+                  onClick={() => void removeItem(detail.id)}
+                >
+                  {confirmRemove === detail.id ? '确认删除?' : '删除'}
+                </button>
+                <button
+                  className={'ui-btn gth-btn sm'}
+                  type={'button'}
+                  title={'收起详情'}
+                  onClick={() => {
+                    setDetailId(null)
+                    setDetail(null)
+                  }}
+                >
+                  收起
+                </button>
+              </span>
+            </div>
+            <dl className={'gth-kv'}>
+              <dt>来源</dt>
+              <dd>
+                <Badge>
+                  {ORIGIN_LABEL[detail.origin] ?? detail.origin} ·{' '}
+                  {KIND_LABEL[detail.kind] ?? detail.kind}
+                </Badge>
+                {detail.platformItemId ? (
+                  <span className={'gth-num'}> ID {detail.platformItemId}</span>
+                ) : null}
+              </dd>
+              <dt>标题</dt>
+              <dd>{detail.title || '(无)'}</dd>
+              {detail.text ? (
+                <>
+                  <dt>正文</dt>
+                  <dd>
+                    {detail.text.slice(0, 240)}
+                    {detail.text.length > 240 ? '…' : ''}
+                  </dd>
+                </>
+              ) : null}
+              {detail.authorName ? (
+                <>
+                  <dt>作者</dt>
+                  <dd>
+                    {detail.authorName}
+                    {detail.authorId ? ' (' + detail.authorId + ')' : null}
+                  </dd>
+                </>
+              ) : null}
+              {detail.link ? (
+                <>
+                  <dt>链接</dt>
+                  <dd>
+                    <a className={'link'} href={detail.link} target={'_blank'} rel={'noreferrer'}>
+                      {detail.link}
+                    </a>
+                  </dd>
+                </>
+              ) : null}
+              <dt>入库 / 发布</dt>
+              <dd>
+                {fmt(detail.createdAt)}
+                {detail.publishedAt ? ' · 发布 ' + fmt(detail.publishedAt) : ' · 未获取发布时间'}
+              </dd>
+              <dt>互动</dt>
+              <dd className={'gth-num'}>
+                赞 {fmtNum(detail.interactions.likes)} · 藏 {fmtNum(detail.interactions.collects)} ·
+                评 {fmtNum(detail.interactions.comments)} · 转 {fmtNum(detail.interactions.shares)}
+              </dd>
+              {detail.tags.length > 0 ? (
+                <>
+                  <dt>标签</dt>
+                  <dd>{detail.tags.join(', ')}</dd>
+                </>
+              ) : null}
+              <dt>媒体 / 拆解</dt>
+              <dd>
+                {detail.assets.length} 个文件 ·{' '}
+                {detail.decomp ? (
+                  <Badge tone={'green'}>已拆解</Badge>
+                ) : (
+                  <Badge tone={'gray'}>待拆解</Badge>
+                )}
+              </dd>
+            </dl>
+            <div className={'gth-ops'}>
+              <div className={'gth-ops-row'}>
+                <label className={'gth-ops-fld'}>
+                  <span className={'lb'}>用途</span>
+                  <select
+                    className={'ui-select gth-select'}
+                    value={detail.usage}
+                    disabled={patchBusy}
+                    onChange={(e) => void patch(detail.id, { usage: e.target.value })}
+                  >
+                    <option value={'ref'}>内部参考</option>
+                    <option value={'own'}>自有素材</option>
+                    <option value={'licensed'}>已授权</option>
+                  </select>
+                </label>
+                <label className={'gth-ops-fld'}>
+                  <span className={'lb'}>状态</span>
+                  <select
+                    className={'ui-select gth-select'}
+                    value={detail.status}
+                    disabled={patchBusy}
+                    onChange={(e) => void patch(detail.id, { status: e.target.value })}
+                  >
+                    <option value={'new'}>新入库</option>
+                    <option value={'ready'}>可爆改</option>
+                    <option value={'used'}>已爆改/已用</option>
+                    <option value={'archived'}>已归档</option>
+                  </select>
+                </label>
+              </div>
+              <div className={'gth-ops-row'}>
+                <label className={'gth-ops-fld grow'}>
+                  <span className={'lb'}>内部备注</span>
+                  <textarea
+                    className={'ui-textarea gth-input gth-input--area'}
+                    rows={2}
+                    value={noteDraft}
+                    disabled={patchBusy}
+                    placeholder={'来源说明 / 待补全事项 / 跟进信息'}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                  />
+                </label>
+                <button
+                  className={'ui-btn gth-btn sm'}
+                  type={'button'}
+                  disabled={patchBusy || noteDraft === detail.note}
+                  onClick={() => void patch(detail.id, { note: noteDraft })}
+                >
+                  {patchBusy ? '保存中…' : '保存备注'}
+                </button>
+              </div>
+              <div className={'gth-ops-hint'}>
+                仅内部可见; 来源为「内部参考」的素材只能用于学习分析, 对外发布先到「AI
+                工作台」原创化处理。
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+// ── 页面外壳 ──

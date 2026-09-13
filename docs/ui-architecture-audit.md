@@ -219,12 +219,29 @@
 - **保序/无损的证据**：脚本把 HEAD 版与「外壳 + 各分节」的纯声明序列（去掉注释与空行）逐行比对 ——
   workbench **2035 行完全相同**、workbench-chat **1615 行完全相同**、growth **1997 行完全相同**。
 
+### 6. 巨型组件分段：`GrowthPage.tsx` 2147 行 → 8 个文件（本轮第三批）
+
+| 文件 | 行数 | 装什么 |
+| --- | --- | --- |
+| `pages/GrowthPage.tsx` | 183（原 2147） | 只留页面外壳：页签 + 各面板拼装 + `TAB_DESC` |
+| `components/growth/meta.ts` | 68 | 纯数据/纯函数：`growthApi`、`fmt/fmtRel/fmtNum`、四张文案映射表、remoteMedia 取址函数 |
+| `components/growth/common.tsx` | 138 | 通用小组件：`Switch / Badge / SearchInput / EmptyState / ErrBar` |
+| `components/growth/StatsBar.tsx` | 118 | 指标条 + 4 个图标 |
+| `components/growth/ProviderPanel.tsx` | 137 | 数据服务商面板 |
+| `components/growth/SourcesPanel.tsx` | 420 | 订阅源面板（含新建/编辑表单状态） |
+| `components/growth/MediaGallery.tsx` | 266 | 图集画廊 + 灯箱 |
+| `components/growth/WarehousePanel.tsx` | 870 | 素材仓库面板（入库条 + 详情 + 批量操作） |
+
+- **无损证据**：脚本按声明名比对 HEAD 版与拆分后 8 个文件 —— **41 个声明一个不少**，其中 37 个逐字节相同，
+  4 个差异只是 prettier 把函数签名换了行（`Switch`/`Lightbox`）或注释归属边界（`VENDOR_PRESETS`/`SourcesPanel`）；
+  产物 `GrowthPage-*.js` 180,293 字节（拆分前 180.28 kB）不变。
+- **踩到的两个坑（都已按 lint 要求修正）**：① 组件的 `.tsx` 里不能和组件一起导出常量/纯函数
+  （`react-refresh/only-export-components`）→ 才单独拆出 `meta.ts`；② 相对路径深度：`components/growth/` 比 `pages/` 深一层，
+  指向 `src/shared` 要 `../../../../shared`。
+
 ### 仍未做（下一轮候选，都是「结构性/体量」而非「重复实现」）
 
-1. **巨型组件分段**：`GrowthPage.tsx` 2020 行（内部已有 `Switch/Badge/SearchInput/EmptyState/ErrBar`、`StatsBar`、
-   `ProviderPanel`、`SourcesPanel`、`Lightbox/MediaGallery`、`IngestBar/WarehousePanel` 这些天然边界，
-   可按「common 基元 + 各面板」拆成 6 个文件，靠 typecheck 兜底）；
-2. **T3：61 处 `eslint-disable`**（多为 `react-hooks/set-state-in-effect`）—— 先抽一个 `useSyncedEffect` 小 hook 试点 2~3 处，
+1. **T3：61 处 `eslint-disable`**（多为 `react-hooks/set-state-in-effect`）—— 先抽一个 `useSyncedEffect` 小 hook 试点 2~3 处，
    验证规则是否在调用点仍然触发；不达标就保留现状（注释已写明理由）；
-3. **A2：图表硬编码色**（`DashboardPage` 里的 `#07c160/#5b8ff9/#fa5151`）→ 收敛到 CSS 变量导出的主题常量。
+2. **A2：图表硬编码色**（`DashboardPage` 里的 `#07c160/#5b8ff9/#fa5151`）→ 收敛到 CSS 变量导出的主题常量。
 
