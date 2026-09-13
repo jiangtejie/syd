@@ -384,7 +384,12 @@ CSS 可精简估算：**约 1,020 行（9.2%）**，激进约 1,300 行（11.7%�
 ### 7.6 明确未做（附原因）
 
 1. **preload 双份类型面（850 行 `index.ts` ↔ 693 行 `index.d.ts`）**：收敛需先把 `index.ts` 里 34 处 `unknown` 补成精确类型，属独立重构，且当前两份已能通过编译，风险大于收益。
-2. **`growth/remix/service.ts` + `prompts.ts`（约 315 行）**：`remixContent` 已无调用方，但整条"爆改"链疑似为规划中的功能，保留待产品确认，未删。
+2. ~~**`growth/remix/service.ts` + `prompts.ts`（约 315 行）**：`remixContent` 已无调用方，但整条"爆改"链疑似为规划中的功能，保留待产品确认，未删。~~
+   → **已删（2026-09）**：核实 `remixContent` 全仓零调用方，且「营销 → AI 工作台」已用 `growth_rewrite_title/copy + growth_update_output`（写 `growthAiRepo`）承接同一件事，
+   两份实现并存只会漂移。本轮删除：`service.ts` 的 `remixContent`+`ensureDecompText`、`prompts.ts` 的 `buildRemixPrompt`/`normalizeRemixResult`/`STYLE_LABEL`、
+   `growthOpsRepo` 的三个写函数（`createRemixJob`/`finishRemixJob`/`createRemixOutput`）、`shared/growth.ts` 的 `GrowthRemixStyle`。
+   产物：`service.ts` 178→103 行、`prompts.ts` 146→83 行、`growthOpsRepo` −50 行。
+   **历史数据的读取路径保留**（`listRemixOutputViews` 仍被页面与导出器使用），需要恢复该链路见 git 历史。
 3. **删除 Tailwind 本体**：见 7.4，需目视回归。
 4. **`issueRepo` 列表 SQL 加 LIMIT / `cs:wb:messages` 分页**：会改变 IPC 契约与渲染端分页行为，建议单独排期。
 5. **`settings.css` 等文件里双重编码乱码注释**：只删了随死代码一起消失的部分，全量重写属独立清理。

@@ -1,16 +1,13 @@
 /**
- * AI 拆解 / 爆改 提示词与 JSON 解析(纯函数, 可独立单测)。
+ * AI 拆解 提示词与 JSON 解析(纯函数, 可独立单测)。
  * 注意: 不使用模板围栏正则, JSON 提取靠大括号平衡扫描(容忍模型输出杂文)。
+ *
+ * 历史说明: 这里原有「一键爆改」的 `buildRemixPrompt`/`normalizeRemixResult`/`STYLE_LABEL`。
+ * 该链路已由「营销 → AI 工作台」的工具承接(growth_rewrite_title/copy), 且无调用方, 故删除;
+ * 需要恢复见 git 历史。
  */
 
-import type { GrowthContentItem, GrowthRemixStyle } from '../../../../shared/growth'
-
-export const STYLE_LABEL: Record<GrowthRemixStyle, string> = {
-  tanDian: '探店种草风(突出体验感/画面感, 适合小红书)',
-  shangXin: '门店上新官宣(新品/新店开业, 干脆有力)',
-  cuXiao: '优惠促单风(套餐/团购引导, 突出划算与时限提示)',
-  renShe: '老板/门店人设朋友圈(真实、松弛、像人话)'
-}
+import type { GrowthContentItem } from '../../../../shared/growth'
 
 /** 把素材内容转成可读文本块(喂给 LLM) */
 export function describeItem(item: GrowthContentItem): string {
@@ -57,32 +54,6 @@ export function buildAnalyzePrompt(item: GrowthContentItem): { system: string; u
   return { system, user: describeItem(item) }
 }
 
-/** 改写请求: 结构启发 → 全新品牌文案(餐饮门店) */
-export function buildRemixPrompt(input: {
-  item: GrowthContentItem
-  decompText: string
-  style: GrowthRemixStyle
-}): { system: string; user: string } {
-  const system = [
-    '你是一名餐饮门店的内容运营。基于给定的「爆款拆解」创作全新文案:',
-    '规则(务必遵守):',
-    '1. 只借鉴结构与情绪, 不允许复述、仿写原句; 所有文字必须原创且符合本店实际;',
-    '2. 不虚构门店事实(菜品/价格/活动/地址等一律用占位符如【菜品】【套餐】【店名】, 由运营替换);',
-    '3. 普通食品禁止功效宣称(不能说治病/减肥/保健), 不用绝对化用语(最/第一/唯一);',
-    '4. 风格: ' + STYLE_LABEL[input.style] + ';',
-    '5. 只输出一个 JSON 对象(不要 Markdown 代码块), 结构:',
-    '{ "titles": ["标题1", "标题2", "标题3", "标题4", "标题5"], "copies": ["正文A(80-150字)", "正文B(80-150字, 不同侧重)"] }'
-  ].join('\n')
-  const user = [
-    '——爆款拆解——',
-    input.decompText,
-    '',
-    '——参考素材原文(只许看结构与感觉, 禁止照抄)——',
-    describeItem(input.item)
-  ].join('\n')
-  return { system, user }
-}
-
 /** 从模型输出中稳健提取 JSON: 容忍围栏/前后杂文, 大括号平衡扫描 */
 export function parseModelJson(raw: string): Record<string, unknown> | null {
   if (!raw) return null
@@ -117,30 +88,4 @@ export function parseModelJson(raw: string): Record<string, unknown> | null {
     }
   }
   return null
-}
-
-/** 解析爆改结果并容错归一 */
-export function normalizeRemixResult(parsed: Record<string, unknown> | null): {
-  titles: string[]
-  copies: string[]
-} {
-  const titles: string[] = []
-  const copies: string[] = []
-  if (parsed) {
-    const t = parsed['titles']
-    const c = parsed['copies']
-    if (Array.isArray(t)) {
-      for (const x of t) {
-        const s = typeof x === 'string' ? x.trim() : ''
-        if (s && titles.length < 8) titles.push(s)
-      }
-    }
-    if (Array.isArray(c)) {
-      for (const x of c) {
-        const s = typeof x === 'string' ? x.trim() : ''
-        if (s && copies.length < 4) copies.push(s)
-      }
-    }
-  }
-  return { titles, copies }
 }

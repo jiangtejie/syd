@@ -158,8 +158,7 @@ export interface GrowthProgressPayload {
 
 // ── AI 拆解 / 爆改 / 发布回填(落地批 A/B) ──
 
-/** 爆改快捷风格 */
-export type GrowthRemixStyle = 'tanDian' | 'shangXin' | 'cuXiao' | 'renShe'
+// 注: 原有一键爆改的 GrowthRemixStyle 已随该链路删除(改由 AI 工作台工具承接)；
 
 /** 一次爆改产出的一个输出块(titles 用换行分隔多标题; copy 为单篇正文) */
 export interface GrowthRemixOutputView {

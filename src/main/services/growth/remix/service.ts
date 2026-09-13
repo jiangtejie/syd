@@ -1,40 +1,25 @@
 /**
- * AI 拆解 / 文案爆改 服务: 复用客服 AI 通道(services/ai provider, 同 baseUrl/key/model)。
+ * AI 拆解 / 发布回填 服务: 复用客服 AI 通道(services/ai provider, 同 baseUrl/key/model)。
  * - 拆解: 爆款 → 结构化拆解卡(落 growth_decomp);
- * - 爆改: 拆解卡 + 快捷风格 → 标题 x5 + 正文 x2(落 remix_job / remix_output), 附合规提示;
  * - 回填: 发布登记 → growth_metric_snapshot, 素材分自动更新。
+ *
+ * 历史说明: 这里原有 `remixContent`(一键爆改: 拆解 → 标题x5 + 正文x2 → 落 remix_job/remix_output)。
+ * 该链路已由「营销 → AI 工作台」的工具承接(growth_rewrite_title/copy + growth_update_output), 且无任何调用方,
+ * 故删除以免两份实现漂移; 如需恢复, 见 git 历史(提交 f650c4e 之前)。
  */
 
 import { createAiProvider } from '../../ai/provider'
 import { describeModelError } from '../../ai/modelErrors'
 import {
-  getContentDetail,
   getContentItem,
   setDecomp,
   interactionScoreOf,
   updateContentFields
 } from '../../../db/repos/growthRepo'
-import {
-  createRemixJob,
-  createRemixOutput,
-  finishRemixJob,
-  insertMetricSnapshot,
-  listMetricViews,
-  listRemixOutputViews
-} from '../../../db/repos/growthOpsRepo'
-import {
-  buildAnalyzePrompt,
-  buildRemixPrompt,
-  normalizeRemixResult,
-  parseModelJson
-} from './prompts'
-import { checkComplianceBatch } from './compliance'
+import { insertMetricSnapshot, listMetricViews } from '../../../db/repos/growthOpsRepo'
+import { buildAnalyzePrompt, parseModelJson } from './prompts'
 import { createLogger } from '../../logging'
-import type {
-  GrowthMetricView,
-  GrowthRemixOutputView,
-  GrowthRemixStyle
-} from '../../../../shared/growth'
+import type { GrowthMetricView } from '../../../../shared/growth'
 
 const remixLog = createLogger('growth-remix')
 
@@ -100,70 +85,6 @@ export async function analyzeContent(contentId: number): Promise<string> {
     commentTopics: (structure as { commentTopics: string[] }).commentTopics
   })
   return JSON.stringify(structure, null, 2)
-}
-
-/** 拆解卡文本(供爆改输入); 缺失时先自动拆解 */
-async function ensureDecompText(contentId: number): Promise<string> {
-  const detail = getContentDetail(contentId)
-  const structure = detail?.decomp?.structure
-  if (detail?.decomp?.modelVer && structure && Object.keys(structure).length > 0) {
-    return JSON.stringify(structure, null, 2)
-  }
-  return await analyzeContent(contentId)
-}
-
-/**
- * 一键爆改: 拆解 → 风格化生成标题/正文 → 合规提示 → 落库。
- * 返回本次产出块(按 id 倒序的最新内容)。
- */
-export async function remixContent(
-  contentId: number,
-  style: GrowthRemixStyle
-): Promise<GrowthRemixOutputView[]> {
-  const item = getContentItem(contentId)
-  if (!item) throw new Error('素材不存在')
-  const decompText = await ensureDecompText(contentId)
-
-  const { system, user } = buildRemixPrompt({ item, decompText, style })
-  const parsed = await generateJson(system, user)
-  const { titles, copies } = normalizeRemixResult(parsed)
-  if (titles.length === 0 && copies.length === 0) {
-    throw new Error('AI 未返回可用文案, 请重试或更换风格')
-  }
-
-  const jobId = createRemixJob(contentId, style)
-  try {
-    const allTexts: string[] = []
-    if (titles.length > 0) {
-      const hints = checkComplianceBatch(titles)
-      createRemixOutput({
-        jobId,
-        contentId,
-        variant: 'titles',
-        title: titles.join('\n'),
-        copy: '',
-        complianceHints: hints
-      })
-      allTexts.push(...titles)
-    }
-    copies.forEach((copy, i) => {
-      createRemixOutput({
-        jobId,
-        contentId,
-        variant: 'copy' + String(i + 1),
-        title: '',
-        copy,
-        complianceHints: checkComplianceBatch([copy])
-      })
-      allTexts.push(copy)
-    })
-    finishRemixJob(jobId, { ok: true })
-    remixLog.info('remix done content=' + String(contentId) + ' style=' + style)
-    return listRemixOutputViews(contentId, 12)
-  } catch (e) {
-    finishRemixJob(jobId, { ok: false, error: e instanceof Error ? e.message : String(e) })
-    throw e
-  }
 }
 
 /**

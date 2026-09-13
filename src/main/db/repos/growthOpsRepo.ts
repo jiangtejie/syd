@@ -250,57 +250,7 @@ export function growthStats(autoEnabled: boolean, provider: string): GrowthStats
   }
 }
 
-// ── 爆改任务 / 产出(AI 拆解与文案爆改落地) ──
-
-export function createRemixJob(sourceContentId: number, mode: string): number {
-  const now = Date.now()
-  const res = getDb()
-    .prepare(
-      'INSERT INTO growth_remix_job (source_content_id, store_id, mode, status, stage, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    )
-    .run(sourceContentId, null, mode, 'running', 'llm', now, now)
-  return Number(res.lastInsertRowid)
-}
-
-export function finishRemixJob(jobId: number, outcome: { ok: boolean; error?: string }): void {
-  getDb()
-    .prepare(
-      'UPDATE growth_remix_job SET status = ?, stage = ?, error = ?, progress = ?, updated_at = ? WHERE id = ?'
-    )
-    .run(
-      outcome.ok ? 'done' : 'failed',
-      outcome.ok ? 'done' : 'error',
-      outcome.error ?? '',
-      outcome.ok ? 1 : 0,
-      Date.now(),
-      jobId
-    )
-}
-
-export function createRemixOutput(input: {
-  jobId: number
-  contentId: number
-  variant: string
-  title: string
-  copy: string
-  complianceHints: string[]
-}): number {
-  const res = getDb()
-    .prepare(
-      'INSERT INTO growth_remix_output (job_id, variant, title, copy_text, content_id, compliance_json, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    )
-    .run(
-      input.jobId,
-      input.variant,
-      input.title,
-      input.copy,
-      input.contentId,
-      JSON.stringify(input.complianceHints ?? []),
-      'draft',
-      Date.now()
-    )
-  return Number(res.lastInsertRowid)
-}
+// ── 爆改产出(只读: 历史数据的展示与导出; 写入路径已收敛到 growthAiRepo) ──
 
 export function listRemixOutputViews(
   contentId: number,
