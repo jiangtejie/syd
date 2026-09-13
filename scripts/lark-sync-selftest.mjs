@@ -41,6 +41,7 @@ import {
   operatorOpenIdOf,
   parseApprovalAction
 } from '../src/main/services/im/cards.ts'
+import { parseRecordFields } from '../src/main/services/lark/recordFields.ts'
 // 人员列的两个纯函数放在 baseMapping(与证据映射同源),这里直接离线导入
 
 let failed = 0
@@ -406,6 +407,27 @@ console.log('\n[15] 工具审批卡片（按钮 value 是发送端与回调端�
   log(operatorOpenIdOf(payload) === 'ou_a', '从回调里取操作者(operator_id.open_id)')
   log(operatorOpenIdOf({ operator: { open_id: 'ou_b' } }) === 'ou_b', '兼容 operator.open_id 形状')
   log(operatorOpenIdOf({}) === '', '取不到返回空串')
+}
+
+console.log('\n[16] Base 写入字段解析（模型给的 JSON → 飞书字段对象的校验）')
+{
+  const ok1 = parseRecordFields('{"标题":"孜然粉到货","状态":"跟进中"}')
+  log(ok1.ok && Object.keys(ok1.fields).length === 2, '正常对象', JSON.stringify(ok1.fields))
+  log(ok1.ok && ok1.fields['标题'] === '孜然粉到货', '值原样保留(不转字符串)')
+  const num = parseRecordFields('{"证据条数":3,"已确认":true}')
+  log(num.ok && num.fields['证据条数'] === 3 && num.fields['已确认'] === true, '数字/布尔不被改写')
+  const spaced = parseRecordFields('{ " 标题 ": " x " }')
+  log(spaced.ok && Object.keys(spaced.fields)[0] === '标题' && spaced.fields['标题'] === ' x ', '列名去首尾空白,值不动')
+  log(parseRecordFields('') .ok === false, '空串 → 报错')
+  log(parseRecordFields('{}').ok === false, '空对象 → 报错')
+  log(parseRecordFields('[1,2]').ok === false, '数组 → 报错')
+  log(parseRecordFields('"x"').ok === false, '标量 → 报错')
+  log(parseRecordFields('{bad json}').ok === false, '非法 JSON → 报错')
+  log(parseRecordFields('{"":"只有空键"}').ok === false, '只有空键 → 报错')
+  log(parseRecordFields('{"a":null}').ok === true, 'null 值允许(表示清空该列)')
+  const many = {}
+  for (let i = 0; i < 41; i++) many['c' + i] = i
+  log(parseRecordFields(JSON.stringify(many)).ok === false, '超过 40 列 → 报错(防一次塞爆)')
 }
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)

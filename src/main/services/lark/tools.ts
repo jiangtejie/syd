@@ -1,6 +1,11 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { ToolDef } from '../ai/chat/skills'
-import { readBaseAsText, readDocAsText } from './api'
+import { readBaseAsText, readDocAsText, writeBaseRecordAsText } from './api'
+import { larkDownloadMedia } from './client'
 import { sendFeishuTextNow } from './notify'
+import { getFilesRootDir } from '../paths'
+import { safeFileName } from '../_filename'
 
 /**
  * 飞书云文档工具(应用身份, 复用已有飞书自建应用凭证)。
@@ -33,7 +38,9 @@ export const LARK_TOOLS: ToolDef[] = [
       table_id: { type: 'string', desc: '数据表 id(不传则先返回该 Base 的数据表清单)' },
       view_id: { type: 'string', desc: '视图 id(可空,链接里的 view=vew…)' },
       limit: { type: 'number', desc: '读取条数上限(默认 50,最大 200)' },
-      page_token: { type: 'string', desc: '分页游标(上一页返回的 pageToken,可空)' }
+      page_token: { type: 'string', desc: '分页游标(上一页返回的 pageToken,可空)' },
+      filter: { type: 'string', desc: '筛选公式(飞书语法),如 CurrentValue.[状态]="待处理"' },
+      sort: { type: 'string', desc: '排序 JSON,如 [{"field_name":"最近更新","desc":true}]' }
     },
     description:
       '读取飞书多维表格指定数据表的记录(只读, 返回 Markdown 表格 + 总数与分页游标)。' +
@@ -44,7 +51,9 @@ export const LARK_TOOLS: ToolDef[] = [
         tableId: String(args?.table_id ?? '').trim() || undefined,
         viewId: String(args?.view_id ?? '').trim() || undefined,
         limit: typeof args?.limit === 'number' ? args.limit : undefined,
-        pageToken: String(args?.page_token ?? '').trim() || undefined
+        pageToken: String(args?.page_token ?? '').trim() || undefined,
+        filter: String(args?.filter ?? '').trim() || undefined,
+        sort: String(args?.sort ?? '').trim() || undefined
       })
   },
   {
@@ -75,6 +84,56 @@ export const LARK_TOOLS: ToolDef[] = [
       })
       if (!res.ok) return `发送失败：${res.error ?? '未知错误'}`
       return `已发送到 ${res.targets.join('、')}（成功 ${res.sent} 条${res.failed > 0 ? `，失败 ${res.failed} 条` : ''}）`
+    }
+  },
+  {
+    name: 'feishu_base_write',
+    kind: 'builtin',
+    needsWx: false,
+    confirm: true,
+    params: {
+      url: { type: 'string', desc: URL_DESC },
+      table_id: { type: 'string', desc: '数据表 id(可空,链接里带 ?table= 时可不填)' },
+      record_id: { type: 'string', desc: '要更新的记录 id(rec…);不传 = 新增一条' },
+      fields: { type: 'string', required: true, desc: 'JSON 对象:列名 → 值(列名用表里的原名)' }
+    },
+    description:
+      '写入飞书多维表格一行(新增或更新)。写操作,需人工确认;不传 record_id 为新增,传了为更新。' +
+      'args: {"url":"飞书 Base 链接","table_id":"tbl…(可空)","record_id":"rec…(可空)","fields":"{状态:跟进中}"}',
+    run: async (_ctx, args) =>
+      writeBaseRecordAsText({
+        url: String(args?.url ?? ''),
+        tableId: String(args?.table_id ?? '').trim() || undefined,
+        recordId: String(args?.record_id ?? '').trim() || undefined,
+        fieldsJson: String(args?.fields ?? '')
+      })
+  },
+  {
+    name: 'feishu_file_download',
+    kind: 'builtin',
+    needsWx: false,
+    params: {
+      file_token: {
+        type: 'string',
+        required: true,
+        desc: '素材 file_token(多维表格附件列里的 file_token)'
+      },
+      name: { type: 'string', desc: '保存文件名(含扩展名;不传用 token 兜底)' }
+    },
+    description:
+      '把飞书素材(附件列里的文件/图片)下载到本机 lark-files 目录。只读,不改飞书数据。' +
+      'args: {"file_token":"boxcn…","name":"对账单.xlsx"}',
+    run: async (_ctx, args) => {
+      const token = String(args?.file_token ?? '').trim()
+      if (!token) return '缺少 file_token。'
+      const r = await larkDownloadMedia(token)
+      if (!r.ok) return `下载失败：${r.error}`
+      const raw = String(args?.name ?? '').trim() || token + '.bin'
+      const dir = join(getFilesRootDir(), 'lark-files')
+      await mkdir(dir, { recursive: true })
+      const file = join(dir, safeFileName(raw, { fallback: token + '.bin' }))
+      await writeFile(file, r.buf)
+      return `已下载 ${file}（${r.buf.length} 字节）`
     }
   },
   {

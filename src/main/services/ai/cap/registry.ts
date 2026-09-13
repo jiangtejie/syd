@@ -175,6 +175,16 @@ export const LARK_CAPS: Array<{
     when: '用户给了飞书文档链接、要你总结或提取其中内容时'
   },
   {
+    name: 'feishu_base_write',
+    oneLine: '写入飞书多维表格一行(新增/更新,写操作按审批策略确认)',
+    when: '用户要求把结论/进展写回飞书表格、或让你登记一条记录时'
+  },
+  {
+    name: 'feishu_file_download',
+    oneLine: '把飞书附件列里的文件/图片下载到本机 lark-files',
+    when: '需要把飞书表格里的附件取到本地查看/处理时'
+  },
+  {
     name: 'feishu_send_message',
     oneLine: '把消息发到飞书(写操作,按审批策略确认;接收方为设置里已配置的目标)',
     when: '用户要求“把这条发到飞书 / 通知群里 / 发给我”时'

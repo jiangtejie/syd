@@ -3,6 +3,7 @@ import { clipOneLine } from '../../util/text'
 import { larkCall, type LarkCallResult } from './client'
 import { larkKindText, parseLarkRef, type LarkRef } from './url'
 import { fetchFields } from './fields'
+import { parseRecordFields } from './recordFields'
 
 /**
  * 飞书云文档只读数据面(多维表格 / 云文档 / 知识库节点解析)。
@@ -88,6 +89,10 @@ export async function listRecords(input: {
   viewId?: string
   pageSize?: number
   pageToken?: string
+  /** 筛选公式(飞书 filter 语法) */
+  filter?: string
+  /** 排序 JSON 字符串 */
+  sort?: string
 }): Promise<
   LarkResult<{ records: LarkRecord[]; hasMore: boolean; pageToken?: string; total?: number }>
 > {
@@ -103,7 +108,9 @@ export async function listRecords(input: {
       params: {
         page_size: pageSize,
         ...(input.viewId ? { view_id: input.viewId } : {}),
-        ...(input.pageToken ? { page_token: input.pageToken } : {})
+        ...(input.pageToken ? { page_token: input.pageToken } : {}),
+        ...(input.filter ? { filter: input.filter } : {}),
+        ...(input.sort ? { sort: input.sort } : {})
       }
     })
   )
@@ -121,6 +128,121 @@ export async function listRecords(input: {
       total: r.data.total
     }
   }
+}
+
+/* ══════════ 多维表格写入(写操作,调用方负责审批) ══════════ */
+
+/** 写操作的目标解析(url / appToken / tableId;wiki 链接解析成 bitable) */
+export async function resolveBaseForWrite(input: {
+  url?: string
+  appToken?: string
+  tableId?: string
+}): Promise<{ ok: true; appToken: string; tableId: string } | { ok: false; error: string }> {
+  const raw = (input.url ?? '').trim() || (getConfig('lark.baseToken') ?? '').trim()
+  const ref: LarkRef | null = input.appToken
+    ? { kind: 'base', token: input.appToken.trim(), raw: input.appToken.trim() }
+    : parseLarkRef(raw)
+  if (!ref) {
+    return {
+      ok: false,
+      error:
+        '未识别到多维表格链接：请粘贴 …/base/<app_token>?table=<table_id>，或先在设置里配置默认链接。'
+    }
+  }
+  let appToken = ref.token
+  if (ref.kind === 'wiki') {
+    const node = await resolveWikiNode(ref.token)
+    if (!node.ok) return { ok: false, error: node.error }
+    if (node.data.objType !== 'bitable') {
+      return {
+        ok: false,
+        error: `知识库节点是 ${node.data.objType || '未知'}，不是多维表格，不能写入。`
+      }
+    }
+    appToken = node.data.objToken
+  } else if (ref.kind !== 'base') {
+    return {
+      ok: false,
+      error: `这是${larkKindText(ref.kind)}链接，不是多维表格（写入只支持 /base/）。`
+    }
+  }
+  const tableId = (input.tableId ?? ref.tableId ?? '').trim()
+  if (!tableId) {
+    return {
+      ok: false,
+      error: '缺少 table_id：链接里带 ?table=<table_id>，或先读取数据表清单拿到 table_id。'
+    }
+  }
+  return { ok: true, appToken, tableId }
+}
+
+/** 新增一条记录;返回 record_id */
+export async function createBaseRecord(input: {
+  appToken: string
+  tableId: string
+  fields: Record<string, unknown>
+}): Promise<LarkResult<{ recordId: string }>> {
+  const r = await call<{ record?: { record_id?: string } }>((api) =>
+    api.bitable.appTableRecord.create({
+      path: { app_token: input.appToken, table_id: input.tableId },
+      data: { fields: input.fields }
+    })
+  )
+  if (!r.ok) return r
+  return { ok: true, data: { recordId: r.data.record?.record_id ?? '' } }
+}
+
+/** 更新一条记录(按 record_id) */
+export async function updateBaseRecord(input: {
+  appToken: string
+  tableId: string
+  recordId: string
+  fields: Record<string, unknown>
+}): Promise<LarkResult<{ recordId: string }>> {
+  const r = await call<{ record?: { record_id?: string } }>((api) =>
+    api.bitable.appTableRecord.update({
+      path: {
+        app_token: input.appToken,
+        table_id: input.tableId,
+        record_id: input.recordId
+      },
+      data: { fields: input.fields }
+    })
+  )
+  if (!r.ok) return r
+  return { ok: true, data: { recordId: r.data.record?.record_id ?? input.recordId } }
+}
+
+/** 工具层入口:写入一行(无 record_id = 新增,有 = 更新),返回人话结果 */
+export async function writeBaseRecordAsText(input: {
+  url?: string
+  tableId?: string
+  recordId?: string
+  fieldsJson: string
+}): Promise<string> {
+  const parsed = parseRecordFields(input.fieldsJson)
+  if (!parsed.ok) return parsed.error
+  const target = await resolveBaseForWrite({ url: input.url, tableId: input.tableId })
+  if (!target.ok) return target.error
+  const names = Object.keys(parsed.fields).join('、')
+  const recordId = (input.recordId ?? '').trim()
+  if (recordId) {
+    const r = await updateBaseRecord({
+      appToken: target.appToken,
+      tableId: target.tableId,
+      recordId,
+      fields: parsed.fields
+    })
+    if (!r.ok) return `更新记录失败：${r.error}`
+    return `已更新记录 ${r.data.recordId}（表 ${target.tableId}；列：${names}）`
+  }
+  const r = await createBaseRecord({
+    appToken: target.appToken,
+    tableId: target.tableId,
+    fields: parsed.fields
+  })
+  if (!r.ok) return `新增记录失败：${r.error}`
+  return `已新增记录 ${r.data.recordId || '(未返回 record_id)'}（表 ${target.tableId}；列：${names}）`
 }
 
 /* ══════════ 云文档(docx) / 知识库(wiki) ══════════ */
@@ -205,6 +327,10 @@ export interface ReadBaseInput {
   limit?: number
   /** 分页游标(上一页返回的 pageToken) */
   pageToken?: string
+  /** 筛选公式(飞书 filter 语法,如 CurrentValue.[状态]="待处理") */
+  filter?: string
+  /** 排序(飞书 sort JSON,如 [{"field_name":"最近更新","desc":true}]) */
+  sort?: string
 }
 
 /** 读取结果(带 ok, 便于设置页区分成败;工具层只用 text) */
@@ -279,15 +405,19 @@ export async function readBaseResult(input: ReadBaseInput): Promise<LarkReadResu
     tableId,
     viewId: viewId || undefined,
     pageSize: limit,
-    pageToken: input.pageToken
+    pageToken: input.pageToken,
+    filter: (input.filter ?? '').trim() || undefined,
+    sort: (input.sort ?? '').trim() || undefined
   })
   if (!rec.ok) return { ok: false, text: rec.error }
   const fieldNames = fields.ok ? fields.data.fields : []
   const totalText =
     typeof rec.data.total === 'number' ? `共 ${rec.data.total} 条记录` : '记录数未知'
   const shown = rec.data.records.length
+  const condText = input.filter ? `, 已按条件筛选(${clipOneLine(input.filter, 60)})` : ''
+  const sortText = input.sort ? ', 已排序' : ''
   const parts = [
-    `数据表 ${tableId}${viewId ? `(视图 ${viewId})` : ''}: ${totalText}, 本次返回 ${shown} 条。`,
+    `数据表 ${tableId}${viewId ? `(视图 ${viewId})` : ''}: ${totalText}, 本次返回 ${shown} 条${condText}${sortText}。`,
     '',
     renderRecords(rec.data.records, fieldNames)
   ]

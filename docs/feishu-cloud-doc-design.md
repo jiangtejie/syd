@@ -72,6 +72,19 @@ url.ts(/base/ /docx/ /wiki/ /sheets/ 链接解析)
 ## 5. 未覆盖(下一步候选)
 
 - 电子表格(`/sheets/`)未支持:当前提示"导出 CSV/Excel 放工作区";
-- 写回(Base 新增/更新记录)未做:要做需走 `requestToolApproval` 审批;
-- 视图筛选(`filter`/`sort`)未暴露;附件下载未做;
+- ~~写回(Base 新增/更新记录)未做~~ → **已落地(2026-09,见 §6)**;~~视图筛选(`filter`/`sort`)未暴露;附件下载未做~~ → **已落地**;
 - 通用化:接入 MCP 客户端后,第三方飞书技能可即插即用(`kind:'mcp'` 骨架仍在注释里)。
+
+## 6. 写回 + 筛选排序 + 附件下载(2026-09,已实现)
+
+| 能力 | 实现 | 审批 |
+| --- | --- | --- |
+| Base 写回 | `api.ts`: `resolveBaseForWrite`(链接/知识库 → app_token+table_id)、`createBaseRecord`、`updateBaseRecord`、`writeBaseRecordAsText`(无 record_id = 新增,有 = 更新);工具 `feishu_base_write` | **`confirm: true`** → 走审批桥(飞书会话里是按钮卡片,见命令自动化文档 §3.8) |
+| 写入字段校验(纯函数) | `lark/recordFields.ts`: `parseRecordFields(json)` —— 必须是 JSON 对象、键去空白、值原样(数字/布尔/null 不改写)、空对象/数组/标量/非法 JSON 都给人话报错、单次 ≤40 列 | 自检 `scripts/lark-sync-selftest.mjs` 第 [16] 节 12 例 |
+| 视图筛选/排序 | `listRecords` 增 `filter`(飞书公式)/`sort`(JSON) 透传;`lark_base_records` 工具暴露这两个参数;返回文本里注明「已按条件筛选/已排序」 | 只读,不审批 |
+| 附件下载 | `client.ts`: `larkDownloadMedia(file_token)` —— 二进制接口**不套 larkCall**(与 uploadAll 同一类坑),用 tenant_access_token + fetch 直取;工具 `feishu_file_download` 落盘到 `<userData>/lark-files/`(文件名走共享 `safeFileName`) | 只读(不改飞书数据) |
+
+⚠ 待实测:附件下载走的是 REST 二进制接口,代码按官方文档实现,但**本机未实测**(需要真实附件 file_token)。
+若报 `http 403/404`,优先检查:应用是否开通 `drive:drive:readonly`、以及该附件是否属于本应用可访问的 Base。
+
+仍未做:电子表格(`/sheets/`)直读 —— 仍提示「导出 CSV/Excel 放工作区」;MCP 客户端接入。

@@ -178,6 +178,47 @@ export async function larkUploadMedia(payload: {
   }
 }
 
+/**
+ * 下载云文档素材（drive/v1/medias/:file_token/download）。
+ *
+ * **不能套 larkCall**：这是二进制接口，SDK 返回文件流而非 {code,msg,data} 包装，
+ * 套 larkCall 会拿到空 data（与上面 uploadAll 是同一类坑）。这里用 tenant_access_token + fetch 直取。
+ */
+export async function larkDownloadMedia(
+  fileToken: string
+): Promise<{ ok: true; buf: Buffer } | { ok: false; error: string }> {
+  const token = (fileToken ?? '').trim()
+  if (!token) return { ok: false, error: '缺少 file_token' }
+  const c = larkApiClient()
+  if (!c) return { ok: false, error: noCredentialHint() }
+  try {
+    const tm = (
+      c.api as unknown as {
+        tokenManager?: { getTenantAccessToken(): Promise<string> }
+      }
+    ).tokenManager
+    const access = tm ? await tm.getTenantAccessToken() : ''
+    if (!access) return { ok: false, error: '取不到 tenant_access_token（请检查凭证是否有效）' }
+    const res = await fetch(
+      `https://open.feishu.cn/open-apis/drive/v1/medias/${encodeURIComponent(token)}/download`,
+      { headers: { Authorization: `Bearer ${access}` } }
+    )
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return {
+        ok: false,
+        error: `下载失败(http ${res.status})${body ? `：${body.slice(0, 200)}` : ''}`
+      }
+    }
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.length === 0)
+      return { ok: false, error: '下载到空文件（可能无权限或 file_token 已失效）' }
+    return { ok: true, buf }
+  } catch (e) {
+    return { ok: false, error: larkTransportError(e) }
+  }
+}
+
 export function noCredentialHint(): string {
   return (
     '未配置飞书应用凭证: 请到 设置 → AI 助手 → 飞书云文档 填写 App ID / App Secret, ' +
