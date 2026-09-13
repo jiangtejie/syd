@@ -195,11 +195,12 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
     confirm: true,
     needsContent: true,
     params: {
+      // 这里刻意用 string 而不是 enum：渠道是「渠道名」，原实现允许任意取值（如 weibo），
+      // 收成 enum 会让历史用法/新渠道直接报参数错误；把可选值写在说明里即可。
       channel: {
-        type: 'enum',
-        enum: ['wxMoments', 'wxGroup', 'wxChat', 'douyin', 'xhs', 'other'],
+        type: 'string',
         required: true,
-        desc: '发布渠道'
+        desc: '发布渠道：wxMoments | wxGroup | wxChat | douyin | xhs | other'
       },
       outputId: { type: 'number', desc: '归因的产出 id（可空）' },
       likes: { type: 'number', desc: '点赞数' },
