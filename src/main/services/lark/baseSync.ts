@@ -79,6 +79,7 @@ import {
   sleep,
   listFields,
   ensureFields,
+  isRecordMissingError,
   type SyncOutResult,
   type PullResult
 } from './baseCore'
@@ -347,8 +348,8 @@ export async function syncIssuesOut(
     )
     if (!r.ok) {
       // 记录被同事删了/表换了：清掉映射，下一轮按新建处理。
-      // 判定要窄:字段类错误码同样是 1254xxx,误判会导致重复插入(回复表那边实测踩过)。
-      if (/RecordIdNotFound|record.?not.?found|记录不存在/i.test(r.error)) {
+      // 判定要窄（字段类错误码同样是 1254xxx，误判会导致重复插入）：见 baseCore.isRecordMissingError。
+      if (isRecordMissingError(r.error)) {
         saveSyncRef('issue', issue.id, appToken, tableId, ref.recordId, '')
         pendingCreates.push({ id: issue.id, fields, hash })
         continue
@@ -701,10 +702,8 @@ export async function syncRepliesOut(
       })
     )
     if (!r.ok) {
-      // 只有「记录真的没了」才丢映射重新建。
-      // 早先这里用了过宽的 /1254/ —— 飞书的**字段**类错误码也是 1254xxx,
-      // 于是「列缺失」被误判成「记录没了」→ 丢映射 → 下一轮重复插入(实测 58 条变 116 条)。
-      if (/RecordIdNotFound|record.?not.?found|记录不存在/i.test(r.error)) {
+      // 只有「记录真的没了」才丢映射重新建（历史事故：过宽的 /1254/ 让 58 条变 116 条）。
+      if (isRecordMissingError(r.error)) {
         dropSyncRef('reply', row.id)
         pending.push({ id: row.id, fields, hash })
         continue

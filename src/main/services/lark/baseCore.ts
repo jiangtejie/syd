@@ -18,6 +18,7 @@ import { mapFieldName, FieldMap } from './baseMapping'
 import { clearAttached, clearMediaRefs } from '../../db/repos/larkMediaRepo'
 import { parseLarkRef } from './url'
 import { fetchFields, invalidateFields } from './fields'
+export { isRecordMissingError } from './errorClass'
 import { createLogger } from '../logging'
 
 export const syncLog = createLogger('lark')
@@ -222,6 +223,8 @@ export function canWriteBack(fieldNames: string[]): boolean {
   const map = getFieldMap()
   return COLLAB_KEYS.every((k) => fieldNames.includes(mapFieldName(k, map)))
 }
+
+/** 错误分类的纯实现见 errorClass.ts（纯函数，可离线自检）；这里转发，调用方从 baseCore 导入即可 */
 
 /** 同步结果入历史环（最近 20 条，供设置页/监控页展示） */
 export function pushHistory(

@@ -32,6 +32,8 @@ import {
   maxMediaBytesOf
 } from '../src/main/services/lark/evidenceMedia.ts'
 import { fmtHms, fmtStamp, fmtTimeShort } from '../src/shared/monitorMetrics.ts'
+import { isRecordMissingError } from '../src/main/services/lark/errorClass.ts'
+import { collectFieldPages } from '../src/main/services/lark/fieldPages.ts'
 // 人员列的两个纯函数放在 baseMapping(与证据映射同源),这里直接离线导入
 
 let failed = 0
@@ -270,5 +272,61 @@ log(parsed['王五'] === 'ou_ghi789', '两侧空格容错', JSON.stringify(parse
 log(Object.keys(parsed).length === 3, '注释/空行/非法行被忽略', String(Object.keys(parsed).length))
 log(JSON.stringify(personFieldValue('ou_x')) === '[{"id":"ou_x"}]', '人员字段值形状 [{id}]（飞书要求）')
 
+
+console.log('\n[12] 飞书错误分类：记录没了 vs 字段类错误（历史事故：过宽判定导致重复插入）')
+for (const [msg, want] of [
+  ['RecordIdNotFound', true],
+  ['record not found', true],
+  ['Record not found: recuXyZ', true],
+  ['记录不存在', true],
+  ['FieldNameNotFound', false],
+  ['1254302: FieldNameNotFound', false],
+  ['InvalidFieldValue', false],
+  ['1254005: InvalidFieldValue', false],
+  ['1254 列缺失', false],
+  ['rate limit exceeded', false],
+  ['', false]
+]) {
+  log(isRecordMissingError(msg) === want, `${JSON.stringify(msg)} → ${want}`, String(isRecordMissingError(msg)))
+}
+
+console.log('\n[13] 列元信息分页聚合（假 transport，不联网）')
+{
+  const pages = [
+    { items: [{ field_id: 'f1', field_name: '标题', type: 1 }, { field_id: 'f2', field_name: '状态', type: 3 }], has_more: true, page_token: 't1' },
+    { items: [{ field_id: 'f3', field_name: '跟进人', type: 11 }], has_more: false }
+  ]
+  let calls = 0
+  const tokens = []
+  const all = await collectFieldPages(async (tk) => {
+    calls++
+    tokens.push(tk)
+    return pages[calls - 1]
+  })
+  log(all.length === 3, '两页拼接 → 3 列', String(all.length))
+  log(calls === 2, 'has_more=false 后停止请求', 'calls=' + calls)
+  log(tokens[0] === undefined && tokens[1] === 't1', '第二页带上 page_token')
+  log(all[0].primary === true && all[1].primary === false && all[2].primary === false, '主字段兜底只给「第一页第一条」')
+  log(all.map((f) => f.name).join(',') === '标题,状态,跟进人', '顺序与字段名保持原样')
+
+  let cap = 0
+  const capped = await collectFieldPages(async () => {
+    cap++
+    return { items: [{ field_name: 'x' + cap }], has_more: true, page_token: 'p' + cap }
+  }, 3)
+  log(cap === 3 && capped.length === 3, '页数上限生效（防跑飞）', 'calls=' + cap)
+
+  const skipped = await collectFieldPages(async () => ({
+    items: [{ field_id: 'x' }, { field_name: ' 名称带空格 ' }],
+    has_more: false
+  }))
+  log(skipped.length === 1 && skipped[0].name === '名称带空格', '无名字段跳过 + 名字去空白', JSON.stringify(skipped))
+
+  const explicit = await collectFieldPages(async () => ({
+    items: [{ field_name: 'a', is_primary: true }, { field_name: 'b', is_primary: true }],
+    has_more: false
+  }))
+  log(explicit[1].primary === true, '飞书明确回 is_primary 时以它为准')
+}
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)
