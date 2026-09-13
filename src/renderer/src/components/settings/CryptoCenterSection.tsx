@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { SettingsCard } from './ui'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { toast } from '../../stores/toast'
 import type { AccountReadiness, WarmupReport } from '../../../../shared/api'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 /**
  * 解密一体化（体检 / 一键接入 / 预热）：
@@ -32,10 +33,7 @@ function CryptoCenterSection(): React.JSX.Element {
     if (r?.ok && r.report) setReadiness(r.report)
   }, [cryptoApi, wxid])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入设置页时拉一次体检（全仓同款模式）
-    void check()
-  }, [check])
+  useAsyncEffect(check, [check])
 
   const onboard = async (): Promise<void> => {
     setBusy('onboard')

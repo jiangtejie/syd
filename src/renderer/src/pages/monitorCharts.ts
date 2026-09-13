@@ -1,12 +1,13 @@
 import type { EChartsOption } from 'echarts'
 import type { MonitorData } from '../../../shared/monitorMetrics'
+import { CHART } from '../lib/theme'
 
 /**
  * 监控中心四张图的 ECharts 配置（纯函数：输入指标即可，便于单独调整样式与联动）。
  * 从 MonitorPage 拆出，页面只负责取数与布局。
  */
-export const BRAND = '#07c160'
-const PALETTE = ['#fa5151', '#f5a623', '#07c160', '#3c82f6', '#8e5cf0', '#00b8a9', '#c0c4cc']
+export const BRAND = CHART.brand
+const PALETTE = CHART.palette
 
 export function buildTrendOption(metrics: MonitorData): EChartsOption {
   return {
@@ -99,7 +100,7 @@ export function buildGroupOption(metrics: MonitorData): EChartsOption {
         type: 'bar',
         data: rows.map((g, i) => ({
           value: g.value,
-          itemStyle: { color: i === rows.length - 1 ? BRAND : '#7fd8ad' }
+          itemStyle: { color: i === rows.length - 1 ? BRAND : CHART.brandSoft }
         })),
         barMaxWidth: 12
       }
@@ -108,7 +109,7 @@ export function buildGroupOption(metrics: MonitorData): EChartsOption {
 }
 
 export function buildAgeOption(metrics: MonitorData): EChartsOption {
-  const colors = ['#3c82f6', '#f5a623', '#f08a24', '#fa5151']
+  const colors = [CHART.info, CHART.warn, CHART.amberDeep, CHART.danger]
   return {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: 8, right: 8, top: 20, bottom: 0, containLabel: true },

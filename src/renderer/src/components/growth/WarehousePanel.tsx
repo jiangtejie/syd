@@ -8,6 +8,7 @@ import { Badge, SearchInput, EmptyState, ErrBar } from './common'
 import { MediaGallery } from './MediaGallery'
 import { remoteImageUrlsOf, remoteVideoUrlOf } from './meta'
 import type { GrowthContentDetailView, GrowthContentItem } from '../../../../shared/growth'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 const KIND_LABEL: Record<string, string> = {
   image_text: '图文',
@@ -134,8 +135,7 @@ export function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.El
     [keyword, origin, usage, status, noDecomp, sort]
   )
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 筛选/排序变化与首载统一重拉(全仓同款模式)
+  useAsyncEffect(() => {
     void load(true)
   }, [load])
 

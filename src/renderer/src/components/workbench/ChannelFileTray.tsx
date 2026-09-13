@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from '../../stores/toast'
 import { confirmAsk } from '../../stores/confirmDialog'
 import { fmtTimeShort } from '../../../../shared/monitorMetrics'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 /**
  * 工作台侧栏「收到的渠道文件」:飞书等外部渠道接收并落盘的图片/文件,
@@ -97,16 +98,12 @@ export function ChannelFileTray(): React.JSX.Element {
     setAcctKeepDays(v && v !== '' ? String(v) : '')
   }, [accountId])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载拉取文件摘要与清理策略(全仓同款模式)
+  useAsyncEffect(() => {
     void load()
     void loadPolicy()
   }, [load, loadPolicy])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 账号切换回显其保留覆盖(全仓同款模式)
-    void loadAcctOverride()
-  }, [loadAcctOverride])
+  useAsyncEffect(loadAcctOverride, [loadAcctOverride])
 
   const openDialog = async (): Promise<void> => {
     setOpen(true)

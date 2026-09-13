@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
 import type { SessionSummary } from '../../../shared/types'
+import { useAsyncEffect } from '../lib/useAsyncEffect'
 import './export.css'
 
 /**
@@ -80,10 +81,8 @@ function ExportPage(): React.JSX.Element {
     }
   }, [connected, wxid])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面异步加载会话列表（回调内 setState，全仓同款模式）
-    void loadSessions()
-  }, [loadSessions])
+  // 进入页面异步加载会话列表（回调内 setState，全仓同款模式 → 走 useAsyncEffect）
+  useAsyncEffect(loadSessions, [loadSessions])
 
   // 进度订阅
   useEffect(() => {

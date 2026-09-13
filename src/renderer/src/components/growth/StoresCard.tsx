@@ -3,10 +3,11 @@
  * 这是营销 AI 工作台的「事实白名单」: AI 只能使用这里配置的信息, 缺失会追问。
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from '../../stores/toast'
 import { confirmAsk } from '../../stores/confirmDialog'
 import { FieldRow, SettingsCard } from '../settings/ui'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 interface StoreView {
   id: number
@@ -67,10 +68,7 @@ export default function StoresCard(): React.JSX.Element {
     }
   }, [])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载时加载门店与品牌(全仓同款模式)
-    void load()
-  }, [load])
+  useAsyncEffect(load, [load])
 
   const startNew = (): void => {
     setEditing(null)

@@ -239,9 +239,29 @@
   （`react-refresh/only-export-components`）→ 才单独拆出 `meta.ts`；② 相对路径深度：`components/growth/` 比 `pages/` 深一层，
   指向 `src/shared` 要 `../../../../shared`。
 
-### 仍未做（下一轮候选，都是「结构性/体量」而非「重复实现」）
+### 7. T3：`eslint-disable` 里的 `set-state-in-effect` 收敛（试点 → 铺开）
 
-1. **T3：61 处 `eslint-disable`**（多为 `react-hooks/set-state-in-effect`）—— 先抽一个 `useSyncedEffect` 小 hook 试点 2~3 处，
-   验证规则是否在调用点仍然触发；不达标就保留现状（注释已写明理由）；
-2. **A2：图表硬编码色**（`DashboardPage` 里的 `#07c160/#5b8ff9/#fa5151`）→ 收敛到 CSS 变量导出的主题常量。
+- 现状盘点（渲染端）：`eslint-disable` **55 处**，其中 **47 处**是 `react-hooks/set-state-in-effect` ——
+  它们全是同一个形状：`useEffect(() => { void load() }, [load])`，`setState` 明明在 `await` 之后，
+  规则看不穿 Promise，于是每个调用点各写一行 disable 注释。
+- 新增 `src/renderer/src/lib/useAsyncEffect.ts`：`useAsyncEffect(run, deps)` 把这类调用收成一个 hook
+  （**实测规则不再在调用点报警**，而真正的同步 `setState` 仍会被抓到）。
+- 铺开范围：**18 个调用点**改为 `useAsyncEffect(fn, deps)`（脚本按「effect 体只有 `void xxx()`」的形状精确匹配，
+  多语句/含清理函数的 effect 一律不动）。
+- 结果：`set-state-in-effect` **47 → 29**，渲染端 `eslint-disable` 总数 **55 → 39**；
+  剩下 29 处是「effect 里多语句 + 直接 setState / 订阅」这类真需要豁免的地方，保留逐条理由注释。
+
+### 8. A2：图表配色收敛到一处
+
+- 新增 `src/renderer/src/lib/theme.ts`：`CHART` 常量集中 ECharts 色值（品牌绿/危险红/信息蓝/琥珀/轴与分隔线/图例文字/分类色板），
+  注释里标出各自对应的 `assets/base.css` token；`base.css` 增补 `--chart-blue`（`dashboard.css` 的渐变改用它）。
+- `DashboardPage` 的 4 个 `CHART_*` 常量与 3 个轴/图例样式对象、`monitorCharts.ts` 的 `BRAND`/`PALETTE`/
+  两处内联色值全部改为引用 `CHART` —— 色值只在 `theme.ts` + `base.css` 各一份，页面里不再出现 `#07c160` 之类的裸色值。
+- `lib/ui.ts` 的 `AVATAR_COLORS` **刻意不动**：那是头像辨识用的取色板（同色不代表品牌语义），文件头已注明理由。
+
+### 仍未做（下一轮候选）
+
+1. 渲染端剩余的 **29 处 `set-state-in-effect`**：都是「effect 内多语句 + 直接 setState / 事件订阅」的形状，
+   要再收敛得先给这些 effect 补 `useAsyncEffect` 之外的抽象（例如订阅型 `useSubscription`），风险高于收益，暂缓；
+2. 主进程侧 `getRowField(row: Record<string, any>)` 的宽类型（T4，需单独排期收窄）。
 

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 /**
  * AI 通道可靠性卡(本次运行统计):
@@ -41,10 +42,7 @@ function WorkbenchReliabilitySection(): React.JSX.Element {
     if (res.stats) setStats(res.stats)
   }
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载时一次性拉取(回调内 setState,全仓同款模式)
-    void reload()
-  }, [])
+  useAsyncEffect(reload, [])
 
   const tone =
     stats && stats.rate !== null

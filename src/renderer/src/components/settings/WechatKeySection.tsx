@@ -3,6 +3,7 @@ import { useWorkbenchStore } from '../../stores/workbench'
 import { toast } from '../../stores/toast'
 import { SettingsCard } from './ui'
 import type { KeyAccountInfo, KeyStatusInfo } from '../../../../shared/types'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 /**
  * 微信数据与密钥（方案 §4.9：密钥外部注入，客户端不内嵌取 key）。
@@ -107,10 +108,7 @@ function WechatKeySection(): React.JSX.Element {
     setAccounts(list ?? [])
   }, [])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取账号列表(全仓同款模式)
-    void loadAccounts()
-  }, [loadAccounts])
+  useAsyncEffect(loadAccounts, [loadAccounts])
 
   const browse = async (): Promise<void> => {
     const r = await dialogApi?.pickDirectory('选择微信数据根路径（db_storage 上级目录）')

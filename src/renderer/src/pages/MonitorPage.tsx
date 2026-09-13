@@ -31,6 +31,7 @@ import type {
   LarkBaseStatus
 } from '../../../shared/types'
 import './monitor.css'
+import { useAsyncEffect } from '../lib/useAsyncEffect'
 
 /**
  * 问题监控中心(管理者视角 BI + Bug 追踪):
@@ -168,10 +169,7 @@ function MonitorPage(): React.JSX.Element {
     }
   }, [connected, wxid, issueApi, range, thresh.backlog])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面异步加载(回调内 setState,全仓同款模式)
-    void load()
-  }, [load])
+  useAsyncEffect(load, [load])
 
   // 阈值读取(设置 → 偏好与数据 可配)
   useEffect(() => {

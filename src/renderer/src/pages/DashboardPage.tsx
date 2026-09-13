@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import { avatarColor } from '../lib/ui'
+import { CHART } from '../lib/theme'
 import { fmtStamp } from '../../../shared/monitorMetrics'
 import EChart from '../components/EChart'
 import type { EChartsOption } from 'echarts'
@@ -76,14 +77,14 @@ function pct(part: number, total: number): number {
   return total > 0 ? Math.round((part / total) * 100) : 0
 }
 
-/** 图表统一色板（与主调一致，避免 CSS/TSX 两处各自硬编码） */
-const CHART_GREEN = '#07c160'
-const CHART_BLUE = '#5b8ff9'
-const CHART_RED = '#fa5151'
-const CHART_AMBER = '#f0b429'
-const CHART_AXIS_LABEL = { color: '#8a9099', fontSize: 10 }
-const CHART_AXIS_LINE = { color: '#d9dde2' }
-const CHART_SPLIT_LINE = { lineStyle: { color: '#eef0f3' } }
+/** 图表统一色板：色值只在 lib/theme.ts 定义一份（与本文件无关的页面也用它） */
+const CHART_GREEN = CHART.brand
+const CHART_BLUE = CHART.blue
+const CHART_RED = CHART.danger
+const CHART_AMBER = CHART.amber
+const CHART_AXIS_LABEL = { color: CHART.axisLabel, fontSize: 10 }
+const CHART_AXIS_LINE = { color: CHART.axisLine }
+const CHART_SPLIT_LINE = { lineStyle: { color: CHART.splitLine } }
 const CHART_LEGEND = {
   top: 0,
   right: 0,
@@ -91,7 +92,7 @@ const CHART_LEGEND = {
   itemWidth: 8,
   itemHeight: 8,
   itemGap: 12,
-  textStyle: { fontSize: 11, color: '#6b7280' }
+  textStyle: { fontSize: 11, color: CHART.legendText }
 } as const
 
 interface DonutSlice {
@@ -112,7 +113,7 @@ function donutOption(slices: DonutSlice[], centerText: string, centerSub: string
       itemWidth: 8,
       itemHeight: 8,
       itemGap: 14,
-      textStyle: { fontSize: 11, color: '#6b7280' }
+      textStyle: { fontSize: 11, color: CHART.legendText }
     },
     graphic: [
       {

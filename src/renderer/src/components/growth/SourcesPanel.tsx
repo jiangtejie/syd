@@ -1,5 +1,5 @@
 import { fmt, fmtRel, TARGET_KIND_LABEL } from './meta'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from '../../stores/toast'
 import SkeletonRows from './SkeletonRows'
 import { growthApi } from './meta'
@@ -9,6 +9,7 @@ import type {
   GrowthSubscription,
   GrowthSubscriptionInput
 } from '../../../../shared/growth'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 export interface SubFormState {
   name: string
@@ -59,10 +60,7 @@ export function SourcesPanel({ onChanged }: { onChanged: () => void }): React.JS
     }
   }, [onChanged])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载时拉取一次订阅与任务(全仓同款模式)
-    void load()
-  }, [load])
+  useAsyncEffect(load, [load])
 
   const openNew = (): void => {
     setEditing(null)

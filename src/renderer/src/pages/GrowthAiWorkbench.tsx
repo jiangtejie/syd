@@ -9,6 +9,7 @@ import SkeletonRows from '../components/growth/SkeletonRows'
 import { useEscape } from '../lib/useEscape'
 import { fmtStamp } from '../../../shared/monitorMetrics'
 import './growth-ai.css'
+import { useAsyncEffect } from '../lib/useAsyncEffect'
 
 interface TaskView {
   id: number
@@ -379,8 +380,7 @@ export default function GrowthAiWorkbench({
   }, [])
 
   // 初始加载
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载时拉取任务与门店(全仓同款模式)
+  useAsyncEffect(() => {
     void loadTasks()
     void loadStores()
   }, [loadTasks, loadStores])

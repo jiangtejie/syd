@@ -6,6 +6,7 @@ import { deriveCustomers, secondaryLabel, TAG_ORDER, type CustomerProfile } from
 import { toast } from '../stores/toast'
 import type { DutyGroupSwitch } from '../../../shared/types'
 import './customers.css'
+import { useAsyncEffect } from '../lib/useAsyncEffect'
 
 /**
  * 客户页：私域客户列表（状态标签筛选）+ 画像抽屉。
@@ -182,10 +183,7 @@ function CustomersPage(): React.JSX.Element {
     }
   }, [wxid])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载/换账号时拉一次开关（异步，setState 在 await 之后）
-    void loadSwitches()
-  }, [loadSwitches])
+  useAsyncEffect(loadSwitches, [loadSwitches])
 
   /** 某群的生效开关（未配置 → 继承全局默认） */
   const groupOn = useCallback(

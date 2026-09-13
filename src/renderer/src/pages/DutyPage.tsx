@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
 import type {
@@ -11,6 +11,7 @@ import type {
   DutyStatus
 } from '../../../shared/types'
 import { fmtTimeShort as fmtTime } from '../../../shared/monitorMetrics'
+import { useAsyncEffect } from '../lib/useAsyncEffect'
 import './duty.css'
 
 /**
@@ -101,10 +102,8 @@ function DutyPage(): React.JSX.Element {
     if (rp?.ok && rp.replies) setReplies(rp.replies)
   }, [wxid, api])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 首次挂载拉一次数据（异步，setState 在 await 之后）
-    void loadAll()
-  }, [loadAll])
+  // 首次挂载拉一次数据（异步，setState 在 await 之后 —— 统一走 useAsyncEffect）
+  useAsyncEffect(loadAll, [loadAll])
 
   const resetDraft = (): void =>
     setDraft({ intent: '', title: '', patterns: '', replyText: '', riskLevel: 'A', priority: 100 })

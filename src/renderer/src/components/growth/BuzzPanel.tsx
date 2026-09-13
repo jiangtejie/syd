@@ -3,7 +3,7 @@
  * 数据链路: 粘贴原帖链接 → 解析入库(保留原链接/封面/互动) → 录入评论区高赞 → 智能诊断(规则+模型)。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from '../../stores/toast'
 import { confirmAsk } from '../../stores/confirmDialog'
 import SkeletonRows from './SkeletonRows'
@@ -16,6 +16,7 @@ import type {
   GrowthBuzzDetailView,
   GrowthBuzzDiagnosisView
 } from '../../../../shared/growth'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 const api = window.api?.cs?.growthbuzz
 const storeApi = window.api?.cs?.growthai
@@ -151,15 +152,9 @@ export default function BuzzPanel({
     if (res.ok) setStores((res.stores ?? []) as StoreOption[])
   }, [])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载时拉取门店一次(全仓同款模式)
-    void loadStores()
-  }, [loadStores])
+  useAsyncEffect(loadStores, [loadStores])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 筛选变化与首载统一重拉(全仓同款模式)
-    void load()
-  }, [load])
+  useAsyncEffect(load, [load])
 
   const openDetail = useCallback(async (id: number): Promise<void> => {
     if (!api) return

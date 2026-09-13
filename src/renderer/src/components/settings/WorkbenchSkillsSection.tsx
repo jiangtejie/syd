@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from '../../stores/toast'
 import { SettingsCard, Switch } from './ui'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 /**
  * 设置 → 工作台 tab:SKILL.md 业务技能管理(轻量:无市场/无安装向导)。
@@ -32,10 +33,7 @@ export default function WorkbenchSkillsSection(): React.JSX.Element {
     } else setSkills([])
   }
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取技能列表(全仓同款模式)
-    void load()
-  }, [])
+  useAsyncEffect(load, [])
 
   const openDir = async (): Promise<void> => {
     const res = await wbApi?.openSkillsDir().catch(() => null)

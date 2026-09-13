@@ -13,6 +13,7 @@ import {
 import { SettingsCard, SwitchRow, FieldRow } from './ui'
 import { toast } from '../../stores/toast'
 import { confirmAsk } from '../../stores/confirmDialog'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 /**
  * 设置 → 定时任务:数据上报任务管理(chat_sync:本地微信聊天记录 → PostgreSQL)。
@@ -92,8 +93,7 @@ export default function ReportJobsSection(): React.JSX.Element {
     }
     setWxAccounts(list ?? [])
   }
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载异步拉取任务与账号(全仓同款模式)
+  useAsyncEffect(() => {
     void load()
     void loadAccounts()
   }, [])

@@ -4,6 +4,7 @@ import { toast } from '../../stores/toast'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { avatarColor } from '../../lib/ui'
 import { setAgentFormDirty } from './agentDirty'
+import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 /** 变更成功后同步工作台 store（对话页常驻挂载，仅首挂载拉取会陈旧/悬空） */
 function syncWorkbenchAgents(): void {
@@ -79,10 +80,7 @@ function AgentSettingsSection(): React.JSX.Element {
     }
   }, [fillPerson])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载时一次性异步拉取（回调内 setState，全仓同款模式）
-    void reload()
-  }, [reload])
+  useAsyncEffect(reload, [reload])
 
   const dirty = snapshot !== snapshotOf(name, description, style, prompt)
 
