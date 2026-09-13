@@ -12,6 +12,13 @@
  * 结构更简单（name + oneLine + when），同样在下面按同一套规矩校验。
  */
 import { GROWTH_TOOL_META } from '../src/main/services/growth/ai/toolMeta.ts'
+import {
+  GROUP_TEXT,
+  LARK_CAPS,
+  SOFTWARE_CAPS,
+  WHEN_HINT,
+  WS_CAPS
+} from '../src/main/services/ai/cap/catalog.ts'
 
 let failed = 0
 const log = (ok, name, detail) => {
@@ -88,5 +95,37 @@ log(
   'contentId 不设为必填(营销页会注入默认值,其它入口显式传)'
 )
 
+
+console.log('\n[6] 全能力目录契约（catalog.ts 纯数据，注册表与自检共用）')
+{
+  const groups = Object.entries(GROUP_TEXT)
+  log(groups.length === 6, '六个分组都有展示名', groups.map(([k]) => k).join(','))
+  log(groups.every(([, label]) => String(label).trim().length >= 2), '分组名非空')
+  const buckets = {
+    software: SOFTWARE_CAPS,
+    cloud: LARK_CAPS,
+    workspace: WS_CAPS,
+    wechat: Object.entries(WHEN_HINT).map(([name, v]) => ({ name, ...v }))
+  }
+  for (const [group, list] of Object.entries(buckets)) {
+    log(list.length > 0, `${group} 组非空`, String(list.length))
+    log(
+      list.every((c) => String(c.oneLine ?? '').trim().length >= 4),
+      `${group} 组每条都有目录行`
+    )
+    log(
+      list.every((c) => String(c.when ?? '').trim().length >= 4),
+      `${group} 组每条都有触发场景`
+    )
+    log(
+      list.every((c) => /^[a-z][a-z0-9_]*$/.test(c.name)),
+      `${group} 组命名 snake_case`
+    )
+  }
+  const all = [...Object.keys(WHEN_HINT), ...SOFTWARE_CAPS.map((c) => c.name), ...LARK_CAPS.map((c) => c.name), ...WS_CAPS.map((c) => c.name), ...GROWTH_TOOL_META.map((c) => c.name)]
+  const dup = all.filter((n, i) => all.indexOf(n) !== i)
+  log(dup.length === 0, '跨组能力名不重复（重名会让目录/挂载指向错的那一个）', dup.join(',') || '无重复')
+  log(all.length === new Set(all).size, '能力总数 = 去重后数量', String(all.length))
+}
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)
