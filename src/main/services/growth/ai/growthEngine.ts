@@ -127,6 +127,8 @@ export async function sendGrowthMessage(
       }
     }
 
+    /** 本轮工具参数暂存：toolCallId → 参数（结果回来时一并落库） */
+    const toolArgs = new Map<string, string>()
     const result = streamText({
       model,
       system: buildGrowthSystem(taskId, task.contentId, task.storeId, task.goal),
@@ -143,25 +145,43 @@ export async function sendGrowthMessage(
         content += part.text
         emitWorkbenchEvent(sessionId, { type: 'delta', token: part.text })
       } else if (part.type === 'tool-call') {
+        const args = JSON.stringify(part.input ?? {}).slice(0, 4000)
+        // 记下参数：结果回来时要连同参数一起落库（切任务/重开后仍能看到「这一步做了什么」）
+        toolArgs.set(part.toolCallId || part.toolName, args)
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
           tool: part.toolName,
           toolStatus: 'start',
-          args: JSON.stringify(part.input ?? {}).slice(0, 4000)
+          args
         })
       } else if (part.type === 'tool-result') {
+        const output = JSON.stringify(part.output ?? '').slice(0, 4000)
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
           tool: part.toolName,
           toolStatus: 'done',
-          output: JSON.stringify(part.output ?? '').slice(0, 4000)
+          output
+        })
+        // 与客服工作台同一口径：一步一行 $kind=tool_call$ 落库（meta 带名字/状态/参数/结果）
+        appendChatMessage(sessionId, 'assistant', 'tool_call', '', {
+          name: part.toolName,
+          status: 'done',
+          args: toolArgs.get(part.toolCallId || part.toolName) ?? '',
+          output
         })
       } else if (part.type === 'tool-error') {
+        const output = String((part.error as Error)?.message ?? part.error ?? '').slice(0, 1000)
         emitWorkbenchEvent(sessionId, {
           type: 'tool',
           tool: part.toolName,
           toolStatus: 'fail',
-          output: String((part.error as Error)?.message ?? part.error ?? '').slice(0, 1000)
+          output
+        })
+        appendChatMessage(sessionId, 'assistant', 'tool_call', '', {
+          name: part.toolName,
+          status: 'fail',
+          args: toolArgs.get(part.toolCallId || part.toolName) ?? '',
+          output
         })
       } else if (part.type === 'error') {
         throw part.error

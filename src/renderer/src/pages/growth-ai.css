@@ -234,35 +234,16 @@
 .gai-thinking {
   color: var(--text-3);
 }
-.gai-tool {
-  align-self: flex-start;
-  max-width: 92%;
-  border: 1px dashed var(--border);
-  border-radius: var(--r-md);
-  padding: 6px 10px;
-  font-size: 12px;
-  color: var(--text-2);
-  background: var(--bg-panel);
+/* 工具步骤改用共享时间线组件(components/workbench/ToolTimeline) —— 原来这里是平铺的 .gai-tool 行，
+ * 一次调用一行、看不到先后与并行；时间线的样式在 pages/workbench-chat/messages.css 的 .wb-tl*。 */
+.gai-chat .wb-tl {
+  align-self: stretch;
+  padding: 2px 2px 4px;
 }
-.gai-tool.is-fail {
-  border-color: var(--danger-line);
-  color: var(--danger);
-}
-.gai-tool-name {
-  font-weight: 600;
-  margin-right: 8px;
-}
-.gai-tool-status {
+
+.gai-approval-hint {
+  font-size: 10px;
   color: var(--text-4);
-}
-.gai-tool-out {
-  margin: 6px 0 0;
-  font-size: 11px;
-  color: var(--text-3);
-  white-space: pre-wrap;
-  max-height: 160px;
-  overflow-y: auto;
-  font-family: inherit;
 }
 .gai-approval {
   align-self: stretch;

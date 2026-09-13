@@ -3,11 +3,13 @@
  * 复用客服工作台的事件通道(ai:wb)与审批桥; 一个素材 = 一个任务, 多任务并行。
  */
 
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '../stores/toast'
 import SkeletonRows from '../components/growth/SkeletonRows'
 import { useEscape } from '../lib/useEscape'
 import { fmtStamp } from '../../../shared/monitorMetrics'
+import { ToolTimeline } from '../components/workbench/ToolTimeline'
+import { splitToolRuns, type TimelineItem } from '../lib/toolTimeline'
 import './growth-ai.css'
 import { useAsyncEffect } from '../lib/useAsyncEffect'
 
@@ -89,12 +91,68 @@ interface ToolRow {
   status: 'start' | 'done' | 'fail'
   args?: string
   output?: string
+  /** 收到 start/done 事件的时间（时间线据此判定顺序 vs 并行） */
+  startedAt?: number
+  endedAt?: number
 }
 
 interface ApprovalRow {
   runId: string
   tool: string
   text: string
+}
+
+/** 工具步骤消息(engine 落库的 kind=tool_call 行) → 时间线条目 */
+function toolItemsOfMessages(rows: ChatRow[]): TimelineItem[] {
+  return rows.map((m) => {
+    const meta = parseToolMeta(m)
+    return {
+      id: m.id,
+      name: meta?.name ?? '工具',
+      status: meta?.status ?? 'done',
+      args: meta?.args,
+      output: meta?.output
+    }
+  })
+}
+
+/** 实时 toolLog 行 → 时间线条目（带事件到达时间，能判并行） */
+function toolItemOf(t: ToolRow, i: number): TimelineItem {
+  return {
+    id: 'live-' + String(i) + '-' + t.name,
+    name: t.name,
+    status: t.status,
+    startedAt: t.startedAt,
+    endedAt: t.endedAt,
+    args: t.args,
+    output: t.output
+  }
+}
+
+/** meta 可能是 JSON 字符串(仓储层原样返回)也可能是对象，两种都认 */
+function parseToolMeta(
+  m: ChatRow
+): { name: string; status: TimelineItem['status']; args?: string; output?: string } | null {
+  const raw = m.meta
+  let obj: Record<string, unknown> | null = null
+  if (typeof raw === 'string' && raw) {
+    try {
+      const p = JSON.parse(raw) as unknown
+      obj = p && typeof p === 'object' ? (p as Record<string, unknown>) : null
+    } catch {
+      obj = null
+    }
+  } else if (raw && typeof raw === 'object') {
+    obj = raw as Record<string, unknown>
+  }
+  if (!obj) return null
+  const status = obj.status === 'fail' ? 'fail' : 'done'
+  return {
+    name: typeof obj.name === 'string' && obj.name ? obj.name : '工具',
+    status,
+    args: typeof obj.args === 'string' && obj.args ? obj.args : undefined,
+    output: typeof obj.output === 'string' ? obj.output : undefined
+  }
 }
 
 /** 单条消息(memo: 流式刷新时不重渲染历史消息) */
@@ -271,6 +329,18 @@ export default function GrowthAiWorkbench({
   const [outputs, setOutputs] = useState<OutputView[]>([])
   const [candidates, setCandidates] = useState<OutputView[]>([])
   const [messages, setMessages] = useState<ChatRow[]>([])
+  /** 连续的工具步骤合成一条时间线（与客服工作台同一手法：纯函数切段） */
+  const chatRuns = useMemo(
+    () =>
+      splitToolRuns(
+        messages.map((m) => ({
+          id: m.id,
+          isTool: m.role !== 'user' && m.kind === 'tool_call',
+          msg: m
+        }))
+      ),
+    [messages]
+  )
   const [streaming, setStreaming] = useState('')
   const [toolLog, setToolLog] = useState<ToolRow[]>([])
   const [approval, setApproval] = useState<ApprovalRow | null>(null)
@@ -432,15 +502,15 @@ export default function GrowthAiWorkbench({
         setToolLog((prev) => {
           const next = [...prev]
           if (status === 'start') {
-            next.push({ name, status: 'start', args: e.args })
+            next.push({ name, status: 'start', args: e.args, startedAt: Date.now() })
           } else {
             for (let i = next.length - 1; i >= 0; i -= 1) {
               if (next[i].name === name && next[i].status === 'start') {
-                next[i] = { ...next[i], status, output: e.output }
+                next[i] = { ...next[i], status, output: e.output, endedAt: Date.now() }
                 return next
               }
             }
-            next.push({ name, status, output: e.output })
+            next.push({ name, status, output: e.output, endedAt: Date.now() })
           }
           return next
         })
@@ -449,7 +519,13 @@ export default function GrowthAiWorkbench({
       } else if (e.type === 'done') {
         resetStream()
         setSending(false)
-        if (activeId) void loadBundle(activeId)
+        // 先重载（工具步骤已按 tool_call 落库，重载后就由消息流渲染），再清实时列表 ——
+        // 反过来会有一瞬间两边都没有，看起来像「工具调用突然消失」
+        if (activeId) {
+          void loadBundle(activeId).then(() => setToolLog([]))
+        } else {
+          setToolLog([])
+        }
         void loadTasks()
       } else if (e.type === 'error') {
         resetStream()
@@ -698,21 +774,17 @@ export default function GrowthAiWorkbench({
             </header>
 
             <div className="gai-chat" ref={chatRef} onScroll={onChatScroll}>
-              {messages.map((m) => (
-                <ChatMessage key={m.id} m={m} />
-              ))}
-              {toolLog.map((t, i) => (
-                <div
-                  className={'gai-tool ' + (t.status === 'fail' ? 'is-fail' : '')}
-                  key={String(i) + t.name}
-                >
-                  <span className="gai-tool-name">{t.name}</span>
-                  <span className="gai-tool-status">
-                    {t.status === 'start' ? '执行中…' : t.status === 'done' ? '完成' : '失败'}
-                  </span>
-                  {t.output ? <pre className="gai-tool-out">{t.output.slice(0, 600)}</pre> : null}
-                </div>
-              ))}
+              {chatRuns.map((run) =>
+                run.tool ? (
+                  <ToolTimeline
+                    key={'tl-' + String(run.rows[0].id)}
+                    items={toolItemsOfMessages(run.rows.map((r) => r.msg))}
+                  />
+                ) : (
+                  <ChatMessage key={run.row.msg.id} m={run.row.msg} />
+                )
+              )}
+              {toolLog.length > 0 && <ToolTimeline items={toolLog.map(toolItemOf)} />}
               {streaming ? <StreamBubble text={streaming} /> : null}
               {approval ? (
                 <div className="gai-approval">
@@ -732,6 +804,9 @@ export default function GrowthAiWorkbench({
                   >
                     拒绝
                   </button>
+                  <span className="gai-approval-hint" title="引擎侧等待上限 120 秒">
+                    120 秒内答复，超时按「拒绝」处理
+                  </span>
                 </div>
               ) : null}
               {sending && !streaming && toolLog.length === 0 ? (
