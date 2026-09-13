@@ -53,7 +53,9 @@ export function registerGrowthAiHandlers(): void {
   // ── 任务 ──
   ipcMain.handle('cs:growthai:listTasks', () => {
     try {
-      return ok({ tasks: listTasks() })
+      // 带上运行态：营销页是多任务并行（一个素材一个任务），左栏得能看出"别的任务正在跑"
+      const tasks = listTasks().map((t) => ({ ...t, running: isGrowthRunning(t.id) }))
+      return ok({ tasks })
     } catch (e) {
       return err(e instanceof Error ? e.message : '读取任务失败')
     }

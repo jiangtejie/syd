@@ -241,6 +241,27 @@
   padding: 2px 2px 4px;
 }
 
+/* 任务行「执行中」标记：与工具时间线的进行中节点同一视觉语言（呼吸点） */
+.gai-task-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+  color: var(--info);
+}
+.gai-run-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--info);
+  animation: gai-run-pulse 1.1s ease-in-out infinite;
+}
+@keyframes gai-run-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
 .gai-approval-hint {
   font-size: 10px;
   color: var(--text-4);

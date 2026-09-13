@@ -22,6 +22,8 @@ interface TaskView {
   storeId: number | null
   storeName: string
   title: string
+  /** 该任务此刻是否在生成中（主进程按运行中的会话标记） */
+  running?: boolean
   goal: string
   status: string
   sessionId: number | null
@@ -264,6 +266,12 @@ const TaskCard = memo(function TaskCard({
           {t.pendingCandidates > 0 ? <i className="gai-dot" title="有待确认候选" /> : null}
         </span>
         <span className="gai-task-sub">
+          {t.running ? (
+            <span className="gai-task-running" title="该任务正在生成（可切过去看进度）">
+              <i className="gai-run-dot" />
+              执行中
+            </span>
+          ) : null}
           {STAGE_LABEL[t.stage] ?? t.stage} · {t.summary || '待开始'}
         </span>
         <span className="gai-task-meta">
@@ -454,6 +462,14 @@ export default function GrowthAiWorkbench({
     void loadTasks()
     void loadStores()
   }, [loadTasks, loadStores])
+
+  // 有任务在生成时轮询任务列表：营销页是多任务并行，左栏的运行态得跟得上（没有任务在跑时不起定时器）
+  const anyRunning = sending || tasks.some((t) => t.running)
+  useEffect(() => {
+    if (!anyRunning) return
+    const timer = setInterval(() => void loadTasks(), 4000)
+    return () => clearInterval(timer)
+  }, [anyRunning, loadTasks])
 
   // 素材仓库跳转进来: 选中该任务
   useEffect(() => {
