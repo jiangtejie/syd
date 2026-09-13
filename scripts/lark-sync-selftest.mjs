@@ -34,6 +34,7 @@ import {
 import { fmtHms, fmtStamp, fmtTimeShort } from '../src/shared/monitorMetrics.ts'
 import { isRecordMissingError } from '../src/main/services/lark/errorClass.ts'
 import { collectFieldPages } from '../src/main/services/lark/fieldPages.ts'
+import { buildGroupIssuesText } from '../src/main/services/lark/issueDigest.ts'
 // 人员列的两个纯函数放在 baseMapping(与证据映射同源),这里直接离线导入
 
 let failed = 0
@@ -327,6 +328,44 @@ console.log('\n[13] 列元信息分页聚合（假 transport，不联网）')
     has_more: false
   }))
   log(explicit[1].primary === true, '飞书明确回 is_primary 时以它为准')
+}
+
+console.log('\n[14] 群问题 → 飞书摘要文案（工作台「发到飞书」与 AI 工具共用口径）')
+{
+  const base = { id: 1, type: '物流', status: 'open', occurText: '今天 08:00:00' }
+  const empty = buildGroupIssuesText({
+    groupName: '保利星荟店对接群',
+    nowText: '2026-09-13 10:12:33',
+    issues: []
+  })
+  log(empty.includes('【群问题】保利星荟店对接群'), '标题带群名', empty.split('\n')[0])
+  log(empty.includes('当前没有未闭环的问题'), '无未闭环 → 明确说明')
+
+  const mixed = buildGroupIssuesText({
+    groupName: '南部店物配对接群',
+    nowText: '2026-09-13 10:12:33',
+    issues: [
+      { ...base, id: 1, title: '孜然粉到货', severity: '紧急' },
+      { ...base, id: 2, title: '鸡爪到不了', followUp: true, assignee: '陈西西' },
+      { ...base, id: 3, title: '对账单没收到', followUp: true, followUpOverdue: true },
+      { ...base, id: 4, title: '已解决的旧问题', status: 'done' },
+      { ...base, id: 5, title: '已归档的', status: 'archived' }
+    ]
+  })
+  log(mixed.includes('未闭环 3 条（待处理 1 · 跟进中 1 · 跟进超时 1）'), '统计口径', mixed.split('\n')[1])
+  log(!mixed.includes('已解决的旧问题') && !mixed.includes('已归档的'), 'done/archived 不进摘要')
+  log(mixed.includes('1. [紧急][物流]孜然粉到货'), '序号 + 严重度/类型标签', mixed.split('\n')[3])
+  log(mixed.includes('跟进:陈西西'), '跟进人显示')
+  log(mixed.includes('2. [物流]鸡爪到不了'), '无严重度时不出现空标签')
+
+  const many = buildGroupIssuesText({
+    groupName: 'X 群',
+    limit: 2,
+    nowText: '2026-09-13 10:12:33',
+    issues: [1, 2, 3, 4].map((n) => ({ ...base, id: n, title: '问题' + n }))
+  })
+  log(many.includes('仅列前 2 条，共 4 条未闭环'), '超出上限时给尾注', many.split('\n').slice(-1)[0])
+  log(many.split('\n').filter((l) => /^\d+\. /.test(l)).length === 2, '真的只列 2 条')
 }
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)

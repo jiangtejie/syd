@@ -4,6 +4,7 @@ import {
   getFeishuNotifyConfig,
   recentFeishuSends,
   removeFeishuNotifyTarget,
+  sendFeishuGroupIssues,
   sendFeishuTestMessage,
   setFeishuNotifyEnabled,
   setFeishuNotifyEvent,
@@ -127,6 +128,25 @@ export function registerFeishuNotifyHandlers(): void {
       return { ok: false as const, error: e instanceof Error ? e.message : '发送失败' }
     }
   })
+
+  // 工作台「群问题」面板的「发到飞书」：把本群未闭环问题摘要发到已配置的目标（写审计、受日限额）
+  ipcMain.handle(
+    'cs:feishu:notify:sendGroupIssues',
+    async (_e, wxid: string, chatroom: string, targetName?: string) => {
+      try {
+        const r = await sendFeishuGroupIssues({
+          wxid: String(wxid ?? ''),
+          chatroom: String(chatroom ?? ''),
+          targetName: targetName ? String(targetName) : undefined
+        })
+        return r.ok
+          ? { ok: true as const, sent: r.sent, count: r.count, targets: r.targets }
+          : { ok: false as const, error: r.error ?? '发送失败', count: r.count }
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : '发送失败' }
+      }
+    }
+  )
 
   ipcMain.handle('cs:feishu:notify:listChats', async () => {
     try {

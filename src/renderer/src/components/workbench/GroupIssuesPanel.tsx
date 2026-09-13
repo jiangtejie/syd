@@ -237,6 +237,7 @@ function GroupIssuesPanel(): React.JSX.Element {
   const { members, nameOf } = useTeamNames(wxid, teamReloadKey)
   const teamUsernames = useMemo(() => members.map((m) => m.username), [members])
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [feishuSending, setFeishuSending] = useState(false)
   const [collapsed, setCollapsed] = useState<{ history: boolean; ignored: boolean }>({
     history: true,
     ignored: true
@@ -247,6 +248,32 @@ function GroupIssuesPanel(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话切换时同步复位 UI（全仓同款模式）
     setExpandedId(null)
   }, [activeSessionId])
+
+  /**
+   * 「发到飞书」：把本群未闭环问题摘要发给设置里配置的飞书目标（写审计、受日限额）。
+   * 目标为空时主进程会返回可行动提示，这里原样 toast 出来，不静默失败。
+   */
+  const sendToFeishu = async (): Promise<void> => {
+    const api = window.api?.cs?.feishuNotify
+    if (!api?.sendGroupIssues || !wxid || !activeSessionId) {
+      toast.error('当前会话不可发送（缺少账号或会话）')
+      return
+    }
+    setFeishuSending(true)
+    try {
+      const res = await api.sendGroupIssues(wxid, activeSessionId)
+      if (!res.ok) {
+        toast.error(res.error ?? '发送到飞书失败')
+        return
+      }
+      const who = (res.targets ?? []).filter(Boolean).join('、')
+      toast.success(`已发到飞书${who ? `（${who}）` : ''} · 未闭环 ${res.count ?? 0} 条`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '发送到飞书失败')
+    } finally {
+      setFeishuSending(false)
+    }
+  }
 
   /**
    * 展开的那条被处置/归档后已不在列表里 → 收起展开态。
@@ -511,6 +538,15 @@ function GroupIssuesPanel(): React.JSX.Element {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            className="ui-btn gip-btn ghost"
+            disabled={feishuSending || !wxid || !activeSessionId}
+            onClick={() => void sendToFeishu()}
+            title="把本群未闭环问题摘要发到飞书（接收目标在 设置 → IM 渠道 → 飞书通知 里配置）"
+          >
+            {feishuSending ? '发送中…' : '发到飞书'}
+          </button>
           <button
             type="button"
             className={`ui-btn gip-btn${excluded ? '' : ' ghost'}`}

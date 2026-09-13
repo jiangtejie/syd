@@ -7,7 +7,9 @@ import {
 } from '../../db/repos/feishuSendLogRepo'
 import { createLogger } from '../logging'
 import { sendImText, type FeishuReceiveIdType } from './im'
-import { fmtStamp } from '../../../shared/monitorMetrics'
+import { fmtStamp, fmtTimeShort } from '../../../shared/monitorMetrics'
+import { listIssuesByGroup } from '../../db/repos/issueRepo'
+import { buildGroupIssuesText } from './issueDigest'
 
 /**
  * 飞书告警推送(机器人身份,只读业务数据不外发细节的克制口径)。
@@ -150,14 +152,26 @@ async function sendToTargets(
     log.warn(`日限额已满(${cfg.dailyLimit}),跳过发送 source=${source}`)
     return { sent: 0, failed: 0, error: '已达每日发送上限' }
   }
+  return dispatchTo(cfg.targets.slice(0, remaining), text, source, idempotencyKey)
+}
+
+/**
+ * 逐个目标发送并写审计（限额与节流由调用方判定）。
+ * 幂等键按「目标序号」区分：同一 uuid 跨不同接收方会被飞书去重，导致后续目标收不到。
+ */
+async function dispatchTo(
+  targets: FeishuNotifyTarget[],
+  text: string,
+  source: string,
+  idempotencyKey: string
+): Promise<{ sent: number; failed: number }> {
   let sent = 0
   let failed = 0
-  for (const [idx, t] of cfg.targets.slice(0, remaining).entries()) {
+  for (const [idx, t] of targets.entries()) {
     const r = await sendImText({
       receiveIdType: (t.kind === 'chat' ? 'chat_id' : 'open_id') as FeishuReceiveIdType,
       receiveId: t.id,
       text,
-      // 幂等键按「目标序号」区分:同一 uuid 跨不同接收方会被飞书去重,导致后续目标收不到
       idempotencyKey: `${idempotencyKey.slice(0, 24)}-t${idx + 1}`
     })
     insertFeishuSendLog({
@@ -263,4 +277,113 @@ export async function sendDigestText(
 /** 最近发送记录(设置页展示) */
 export function recentFeishuSends(limit = 10): FeishuSendLogRow[] {
   return listFeishuSendLogs(limit)
+}
+
+/* ── 主动发送（工作台「发到飞书」按钮 + AI 工具 feishu_send_message）── */
+
+export interface FeishuSendNowResult {
+  ok: boolean
+  sent: number
+  failed: number
+  /** 实际发送到的目标展示名（便于 UI/模型回话） */
+  targets: string[]
+  error?: string
+}
+
+/**
+ * 主动发送一条文本（带日限额与审计）。
+ * 与告警推送的区别：**不按事件节流**、可指定目标（不指定则发给全部目标）。
+ * 目标只能从「设置 → IM 渠道 → 飞书通知」里已配置的接收目标中选，模型/UI 无法凭空指定 receive_id。
+ */
+export async function sendFeishuTextNow(input: {
+  text: string
+  targetName?: string
+  source: string
+  idempotencyKey?: string
+}): Promise<FeishuSendNowResult> {
+  const cfg = getFeishuNotifyConfig()
+  if (cfg.targets.length === 0) {
+    return {
+      ok: false,
+      sent: 0,
+      failed: 0,
+      targets: [],
+      error: '未配置飞书接收目标：请到 设置 → IM 渠道 → 飞书通知 添加'
+    }
+  }
+  const wanted = (input.targetName ?? '').trim()
+  let picked = cfg.targets
+  if (wanted) {
+    picked = cfg.targets.filter((t) => t.name === wanted || t.id === wanted)
+    if (picked.length === 0) {
+      const names = cfg.targets
+        .map((t) => `${t.name}(${t.kind === 'chat' ? '群' : '个人'})`)
+        .join('、')
+      return {
+        ok: false,
+        sent: 0,
+        failed: 0,
+        targets: [],
+        error: `找不到目标「${wanted}」；现有目标：${names}`
+      }
+    }
+  }
+  const remaining = cfg.dailyLimit - countFeishuSentToday()
+  if (remaining <= 0)
+    return { ok: false, sent: 0, failed: 0, targets: [], error: '已达每日发送上限' }
+  const text = (input.text ?? '').trim()
+  if (!text) return { ok: false, sent: 0, failed: 0, targets: [], error: '内容为空' }
+  const key = (input.idempotencyKey ?? `now-${Date.now()}`).slice(0, 40)
+  const r = await dispatchTo(picked.slice(0, remaining), text, input.source, key)
+  const names = picked.slice(0, remaining).map((t) => t.name || t.id)
+  if (r.sent === 0) {
+    return {
+      ok: false,
+      sent: 0,
+      failed: r.failed,
+      targets: names,
+      error: '发送失败（请检查应用可用范围与权限）'
+    }
+  }
+  return { ok: true, sent: r.sent, failed: r.failed, targets: names }
+}
+
+/**
+ * 把某个群的「未闭环问题」摘要发到飞书（工作台群问题面板的「发到飞书」按钮）。
+ * 摘要文案由 lib 无关的纯函数 buildGroupIssuesText 生成，AI 工具与 UI 共用同一口径。
+ */
+export async function sendFeishuGroupIssues(input: {
+  wxid: string
+  chatroom: string
+  targetName?: string
+  limit?: number
+}): Promise<FeishuSendNowResult & { count: number }> {
+  const now = Date.now()
+  const issues = listIssuesByGroup(input.wxid, input.chatroom)
+  const open = issues.filter((i) => i.status === 'open' || i.status === 'stalled')
+  const groupName = issues[0]?.groupName ?? ''
+  // 时间文案在这里用共享实现算好（issueDigest 是零依赖纯函数，见其文件头说明）
+  const text = buildGroupIssuesText({
+    groupName,
+    nowText: fmtStamp(now),
+    limit: input.limit ?? 8,
+    issues: issues.map((i) => ({
+      id: i.id,
+      title: i.title,
+      type: i.type,
+      status: i.status,
+      severity: i.severity,
+      occurText: fmtTimeShort(i.occurAt),
+      followUp: i.followUp,
+      followUpOverdue: i.followUpOverdue,
+      assignee: i.assignee
+    }))
+  })
+  const r = await sendFeishuTextNow({
+    text,
+    targetName: input.targetName,
+    source: 'group_issues',
+    idempotencyKey: `gip-${input.chatroom}-${Date.now()}`
+  })
+  return { ...r, count: open.length }
 }

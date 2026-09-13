@@ -733,6 +733,17 @@ const api: PreloadApi = {
         ipcRenderer.invoke('cs:feishu:notify:removeTarget', kind, id),
       test: (): Promise<{ ok: boolean; sent?: number; error?: string }> =>
         ipcRenderer.invoke('cs:feishu:notify:test'),
+      sendGroupIssues: (
+        wxid: string,
+        chatroom: string,
+        targetName?: string
+      ): Promise<{
+        ok: boolean
+        sent?: number
+        count?: number
+        targets?: string[]
+        error?: string
+      }> => ipcRenderer.invoke('cs:feishu:notify:sendGroupIssues', wxid, chatroom, targetName),
       listChats: (): Promise<{
         ok: boolean
         chats?: Array<{ chatId: string; name: string; chatMode: string }>

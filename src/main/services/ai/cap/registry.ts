@@ -173,6 +173,11 @@ export const LARK_CAPS: Array<{
     name: 'lark_doc_read',
     oneLine: '读取飞书云文档(docx/知识库)的纯文本内容',
     when: '用户给了飞书文档链接、要你总结或提取其中内容时'
+  },
+  {
+    name: 'feishu_send_message',
+    oneLine: '把消息发到飞书(写操作,按审批策略确认;接收方为设置里已配置的目标)',
+    when: '用户要求“把这条发到飞书 / 通知群里 / 发给我”时'
   }
 ]
 
@@ -270,7 +275,8 @@ export function listCaps(): CapInfo[] {
       tier,
       group,
       kind: 'tool',
-      readOnly: name !== 'send_message',
+      // 写类能力一律标成非只读（此前只认 send_message，feishu_send_message 会被误标成只读）
+      readOnly: !isWriteCap(name),
       needsWx,
       oneLine,
       when,

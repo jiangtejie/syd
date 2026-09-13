@@ -725,6 +725,12 @@ export interface CsApi {
     }) => Promise<{ ok: boolean; error?: string }>
     removeTarget: (kind: 'chat' | 'user', id: string) => Promise<{ ok: boolean; error?: string }>
     test: () => Promise<{ ok: boolean; sent?: number; error?: string }>
+    /** 工作台「群问题 → 发到飞书」：本群未闭环问题摘要发到已配置目标 */
+    sendGroupIssues: (
+      wxid: string,
+      chatroom: string,
+      targetName?: string
+    ) => Promise<{ ok: boolean; sent?: number; count?: number; targets?: string[]; error?: string }>
     listChats: () => Promise<
       Result<{ chats?: Array<{ chatId: string; name: string; chatMode: string }> }>
     >

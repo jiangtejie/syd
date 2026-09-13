@@ -177,3 +177,21 @@ AI 工具 ──────┼─→ 闸门(sendGate 同款:总开关+逐次审
 - 若还想在平台侧彻底关闭:开放平台 → 事件与回调 → 取消订阅 `im.message.receive_v1`(或删除长连接配置)。产品内开关更灵活、可随时回滚。
 - 与推送能力的关系:推送走 `services/lark/client.ts`(独立 SDK 客户端 + 应用凭证),**不依赖长连接**,所以「仅推送」模式下告警推送照常工作。
 - 如需更细粒度(只收单聊、不收群),可在 `onReceive` 里按 `msg.chat_type` 过滤——当前未做,按需再加。
+
+## 11. AI 主动发送 + 工作台「发到飞书」(2026-09,已实现 P1)
+
+产品确认的三个问题沿用 §8 的结论(接收目标个人+群、仅机器人身份、先做推送)。本节补上当时未做的 P1:
+
+| 层 | 文件 | 内容 |
+| --- | --- | --- |
+| 发送层(共用) | `src/main/services/lark/notify.ts` | 新增 `sendFeishuTextNow({text,targetName?,source})` 与 `sendFeishuGroupIssues({wxid,chatroom})`;抽出 `dispatchTo` 统一「逐个目标发送 + 审计 + 日限额」,告警推送与主动发送共用 |
+| 摘要文案(纯函数) | `src/main/services/lark/issueDigest.ts` | `buildGroupIssuesText({groupName,nowText,issues,limit})`:未闭环统计(口径与监控页 `monitor_summary` 一致)、严重度/类型标签、跟进状态与跟进人、超出上限尾注 |
+| AI 工具 | `src/main/services/lark/tools.ts` | `feishu_send_message(text,target?)`,**`confirm: true` → 走审批桥**;接收方只能是设置里已配置的目标,模型无法凭空指定 receive_id |
+| 注册表 | `src/main/services/ai/cap/registry.ts` | LARK_CAPS 增 `feishu_send_message`(目录行/触发场景);顺带修 `readOnly` 判定(此前只认 `send_message`,新写类能力会被误标成只读 → 现改为 `!isWriteCap(name)`) |
+| IPC/桥 | `feishuNotifyHandlers.ts` + preload + `shared/api.ts` | `cs:feishu:notify:sendGroupIssues(wxid,chatroom,targetName?)`,返回 `{ok,sent,count,targets,error}` |
+| UI | `components/workbench/GroupIssuesPanel.tsx` | 群问题面板头部新增「发到飞书」按钮(发送中禁用;未配置目标时把主进程的可行动提示原样 toast) |
+
+安全边界(与告警推送一致):目标白名单(仅设置里配置过的目标)、日限额、幂等键、`feishu_send_log` 审计落库;
+写类能力经审批桥人工确认后才执行。自检覆盖:`scripts/lark-sync-selftest.mjs` 第 [14] 节(9 例:口径/done 不进摘要/标签/尾注/上限)。
+
+仍未做(沿用原判断,按需再加):富文本卡片、图片/附件、群内 @、以用户身份发送。
