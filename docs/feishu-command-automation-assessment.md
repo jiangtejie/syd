@@ -207,14 +207,26 @@ IPC 收敛:cs:feishu:tasks:list 取消,统一为 cs:feishu:audit:list(limit, onl
 
 行为变化:工作台页的工具集现在完全跟随注册表(停用项 cap.disable 对工作台页同样生效;软件能力多出 memory_view)。
 
-### 营销域为什么还没并进来
+### 营销域并入统一注册表(2026-09,**已落地**)
 
-营销工具(growth/ai/growthTools.ts,13 个)是 **AI SDK tool() + GrowthToolCtx(sessionId/taskId/contentId/storeId)**,与客服侧 ToolDef 不是同一形态,且强依赖「当前营销任务」上下文——飞书私聊里没有任务,直接暴露会得到一堆无参数可用的工具。并进来需要两步:
+原判断:营销工具(growth/ai/growthTools.ts,13 个)是 **AI SDK tool() + GrowthToolCtx**,与客服侧 ToolDef 不同构,合并要先重写。本轮按这个思路落地:
+
+| 层 | 文件 | 内容 |
+| --- | --- | --- |
+| 元数据(纯数据,零依赖) | `growth/ai/toolMeta.ts` | 13 个能力的 name/oneLine/when/confirm/needsContent·needsStore·needsTask/参数声明 —— **注册表与实现共用这一份**,并可离线自检 |
+| 实现(ToolDef) | `growth/ai/growthToolDefs.ts` | 13 个 `ToolDef`;工具体与原实现逐字一致,仅机械改写:`ctx.contentId/taskId/storeId` → `contentIdOf(args)/taskIdOf(args)/storeIdOf(args)`(默认值由 `growthToolDefs(defaults)` 注入),`approve(...)` 由 `confirm: true` 取代 |
+| AI SDK 适配 | `growth/ai/growthTools.ts` | 只做三件事:注入当前任务默认值、把 `confirm` 接到审批桥(120s,与工作台同一套)、保留 `itemBrief/storeBrief` 导出。**营销页行为不变** |
+| 注册表 | `ai/cap/registry.ts` | 新增 `growth` 组(目录行 `营销能力`)、`findGrowthTool`、并入 `resolveCapDef`;工作台分组菜单同步列出该组 → 营销能力现在可从**任意会话按需挂载**(飞书/工作台/营销页同一份实现) |
+| 参数能力扩展 | `ai/chat/skills.ts` + `ai/toolSchema.ts` | `ToolParamDecl` 支持 `enum/number_array/string_array/json`;zod 适配层抽成共享模块(此前只写在工作台里,营销域只能自己再声明一遍) |
+| 契约自检 | `scripts/tool-registry-selftest.mjs` | `npm run test:registry`:13 个能力/命名唯一/目录行齐全/写类必须 confirm/参数必须有说明/枚举必须有可选项/上下文依赖与参数一致 —— 防「漏登记」与「写类被当只读」这两类老坑 |
+
+> 先前的说明(留档):营销工具是 AI SDK tool() + GrowthToolCtx(sessionId/taskId/contentId/storeId),与客服侧 ToolDef 不是同一形态,且强依赖「当前营销任务」上下文——飞书私聊里没有任务,直接暴露会得到一堆无参数可用的工具。并进来需要两步:
 
 1. 把 13 个 growth 工具从 tool() 重写为 ToolDef(参数声明 + run),约 1 天;
 2. 给会话增加「当前营销任务」绑定(类似工作区绑定),或在工具内做任务选择(growth_list_tasks → 选任务)。
 
-在此之前,营销能力仍只在 营销 → AI 工作台 内可用。
+~~在此之前,营销能力仍只在 营销 → AI 工作台 内可用。~~ → **本轮已并入注册表(见上表)**:任意会话可按需挂载 `growth_*` 能力;
+营销页仍是主入口(带当前任务上下文),其它入口需显式传 `contentId`(缺上下文时工具返回可行动提示)。
 
 ## 4. 需要拍板的决策
 

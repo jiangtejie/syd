@@ -2,6 +2,8 @@ import { getConfig } from '../../../db/repos/config'
 import { findTool } from '../chat/skills'
 import { findSoftwareTool } from './software'
 import { findLarkTool } from '../../lark/tools'
+import { GROWTH_TOOL_META } from '../../growth/ai/toolMeta'
+import { growthToolDefs } from '../../growth/ai/growthToolDefs'
 import { findWsTool, isWsWriteTool } from './wsTools'
 import type { ToolDef } from '../chat/skills'
 
@@ -17,7 +19,7 @@ import type { ToolDef } from '../chat/skills'
  * 名称唯一性:内置 → 软件能力 → 飞书云文档(冲突时靠前胜出)。挂载粒度为“能力名”。
  */
 
-export type CapGroup = 'core' | 'wechat' | 'software' | 'cloud' | 'workspace'
+export type CapGroup = 'core' | 'wechat' | 'software' | 'cloud' | 'workspace' | 'growth'
 
 export interface CapInfo {
   /** 能力名(挂载/卸载/目录使用) */
@@ -38,6 +40,7 @@ export interface CapInfo {
 }
 
 const TIER_TEXT: Record<CapGroup, string> = {
+  growth: '营销能力',
   core: '核心',
   wechat: '微信业务',
   software: '软件能力',
@@ -356,6 +359,11 @@ export function listCaps(): CapInfo[] {
     push(c.name, 2, 'cloud', false, c.oneLine, c.when)
   }
 
+  // L2 营销能力(声明见 growth/ai/toolMeta.ts;实现按需加载,与营销页共用同一份)
+  for (const c of GROWTH_TOOL_META) {
+    push(c.name, 2, 'growth', false, c.oneLine, c.when)
+  }
+
   // L2 工作区文件(需会话/默认工作区;写类工具走审批)
   for (const c of WS_CAPS) {
     if (!findWsTool(c.name)) continue
@@ -434,7 +442,21 @@ export function catalogText(opts: {
 
 /** 能力名(单工具能力)解析为 ToolDef */
 export function resolveCapDef(name: string): ToolDef | undefined {
-  return findTool(name) ?? findSoftwareTool(name) ?? findLarkTool(name) ?? findWsTool(name)
+  return (
+    findTool(name) ??
+    findSoftwareTool(name) ??
+    findLarkTool(name) ??
+    findWsTool(name) ??
+    findGrowthTool(name)
+  )
+}
+
+/** 营销能力实现按需构建一次（13 个 ToolDef，构建本身不碰库/网络） */
+let growthDefsCache: ToolDef[] | null = null
+export function findGrowthTool(name: string): ToolDef | undefined {
+  if (!GROWTH_TOOL_META.some((m) => m.name === name)) return undefined
+  growthDefsCache ??= growthToolDefs()
+  return growthDefsCache.find((d) => d.name === name)
 }
 
 /** 能力是否为写操作(供审批判定;工作区写类工具历史上由 isWsWriteTool 标记) */

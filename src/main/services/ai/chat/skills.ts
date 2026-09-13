@@ -27,9 +27,11 @@ export interface ToolCtx {
 
 /** 轻量参数声明(原生 function-calling 生成精确 JSON Schema;JSON 协议仍靠 description) */
 export interface ToolParamDecl {
-  type?: 'string' | 'number' | 'boolean'
+  type?: 'string' | 'number' | 'boolean' | 'enum' | 'number_array' | 'string_array' | 'json'
   required?: boolean
   desc?: string
+  /** type='enum' 时的可选值 */
+  enum?: string[]
 }
 
 export interface ToolDef {
@@ -59,7 +61,18 @@ export function schemaFromParams(
   const required: string[] = []
   for (const [name, p] of Object.entries(params)) {
     const prop: Record<string, unknown> = {}
-    if (p.type) prop.type = p.type
+    if (p.type === 'enum') {
+      prop.type = 'string'
+      if (p.enum && p.enum.length > 0) prop.enum = p.enum
+    } else if (p.type === 'number_array') {
+      prop.type = 'array'
+      prop.items = { type: 'number' }
+    } else if (p.type === 'string_array') {
+      prop.type = 'array'
+      prop.items = { type: 'string' }
+    } else if (p.type) {
+      prop.type = p.type
+    }
     if (p.desc) prop.description = p.desc
     properties[name] = prop
     if (p.required) required.push(name)

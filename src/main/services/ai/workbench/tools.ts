@@ -1,6 +1,6 @@
 import { tool, zodSchema, type Tool, type ToolSet } from 'ai'
-import { z } from 'zod'
-import type { ToolDef, ToolParamDecl } from '../chat/skills'
+import { zodFromParams } from '../toolSchema'
+import type { ToolDef } from '../chat/skills'
 import { groupText, isWriteCap, listCaps, resolveCapDef, type CapGroup } from '../cap/registry'
 import type { WbToolGroup } from './types'
 import { requestToolApproval } from './approval'
@@ -42,7 +42,7 @@ export function workbenchToolNames(): string[] {
 
 /** 分组菜单(给 system 的固定说明):按注册表分组聚合,新增能力自动出现 */
 export function workbenchToolGroups(): WbToolGroup[] {
-  const order: CapGroup[] = ['wechat', 'software', 'workspace', 'cloud']
+  const order: CapGroup[] = ['wechat', 'software', 'workspace', 'cloud', 'growth']
   const caps = listCaps().filter((c) => c.tier > 0 && !c.disabled)
   const out: WbToolGroup[] = []
   for (const g of order) {
@@ -62,30 +62,6 @@ function resolveSpec(name: string): WbToolSpec | null {
   const def = resolveCapDef(name)
   if (!def) return null
   return { resolve: () => def, approval: isWriteCap(name) }
-}
-
-/** ToolParamDecl → zod(自动生成参数 schema;高扩展:def 声明即生效) */
-function zodFromParams(
-  params: Record<string, ToolParamDecl> | undefined
-): ReturnType<typeof z.object> {
-  const shape: Record<string, z.ZodType> = {}
-  for (const [name, p] of Object.entries(params ?? {})) {
-    let base: z.ZodType
-    switch (p.type) {
-      case 'number':
-        base = z.number()
-        break
-      case 'boolean':
-        base = z.boolean()
-        break
-      default:
-        base = z.string()
-    }
-    if (p.desc) base = base.describe(p.desc)
-    if (!p.required) base = base.optional()
-    shape[name] = base
-  }
-  return z.object(shape)
 }
 
 function toolFromDef(
