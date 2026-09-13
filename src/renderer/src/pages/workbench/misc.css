@@ -1,0 +1,481 @@
+/* 外观走全局 ui-btn；这里只留右栏的密度（比工具栏再小一号） */
+.gip-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.gip-sync {
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+
+/* 转账消息双方显示名（49/2000） */
+.wb-msg-transfer-names {
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 500;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 动画表情加载占位 */
+.wb-msg-emoji-loading {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* 会话列表「待办问题」徽标（群） */
+.wb-issue-badge {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: var(--r-pill);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+/* 气泡发送人「团队客服」标记 */
+.wb-msg-sender-team {
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 13px;
+  padding: 0 5px;
+  margin-left: 5px;
+  border-radius: var(--r-pill);
+  background: var(--success-soft);
+  color: var(--success-strong);
+  vertical-align: 1px;
+}
+
+/* 定位消息短暂高亮：伪元素 opacity 动画（合成层，不重绘背景） */
+.wb-msg-flash {
+  position: relative;
+}
+
+.wb-msg-flash::after {
+  content: '';
+  position: absolute;
+  inset: -4px -6px;
+  border-radius: var(--r-md);
+  background: var(--warn);
+  opacity: 0;
+  pointer-events: none;
+  animation: wb-flash 2.2s ease-out;
+}
+
+@keyframes wb-flash {
+  0%,
+  30% {
+    opacity: 0.22;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 群问题折叠分组 */
+.gip-fold {
+  margin-top: 6px;
+}
+
+.gip-fold-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--bg);
+  border: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.gip-fold-btn:hover {
+  background: var(--bg-hover);
+}
+
+/* 同事标记折叠面板（批量把本群发言人标为团队客服） */
+.gip-senders {
+  margin-top: 6px;
+}
+
+.gip-senders-body {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  margin-top: 4px;
+}
+
+.gip-senders-hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.gip-senders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.gip-sender-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.gip-sender-row:hover {
+  background: var(--bg-hover);
+}
+
+.gip-sender-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gip-sender-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-4);
+}
+
+.gip-senders-ops {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* 跟进中(琥珀)与跟进超时状态徽标 */
+.gip-st.is-follow {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.gip-stat.is-follow {
+  color: var(--warn-text);
+}
+
+/* 危险操作(清空本群) */
+.gip-btn.danger {
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+
+.gip-btn.danger:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+/* 历史顶部状态 */
+.wb-history-end {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-4);
+  padding: 10px 0 4px;
+}
+
+/* ── 骨架屏与空状态占位 ── */
+.ph-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 14px;
+}
+
+/* 骨架条：静态底条 + 伪元素高光 translateX 动画（合成层，不重绘背景） */
+.ph-skel-line {
+  position: relative;
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.ph-skel-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--border-light), transparent);
+  transform: translateX(-100%);
+  animation: ph-shimmer 1.3s ease-in-out infinite;
+}
+
+.ph-skel-line.short {
+  width: 58%;
+}
+
+@keyframes ph-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.ph-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 34px 16px;
+  text-align: center;
+}
+
+.ph-empty-icon {
+  font-size: 30px;
+  opacity: 0.85;
+  line-height: 1;
+}
+
+.ph-empty-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.ph-empty-desc {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-4);
+  max-width: 300px;
+}
+
+/* 本文件内联定义：此前隐式依赖 workbench-chat.css 的同名 keyframes */
+@keyframes wb-run-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes wb-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 单行对话框:⊕附件入口 + 浮层菜单 + 状态行 */
+.wb-chat-status {
+  align-self: flex-start;
+  font-size: 10.5px;
+  color: var(--brand);
+  margin-left: 44px;
+  animation: wb-run-pulse 1.1s ease-in-out infinite;
+}
+
+.wb-chat-attach-wrap {
+  position: relative;
+  flex: none;
+  align-self: flex-end;
+}
+
+.wb-chat-attach {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d9dce1;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.wb-chat-attach:hover:not(:disabled) {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.wb-chat-attach:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.wb-chat-attach-plus {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.wb-chat-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+}
+
+.wb-chat-attach-menu {
+  position: absolute;
+  left: 0;
+  bottom: 44px;
+  z-index: 10;
+  min-width: 200px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.14);
+  animation: wb-row-in 0.14s ease-out;
+}
+
+.wb-chat-attach-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-1);
+  cursor: pointer;
+  text-align: left;
+}
+
+.wb-chat-attach-menu > button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.wb-chat-attach-menu > button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wb-chat-attach-menu > button span {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+
+.wb-chat-attach-tip {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-light);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-4);
+}
+
+/* ── 群问题面板：跟进人（默认显示 + 一键指派建议） ── */
+.gip-owner-tag {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  flex: none;
+  white-space: nowrap;
+  background: rgba(7, 193, 96, 0.14);
+  color: #0a8f4d;
+  font-weight: 600;
+}
+
+.gip-owner-none {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  flex: none;
+  white-space: nowrap;
+  background: var(--bg-hover);
+  color: var(--text-3);
+}
+
+.gip-owner-sug {
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: var(--r-pill);
+  border: 1px dashed var(--brand);
+  background: transparent;
+  color: var(--brand);
+  cursor: pointer;
+  flex: none;
+  white-space: nowrap;
+}
+
+.gip-owner-sug:hover {
+  background: var(--brand-soft, rgba(7, 193, 96, 0.12));
+}
+
+.gip-owner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gip-owner-label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.gip-owner-select {
+  max-width: 150px;
+}
+
+.gip-owner-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* 处理备注（来自飞书多维表格：同事在手机上填的结论，本地只读展示） */
+.gip-note {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-left: 2px solid var(--brand);
+  background: var(--bg-hover);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+
+.gip-note b {
+  flex: none;
+  color: var(--brand);
+  font-weight: 600;
+}

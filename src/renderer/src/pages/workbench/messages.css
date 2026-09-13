@@ -1,0 +1,751 @@
+/* ══════════ 中栏：消息区 ══════════ */
+.wb-chat {
+  display: flex;
+  flex-direction: column;
+  background: #f2f3f5;
+  min-width: 0;
+  min-height: 0; /* 关键：grid 子元素可收缩 */
+}
+
+.wb-chat-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.wb-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.wb-chat-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: #f1f3f5;
+  color: #57606e;
+  font-weight: 400;
+  flex-shrink: 0;
+}
+
+.wb-tag-danger {
+  background: var(--danger-soft);
+  color: var(--danger-hover);
+}
+
+/* 消息滚动区：flex:1 + min-height:0 才能出现滚动条 */
+.wb-chat-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* 滚动容器隔离布局/绘制，避免内部变化影响外部 */
+  contain: layout paint;
+}
+
+.wb-msg {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start; /* 头像与气泡顶部对齐，配合发送人昵称 */
+  /* 长列表渲染优化：视口外行跳过布局/绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+
+.wb-msg.is-send {
+  flex-direction: row-reverse;
+}
+
+.wb-msg-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 5px;
+  color: var(--on-brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  overflow: hidden;
+  object-fit: cover;
+}
+
+.wb-msg-main {
+  max-width: 72%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.is-send .wb-msg-main {
+  align-items: flex-end;
+}
+
+/* 群聊发送人昵称（微信风格：小字灰绿） */
+.wb-msg-sender {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.2;
+  padding-left: 2px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-msg-bubble {
+  position: relative;
+  padding: 9px 12px;
+  border-radius: 6px;
+  word-break: break-word;
+  background: var(--bg-panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  line-height: 1.5;
+}
+
+/* 气泡小尾巴（接收左 / 发送右） */
+.is-recv .wb-msg-bubble::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 12px;
+  border: 5px solid transparent;
+  border-right-color: var(--bg-panel);
+  border-left: 0;
+}
+
+.is-send .wb-msg-bubble {
+  background: #95ec69;
+}
+
+.is-send .wb-msg-bubble::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 12px;
+  border: 5px solid transparent;
+  border-left-color: #95ec69;
+  border-right: 0;
+}
+
+.wb-msg-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  user-select: text; /* 消息文本允许选中复制 */
+  cursor: text;
+}
+
+/* 引用消息块：气泡内顶部浅色卡片（发送人 + 被引用内容摘要） */
+.wb-msg-quote {
+  position: relative;
+  margin-bottom: 6px;
+  padding: 5px 8px 5px 10px;
+  border-left: 3px solid rgba(0, 0, 0, 0.16);
+  background: rgba(0, 0, 0, 0.045);
+  border-radius: 3px;
+  line-height: 1.4;
+}
+
+.is-send .wb-msg-quote {
+  border-left-color: rgba(0, 0, 0, 0.22);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.wb-msg-quote-sender {
+  font-size: 12px;
+  color: #576b95;
+  margin-bottom: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-msg-quote-content {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-msg-image {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: var(--r-sm);
+  cursor: zoom-in;
+  display: block;
+}
+
+/* 图片占位块（懒加载：未进入视口不解密 / 解密中 / 解密失败均使用，不加载外网占位图） */
+.wb-msg-image-ph {
+  width: 200px;
+  height: 200px;
+  max-width: 220px;
+  max-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  background: #f2f4f7;
+  color: #b0b6bf;
+  font-size: 12px;
+  cursor: zoom-in;
+  user-select: none;
+}
+
+.wb-msg-image-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.wb-msg-live {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--on-brand);
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 3px;
+}
+
+.wb-msg-emoji {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  display: block;
+}
+
+.wb-msg-video {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.wb-msg-video-icon {
+  font-size: 22px;
+}
+
+.wb-msg-video-dur {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ── 语音气泡：自绘播放器 ──
+   为什么不用 <audio controls>：原生控件在气泡里宽度不可控（进度条会被裁掉一截、时长挤成两个小字），
+   观感也和微信气泡完全不搭。这里用「圆形播放键 + 波形进度 + 时间」自己拼，配色全部走 rgba，
+   白气泡（接收）与绿气泡（发送）下都成立。 */
+.wb-msg-voice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 196px;
+  max-width: 360px;
+  padding: 1px 0;
+}
+
+.wb-msg-voice-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 圆形播放/暂停键：绿底白图标，一眼能找到 */
+.wb-msg-voice-play {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--on-brand);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.12s ease;
+}
+
+.wb-msg-voice-play:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+
+.wb-msg-voice-play:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.wb-msg-voice-play:disabled {
+  cursor: default;
+}
+
+.wb-msg-voice-play.is-failed {
+  background: var(--danger);
+}
+
+.wb-msg-voice-play.is-failed:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+/* 播放图标视觉重心偏左，补 1px 让它看着居中 */
+.wb-msg-voice-play svg {
+  display: block;
+  margin-left: 1px;
+}
+
+.wb-msg-voice-play.is-playing svg {
+  margin-left: 0;
+}
+
+/* 波形进度：柱子高度由消息 id 决定（稳定），已播部分换色 → 进度一眼可见，且可点可拖 */
+.wb-msg-voice-wave {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 2px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.wb-msg-voice-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 1px;
+  background: rgba(0, 0, 0, 0.16);
+  transition:
+    background 0.12s linear,
+    transform 0.12s ease;
+}
+
+.wb-msg-voice-bar.is-played {
+  background: var(--brand);
+}
+
+.wb-msg-voice-wave:hover .wb-msg-voice-bar {
+  background: rgba(0, 0, 0, 0.26);
+}
+
+.wb-msg-voice-wave:hover .wb-msg-voice-bar.is-played {
+  background: var(--brand-hover);
+}
+
+/* 绿气泡上用绿色波形对比度太低，改成深色系 */
+.is-send .wb-msg-voice-bar {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.is-send .wb-msg-voice-bar.is-played {
+  background: rgba(0, 0, 0, 0.66);
+}
+
+.is-send .wb-msg-voice-wave:hover .wb-msg-voice-bar {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.is-send .wb-msg-voice-wave:hover .wb-msg-voice-bar.is-played {
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.wb-msg-voice-time {
+  flex: none;
+  font-size: 11.5px;
+  line-height: 1;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.is-send .wb-msg-voice-time {
+  color: rgba(0, 0, 0, 0.55);
+}
+
+/* 解码中：白圈转起来（播放键是绿底，白圈最清晰） */
+.wb-msg-voice-spin {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: var(--on-brand);
+  border-radius: 50%;
+  animation: wb-voice-spin 0.7s linear infinite;
+}
+
+.wb-msg-voice-spin.is-dark {
+  width: 11px;
+  height: 11px;
+  border-color: rgba(0, 0, 0, 0.18);
+  border-top-color: rgba(0, 0, 0, 0.6);
+}
+
+@keyframes wb-voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 转写按钮：虚线胶囊，比正文轻，但不至于看不见 */
+.wb-msg-voice-asr {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 6px;
+  border: 1px dashed rgba(0, 0, 0, 0.22);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.78;
+  cursor: pointer;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease;
+}
+
+.wb-msg-voice-asr:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.wb-msg-voice-asr:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.wb-msg-voice-asr-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.1);
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* 转写文本：左侧竖线的引用块样式，和正文明确区分（并且可选中复制） */
+.wb-msg-voice-text {
+  margin: 0;
+  padding: 5px 8px 5px 10px;
+  border-left: 2px solid rgba(0, 0, 0, 0.14);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: rgba(0, 0, 0, 0.04);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.92;
+  user-select: text;
+}
+
+.is-send .wb-msg-voice-text {
+  border-left-color: rgba(0, 0, 0, 0.22);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.wb-msg-voice-err {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+
+/* 绿底上红色偏糊，错误文字换成更深的红 */
+.is-send .wb-msg-voice-err {
+  color: #8c1d1d;
+}
+
+/* 播放用的 <audio> 本身不出现在布局里：控件全在上面自绘 */
+.wb-msg-voice-audio {
+  display: none;
+}
+
+.wb-msg-chathistory {
+  min-width: 200px;
+  max-width: 280px;
+}
+
+.wb-msg-chathistory-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.wb-msg-chathistory-item {
+  font-size: 12px;
+  color: #444;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-msg-chathistory-more {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+
+.wb-msg-quote-emoji {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  display: block;
+}
+
+.wb-msg-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 180px;
+}
+
+.wb-msg-file-icon {
+  font-size: 26px;
+}
+
+.wb-msg-file-meta {
+  min-width: 0;
+}
+
+.wb-msg-file-name {
+  font-size: 13px;
+  color: #576b95;
+  word-break: break-all;
+}
+
+.wb-msg-file-size {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* 红包消息卡片（type 49/2001） */
+.wb-msg-hongbao {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.wb-msg-hongbao-text {
+  font-size: 13px;
+}
+
+.wb-msg-hongbao-status {
+  font-size: 11px;
+  color: var(--warn);
+  white-space: nowrap;
+}
+
+/* 时间分隔条：>5 分钟间隔插入，居中灰字 */
+.wb-time-divider {
+  text-align: center;
+  font-size: 12px;
+  color: #a8adb5;
+  margin: 6px 0 2px;
+  user-select: none;
+}
+
+/* 系统消息（撤回/入群等）：居中灰条，无气泡无头像 */
+.wb-msg-system {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0;
+}
+
+.wb-msg-system-text {
+  font-size: 12px;
+  color: #a8adb5;
+  max-width: 80%;
+  text-align: center;
+  line-height: 1.5;
+  user-select: text;
+}
+
+/* 加载更早消息（keyset 翻页）按钮 */
+.wb-load-older {
+  display: block;
+  margin: 8px auto;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #6b7280;
+  background: #f3f4f6;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.wb-load-older:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.wb-load-older:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.wb-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-3);
+  gap: 8px;
+}
+
+.wb-chat-empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.wb-chat-empty-sub {
+  font-size: 13px;
+  color: #aaa;
+}
+
+/* 底部输入区 */
+.wb-chat-input {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
+
+.wb-chat-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 64px;
+  max-height: 140px;
+  resize: none;
+  border: 1px solid #d9dce1;
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  outline: none;
+  user-select: text; /* 全局 user-select:none 下恢复输入框可选 */
+}
+
+.wb-chat-textarea:focus {
+  border-color: var(--brand);
+}
+
+.wb-chat-send {
+  flex-shrink: 0;
+  padding: 8px 22px;
+  border-radius: var(--r-md);
+  border: none;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wb-chat-send:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+
+.wb-chat-send:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 输入区:附文件工具与待发列表 */
+.wb-chat-composer {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wb-chat-composer-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.wb-chat-pending {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wb-chat-pchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.wb-chat-pchip .wb-chat-pchip-kind {
+  flex: none;
+  color: var(--brand);
+}
+
+.wb-chat-pchip b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.wb-chat-pchip button {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.wb-chat-pchip button:hover {
+  color: var(--danger);
+}

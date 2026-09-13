@@ -1,0 +1,8 @@
+/* ── 细滚动条：仅覆盖宽度/内缩（全局实现见 assets/base.css） ── */
+.wb-sessions,
+.wb-suggest,
+.wb-chat-body,
+.wb-pane-content {
+  --sb-w: 6px;
+  --sb-inset: 0;
+}

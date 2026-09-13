@@ -204,10 +204,26 @@
 - `.gitignore` 加 `*.tsbuildinfo`（`npm run typecheck` 会生成 composite 缓存，之前是未跟踪噪声）；
 - 删除遗留临时脚本 `scripts/.tmp-forms.cjs`。
 
+### 5. 巨型 CSS 文件分段（本轮第二批）
+
+| 原文件 | 行数 | 拆成 |
+| --- | --- | --- |
+| `pages/workbench.css` | 2453 | 外壳 24 行 + `pages/workbench/` 下 7 节：scrollbars 8 / list 196 / messages 751 / side 326 / overlays 172 / issues 465 / misc 481 |
+| `pages/workbench-chat.css` | 1917 | 外壳 14 行 + `pages/workbench-chat/` 下 5 节：layout 345 / messages 436 / interactions 334 / richtext 571 / files 213 |
+| `pages/growth.css` | 2033 | 外壳 8 行 + `pages/growth/` 下 5 节：forms 302 / tables 332 / panels 167 / buzz 648 / polish 681 |
+
+- **踩到的坑（记下来免得再犯）**：一开始用 CSS 的 `@import` 做聚合 —— Vite 实测**直接丢弃**了这些 `@import`
+  （外壳文件里 `@import` 前面还有规则，且构建产物里 `gth-btn`/`wb-sessions` 全部消失，产物从 90KB 掉到 19KB）。
+  改成**由消费方模块按顺序 import 分节文件**（`Workbench.tsx` / `WorkbenchChatPage.tsx` / `GrowthPage.tsx` 顶部各加一组样式导入），
+  构建后逐项核对：`wb-sessions`/`wb-side-foot`/`gth-btn`/`gth-card`/`gai-page` 全部存在、产物里 `@import` 残留为 0、`.st-btn` 为 0。
+- **保序/无损的证据**：脚本把 HEAD 版与「外壳 + 各分节」的纯声明序列（去掉注释与空行）逐行比对 ——
+  workbench **2035 行完全相同**、workbench-chat **1615 行完全相同**、growth **1997 行完全相同**。
+
 ### 仍未做（下一轮候选，都是「结构性/体量」而非「重复实现」）
 
-1. **巨型文件分段**：`GrowthPage.tsx` 1986 行、`growth.css` 2033 行、`workbench.css` 2453 行、`workbench-chat.css` 1917 行
-   —— 按注释里的 `══` 分节拆成「入口 + 若干节文件」，CSS 用 `@import` 保序，产物字节数应完全一致（可逐字节比对验证）；
+1. **巨型组件分段**：`GrowthPage.tsx` 2020 行（内部已有 `Switch/Badge/SearchInput/EmptyState/ErrBar`、`StatsBar`、
+   `ProviderPanel`、`SourcesPanel`、`Lightbox/MediaGallery`、`IngestBar/WarehousePanel` 这些天然边界，
+   可按「common 基元 + 各面板」拆成 6 个文件，靠 typecheck 兜底）；
 2. **T3：61 处 `eslint-disable`**（多为 `react-hooks/set-state-in-effect`）—— 先抽一个 `useSyncedEffect` 小 hook 试点 2~3 处，
    验证规则是否在调用点仍然触发；不达标就保留现状（注释已写明理由）；
 3. **A2：图表硬编码色**（`DashboardPage` 里的 `#07c160/#5b8ff9/#fa5151`）→ 收敛到 CSS 变量导出的主题常量。

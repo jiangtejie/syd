@@ -1,0 +1,326 @@
+/* ══════════ 右栏（宽栏）：双视图容器 ══════════ */
+.wb-suggest {
+  min-height: 0; /* 关键：允许滚动 */
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.wb-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 视图切换（群会话时出现） */
+.wb-pane-tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+
+.wb-pane-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.wb-pane-tab:hover {
+  background: var(--bg-hover);
+}
+
+.wb-pane-tab.is-active {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.wb-pane-badge {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 14px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--danger);
+  color: var(--on-brand);
+  text-align: center;
+}
+
+.wb-pane-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.wb-suggest-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.wb-suggest-title {
+  font-weight: 600;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+/* 当前会话使用的智能体（人设）选择条 */
+.wb-suggest-agent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 12px;
+  flex-shrink: 0;
+}
+
+.wb-suggest-agent-label {
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+}
+
+/* 统一人设展示（全端共用一条；点击去设置修改） */
+.wb-suggest-agent-current {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.wb-suggest-agent-current:hover {
+  border-color: var(--brand);
+}
+
+.wb-suggest-agent-current b {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-suggest-agent-current .wb-suggest-agent-edit {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.wb-suggest-agent-current:hover .wb-suggest-agent-edit {
+  color: var(--brand);
+}
+
+.wb-suggest-empty {
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.wb-suggest-tag {
+  font-size: 10px;
+  font-weight: 500;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--r-md);
+  vertical-align: 1px;
+}
+
+.wb-suggest-tag-ai {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.wb-suggest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.wb-suggest-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  background: var(--bg-hover);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.wb-suggest-card.is-chosen {
+  border-color: var(--brand);
+  background: var(--success-soft);
+}
+
+.wb-suggest-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 8px;
+  user-select: text;
+}
+
+.wb-suggest-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.wb-suggest-btn {
+  font-size: 12px;
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--brand);
+  background: var(--bg-panel);
+  color: var(--brand);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.wb-suggest-btn:hover:not(:disabled) {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+
+.wb-suggest-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.wb-suggest-card.is-chosen .wb-suggest-btn {
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: var(--success);
+  cursor: default;
+}
+
+.wb-suggest-regenerate {
+  width: 100%;
+  font-size: 13px;
+  padding: 8px 0;
+  border-radius: var(--r-md);
+  border: 1px solid #d9dce1;
+  background: var(--bg-panel);
+  color: var(--text-2);
+  cursor: pointer;
+  margin-top: auto; /* 固定在面板底部 */
+}
+
+.wb-suggest-regenerate:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.wb-suggest-regenerate:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.wb-suggest-error {
+  color: var(--danger-hover);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 建议生成依据引用(对方最新消息) */
+.wb-suggest-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  background: var(--bg-hover);
+  border-left: 3px solid var(--brand-line);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  user-select: text;
+}
+
+.wb-suggest-quote-label {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.wb-suggest-quote-text {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* 发送结果提示 */
+.wb-send-result {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.wb-send-result.is-ok {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.wb-send-result.is-fail {
+  background: var(--danger-soft);
+  color: var(--danger-hover);
+}
+
+/* ══════════ 顶部提示条 ══════════ */
+.wb-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-line);
+  color: var(--warn-text);
+  font-size: 12px;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  pointer-events: none; /* 不遮挡下方内容点击 */
+}
+
+.wb-banner-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f0b429;
+}

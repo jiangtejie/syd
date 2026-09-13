@@ -1,0 +1,172 @@
+/* ══════════ 附件弹层 ══════════ */
+.wb-att-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.wb-att-dialog {
+  background: var(--bg-panel);
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+  max-width: 94vw;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+
+.wb-att-video {
+  max-width: 90vw;
+  max-height: 80vh;
+  border-radius: 6px;
+  background: #000;
+}
+
+/* 可缩放图片预览 */
+.wb-img-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 92vw;
+}
+
+.wb-img-box {
+  max-width: 92vw;
+  max-height: 80vh;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: repeating-conic-gradient(#f0f2f5 0% 25%, var(--bg-panel) 0% 50%) 0 0 / 20px 20px;
+  border-radius: 6px;
+  cursor: zoom-in;
+  user-select: none;
+}
+
+.wb-img-el {
+  display: block;
+  flex: none;
+}
+
+.wb-img-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.wb-img-btn {
+  min-width: 26px;
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.wb-img-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.wb-img-pct {
+  min-width: 56px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-2);
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.wb-att-video-hint {
+  padding: 24px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.wb-att-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.wb-att-file-icon {
+  font-size: 44px;
+}
+
+.wb-att-file-name {
+  font-weight: 500;
+  word-break: break-all;
+  text-align: center;
+}
+
+.wb-att-file-size {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.wb-att-file-hint {
+  color: #b0b3b8;
+  font-size: 12px;
+}
+
+.wb-att-close {
+  padding: 6px 20px;
+  border-radius: 6px;
+  border: 1px solid #d9dce1;
+  background: var(--bg-panel);
+  cursor: pointer;
+}
+
+.wb-att-close:hover {
+  background: var(--bg);
+}
+
+/* ── 消息右键菜单 ── */
+.ctx-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.ctx-menu {
+  position: fixed;
+  min-width: 96px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  z-index: 201;
+}
+
+.ctx-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.ctx-item:hover {
+  background: #f0f2f5;
+}

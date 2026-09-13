@@ -1,0 +1,332 @@
+/* ── 表格行(订阅 / 素材 / 任务 各自列模板) ── */
+.gth-list {
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.gth-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-panel);
+  min-width: 0;
+}
+.gth-row:last-child {
+  border-bottom: 0;
+}
+.gth-row.is-head {
+  background: var(--bg-hover);
+  font-size: 12px;
+  color: var(--text-3);
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.gth-row.is-head:hover {
+  background: var(--bg-hover);
+}
+.gth-row--sub {
+  grid-template-columns: minmax(240px, 1fr) 92px 92px 190px auto;
+}
+.gth-row--task {
+  grid-template-columns: minmax(220px, 1fr) 88px 130px 170px;
+}
+.gth-row--item {
+  grid-template-columns: minmax(240px, 1fr) 108px 150px 150px 64px auto;
+}
+.gth-row.clickable {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.gth-row.clickable:hover {
+  background: var(--bg-hover);
+}
+.gth-row.is-active {
+  background: var(--brand-soft);
+}
+.gth-row.is-active:hover {
+  background: var(--brand-soft);
+}
+.gth-col-right {
+  text-align: right;
+}
+
+.gth-main {
+  min-width: 0;
+}
+.gth-main .t {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-1);
+  overflow: hidden;
+}
+.gth-main .t .txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gth-main .t .gth-badge {
+  flex: none;
+}
+.gth-main .s {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gth-num {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.gth-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ── 状态/空态/错误 ── */
+.gth-empty {
+  padding: 36px 16px 30px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.gth-empty .steps {
+  margin: 16px auto 0;
+  max-width: 520px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.gth-empty .step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.gth-empty .step .no {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gth-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  color: #c92a2a;
+  font-size: 13px;
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.gth-error .msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 素材入库动作条 ── */
+.gth-ingest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.gth-ingest .gth-input {
+  flex: 1;
+  height: 32px;
+}
+
+/* ── 详情区 ── */
+.gth-detail {
+  display: grid;
+  grid-template-columns: minmax(300px, 6fr) minmax(280px, 7fr) minmax(230px, 5fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 12px;
+}
+
+.gth-kv {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 7px 12px;
+  font-size: 13px;
+  align-items: baseline;
+  min-width: 0;
+}
+.gth-kv dt {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.gth-kv dd {
+  margin: 0;
+  color: var(--text-1);
+  word-break: break-all;
+  min-width: 0;
+  line-height: 1.6;
+}
+.gth-kv dd .link {
+  color: var(--brand);
+  text-decoration: none;
+}
+.gth-kv dd .link:hover {
+  text-decoration: underline;
+}
+.gth-detail-loading {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-4);
+  font-size: 13px;
+}
+
+/* ── AI 创作台 / 发布登记 ── */
+.gth-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-1);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dashed var(--border-light);
+  padding: 7px 4px;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.gth-title-line span {
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.gth-title-line:hover {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.gth-copy-text {
+  width: 100%;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-1);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
+
+/* ── 图集画廊(详情左栏) ── */
+.gth-gallery-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  min-height: 220px;
+  max-height: 360px;
+  overflow: hidden;
+}
+.gth-gallery-img {
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+.gth-gallery-img-empty {
+  color: var(--text-4);
+  font-size: 13px;
+  padding: 60px 12px;
+}
+.gth-gallery-count {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  font-size: 11px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: var(--r-pill);
+  padding: 1px 8px;
+  font-variant-numeric: tabular-nums;
+}
+.gth-gallery-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-card);
+  color: var(--text-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.gth-gallery-nav:hover {
+  background: #fff;
+  color: var(--brand);
+  opacity: 1;
+}
+.gth-gallery-nav.left {
+  left: 6px;
+}
+.gth-gallery-nav.right {
+  right: 6px;
+}
+.gth-gallery-thumbs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-top: 8px;
+  padding-bottom: 4px;
+}
+.gth-gallery-thumb {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 2px solid transparent;
+  cursor: pointer;
+  background: var(--bg-hover);
+}
+.gth-gallery-thumb.is-active {
+  border-color: var(--brand);
+}
+.gth-gallery-copy {
+  margin-top: 8px;
+}

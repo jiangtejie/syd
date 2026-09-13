@@ -4,6 +4,13 @@ import SessionList from '../components/workbench/SessionList'
 import MessagePanel from '../components/workbench/MessagePanel'
 import SidePanel from '../components/workbench/SidePanel'
 import './workbench.css'
+import './workbench/scrollbars.css'
+import './workbench/list.css'
+import './workbench/messages.css'
+import './workbench/side.css'
+import './workbench/overlays.css'
+import './workbench/issues.css'
+import './workbench/misc.css'
 
 /**
  * 客服工作台（T6）。

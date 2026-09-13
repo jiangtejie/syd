@@ -17,6 +17,11 @@ import type {
   GrowthSubscriptionInput
 } from '../../../shared/growth'
 import './growth.css'
+import './growth/forms.css'
+import './growth/tables.css'
+import './growth/panels.css'
+import './growth/buzz.css'
+import './growth/polish.css'
 
 /**
  * 营销增长页: 采集源 / 素材仓库 / 数据服务。

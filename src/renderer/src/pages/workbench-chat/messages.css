@@ -1,0 +1,436 @@
+/* ── 消息 ── */
+.wb-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 8px;
+  /* 关闭浏览器滚动锚定:输出中工具卡开合/段落增删会钉住视口造成跳动 */
+  overflow-anchor: none;
+  /* 滚动容器隔离布局/绘制 */
+  contain: layout paint;
+}
+
+/* 助手侧文本气泡统一「版心宽度」:
+ * 流式输出按 token 变化时,内容只影响高度、不影响宽度;
+ * 否则表格/列表/段落结构翻转(max-content 忽大忽小)会让气泡忽窄忽宽、
+ * 整列左右漂移。宽度上限仍受下方 max-width 约束。 */
+.wb-row:not(.is-user) .wb-bubble {
+  width: 92%;
+}
+
+/* 特殊窄胶囊(思考中/实时推理收起态)与用户气泡不套版心宽度 */
+.wb-row:not(.is-user) .wb-bubble.wb-thinking,
+.wb-row:not(.is-user) .wb-bubble.wb-reason-live {
+  width: auto;
+}
+
+.wb-welcome {
+  max-width: 520px;
+  margin: 12vh auto 0;
+  text-align: center;
+}
+
+.wb-welcome-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.wb-welcome-sub {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  line-height: 1.7;
+}
+
+.wb-loading {
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 8px 2px;
+}
+
+.wb-row {
+  display: flex;
+  margin: 4px 0 10px;
+  /* 长列表渲染优化：视口外行跳过布局/绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+
+.wb-row.is-user {
+  justify-content: flex-end;
+}
+
+.wb-bubble {
+  max-width: min(920px, 92%);
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  font-size: 13.5px;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.wb-row.is-user .wb-bubble {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+  white-space: pre-wrap;
+}
+
+.wb-row.is-error .wb-bubble {
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+}
+
+.wb-error-text {
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+
+.wb-plain {
+  white-space: pre-wrap;
+}
+
+.wb-bubble p {
+  margin: 0 0 6px;
+}
+
+.wb-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.wb-bubble h1,
+.wb-bubble h2,
+.wb-bubble h3 {
+  font-size: 15px;
+  margin: 8px 0 4px;
+}
+
+.wb-bubble ul,
+.wb-bubble ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.wb-bubble code {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+/* 代码块:浅色主题(与工作台浅色一致;reason 内容有自己的提示卡样式) */
+.wb-bubble pre {
+  background: var(--bg-hover);
+  color: var(--text-1);
+  border: 1px solid var(--border-light);
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.wb-bubble pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+
+.wb-bubble blockquote {
+  border-left: 3px solid var(--border);
+  margin: 4px 0;
+  padding: 2px 12px;
+  color: var(--text-2);
+  background: transparent;
+}
+
+.wb-caret {
+  display: inline-block;
+  width: 2px;
+  height: 15px;
+  background: var(--brand);
+  vertical-align: -2px;
+  margin-left: 2px;
+  animation: wb-blink 1s steps(2) infinite;
+}
+
+@keyframes wb-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ── 工具调用(纯提示文字行:无背景无边框,浅灰小字,细节按需展开) ── */
+.wb-toolcard {
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 4px;
+}
+
+/* 工具行头部(整行可点开合) */
+.wb-toolcard-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.wb-toolcard-head:hover .wb-toolcard-name {
+  color: var(--brand);
+}
+
+/* 工具调用类型标识:点明这行是什么(保持无背景无边框的提示文字风) */
+.wb-toolcard-kind {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-4);
+  user-select: none;
+}
+
+.wb-toolcard-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+  transition: color 0.15s;
+}
+
+.wb-toolcard.is-fail .wb-toolcard-name {
+  color: var(--danger);
+}
+
+.wb-toolcard-state {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--info);
+  padding: 0;
+  background: none;
+  animation: wb-run-pulse 1.1s ease-in-out infinite;
+}
+
+.wb-toolcard-caret {
+  margin-left: auto;
+  flex: none;
+  font-size: 9px;
+  color: var(--text-4);
+  transition: transform 0.15s;
+}
+
+.wb-toolcard-caret.is-open {
+  transform: rotate(180deg);
+}
+
+/* 展开细节:无框纯文字,长内容截断+区内滚动 */
+.wb-toolcard-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 1px 2px;
+}
+
+.wb-toolcard-sec {
+  min-width: 0;
+}
+
+.wb-toolcard-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  color: var(--text-4);
+}
+
+.wb-toolcard-detail-pre {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  scrollbar-width: thin;
+}
+
+/* 审批条(输入区上方,琥珀警示) */
+.wb-approvals {
+  flex: none;
+  margin: 0 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wb-approval {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--warn-line);
+  border-radius: 10px;
+  background: var(--warn-soft);
+  padding: 7px 12px;
+  font-size: 12px;
+  box-shadow: 0 1px 3px rgba(245, 166, 35, 0.12);
+}
+
+.wb-approval-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wb-approval-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--warn-text);
+}
+
+.wb-approval-title .wb-approval-why {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-approval .wb-toolcard-args {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-approval-ops {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ── 错误条与输入 ── */
+.wb-error {
+  margin: 0 16px 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+.wb-composer {
+  flex: none;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wb-textarea {
+  width: 100%;
+  min-height: 60px;
+  max-height: 220px;
+  resize: none;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  padding: 9px 11px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  outline: none;
+  font-family: inherit;
+}
+
+.wb-textarea:focus {
+  border-color: var(--brand);
+}
+
+/* 附图行(粘贴/拖入的待发图片):缩略图卡片 + 移除按钮 */
+.wb-img-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wb-img-chip {
+  position: relative;
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.wb-img-chip img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wb-img-chip button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wb-img-chip button:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.wb-composer-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.wb-hint {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--text-4);
+}

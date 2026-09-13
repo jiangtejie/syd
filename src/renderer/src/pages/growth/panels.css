@@ -1,0 +1,167 @@
+/* ── 批量条 / 快捷筛选 / 加载更多 ── */
+.gth-batchbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
+  border-radius: var(--r-md);
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--text-1);
+}
+.gth-chip {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--m-1) var(--ease-out),
+    border-color var(--m-1) var(--ease-out),
+    color var(--m-1) var(--ease-out),
+    transform var(--m-1) var(--ease-out),
+    box-shadow var(--m-2) var(--ease-out);
+}
+.gth-chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--brand-line);
+}
+.gth-chip:active {
+  transform: scale(0.97);
+}
+.gth-chip.is-on {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
+  font-weight: 600;
+  box-shadow: 0 6px 14px -10px rgba(7, 193, 96, 0.9);
+}
+.gth-more {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 2px;
+}
+/* 行首勾选列 */
+.gth-row--item {
+  grid-template-columns: 28px minmax(180px, 1fr) 96px 140px 130px 56px 88px;
+}
+.gth-row input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+/* ── 图片灯箱 ── */
+.gth-gallery-img.clickable {
+  cursor: zoom-in;
+}
+.gth-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+.gth-lightbox-img {
+  max-width: 92vw;
+  max-height: 86vh;
+  object-fit: contain;
+  border-radius: var(--r-md);
+  cursor: default;
+}
+.gth-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 64px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+.gth-lightbox-nav:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+.gth-lightbox-nav.left {
+  left: 18px;
+}
+.gth-lightbox-nav.right {
+  right: 18px;
+}
+.gth-lightbox-count {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 2px 12px;
+  border-radius: var(--r-pill);
+}
+.gth-lightbox-bar {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+}
+
+/* ── 窄窗口断点 ── */
+@media (max-width: 1360px) {
+  .gth-detail {
+    grid-template-columns: minmax(260px, 1fr) minmax(300px, 1.2fr);
+  }
+  .gth-detail > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 1080px) {
+  .gth-detail {
+    grid-template-columns: 1fr;
+  }
+  .gth-detail > :nth-child(3) {
+    grid-column: auto;
+  }
+}
+
+.gth-gallery-video {
+  width: 100%;
+  max-height: 360px;
+  border-radius: var(--r-md);
+  background: #000;
+}
+
+/* ── 门店档案(数据服务 tab) ── */
+.gai-store-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-light);
+  min-width: 0;
+}
+.gai-store-row:last-child {
+  border-bottom: 0;
+}
+.gai-store-form {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border-light);
+  padding-top: 12px;
+}

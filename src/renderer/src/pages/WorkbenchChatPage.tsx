@@ -14,6 +14,11 @@ import { confirmAsk } from '../stores/confirmDialog'
 import { ChannelFileTray } from '../components/workbench/ChannelFileTray'
 import { MD_REMARK_PLUGINS } from '../components/workbench/mdPlugins'
 import './workbench-chat.css'
+import './workbench-chat/layout.css'
+import './workbench-chat/messages.css'
+import './workbench-chat/interactions.css'
+import './workbench-chat/richtext.css'
+import './workbench-chat/files.css'
 
 /**
  * AI 工作台页:让 AI 调用产品原生能力(业务查询/软件状态)+ SKILL.md 业务口径。
