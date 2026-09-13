@@ -36,6 +36,10 @@ export interface WbTurnBlock {
   /** 工具结果(引擎已截断至 4k,展开查看) */
   output?: string
   outTrunc?: boolean
+  /** 收到 start 事件的时间（时间线据此判断「顺序 vs 并行」） */
+  startedAt?: number
+  /** 收到 done/fail 事件的时间 */
+  endedAt?: number
 }
 
 /** 单轮内块序号(单调递增,仅作 key) */
@@ -638,7 +642,15 @@ function handleWbEvent(raw: unknown): void {
       useWorkbenchChatStore.setState({
         turnBlocks: [
           ...stNow.turnBlocks,
-          { id: ++blockSeq, kind: 'tool', name: e.tool, status: 'start', args: e.args }
+          {
+            id: ++blockSeq,
+            kind: 'tool',
+            name: e.tool,
+            status: 'start',
+            args: e.args,
+            // 打个开始时间：时间线靠它判定「下一个调用是并行还是串行」
+            startedAt: Date.now()
+          }
         ]
       })
     } else {
@@ -658,7 +670,8 @@ function handleWbEvent(raw: unknown): void {
           ...next[doneIdx],
           status: e.toolStatus === 'fail' ? 'fail' : 'done',
           output: e.output ?? e.resultClip,
-          outTrunc: e.toolStatus === 'fail' ? undefined : e.outTrunc
+          outTrunc: e.toolStatus === 'fail' ? undefined : e.outTrunc,
+          endedAt: Date.now()
         }
         useWorkbenchChatStore.setState({ turnBlocks: next })
       }

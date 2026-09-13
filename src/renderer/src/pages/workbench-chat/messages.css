@@ -163,22 +163,123 @@
   }
 }
 
-/* ── 工具调用(纯提示文字行:无背景无边框,浅灰小字,细节按需展开) ── */
-.wb-toolcard {
+/* ── 工具调用时间线(竖轴 + 节点;顺序/并行一眼可辨) ──
+ * 结构:.wb-tl > .wb-tl-head(标题 + 统计) + .wb-tl-body > .wb-tl-step × N > .wb-tl-node × M
+ * 并行:同一 step 里多个 node,节点竖轴共用、子节点缩进；串行:一步一节点。
+ */
+.wb-tl {
   font-size: 11px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 1px 0 4px;
+  margin: 2px 0 6px;
 }
 
-/* 工具行头部(整行可点开合) */
-.wb-toolcard-head {
+.wb-tl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.wb-tl-kind {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-4);
+  user-select: none;
+}
+
+.wb-tl-meta {
+  font-size: 10px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.wb-tl.is-running .wb-tl-meta {
+  color: var(--info);
+}
+
+/* 竖轴:靠 ::before 画线,节点圆点盖在线上 */
+.wb-tl-body {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+.wb-tl-step {
+  position: relative;
+  padding-left: 14px;
+}
+
+.wb-tl-step::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 4px;
+  bottom: -2px;
+  width: 1px;
+  /* 竖轴要看得见才叫时间线：--border 在白底上几乎不可见，用 --text-4 一档 */
+  background: var(--text-4);
+  opacity: 0.55;
+}
+
+/* 正在执行的那一步：竖轴染成品牌色，一眼看出「进度到这」 */
+.wb-tl-step:has(.wb-tl-node.is-start)::before {
+  background: var(--brand);
+  opacity: 0.7;
+}
+
+.wb-tl-step:last-child::before {
+  bottom: auto;
+  height: 12px;
+}
+
+.wb-tl-node + .wb-tl-node {
+  margin-top: 1px;
+}
+
+.wb-tl-node {
+  position: relative;
+}
+
+.wb-tl-step.is-parallel .wb-tl-node + .wb-tl-node {
+  padding-left: 10px;
+}
+
+.wb-tl-step.is-parallel .wb-tl-node + .wb-tl-node .wb-tl-dot {
+  left: -9px;
+  width: 4px;
+  height: 4px;
+  top: 7px;
+  background: var(--text-4);
+}
+
+/* 节点圆点:进行中呼吸,失败变红 */
+.wb-tl-dot {
+  position: absolute;
+  /* 7px + left:-14px → 圆心正好落在竖轴中线(3.5px)上，不多不少半像素 */
+  left: -14px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+  opacity: 0.85;
+}
+
+.wb-tl-node.is-start .wb-tl-dot {
+  animation: wb-run-pulse 1.1s ease-in-out infinite;
+}
+
+.wb-tl-node.is-fail .wb-tl-dot {
+  background: var(--danger);
+}
+
+.wb-tl-line {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 0;
+  padding: 1px 0;
   border: none;
   background: transparent;
   font: inherit;
@@ -187,44 +288,40 @@
   text-align: left;
 }
 
-.wb-toolcard-head:hover .wb-toolcard-name {
-  color: var(--brand);
-}
-
-/* 工具调用类型标识:点明这行是什么(保持无背景无边框的提示文字风) */
-.wb-toolcard-kind {
-  flex: none;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-4);
-  user-select: none;
-}
-
-.wb-toolcard-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.wb-tl-name {
   min-width: 0;
   font-size: 11px;
-  font-weight: 400;
-  color: var(--text-3);
+  color: var(--text-2);
   transition: color 0.15s;
 }
 
-.wb-toolcard.is-fail .wb-toolcard-name {
+.wb-tl-line:hover .wb-tl-name {
+  color: var(--brand);
+}
+
+.wb-tl-node.is-fail .wb-tl-name {
   color: var(--danger);
 }
 
-.wb-toolcard-state {
+.wb-tl-state {
   font-style: normal;
   font-size: 10px;
   color: var(--info);
-  padding: 0;
-  background: none;
   animation: wb-run-pulse 1.1s ease-in-out infinite;
 }
 
-.wb-toolcard-caret {
+.wb-tl-state.is-fail {
+  color: var(--danger);
+  animation: none;
+}
+
+.wb-tl-dur {
+  font-size: 10px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.wb-tl-caret {
   margin-left: auto;
   flex: none;
   font-size: 9px;
@@ -232,16 +329,27 @@
   transition: transform 0.15s;
 }
 
-.wb-toolcard-caret.is-open {
+.wb-tl-caret.is-open {
   transform: rotate(180deg);
 }
 
-/* 展开细节:无框纯文字,长内容截断+区内滚动 */
-.wb-toolcard-detail {
+/* 并行标记:挂在一步的末尾 */
+.wb-tl-tag {
+  display: inline-block;
+  margin: 1px 0 2px;
+  font-size: 9.5px;
+  color: var(--text-4);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+
+/* 展开细节:无框纯文字,长内容区内滚动 */
+.wb-tl-detail {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 2px 0 1px 2px;
+  padding: 2px 0 3px;
 }
 
 .wb-toolcard-sec {

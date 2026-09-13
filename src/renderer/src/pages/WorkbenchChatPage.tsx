@@ -8,10 +8,12 @@ import {
   useWorkbenchChatStore,
   type WbTurnBlock
 } from '../stores/workbenchChat'
+import { splitToolRuns, type TimelineItem } from '../lib/toolTimeline'
 import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
 import { ChannelFileTray } from '../components/workbench/ChannelFileTray'
+import { ToolTimeline } from '../components/workbench/ToolTimeline'
 import { MD_REMARK_PLUGINS } from '../components/workbench/mdPlugins'
 import './workbench-chat.css'
 import './workbench-chat/layout.css'
@@ -353,7 +355,22 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
       args: typeof m?.args === 'string' && m.args ? m.args : undefined,
       output: typeof m?.output === 'string' && m.output ? m.output : undefined
     }
-    return <WbToolCard b={toolBlock} />
+    return (
+      <ToolTimeline
+        items={[
+          {
+            id: toolBlock.id,
+            name: toolBlock.name ?? '',
+            status: toolBlock.status ?? 'done',
+            startedAt: toolBlock.startedAt,
+            endedAt: toolBlock.endedAt,
+            args: toolBlock.args,
+            output: toolBlock.output,
+            outTrunc: toolBlock.outTrunc
+          }
+        ]}
+      />
+    )
   }
   return (
     <div className={`wb-row${isUser ? ' is-user' : ''}${isError ? ' is-error' : ''}`}>
@@ -443,57 +460,18 @@ function WbLiveReason({ text, waitSec }: { text: string; waitSec: number }): Rea
   )
 }
 
-function WbToolCard({ b }: { b: WbTurnBlock }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
-  const openRef = useRef(false)
-  // 开始执行自动展开(看它要做什么);结束后自动收起,用户手动展开过则保持
-  useEffect(() => {
-    if (b.status === 'start') {
-      openRef.current = false
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 工具状态迁移自动开合(全仓同款模式)
-      setOpen(true)
-    } else if (b.status === 'done' || b.status === 'fail') {
-      if (!openRef.current) setOpen(false)
-    }
-  }, [b.status])
-  const toggle = (): void => {
-    openRef.current = !open
-    setOpen(!open)
-  }
-  const statusIcon = b.status === 'start' ? '⚙' : b.status === 'fail' ? '✗' : '✓'
-  const toolRaw = b.name || '工具'
-  const toolLabel = toolCnName(toolRaw)
-  return (
-    <div className={`wb-toolcard is-${b.status}`}>
-      <button type="button" className="wb-toolcard-head" onClick={toggle} aria-expanded={open}>
-        <span className="wb-toolcard-kind">工具调用</span>
-        <span
-          className="wb-toolcard-name"
-          title={toolRaw !== toolLabel ? `工具名:${toolRaw}` : undefined}
-        >
-          {statusIcon} {toolLabel}
-          {b.status === 'start' && <em className="wb-toolcard-state">执行中</em>}
-        </span>
-        <span className={`wb-toolcard-caret${open ? ' is-open' : ''}`}>▾</span>
-      </button>
-      {open && (
-        <div className="wb-toolcard-detail">
-          {b.args && (
-            <div className="wb-toolcard-sec">
-              <div className="wb-toolcard-detail-title">参数</div>
-              <pre className="wb-toolcard-detail-pre">{b.args}</pre>
-            </div>
-          )}
-          {b.output !== undefined && (
-            <div className="wb-toolcard-sec">
-              <div className="wb-toolcard-detail-title">结果{b.outTrunc ? '（已截断）' : ''}</div>
-              <pre className="wb-toolcard-detail-pre">{b.output}</pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+/** 块 → 时间线条目（纯映射，组件只负责画） */
+function toolItemsOf(blocks: WbTurnBlock[]): TimelineItem[] {
+  return blocks.map((b) => ({
+    id: b.id,
+    name: b.name ?? '',
+    status: b.status ?? 'done',
+    startedAt: b.startedAt,
+    endedAt: b.endedAt,
+    args: b.args,
+    output: b.output,
+    outTrunc: b.outTrunc
+  }))
 }
 
 function WbApprovals(): React.JSX.Element | null {
@@ -596,6 +574,11 @@ export default function WorkbenchChatPage(): React.JSX.Element {
       ? Math.min(100, Math.round((ctxInfo.used / ctxInfo.cap) * 100))
       : 0
   const turnBlocks = useWorkbenchChatStore((s) => s.turnBlocks)
+  /** 把本轮块流按「连续工具块」切开：工具段交给时间线，其余保持原样 */
+  const blockRuns = useMemo(
+    () => splitToolRuns(turnBlocks.map((b) => ({ id: b.id, isTool: b.kind === 'tool', block: b }))),
+    [turnBlocks]
+  )
   const approvals = useWorkbenchChatStore((s) => s.approvals)
   const sessNew = useWorkbenchChatStore((s) => s.sessNew)
   const sessErr = useWorkbenchChatStore((s) => s.sessErr)
@@ -1444,10 +1427,17 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               </div>
             </div>
           )}
-          {turnBlocks.map((b, i) => {
-            if (b.kind === 'tool') {
-              return <WbToolCard key={b.id} b={b} />
+          {blockRuns.map((run, i) => {
+            // 连续的工具调用合成一条时间线：竖轴 + 节点，区间重叠的标「并行」
+            if (run.tool) {
+              return (
+                <ToolTimeline
+                  key={'tl-' + String(run.rows[0].id)}
+                  items={toolItemsOf(run.rows.map((r) => r.block))}
+                />
+              )
             }
+            const b = run.row.block
             if (b.kind === 'reason') {
               return (
                 <div key={b.id} className="wb-row">
@@ -1458,7 +1448,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                 </div>
               )
             }
-            const isTail = activeBusy && i === turnBlocks.length - 1
+            const isTail = activeBusy && i === blockRuns.length - 1
             const text = (b.text ?? '').trim()
             if (!text) return null // 空文本块(首 token 未到)不渲染,避免幽灵气泡闪跳
             // 流式尾块:每帧都在变长,Markdown 全量重解析是 O(n²)(rAF ~60fps)。
