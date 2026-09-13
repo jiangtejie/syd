@@ -46,6 +46,7 @@ import {
   parseApprovalAction
 } from '../src/main/services/im/cards.ts'
 import { parseRecordFields } from '../src/main/services/lark/recordFields.ts'
+import { atTag, withMentions } from '../src/main/services/im/mention.ts'
 // 人员列的两个纯函数放在 baseMapping(与证据映射同源),这里直接离线导入
 
 let failed = 0
@@ -465,6 +466,20 @@ console.log('\n[16] Base 写入字段解析（模型给的 JSON → 飞书字段
   const many = {}
   for (let i = 0; i < 41; i++) many['c' + i] = i
   log(parseRecordFields(JSON.stringify(many)).ok === false, '超过 40 列 → 报错(防一次塞爆)')
+}
+
+console.log('\n[17] 飞书文本 @ 人（标签拼接规则，坏了只在真实群里才看得出来）')
+{
+  const ou = 'ou_abc123def456'
+  log(atTag(ou, '陈西西') === `<at user_id="${ou}">陈西西</at>`, '合法 open_id → 标签', atTag(ou, '陈西西'))
+  log(atTag(ou) === `<at user_id="${ou}">同事</at>`, '没给名字 → 兜底「同事」')
+  log(atTag('all', '所有人') === '<at user_id="all">所有人</at>', 'all → @所有人')
+  log(atTag('陈西西') === '', '不是 open_id → 空串（宁可不 @，也不发坏标签）')
+  log(atTag('') === '' && atTag(null) === '', '空值 → 空串')
+  log(atTag(ou, '<script>') === `<at user_id="${ou}">script</at>`, '名字里的尖括号被剥掉（防标签截断）')
+  log(atTag(ou, 'a'.repeat(50)).length < 60, '名字限长')
+  log(withMentions('正文', ['']).trim() === '正文', '没有可用 @ → 原样返回')
+  log(withMentions('正文', [atTag(ou, '张三')]) === `<at user_id="${ou}">张三</at>\n正文`, '有 @ → 拼在正文前一行')
 }
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项未通过 ❌`)
 process.exit(failed === 0 ? 0 : 1)

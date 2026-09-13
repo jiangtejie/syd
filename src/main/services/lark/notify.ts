@@ -10,6 +10,8 @@ import { sendImText, type FeishuReceiveIdType } from './im'
 import { fmtStamp, fmtTimeShort } from '../../../shared/monitorMetrics'
 import { listIssuesByGroup } from '../../db/repos/issueRepo'
 import { buildGroupIssuesText } from './issueDigest'
+import { openIdOf } from './personMap'
+import { atTag } from '../im/mention'
 
 /**
  * 飞书告警推送(机器人身份,只读业务数据不外发细节的克制口径)。
@@ -239,7 +241,10 @@ export async function notifyIssueAlert(input: {
       : `【盯办提醒】${input.issues.length} 条`
   const lines = input.issues.slice(0, 10).map((i, n) => {
     const sev = i.severity && i.severity !== '一般' ? `[${i.severity}] ` : ''
-    const who = i.assignee ? ` · 跟进:${i.assignee}` : ' · 未指派'
+    // 跟进人已知 open_id 就 @ 到他（飞书文本的 @ 是内容里的标签，见 im/mention.ts）
+    const who = i.assignee
+      ? ` · 跟进:${atTag(openIdOf(i.assignee), i.assignee) || i.assignee}`
+      : ' · 未指派'
     const why = i.reason ? ` · ${i.reason}` : ''
     return `${n + 1}. ${sev}${i.type} ${i.title}(群:${i.groupName || '-'}) 首现 ${fmtStamp(i.occurAt)}${who}${why}`
   })

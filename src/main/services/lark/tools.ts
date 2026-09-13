@@ -6,6 +6,8 @@ import { larkDownloadMedia } from './client'
 import { sendFeishuTextNow } from './notify'
 import { getFilesRootDir } from '../paths'
 import { safeFileName } from '../_filename'
+import { atTag, withMentions } from '../im/mention'
+import { openIdOf } from './personMap'
 
 /**
  * 飞书云文档工具(应用身份, 复用已有飞书自建应用凭证)。
@@ -70,19 +72,30 @@ export const LARK_TOOLS: ToolDef[] = [
       target: {
         type: 'string',
         desc: '接收目标名（设置里配置的群/个人显示名）；不传则发给全部目标'
+      },
+      mention: {
+        type: 'string',
+        desc: '要 @ 的人：open_id（ou_…）或团队里的称呼（跟进人里的名字）'
       }
     },
     description:
       '把一条消息发送到飞书（机器人身份）。**写操作，需人工确认**；接收方只能是「设置 → IM 渠道 → 飞书通知」里' +
-      '已配置的目标，传 target 可指定其中一个，不传则发给全部目标。发送会写审计并受日限额约束。' +
-      'args: {"text":"要发送的内容","target":"目标名(可空)"}',
+      '已配置的目标，传 target 可指定其中一个，不传则发给全部目标。传 mention 可在正文前 @ 某人（群消息才会真正通知到人）。' +
+      '发送会写审计并受日限额约束。args: {"text":"要发送的内容","target":"目标名(可空)","mention":"ou_… 或 称呼(可空)"}',
     run: async (_ctx, args) => {
+      const text = String(args?.text ?? '')
+      const mention = String(args?.mention ?? '').trim()
+      const openId = mention ? (/^ou_/.test(mention) ? mention : openIdOf(mention)) : ''
+      const tag = atTag(openId, mention)
       const res = await sendFeishuTextNow({
-        text: String(args?.text ?? ''),
+        text: withMentions(text, tag ? [tag] : []),
         targetName: String(args?.target ?? '').trim() || undefined,
         source: 'ai_tool'
       })
       if (!res.ok) return `发送失败：${res.error ?? '未知错误'}`
+      if (mention && !tag) {
+        return `已发送到 ${res.targets.join('、')}；但「${mention}」没查到 open_id，本条没有 @ 到人（可在设置 → IM 渠道 → 飞书通知 → 加同事里维护人员映射）`
+      }
       return `已发送到 ${res.targets.join('、')}（成功 ${res.sent} 条${res.failed > 0 ? `，失败 ${res.failed} 条` : ''}）`
     }
   },
