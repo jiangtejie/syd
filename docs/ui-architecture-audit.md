@@ -259,9 +259,31 @@
   两处内联色值全部改为引用 `CHART` —— 色值只在 `theme.ts` + `base.css` 各一份，页面里不再出现 `#07c160` 之类的裸色值。
 - `lib/ui.ts` 的 `AVATAR_COLORS` **刻意不动**：那是头像辨识用的取色板（同色不代表品牌语义），文件头已注明理由。
 
+### 7. 「按行数拆文件」这条**取消**（2026-09 决策）
+
+原先把「所有 1000 行以上的文件都拆一遍」列进了待办。复核后**收回这个标准** —— 行数不是指标，**接缝**才是：
+
+- 之前拆的确实是 2000 行量级（`baseSync` 1826、`GrowthPage` 2147、三个 CSS 2023/2453/1917、`SettingsPage` 2302→1333），
+  而且每一个都有**天然接缝**（议题同步/证据/回复三层、页面外壳 vs 六个面板、CSS 的 ══ 分节）。
+- 现在剩下的 11 个「千行文件」逐个看过，**没有一个值得为行数去动**：
+
+| 文件 | 行数 | 结论 |
+| --- | --- | --- |
+| `preload/index.ts` | 1207 | 扁平桥接清单，拆开只是多一层跳转；审计里的「双份类型面」问题早已由 `shared/api.ts` 单一真源解决 |
+| `components/workbench/MessagePanel.tsx` | 1156 | **性能敏感**（MessageBubble memo + 稳定回调 + 头像/红包请求去重），性能审计里明确写着「不要动」 |
+| `pages/MonitorPage.tsx` | 1158 | 图表配置早已拆到 `monitorCharts.ts`，剩下的就是取数 + 布局 |
+| `pages/WorkbenchChatPage.tsx` | 1620 | 唯一还在边缘的：但它内部是「窗口化 + rAF 合并 + 迟到帧丢弃」的紧耦合实现，为行数拆反而容易碰坏优化 |
+| `main/services/wechat/queries.ts` / `db/repos/issueRepo.ts` | 1104 / 1037 | SQL 层，本来就是一个领域一件事 |
+| `ai/chat/service.ts` / `im/feishuService.ts` / `growth/BuzzPanel.tsx` | 1041 / 1039 / 1051 | 各自单一领域，接缝不清晰 |
+
+- 新标准（写进约定）：**只在「有清晰接缝 + 明显混杂了两件事」时拆**，并且优先在**因为真实需求去改那个文件时**顺手拆（童子军原则），
+  不为行数专门开一轮重构。行数本身不构成技术债。
+
 ### 仍未做（下一轮候选）
 
 1. 渲染端剩余的 **29 处 `set-state-in-effect`**：都是「effect 内多语句 + 直接 setState / 事件订阅」的形状，
-   要再收敛得先给这些 effect 补 `useAsyncEffect` 之外的抽象（例如订阅型 `useSubscription`），风险高于收益，暂缓；
-2. 主进程侧 `getRowField(row: Record<string, any>)` 的宽类型（T4，需单独排期收窄）。
+   要再收敛得先给这些 effect 补 `useAsyncEffect` 之外的抽象（例如订阅型 `useSubscription`）；按上面的同一标准，属**收益不明确就不动**；
+2. 主进程侧 `getRowField(row: Record<string, any>)` 的宽类型（T4，需单独排期收窄）；
+3. **真机验证**（只能你来跑）：本轮新增的「发到飞书」按钮、@ 人、Base 写回、视频附件、审批卡片 —— 这些依赖真实飞书环境，
+   我能保证的是编译/构建/离线自检，跑不出「机器人没进群」「应用没开卡片回调」这类平台侧问题。
 
