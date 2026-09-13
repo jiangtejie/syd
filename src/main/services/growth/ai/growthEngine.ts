@@ -24,7 +24,12 @@ const GOAL_LABEL: Record<string, string> = {
   group: '客户群群发'
 }
 
-function buildGrowthSystem(taskId: number, contentId: number, storeId: number | null, goal: string): string {
+function buildGrowthSystem(
+  taskId: number,
+  contentId: number,
+  storeId: number | null,
+  goal: string
+): string {
   return [
     '你是餐饮门店的内容运营助理, 正在与运营人员一起把一条同行爆款素材改造成本店可发布的原创内容。',
     '任务目标: ' + (GOAL_LABEL[goal] ?? goal),
@@ -94,7 +99,11 @@ export async function sendGrowthMessage(
 
   let content = ''
   try {
-    const provider = createOpenAICompatible({ name: 'growth', baseURL: cfg.baseUrl, apiKey: cfg.apiKey })
+    const provider = createOpenAICompatible({
+      name: 'growth',
+      baseURL: cfg.baseUrl,
+      apiKey: cfg.apiKey
+    })
     const model = provider.chatModel(cfg.model)
     const toolSet = buildGrowthToolSet({
       sessionId,
@@ -171,7 +180,9 @@ export async function sendGrowthMessage(
     return { ok: true }
   } catch (e) {
     const aborted = ctrl.signal.aborted
-    const errMsg = aborted ? '已停止生成' : describeModelError(e) || (e instanceof Error ? e.message : String(e))
+    const errMsg = aborted
+      ? '已停止生成'
+      : describeModelError(e) || (e instanceof Error ? e.message : String(e))
     appendChatMessage(sessionId, 'assistant', aborted ? 'text' : 'error', errMsg)
     emitWorkbenchEvent(sessionId, { type: aborted ? 'status' : 'error', text: errMsg })
     if (!aborted) log.warn('growth turn failed: ' + errMsg)

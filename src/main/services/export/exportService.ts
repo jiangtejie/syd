@@ -122,7 +122,13 @@ export async function exportChat(
 
     for (let i = 0; i < opts.targets.length; i++) {
       const t = opts.targets[i]
-      onProgress({ phase: 'session', current: i + 1, total, name: t.displayName, detail: '读取消息中…' })
+      onProgress({
+        phase: 'session',
+        current: i + 1,
+        total,
+        name: t.displayName,
+        detail: '读取消息中…'
+      })
       const seen = new Set<string>()
       const rows: string[] = []
       const jsonRows: string[] = []
@@ -195,7 +201,9 @@ export async function exportChat(
       if (format === 'json') {
         jsonRows.push(']')
       } else if (format === 'html') {
-        rows.push(`<div style="color:#999;margin-top:16px">共 ${count} 条 · 导出于 ${fmtTimeFull(Date.now())}</div></body>`)
+        rows.push(
+          `<div style="color:#999;margin-top:16px">共 ${count} 条 · 导出于 ${fmtTimeFull(Date.now())}</div></body>`
+        )
       }
       if (count > 0 || format !== 'txt') {
         // 空会话也保留空文件?txt 空文件无意义;跳过空会话
@@ -238,7 +246,13 @@ export async function exportBusiness(
     if (!wxid) return { ok: false, error: '未连接微信账号' }
     if (!folder) return { ok: false, error: '未选择导出目录' }
     if (!existsSync(folder)) mkdirSync(folder, { recursive: true })
-    onProgress({ phase: 'prepare', current: 0, total: 1, name: '业务数据', detail: '汇总本地数据…' })
+    onProgress({
+      phase: 'prepare',
+      current: 0,
+      total: 1,
+      name: '业务数据',
+      detail: '汇总本地数据…'
+    })
     const db = getDb()
 
     const issues = db

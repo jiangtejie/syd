@@ -118,5 +118,3 @@ export function markKeyInvalid(wxid: string, reason?: string): void {
   keyRepo.updateKeyStatus(wxid, 'invalid')
   if (reason) configRepo.setConfig(`key:${wxid}:error`, reason)
 }
-
-

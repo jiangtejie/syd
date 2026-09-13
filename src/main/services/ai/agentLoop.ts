@@ -32,7 +32,9 @@ export interface SuggestionAgentOptions {
 }
 
 /** 从模型输出中识别意图：tool 请求 / 数组候选 / 其它文本 */
-function parseAgentIntent(raw: string):
+function parseAgentIntent(
+  raw: string
+):
   | { kind: 'tool'; name: string; args: Record<string, unknown> }
   | { kind: 'array' }
   | { kind: 'other' } {
@@ -67,7 +69,9 @@ function parseAgentIntent(raw: string):
   return { kind: 'other' }
 }
 
-function classify(obj: unknown):
+function classify(
+  obj: unknown
+):
   | { kind: 'tool'; name: string; args: Record<string, unknown> }
   | { kind: 'array' }
   | { kind: 'other' } {

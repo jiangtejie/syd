@@ -1,0 +1,110 @@
+/*
+ * 浏览器默认样式归一（替代 Tailwind preflight）。
+ *
+ * 为什么自己写:审计发现 Tailwind 在本项目**只为 preflight 而存在** —— 全项目 0 处工具类、0 个组件库，
+ * 白背一个构建依赖与一层 @layer;而本项目真正依赖 preflight 的地方只有 4 类：
+ * 表单控件的外观重置、标题/列表的默认边距、img 的行内间隙、链接的默认色/下划线。
+ * 这份 reset 就是把这 4 类按 preflight 的口径原样写下来(逐条对齐 Tailwind v4 preflight)。
+ *
+ * 注意:必须在各页面 CSS **之前**引入(reset 在 @layer base 里,页面手写 CSS 是无 layer,优先级更高)。
+ */
+@layer base {
+  /* 1) 盒模型与边框基线:Tailwind 让所有元素 border-width=0,我们沿用同一口径 */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-width: 0;
+    border-style: solid;
+    border-color: currentColor;
+  }
+
+  /* 2) 标题/段落/列表:去掉默认边距与项目符号 */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  blockquote,
+  figure,
+  dl,
+  dd {
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  ul,
+  ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* 3) 表单控件:继承字体与颜色,去掉浏览器默认外观(按钮的灰底/边框靠各自的类给) */
+  button,
+  input,
+  optgroup,
+  select,
+  textarea {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    background-color: transparent;
+    border-radius: 0;
+    opacity: 1;
+  }
+
+  button,
+  input:where([type='button'], [type='reset'], [type='submit']) {
+    appearance: button;
+    -webkit-appearance: button;
+  }
+
+  ::file-selector-button {
+    font: inherit;
+    appearance: button;
+    -webkit-appearance: button;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  ::placeholder {
+    opacity: 1;
+    color: var(--text-3, color-mix(in oklab, currentColor 50%, transparent));
+  }
+
+  /* 4) 媒体与链接 */
+  img,
+  svg,
+  video,
+  canvas,
+  audio,
+  iframe,
+  embed,
+  object {
+    display: block;
+    vertical-align: middle;
+  }
+
+  img,
+  video {
+    max-width: 100%;
+    height: auto;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: inherit;
+  }
+
+  table {
+    border-collapse: collapse;
+    border-color: inherit;
+    text-indent: 0;
+  }
+}

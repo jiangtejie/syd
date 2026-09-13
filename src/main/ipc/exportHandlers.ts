@@ -1,7 +1,12 @@
 import { ipcMain, shell, BrowserWindow } from 'electron'
 import { writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { exportChat, exportBusiness, type ChatExportOptions, type ProgressEvent } from '../services/export/exportService'
+import {
+  exportChat,
+  exportBusiness,
+  type ChatExportOptions,
+  type ProgressEvent
+} from '../services/export/exportService'
 
 /**
  * 数据导出 IPC。

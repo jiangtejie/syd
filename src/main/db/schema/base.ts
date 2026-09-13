@@ -409,5 +409,5 @@ export const CORE_INDEXES: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_reply_script_pick ON reply_script(account_wxid, enabled, priority)`,
   `CREATE INDEX IF NOT EXISTS idx_agent_reply_group ON agent_reply(account_wxid, group_username, trigger_time DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_agent_reply_status ON agent_reply(account_wxid, status, created_at DESC)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_reply_seq ON agent_reply(group_username, trigger_seq) WHERE trigger_seq IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_reply_seq ON agent_reply(group_username, trigger_seq) WHERE trigger_seq IS NOT NULL`
 ]

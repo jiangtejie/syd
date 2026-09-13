@@ -42,7 +42,6 @@
   min-width: 240px;
 }
 
-
 .mon-page {
   max-width: 1760px;
   padding-bottom: 24px;
@@ -61,20 +60,11 @@
   gap: 8px;
 }
 
-.mon-select,
-.mon-input {
+/* 输入框外观已迁到全局 ui-input / ui-select；这里只留本页尺寸 */
+.mon-input,
+.mon-select {
   font-size: 12.5px;
   padding: 5px 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-panel);
-  color: inherit;
-  outline: none;
-}
-
-.mon-select:focus,
-.mon-input:focus {
-  border-color: var(--brand);
 }
 
 .mon-empty {
@@ -477,34 +467,20 @@
   flex-wrap: wrap;
 }
 
+/* 按钮外观已迁到全局 ui-btn；这里只保留本页密度(工具栏用小号) */
 .mon-btn {
   font-size: 12px;
   padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-panel);
-  color: var(--text-1);
-  cursor: pointer;
-}
-
-.mon-btn:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-
-.mon-btn.primary {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: var(--on-brand);
-}
-
-.mon-btn.primary:hover {
-  background: var(--brand-hover);
 }
 
 .mon-btn.ghost {
   border-color: var(--border);
   background: var(--bg-panel);
+}
+
+.mon-btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* 危险操作(清空/合并):与 confirm-primary.is-danger 同色系 */

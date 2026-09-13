@@ -43,6 +43,11 @@ import type {
 
 const wxLog = createLogger('wx')
 
+/** 异常 → 人话（catch 里不再用 any 取 message） */
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
+}
+
 /**
  * 微信读库查询层（自研实现）。
  * 每个查询按需临时打开对应库文件（只读），查询后立即关闭，避免长时间占用句柄。
@@ -242,8 +247,8 @@ export function listSessions(ctx: WxReaderContext): {
     } finally {
       db.close()
     }
-  } catch (e: any) {
-    return { ok: false, error: `读取会话列表失败: ${e?.message || String(e)}` }
+  } catch (e) {
+    return { ok: false, error: `读取会话列表失败: ${errText(e)}` }
   }
 }
 
@@ -824,8 +829,8 @@ export function listMessages(
       decorateVoiceTranscripts(page, ctx.wxid)
     }
     return { ok: true, messages: page, hasMore, nextCursor }
-  } catch (e: any) {
-    return { ok: false, error: `读取消息失败: ${e?.message || String(e)}` }
+  } catch (e) {
+    return { ok: false, error: `读取消息失败: ${errText(e)}` }
   }
 }
 

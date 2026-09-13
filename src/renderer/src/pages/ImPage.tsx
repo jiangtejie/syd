@@ -283,6 +283,8 @@ export function ImSection(): React.JSX.Element {
     const res = await imApi?.remove(a.id).catch(() => null)
     if (res?.ok) {
       toast.success('已删除')
+      // 正在编辑的就是这个账号 → 退回新建态(否则表单挂着一个已删除的 id)
+      if (editId === a.id) startNew()
       await load()
     } else {
       toast.error((res as { error?: string } | null)?.error || '删除失败')

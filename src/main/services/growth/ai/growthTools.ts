@@ -53,9 +53,18 @@ export function itemBrief(contentId: number): string {
   if (d.text) lines.push('正文: ' + d.text.slice(0, 600))
   lines.push('平台: ' + d.origin + ' · 类型: ' + (d.kind === 'video' ? '视频' : '图文'))
   lines.push(
-    '互动: 赞' + String(d.interactions.likes) + ' 藏' + String(d.interactions.collects) + ' 评' + String(d.interactions.comments)
+    '互动: 赞' +
+      String(d.interactions.likes) +
+      ' 藏' +
+      String(d.interactions.collects) +
+      ' 评' +
+      String(d.interactions.comments)
   )
-  lines.push('本地图片: ' + String(d.assets.filter((a) => a.kind === 'cover' || a.kind === 'image').length) + ' 张')
+  lines.push(
+    '本地图片: ' +
+      String(d.assets.filter((a) => a.kind === 'cover' || a.kind === 'image').length) +
+      ' 张'
+  )
   if (d.decomp?.structure) lines.push('拆解卡: ' + clip(d.decomp.structure, 700))
   else lines.push('拆解卡: 尚未生成')
   return lines.join('\n')
@@ -67,11 +76,25 @@ export function storeBrief(storeId: number | null): string {
   if (!s) return '尚未配置门店档案: 请在 营销 → 数据服务 → 门店与品牌 中填写'
   const lines: string[] = []
   lines.push('品牌: ' + (s.brandName || s.name))
-  lines.push('门店: ' + s.name + (s.city ? ' · ' + s.city : '') + (s.bizType ? ' · ' + s.bizType : ''))
+  lines.push(
+    '门店: ' + s.name + (s.city ? ' · ' + s.city : '') + (s.bizType ? ' · ' + s.bizType : '')
+  )
   if (s.address) lines.push('地址: ' + s.address)
   try {
     const p = JSON.parse(s.profile || '{}') as Record<string, unknown>
-    for (const k of ['phone', 'hours', 'avgPrice', 'signatureDishes', 'packages', 'parking', 'privateRoom', 'tone', 'bannedWords', 'sellingPoints', 'note']) {
+    for (const k of [
+      'phone',
+      'hours',
+      'avgPrice',
+      'signatureDishes',
+      'packages',
+      'parking',
+      'privateRoom',
+      'tone',
+      'bannedWords',
+      'sellingPoints',
+      'note'
+    ]) {
       const v = p[k]
       if (v === undefined || v === null || v === '') continue
       lines.push(k + ': ' + clip(v, 300))
@@ -133,20 +156,35 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
     }),
 
     growth_get_store: tool({
-      description: '读取当前门店/品牌档案(城市/地址/电话/营业时间/招牌菜/套餐/语气等事实)。缺失字段必须追问用户, 严禁编造。',
-      inputSchema: zodSchema(z.object({ storeId: z.number().optional().describe('门店 id, 不传用当前任务门店') })),
+      description:
+        '读取当前门店/品牌档案(城市/地址/电话/营业时间/招牌菜/套餐/语气等事实)。缺失字段必须追问用户, 严禁编造。',
+      inputSchema: zodSchema(
+        z.object({ storeId: z.number().optional().describe('门店 id, 不传用当前任务门店') })
+      ),
       execute: async (args) => storeBrief(args.storeId ?? ctx.storeId)
     }),
 
     growth_search_web: tool({
-      description: '联网搜索公开信息(门店地址/电话/营业时间/菜品做法/口碑等)。结果仅供参考, 地址电话价格必须让用户确认后才能写入档案。',
+      description:
+        '联网搜索公开信息(门店地址/电话/营业时间/菜品做法/口碑等)。结果仅供参考, 地址电话价格必须让用户确认后才能写入档案。',
       inputSchema: zodSchema(z.object({ query: z.string(), count: z.number().optional() })),
       execute: async (args) => {
         try {
           const rows = await searchWeb(args.query, { count: args.count ?? 6 })
           if (rows.length === 0) return '没有找到相关结果, 换个说法再试。'
           return rows
-            .map((r, i) => String(i + 1) + '. ' + r.title + ' | ' + r.site + '\n   ' + r.snippet + '\n   ' + r.url)
+            .map(
+              (r, i) =>
+                String(i + 1) +
+                '. ' +
+                r.title +
+                ' | ' +
+                r.site +
+                '\n   ' +
+                r.snippet +
+                '\n   ' +
+                r.url
+            )
             .join('\n')
         } catch (e) {
           return '搜索失败: ' + (e instanceof Error ? e.message : String(e))
@@ -195,7 +233,8 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
     }),
 
     growth_gen_image: tool({
-      description: 'AI 生成图片(封面/氛围图/菜品示意图), 结果作为候选图待用户点选, 必须标注「AI 生成示意图」。',
+      description:
+        'AI 生成图片(封面/氛围图/菜品示意图), 结果作为候选图待用户点选, 必须标注「AI 生成示意图」。',
       inputSchema: zodSchema(
         z.object({
           prompt: z.string().describe('画面描述, 含风格/光线/场景/主体'),
@@ -207,7 +246,11 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
         const denied = await approve(ctx, 'growth_gen_image', args)
         if (denied) return denied
         try {
-          const imgs = await generateImages({ contentId: ctx.contentId, prompt: args.prompt, count: args.count })
+          const imgs = await generateImages({
+            contentId: ctx.contentId,
+            prompt: args.prompt,
+            count: args.count
+          })
           const outputId = createOutput({
             taskId: ctx.taskId,
             contentId: ctx.contentId,
@@ -228,7 +271,13 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
               note: g.note
             })
           }
-          return '已生成 ' + String(imgs.length) + ' 张候选图(outputId=' + String(outputId) + ', 已标注示意图)。请在右侧图片卡点选。'
+          return (
+            '已生成 ' +
+            String(imgs.length) +
+            ' 张候选图(outputId=' +
+            String(outputId) +
+            ', 已标注示意图)。请在右侧图片卡点选。'
+          )
         } catch (e) {
           if (e instanceof ImageSetupError) return e.message
           return '生图失败: ' + (e instanceof Error ? e.message : String(e))
@@ -253,11 +302,18 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
           '只输出 JSON: { "titles": ["...", "..."] }',
           '风格: ' + STYLE_HINT[args.style ?? 'auto']
         ].join('\n')
-        const user = '素材:\n' + itemBrief(ctx.contentId) + '\n\n门店事实:\n' + storeBrief(ctx.storeId) + (args.strategy ? '\n\n要求: ' + args.strategy : '')
+        const user =
+          '素材:\n' +
+          itemBrief(ctx.contentId) +
+          '\n\n门店事实:\n' +
+          storeBrief(ctx.storeId) +
+          (args.strategy ? '\n\n要求: ' + args.strategy : '')
         try {
           const parsed = parseJson(await modelText(system, user))
           const titles = Array.isArray(parsed?.['titles'])
-            ? (parsed?.['titles'] as unknown[]).filter((x): x is string => typeof x === 'string' && x.trim() !== '').slice(0, 6)
+            ? (parsed?.['titles'] as unknown[])
+                .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+                .slice(0, 6)
             : []
           if (titles.length === 0) return '模型未返回可用标题, 请重试或换个说法。'
           const outputId = createOutput({
@@ -271,11 +327,17 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
             status: 'candidate'
           })
           return (
-            '已生成 ' + String(titles.length) + ' 条候选标题(outputId=' + String(outputId) + '):\n' +
+            '已生成 ' +
+            String(titles.length) +
+            ' 条候选标题(outputId=' +
+            String(outputId) +
+            '):\n' +
             titles.map((t, i) => String(i + 1) + '. ' + t).join('\n')
           )
         } catch (e) {
-          return '生成失败: ' + (describeModelError(e) || (e instanceof Error ? e.message : String(e)))
+          return (
+            '生成失败: ' + (describeModelError(e) || (e instanceof Error ? e.message : String(e)))
+          )
         }
       }
     }),
@@ -284,7 +346,10 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
       description: '生成/改写正文候选(1-3 篇)。只生成候选, 用户点选后才写入产出。',
       inputSchema: zodSchema(
         z.object({
-          instruction: z.string().optional().describe('改写要求, 如「精简第二段」「控制在100字内」'),
+          instruction: z
+            .string()
+            .optional()
+            .describe('改写要求, 如「精简第二段」「控制在100字内」'),
           style: z.enum(['tanDian', 'shangXin', 'cuXiao', 'renShe', 'auto']).optional(),
           copies: z.number().optional()
         })
@@ -294,16 +359,25 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
         if (denied) return denied
         const n = Math.min(Math.max(args.copies ?? 2, 1), 3)
         const system = [
-          '你是餐饮门店内容运营。基于素材与门店事实, 写 ' + String(n) + ' 篇全新原创正文(每篇 80-180 字)。',
+          '你是餐饮门店内容运营。基于素材与门店事实, 写 ' +
+            String(n) +
+            ' 篇全新原创正文(每篇 80-180 字)。',
           '规则: 只借鉴结构与情绪, 不复述原句; 不虚构门店事实(缺失用占位符); 不用绝对化用语与食品功效宣称;',
           '只输出 JSON: { "copies": ["正文1", "正文2"] }',
           '风格: ' + STYLE_HINT[args.style ?? 'auto']
         ].join('\n')
-        const user = '素材:\n' + itemBrief(ctx.contentId) + '\n\n门店事实:\n' + storeBrief(ctx.storeId) + (args.instruction ? '\n\n改写要求: ' + args.instruction : '')
+        const user =
+          '素材:\n' +
+          itemBrief(ctx.contentId) +
+          '\n\n门店事实:\n' +
+          storeBrief(ctx.storeId) +
+          (args.instruction ? '\n\n改写要求: ' + args.instruction : '')
         try {
           const parsed = parseJson(await modelText(system, user))
           const copies = Array.isArray(parsed?.['copies'])
-            ? (parsed?.['copies'] as unknown[]).filter((x): x is string => typeof x === 'string' && x.trim() !== '').slice(0, 3)
+            ? (parsed?.['copies'] as unknown[])
+                .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+                .slice(0, 3)
             : []
           if (copies.length === 0) return '模型未返回可用正文, 请重试。'
           const ids: number[] = []
@@ -321,9 +395,17 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
               })
             )
           })
-          return '已生成 ' + String(copies.length) + ' 篇候选正文(outputId=' + ids.join(',') + ')。请在右侧产出面板点选。'
+          return (
+            '已生成 ' +
+            String(copies.length) +
+            ' 篇候选正文(outputId=' +
+            ids.join(',') +
+            ')。请在右侧产出面板点选。'
+          )
         } catch (e) {
-          return '生成失败: ' + (describeModelError(e) || (e instanceof Error ? e.message : String(e)))
+          return (
+            '生成失败: ' + (describeModelError(e) || (e instanceof Error ? e.message : String(e)))
+          )
         }
       }
     }),
@@ -348,7 +430,8 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
     }),
 
     growth_replace_image: tool({
-      description: '替换产出图集: 用门店素材(assetId)、候选生成图(assetId)或联网图片(remoteUrl, 需确认版权)。',
+      description:
+        '替换产出图集: 用门店素材(assetId)、候选生成图(assetId)或联网图片(remoteUrl, 需确认版权)。',
       inputSchema: zodSchema(
         z.object({
           outputId: z.number(),
@@ -390,7 +473,11 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
             prompt: '',
             note: '来源: 联网检索(请确认版权后再发布)'
           })
-          return '已下载并替换为联网图片(assetId=' + String(assetId) + '), 已标注来源, 发布前请确认版权。'
+          return (
+            '已下载并替换为联网图片(assetId=' +
+            String(assetId) +
+            '), 已标注来源, 发布前请确认版权。'
+          )
         }
         return '请提供 assetId 或 remoteUrl。'
       }
@@ -401,7 +488,18 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
       inputSchema: zodSchema(
         z.object({
           storeId: z.number().optional(),
-          key: z.enum(['city', 'address', 'phone', 'hours', 'avgPrice', 'signatureDishes', 'packages', 'parking', 'privateRoom', 'note']),
+          key: z.enum([
+            'city',
+            'address',
+            'phone',
+            'hours',
+            'avgPrice',
+            'signatureDishes',
+            'packages',
+            'parking',
+            'privateRoom',
+            'note'
+          ]),
           value: z.string()
         })
       ),
@@ -440,7 +538,9 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
         const denied = await approve(ctx, 'growth_export_package', args)
         if (denied) return denied
         const res = await exportPublishPackage(ctx.contentId, args.outputIds ?? [])
-        return res.ok ? '已导出到: ' + String(res.dir) + ' (' + String(res.files) + ' 个文件)' : '导出失败: ' + String(res.error)
+        return res.ok
+          ? '已导出到: ' + String(res.dir) + ' (' + String(res.files) + ' 个文件)'
+          : '导出失败: ' + String(res.error)
       }
     }),
 

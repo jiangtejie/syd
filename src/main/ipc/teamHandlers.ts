@@ -19,21 +19,18 @@ export function registerTeamHandlers(): void {
     }
   })
 
-  ipcMain.handle(
-    'cs:team:save',
-    (_e, accountWxid: string, username: string, label?: string) => {
-      if (!accountWxid || !username) return { ok: false as const, error: '缺少账号或联系人标识' }
-      try {
-        const member = saveTeamMember(accountWxid, username, label ?? '')
-        return { ok: true as const, member }
-      } catch (err) {
-        return {
-          ok: false as const,
-          error: err instanceof Error ? err.message : String(err)
-        }
+  ipcMain.handle('cs:team:save', (_e, accountWxid: string, username: string, label?: string) => {
+    if (!accountWxid || !username) return { ok: false as const, error: '缺少账号或联系人标识' }
+    try {
+      const member = saveTeamMember(accountWxid, username, label ?? '')
+      return { ok: true as const, member }
+    } catch (err) {
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err)
       }
     }
-  )
+  })
 
   ipcMain.handle('cs:team:remove', (_e, accountWxid: string, username: string) => {
     if (!accountWxid || !username) return { ok: false as const, error: '缺少账号或联系人标识' }

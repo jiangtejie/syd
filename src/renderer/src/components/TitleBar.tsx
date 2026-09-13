@@ -12,7 +12,7 @@ const PAGE_NAMES: Record<string, string> = {
   chat: '对话',
   customers: '客户',
   duty: '值班',
-  dashboard: '看板',
+  dashboard: '运营看板',
   export: '数据',
   settings: '设置'
 }

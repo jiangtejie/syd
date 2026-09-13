@@ -146,7 +146,10 @@ export async function importLocalMaterials(): Promise<ImportLocalResult> {
   }
 
   if (added === 0) {
-    return { ok: false, error: '没有导入任何文件' + (skipped.length ? '(跳过: ' + skipped.join(', ') + ')' : '') }
+    return {
+      ok: false,
+      error: '没有导入任何文件' + (skipped.length ? '(跳过: ' + skipped.join(', ') + ')' : '')
+    }
   }
   return { ok: true, added, contentId: firstId, skipped }
 }

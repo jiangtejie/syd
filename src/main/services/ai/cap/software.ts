@@ -3,6 +3,7 @@ import { getDb } from '../../../db/database'
 import { getConfig } from '../../../db/repos/config'
 import { listAccounts as listKeyAccounts } from '../../keyStoreService'
 import { listImAccounts, rowToAccount } from '../../../db/repos/imRepo'
+import { fmtStamp } from '../../../../shared/monitorMetrics'
 import { getSessions } from '../../wechat/wxService'
 import { listFeedbackIssues } from '../../feedback/analyzer'
 import type { ToolCtx, ToolDef } from '../chat/skills'
@@ -18,13 +19,6 @@ const MAX_TEXT = 4000
 
 function clip(s: string): string {
   return s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT)}\n…(已截断)` : s
-}
-
-function fmtTime(ts: number): string {
-  if (!ts) return '-'
-  const d = new Date(ts)
-  const p = (x: number): string => String(x).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 interface WxSessionLite {
@@ -212,7 +206,7 @@ function dataScopeDef(): ToolDef {
             `SELECT COUNT(*) AS n, MIN(created_at) AS lo, MAX(created_at) AS hi FROM issue_feedback WHERE wxid = ?`
           )
           .get(wxid) as { n: number; lo: number | null; hi: number | null }
-        chatSpan = `问题记录 ${row.n} 条(${fmtTime(row.lo ?? 0)} ~ ${fmtTime(row.hi ?? 0)})`
+        chatSpan = `问题记录 ${row.n} 条(${fmtStamp(row.lo ?? 0)} ~ ${fmtStamp(row.hi ?? 0)})`
       } catch {
         chatSpan = '问题记录:(读取失败)'
       }
@@ -229,7 +223,7 @@ function dataScopeDef(): ToolDef {
       const unread = all.reduce((n, s) => n + (s.unreadCount ?? 0), 0)
       const lastAct = all.reduce((m, s) => Math.max(m, s.lastTimestamp ?? 0), 0)
       return (
-        `微信会话:共 ${all.length}(群 ${groups.length} / 个人 ${users.length} / 其它 ${all.length - groups.length - users.length});未读合计 ${unread};最近活跃 ${fmtTime(lastAct)}\n` +
+        `微信会话:共 ${all.length}(群 ${groups.length} / 个人 ${users.length} / 其它 ${all.length - groups.length - users.length});未读合计 ${unread};最近活跃 ${fmtStamp(lastAct)}\n` +
         `(口径:仅能列出已解密会话及其最后消息时间,无法全量扫描历史最早时间)\n` +
         `CS 库:AI 会话 ${cs.chats}、消息 ${cs.msgs}\n${chatSpan}`
       )

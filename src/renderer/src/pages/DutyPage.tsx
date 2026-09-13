@@ -317,7 +317,7 @@ function DutyPage(): React.JSX.Element {
       <div className="dt-toolbar">
         <button
           type="button"
-          className="dt-btn primary"
+          className="ui-btn is-primary dt-btn"
           disabled={busy !== ''}
           onClick={() => void runNow()}
         >
@@ -326,7 +326,7 @@ function DutyPage(): React.JSX.Element {
         {(status?.missingIntent ?? 0) > 0 && (
           <button
             type="button"
-            className="dt-btn"
+            className="ui-btn dt-btn"
             disabled={busy !== ''}
             onClick={() => void backfillIntent()}
             title="历史上走 LLM 兜底的那批记录意图是空的（所以 Base 的意图列一片空白）。这里用规则层离线补齐，不改决策与发送状态。"
@@ -338,7 +338,7 @@ function DutyPage(): React.JSX.Element {
         )}
         <button
           type="button"
-          className="dt-btn"
+          className="ui-btn dt-btn"
           disabled={busy !== ''}
           onClick={() => void loadAll()}
         >
@@ -364,7 +364,7 @@ function DutyPage(): React.JSX.Element {
           <button
             key={k}
             type="button"
-            className={`dt-tab${tab === k ? ' is-active' : ''}`}
+            className={`ui-tab dt-tab${tab === k ? ' is-active' : ''}`}
             onClick={() => setTab(k)}
           >
             {label}
@@ -448,7 +448,7 @@ function DutyPage(): React.JSX.Element {
           <div className="dt-toolbar">
             <button
               type="button"
-              className="dt-btn"
+              className="ui-btn dt-btn"
               disabled={busy !== ''}
               onClick={() => void seedStarters()}
               title="导入 13 条常用话术（问到货/发票/对账单/物流…）：只承诺动作，不承诺具体时间与数字；退款/投诉/合同类只转人工"
@@ -464,19 +464,19 @@ function DutyPage(): React.JSX.Element {
             <div className="dt-form-title">{draft.id ? `编辑话术 #${draft.id}` : '新增话术'}</div>
             <div className="dt-form-row">
               <input
-                className="dt-input"
+                className="ui-input dt-input"
                 placeholder="意图（如 物流时效）"
                 value={draft.intent}
                 onChange={(e) => setDraft({ ...draft, intent: e.target.value })}
               />
               <input
-                className="dt-input"
+                className="ui-input dt-input"
                 placeholder="展示名（可空）"
                 value={draft.title}
                 onChange={(e) => setDraft({ ...draft, title: e.target.value })}
               />
               <select
-                className="dt-input dt-select"
+                className="ui-input ui-select dt-input dt-select"
                 value={draft.riskLevel}
                 onChange={(e) =>
                   setDraft({ ...draft, riskLevel: e.target.value as 'A' | 'B' | 'C' })
@@ -488,7 +488,7 @@ function DutyPage(): React.JSX.Element {
                 <option value="C">C 禁自动</option>
               </select>
               <input
-                className="dt-input dt-num"
+                className="ui-input dt-input dt-num"
                 type="number"
                 value={draft.priority}
                 onChange={(e) => setDraft({ ...draft, priority: Number(e.target.value) })}
@@ -496,14 +496,14 @@ function DutyPage(): React.JSX.Element {
               />
             </div>
             <textarea
-              className="dt-textarea"
+              className="ui-textarea dt-textarea"
               rows={3}
               placeholder={'触发方式，一行一条：\nkw: 什么时候到\nkw: 几天能到\nre: 订单\\s*\\d+'}
               value={draft.patterns}
               onChange={(e) => setDraft({ ...draft, patterns: e.target.value })}
             />
             <textarea
-              className="dt-textarea"
+              className="ui-textarea dt-textarea"
               rows={3}
               placeholder={'回复内容（可用变量：{{客户名}} {{群名}} {{日期}} {{时间}}）'}
               value={draft.replyText}
@@ -512,14 +512,14 @@ function DutyPage(): React.JSX.Element {
             <div className="dt-form-ops">
               <button
                 type="button"
-                className="dt-btn primary"
+                className="ui-btn is-primary dt-btn"
                 disabled={busy !== ''}
                 onClick={() => void saveDraft()}
               >
                 {draft.id ? '保存修改' : '新增话术'}
               </button>
               {draft.id && (
-                <button type="button" className="dt-btn" onClick={resetDraft}>
+                <button type="button" className="ui-btn dt-btn" onClick={resetDraft}>
                   取消编辑
                 </button>
               )}
@@ -527,7 +527,7 @@ function DutyPage(): React.JSX.Element {
             <details className="dt-import">
               <summary>批量导入（模板/JSON）</summary>
               <textarea
-                className="dt-textarea"
+                className="ui-textarea dt-textarea"
                 rows={4}
                 placeholder={
                   '[{"intent":"物流时效","kw":["什么时候到","几天能到"],"reply":"一般 3-5 天到店，我帮您盯一下物流","risk":"A"}]'
@@ -537,7 +537,7 @@ function DutyPage(): React.JSX.Element {
               />
               <button
                 type="button"
-                className="dt-btn"
+                className="ui-btn dt-btn"
                 disabled={busy !== '' || !importText.trim()}
                 onClick={() => void runImport()}
               >
@@ -603,7 +603,7 @@ function DutyPage(): React.JSX.Element {
           <div className="dt-toolbar">
             <span className="dt-hint">拿最近几天的真实群消息跑一遍判定（不写库、不发送）</span>
             <select
-              className="dt-input dt-select"
+              className="ui-input ui-select dt-input dt-select"
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
             >
@@ -615,7 +615,7 @@ function DutyPage(): React.JSX.Element {
             </select>
             <button
               type="button"
-              className="dt-btn primary"
+              className="ui-btn is-primary dt-btn"
               disabled={busy !== ''}
               onClick={() => void runPreview()}
             >

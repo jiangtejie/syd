@@ -1,4 +1,4 @@
-import './assets/tailwind.css'
+import './assets/reset.css'
 import './assets/main.css'
 
 import { StrictMode } from 'react'

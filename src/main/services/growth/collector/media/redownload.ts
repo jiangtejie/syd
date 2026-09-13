@@ -22,10 +22,15 @@ export async function redownloadMissingMedia(contentId: number): Promise<Redownl
 
   const extra = detail.extra as { remoteMedia?: { imageUrls?: string[]; coverUrl?: string } }
   const remote = extra.remoteMedia ?? {}
-  const urls = (remote.imageUrls && remote.imageUrls.length > 0 ? remote.imageUrls : remote.coverUrl ? [remote.coverUrl] : []).filter(
-    (u) => typeof u === 'string' && u.startsWith('http')
-  )
-  if (urls.length === 0) return { ok: false, error: '该素材没有可重新下载的图片源(可能是本地导入或纯视频)' }
+  const urls = (
+    remote.imageUrls && remote.imageUrls.length > 0
+      ? remote.imageUrls
+      : remote.coverUrl
+        ? [remote.coverUrl]
+        : []
+  ).filter((u) => typeof u === 'string' && u.startsWith('http'))
+  if (urls.length === 0)
+    return { ok: false, error: '该素材没有可重新下载的图片源(可能是本地导入或纯视频)' }
 
   const base = getGrowthMediaDir()
   const local = detail.assets.filter((a) => a.kind === 'cover' || a.kind === 'image')
@@ -49,5 +54,10 @@ export async function redownloadMissingMedia(contentId: number): Promise<Redownl
     })
     added += 1
   })
-  return { ok: added > 0, added, failed: media.failed.length, error: added > 0 ? undefined : '重新下载失败(源图可能已失效)' }
+  return {
+    ok: added > 0,
+    added,
+    failed: media.failed.length,
+    error: added > 0 ? undefined : '重新下载失败(源图可能已失效)'
+  }
 }

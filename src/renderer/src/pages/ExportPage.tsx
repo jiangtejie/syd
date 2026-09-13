@@ -94,7 +94,9 @@ function ExportPage(): React.JSX.Element {
   }, [])
 
   const filtered = useMemo(() => {
-    let list = sessions.filter((s) => !/^(weixin|qqmail|fmessage|medianote|filehelper|newsapp)/i.test(s.username))
+    let list = sessions.filter(
+      (s) => !/^(weixin|qqmail|fmessage|medianote|filehelper|newsapp)/i.test(s.username)
+    )
     if (filter === 'group') list = list.filter((s) => s.isGroup)
     else if (filter === 'private') list = list.filter((s) => !s.isGroup && !s.isOfficialAccount)
     else if (filter === 'oa') list = list.filter((s) => s.isOfficialAccount)
@@ -170,7 +172,10 @@ function ExportPage(): React.JSX.Element {
     setError('')
     try {
       const nameOf = new Map(sessions.map((s) => [s.username, s.displayName || s.username]))
-      const targets = Array.from(selected).map((u) => ({ username: u, displayName: nameOf.get(u) || u }))
+      const targets = Array.from(selected).map((u) => ({
+        username: u,
+        displayName: nameOf.get(u) || u
+      }))
       const rangeMs = resolveRangeMs()
       const res = await exportApi.chat(wxid!, {
         targets,
@@ -259,7 +264,7 @@ function ExportPage(): React.JSX.Element {
                 type="button"
                 role="tab"
                 aria-selected={tab === id}
-                className={`exp-tab${tab === id ? ' is-active' : ''}`}
+                className={`ui-tab exp-tab${tab === id ? ' is-active' : ''}`}
                 onClick={() => setTab(id)}
               >
                 {label}
@@ -273,13 +278,13 @@ function ExportPage(): React.JSX.Element {
               <div className="page-card exp-sessions">
                 <div className="exp-toolbar">
                   <input
-                    className="exp-input"
+                    className="ui-input exp-input"
                     placeholder="搜索会话名称…"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
                   />
                   <select
-                    className="exp-input exp-sel"
+                    className="ui-input ui-select exp-sel"
                     value={filter}
                     onChange={(e) => setFilter(e.target.value as SessionFilter)}
                   >
@@ -293,20 +298,27 @@ function ExportPage(): React.JSX.Element {
                   <label className="exp-check">
                     <input
                       type="checkbox"
-                      checked={filtered.length > 0 && filtered.every((s) => selected.has(s.username))}
+                      checked={
+                        filtered.length > 0 && filtered.every((s) => selected.has(s.username))
+                      }
                       onChange={toggleAll}
                     />
                     全选（{filtered.length}）
                   </label>
                   <button
                     type="button"
-                    className="exp-link"
+                    className="ui-link"
                     disabled={busy}
                     onClick={() => setSelected(new Set())}
                   >
                     清空
                   </button>
-                  <button type="button" className="exp-link" disabled={busy} onClick={() => void loadSessions()}>
+                  <button
+                    type="button"
+                    className="ui-link"
+                    disabled={busy}
+                    onClick={() => void loadSessions()}
+                  >
                     刷新
                   </button>
                 </div>
@@ -318,7 +330,10 @@ function ExportPage(): React.JSX.Element {
                   {filtered.map((s) => {
                     const name = s.displayName || s.nickname || s.remark || s.username
                     return (
-                      <label key={s.username} className={`exp-sess-row${selected.has(s.username) ? ' is-on' : ''}`}>
+                      <label
+                        key={s.username}
+                        className={`exp-sess-row${selected.has(s.username) ? ' is-on' : ''}`}
+                      >
                         <input
                           type="checkbox"
                           checked={selected.has(s.username)}
@@ -346,7 +361,7 @@ function ExportPage(): React.JSX.Element {
                     <button
                       key={r.id}
                       type="button"
-                      className={`exp-pill${range === r.id ? ' is-on' : ''}`}
+                      className={`ui-pill exp-pill${range === r.id ? ' is-on' : ''}`}
                       onClick={() => setRange(r.id)}
                     >
                       {r.label}
@@ -355,9 +370,19 @@ function ExportPage(): React.JSX.Element {
                 </div>
                 {range === 'custom' && (
                   <div className="exp-date-row">
-                    <input type="date" className="exp-input" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                    <input
+                      type="date"
+                      className="ui-input exp-input"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                    />
                     <span>至</span>
-                    <input type="date" className="exp-input" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                    <input
+                      type="date"
+                      className="ui-input exp-input"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                    />
                   </div>
                 )}
 
@@ -373,26 +398,33 @@ function ExportPage(): React.JSX.Element {
                     <button
                       key={id}
                       type="button"
-                      className={`exp-pill${format === id ? ' is-on' : ''}`}
+                      className={`ui-pill exp-pill${format === id ? ' is-on' : ''}`}
                       onClick={() => setFormat(id)}
                     >
                       {label}
                     </button>
                   ))}
                 </div>
-                <div className="exp-hint">附件本体不包含在导出中(消息记录其 md5/文件名引用);TXT 适合阅读,JSON 保留结构化字段便于未来导入。</div>
+                <div className="exp-hint">
+                  附件本体不包含在导出中(消息记录其 md5/文件名引用);TXT 适合阅读,JSON
+                  保留结构化字段便于未来导入。
+                </div>
 
                 <div className="exp-section-title">导出位置</div>
                 <div className="exp-folder-row">
                   <span className="exp-folder">{folder || '未选择'}</span>
-                  <button type="button" className="exp-btn ghost" onClick={() => void pickFolder()}>
+                  <button
+                    type="button"
+                    className="ui-btn exp-btn ghost"
+                    onClick={() => void pickFolder()}
+                  >
                     选择目录
                   </button>
                 </div>
 
                 <button
                   type="button"
-                  className="exp-btn primary exp-go"
+                  className="ui-btn is-primary exp-btn exp-go"
                   disabled={busy || selected.size === 0 || !folder}
                   onClick={() => void startChatExport()}
                 >
@@ -401,12 +433,15 @@ function ExportPage(): React.JSX.Element {
                 {progress && (
                   <div className="exp-progress">
                     <div className="exp-progress-text">
-                      正在导出 {progress.name}（{progress.current}/{progress.total}）· {progress.detail}
+                      正在导出 {progress.name}（{progress.current}/{progress.total}）·{' '}
+                      {progress.detail}
                     </div>
                     <div className="exp-bar">
                       <div
                         className="exp-bar-in"
-                        style={{ width: `${(progress.current / Math.max(1, progress.total)) * 100}%` }}
+                        style={{
+                          width: `${(progress.current / Math.max(1, progress.total)) * 100}%`
+                        }}
                       />
                     </div>
                   </div>
@@ -420,7 +455,7 @@ function ExportPage(): React.JSX.Element {
                       </div>
                     ))}
                     {result.length > 8 && <div>… 等 {result.length} 个</div>}
-                    <button type="button" className="exp-link" onClick={() => void openFolder()}>
+                    <button type="button" className="ui-link" onClick={() => void openFolder()}>
                       打开导出目录
                     </button>
                   </div>
@@ -439,16 +474,22 @@ function ExportPage(): React.JSX.Element {
                 <div>· 团队客服成员、智能体(人设)配置</div>
                 <div>· 微信账号摘要(来源/状态,不含密钥)</div>
               </div>
-              <div className="exp-hint">该归档可在密钥/源库失效后用于回顾运营数据;文件为 JSON,可在其他机器导入查看。</div>
+              <div className="exp-hint">
+                该归档可在密钥/源库失效后用于回顾运营数据;文件为 JSON,可在其他机器导入查看。
+              </div>
               <div className="exp-folder-row">
                 <span className="exp-folder">{folder || '未选择(导出时弹窗选择)'}</span>
-                <button type="button" className="exp-btn ghost" onClick={() => void pickFolder()}>
+                <button
+                  type="button"
+                  className="ui-btn exp-btn ghost"
+                  onClick={() => void pickFolder()}
+                >
                   选择目录
                 </button>
               </div>
               <button
                 type="button"
-                className="exp-btn primary exp-go"
+                className="ui-btn is-primary exp-btn exp-go"
                 disabled={busy}
                 onClick={() => void startBizExport()}
               >
@@ -464,7 +505,7 @@ function ExportPage(): React.JSX.Element {
               {bizResult && (
                 <div className="exp-result">
                   <div className="exp-result-title">✓ 已生成 {bizResult}</div>
-                  <button type="button" className="exp-link" onClick={() => void openFolder()}>
+                  <button type="button" className="ui-link" onClick={() => void openFolder()}>
                     打开导出目录
                   </button>
                 </div>

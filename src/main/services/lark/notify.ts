@@ -209,12 +209,6 @@ export interface AlertIssue {
   reason?: string
 }
 
-function fmtTime(ts: number): string {
-  const d = new Date(ts)
-  const p = (n: number): string => String(n).padStart(2, '0')
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
-
 /** 问题告警推送(新问题 / 盯办升级);未开启或无目标时静默返回 */
 export async function notifyIssueAlert(input: {
   kind: FeishuNotifyEvent
@@ -233,7 +227,7 @@ export async function notifyIssueAlert(input: {
     const sev = i.severity && i.severity !== '一般' ? `[${i.severity}] ` : ''
     const who = i.assignee ? ` · 跟进:${i.assignee}` : ' · 未指派'
     const why = i.reason ? ` · ${i.reason}` : ''
-    return `${n + 1}. ${sev}${i.type} ${i.title}(群:${i.groupName || '-'}) 首现 ${fmtTime(i.occurAt)}${who}${why}`
+    return `${n + 1}. ${sev}${i.type} ${i.title}(群:${i.groupName || '-'}) 首现 ${fmtStamp(i.occurAt)}${who}${why}`
   })
   if (input.issues.length > 10) lines.push(`…等共 ${input.issues.length} 条`)
   const text = [head, ...lines, '', '打开微信客服工作台查看详情'].join('\n')

@@ -1,6 +1,7 @@
 import { listIssuesByGroup, searchIssues } from '../../db/repos/issueRepo'
 import { listTeamMembers } from '../../db/repos/teamRepo'
 import { issueStatusLabel } from './issueLabel'
+import { fmtStamp } from '../../../shared/monitorMetrics'
 
 /**
  * 建议 Agent 只读工具面（迷你自研 Agent 层的工具注册表）。
@@ -28,12 +29,6 @@ function clip(text: string): string {
   return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}\n…(已截断)` : text
 }
 
-function fmtTime(ts: number): string {
-  const d = new Date(ts)
-  const p = (n: number): string => String(n).padStart(2, '0')
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
-
 export const SUGGEST_TOOLS: AgentTool[] = [
   {
     name: 'read_group_issues',
@@ -47,15 +42,13 @@ export const SUGGEST_TOOLS: AgentTool[] = [
       const limit = Math.min(Math.max(Math.floor(Number(args.limit) || 5), 1), 10)
       const score: Record<string, number> = { open: 0, stalled: 1, done: 2, archived: 3 }
       const issues = listIssuesByGroup(ctx.wxid, ctx.sessionId)
-        .sort(
-          (a, b) => score[a.status] - score[b.status] || b.occurAt - a.occurAt
-        )
+        .sort((a, b) => score[a.status] - score[b.status] || b.occurAt - a.occurAt)
         .slice(0, limit)
       if (issues.length === 0) return '该群近期没有记录到问题。'
       return issues
         .map((it) => {
           const owner = it.assignee ? `，跟进人 ${it.assignee}` : '，未指派'
-          return `- [${issueStatusLabel(it)}] ${it.type} ${it.title}（首现 ${fmtTime(it.occurAt)}，${it.msgCount} 条证据${owner}）`
+          return `- [${issueStatusLabel(it)}] ${it.type} ${it.title}（首现 ${fmtStamp(it.occurAt)}，${it.msgCount} 条证据${owner}）`
         })
         .join('\n')
     }
@@ -74,15 +67,14 @@ export const SUGGEST_TOOLS: AgentTool[] = [
       return issues
         .map((it) => {
           const g = it.groupName || it.groupUsername
-          return `- [${issueStatusLabel(it)}] ${it.type} ${it.title}（群 ${g}，首现 ${fmtTime(it.occurAt)}）`
+          return `- [${issueStatusLabel(it)}] ${it.type} ${it.title}（群 ${g}，首现 ${fmtStamp(it.occurAt)}）`
         })
         .join('\n')
     }
   },
   {
     name: 'list_team_members',
-    schema:
-      '列出已全局标记的团队客服成员（我方同事，他们的发言不是客户诉求）。args: {}',
+    schema: '列出已全局标记的团队客服成员（我方同事，他们的发言不是客户诉求）。args: {}',
     run: async (ctx) => {
       const members = listTeamMembers(ctx.wxid)
       if (members.length === 0) return '当前没有标记任何团队客服成员。'
@@ -138,7 +130,10 @@ export function collectLocalFacts(ctx: AgentToolCtx): string {
       parts.push(
         `本群待处理问题：\n` +
           open
-            .map((it) => `- [${it.type}] ${it.title}${it.summary ? `（${it.summary.slice(0, 40)}…）` : ''}`)
+            .map(
+              (it) =>
+                `- [${it.type}] ${it.title}${it.summary ? `（${it.summary.slice(0, 40)}…）` : ''}`
+            )
             .join('\n')
       )
     }

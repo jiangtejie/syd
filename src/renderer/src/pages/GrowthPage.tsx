@@ -1239,6 +1239,19 @@ function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
     void load(true)
   }, [load])
 
+  /**
+   * 详情面板跟着列表走：详情那条已经不在当前列表里（被删掉、或改了筛选/排序后不属于这个视野）就收起来。
+   * 只在「没有更多分页且不在加载」时判断 —— 否则翻页途中会误判成"不在列表里"而把详情关掉。
+   */
+  useEffect(() => {
+    if (detailId == null || loading || loadingMore) return
+    if (items.length < total) return
+    if (items.some((i) => i.id === detailId)) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 列表刷新后同步关闭已失效的详情(全仓同款模式)
+    setDetailId(null)
+    setDetail(null)
+  }, [items, total, loading, loadingMore, detailId])
+
   /** 强制重拉详情: 不走 openDetail 的「同一行再点收起」逻辑 */
   const refreshDetail = async (id: number): Promise<void> => {
     if (!growthApi) return

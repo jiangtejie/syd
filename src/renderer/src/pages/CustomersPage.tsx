@@ -145,12 +145,15 @@ function ProfileDrawer({
 function CustomersPage(): React.JSX.Element {
   const sessions = useWorkbenchStore((s) => s.sessions)
   const refreshSessions = useWorkbenchStore((s) => s.refreshSessions)
+  /** 跳到「值班」页（那里是话术/决策记录，同一个数字员工状态） */
+  const gotoPage = useWorkbenchStore((s) => s.setPage)
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [jumpValue, setJumpValue] = useState('')
-  const [selected, setSelected] = useState<CustomerProfile | null>(null)
+  /** 抽屉里展示哪个客户:只记 id,渲染时从实时列表取(见下方 selected) */
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   /** 当前时间（mount 后异步测量 + 每分钟校准，避免渲染期取 Date.now） */
   const [nowMs, setNowMs] = useState<number>(0)
 
@@ -233,6 +236,16 @@ function CustomersPage(): React.JSX.Element {
   }, [refreshSessions])
 
   const customers = useMemo(() => deriveCustomers(sessions, nowMs), [sessions, nowMs])
+
+  /**
+   * 抽屉的客户按 id 从**实时列表**取:
+   * 之前存的是对象快照 —— 列表刷新后抽屉还显示旧数据;客户消失(清空数据/会话被删)时抽屉也不关。
+   * 现在客户不存在就自然变成 null,抽屉自己收起来。
+   */
+  const selected = useMemo(
+    () => (selectedId ? (customers.find((c) => c.wxid === selectedId) ?? null) : null),
+    [selectedId, customers]
+  )
 
   const tagCounts = useMemo(() => {
     const m = new Map<string, number>()
@@ -344,7 +357,7 @@ function CustomersPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* 数字员工：群级自动回复的批量管理（客户页是唯一入口） */}
+      {/* 数字员工：群级自动回复的「批量」管理入口（总开关/话术/决策记录在「值班」页，两处是同一份状态） */}
       <div className="cu-agentbar">
         <span className="cu-agent-title">数字员工</span>
         <span className="cu-agent-meta">
@@ -352,6 +365,14 @@ function CustomersPage(): React.JSX.Element {
           {defaultMode === 'shadow' ? '影子模式（只记录不发送）' : '正式模式'} · 群 {groupCount}{' '}
           个（已开 {agentOnCount}）· 单独设置 {overrideCount} 个
         </span>
+        <button
+          type="button"
+          className="cu-agent-goto"
+          onClick={() => gotoPage('duty')}
+          title="这里管的是「按群批量开关」；总开关、话术库与决策记录在「值班」页（同一份状态）"
+        >
+          话术与决策记录 →
+        </button>
         <div className="cu-agent-filters">
           {(
             [
@@ -438,11 +459,11 @@ function CustomersPage(): React.JSX.Element {
             className="cu-row"
             role="button"
             tabIndex={0}
-            onClick={() => setSelected(c)}
+            onClick={() => setSelectedId(c.wxid)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
-                setSelected(c)
+                setSelectedId(c.wxid)
               }
             }}
           >
@@ -491,7 +512,7 @@ function CustomersPage(): React.JSX.Element {
               {c.isGroup ? (
                 <button
                   type="button"
-                  className={`cu-agent-toggle${groupOn(c.wxid) ? ' is-on' : ''}`}
+                  className={`ui-pill cu-agent-toggle${groupOn(c.wxid) ? ' is-on' : ''}`}
                   title={
                     groupOn(c.wxid)
                       ? `自动回复已开启（${(switches[c.wxid]?.mode ?? defaultMode) === 'shadow' ? '影子模式：只记录不发送' : '正式模式'}）—— 点击关闭`
@@ -523,7 +544,7 @@ function CustomersPage(): React.JSX.Element {
             <span className="cu-pager-info">共 {filtered.length} 条</span>
             <div className="cu-pager-ctrl">
               <select
-                className="cu-pager-select"
+                className="ui-select cu-pager-select"
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
                 aria-label="每页条数"
@@ -536,7 +557,7 @@ function CustomersPage(): React.JSX.Element {
               </select>
               <button
                 type="button"
-                className="cu-pager-btn"
+                className="ui-btn cu-pager-btn"
                 disabled={curPage <= 1}
                 onClick={() => goPage(curPage - 1)}
               >
@@ -547,7 +568,7 @@ function CustomersPage(): React.JSX.Element {
               </span>
               <button
                 type="button"
-                className="cu-pager-btn"
+                className="ui-btn cu-pager-btn"
                 disabled={curPage >= totalPages}
                 onClick={() => goPage(curPage + 1)}
               >
@@ -555,7 +576,7 @@ function CustomersPage(): React.JSX.Element {
               </button>
               <div className="cu-pager-jump">
                 <input
-                  className="cu-pager-jump-input"
+                  className="ui-input cu-pager-jump-input"
                   placeholder={`跳至 ${curPage}`}
                   value={jumpValue}
                   inputMode="numeric"
@@ -566,7 +587,7 @@ function CustomersPage(): React.JSX.Element {
                 />
                 <button
                   type="button"
-                  className="cu-pager-btn"
+                  className="ui-btn cu-pager-btn"
                   disabled={jumpValue === ''}
                   onClick={applyJump}
                 >
@@ -578,7 +599,7 @@ function CustomersPage(): React.JSX.Element {
         )}
       </div>
 
-      {selected && <ProfileDrawer customer={selected} onClose={() => setSelected(null)} />}
+      {selected && <ProfileDrawer customer={selected} onClose={() => setSelectedId(null)} />}
     </div>
   )
 }

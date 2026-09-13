@@ -10,6 +10,7 @@ import type { ChatMessage, SessionSummary } from '../../../shared/types'
 import { createLogger } from '../logging'
 import { Client } from 'pg'
 import { listJobCursors, saveJobCursors } from '../../db/repos/reportRepo'
+import { fmtStamp } from '../../../shared/monitorMetrics'
 import {
   ensurePgSchema,
   upsertPgMessages,
@@ -124,12 +125,8 @@ function contentFor(m: ChatMessage, typeName: string): string {
   return map[typeName] ?? '[消息]'
 }
 
-function fmtTime(ms: number): string {
-  if (!ms || ms <= 0) return ''
-  const d = new Date(ms)
-  const p = (n: number): string => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
+/** 时间一律走共享口径（YYYY-MM-DD HH:mm:ss，精确到秒）；0 表示没有时间，保持空串 */
+const fmtTime = (ms: number): string => (ms && ms > 0 ? fmtStamp(ms) : '')
 
 function toPgRow(sessionWxid: string, m: ChatMessage): PgMessageRow | null {
   const localId = Number(m.localId)

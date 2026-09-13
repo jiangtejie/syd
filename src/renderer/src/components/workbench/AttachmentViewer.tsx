@@ -353,13 +353,23 @@ function ImagePreviewer({ src }: { src: string }): React.JSX.Element {
         <button type="button" className="wb-img-btn" onClick={() => zoom(-STEP * 2)} title="缩小">
           −
         </button>
-        <button type="button" className="wb-img-pct" onClick={() => natural && applyFit(natural)} title="双击图片或点击回到自适应">
+        <button
+          type="button"
+          className="wb-img-pct"
+          onClick={() => natural && applyFit(natural)}
+          title="双击图片或点击回到自适应"
+        >
           {pct}%
         </button>
         <button type="button" className="wb-img-btn" onClick={() => zoom(STEP * 2)} title="放大">
           +
         </button>
-        <button type="button" className="wb-img-btn" onClick={() => natural && applyFit(natural)} title="适应窗口">
+        <button
+          type="button"
+          className="wb-img-btn"
+          onClick={() => natural && applyFit(natural)}
+          title="适应窗口"
+        >
           ⤢ 适应
         </button>
       </div>

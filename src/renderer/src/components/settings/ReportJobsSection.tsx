@@ -202,6 +202,11 @@ export default function ReportJobsSection(): React.JSX.Element {
     const res = await reportApi?.remove(j.id).catch(() => null)
     if (res?.ok) {
       toast.success('已删除')
+      // 正在编辑的就是这条 → 退回新建态,否则表单会挂着一个已经不存在的 id(保存时报错或误建)
+      if (editId === j.id) {
+        setEditId(null)
+        setForm(emptyForm())
+      }
       await load()
     } else {
       toast.error((res as { error?: string } | null)?.error || '删除失败')

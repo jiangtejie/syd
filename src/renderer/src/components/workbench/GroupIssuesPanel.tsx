@@ -83,7 +83,7 @@ function StatusActions({
       {issue.needConfirm && st === 'open' && (
         <button
           type="button"
-          className="gip-btn primary"
+          className="ui-btn is-primary gip-btn"
           title="核实为真实问题：移出疑似桶并计入正式待办"
           onClick={() => void confirmIssue(issue.id)}
         >
@@ -91,18 +91,18 @@ function StatusActions({
         </button>
       )}
       {(st === 'open' || st === 'stalled') && (
-        <button type="button" className="gip-btn primary" onClick={() => act('done')}>
+        <button type="button" className="ui-btn is-primary gip-btn" onClick={() => act('done')}>
           ✓ 标记已解决
         </button>
       )}
       {st === 'open' && (
         <>
-          <button type="button" className="gip-btn" onClick={() => act('stalled')}>
+          <button type="button" className="ui-btn gip-btn" onClick={() => act('stalled')}>
             暂搁置
           </button>
           <button
             type="button"
-            className="gip-btn ghost"
+            className="ui-btn gip-btn ghost"
             title="误报/无需处理：归档后同一问题不再提醒"
             onClick={() => act('archived')}
           >
@@ -111,7 +111,7 @@ function StatusActions({
         </>
       )}
       {(st === 'done' || st === 'stalled' || st === 'archived') && (
-        <button type="button" className="gip-btn" onClick={() => act('open')}>
+        <button type="button" className="ui-btn gip-btn" onClick={() => act('open')}>
           ↺ 重新打开
         </button>
       )}
@@ -193,7 +193,7 @@ function IssueTimeline({
         <StatusActions issue={cur} />
         <button
           type="button"
-          className="gip-btn ghost"
+          className="ui-btn gip-btn ghost"
           onClick={() => onLocate(cur.occurAt)}
           title="切到该群聊天并滚动到问题发生时间附近"
         >
@@ -247,6 +247,19 @@ function GroupIssuesPanel(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话切换时同步复位 UI（全仓同款模式）
     setExpandedId(null)
   }, [activeSessionId])
+
+  /**
+   * 展开的那条被处置/归档后已不在列表里 → 收起展开态。
+   * 否则 expandedId 会一直挂着一条看不见的记录：一旦它以后又回到列表（被重开/取消归档），
+   * 会在没有任何点击的情况下**自己展开**，看起来像"点了没反应"或"面板乱跳"。
+   */
+  useEffect(() => {
+    if (expandedId === null) return
+    if (issues.some((i) => i.id === expandedId)) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 展开的那条已不在列表里,收起展开态(全仓同款模式)
+    setExpandedId(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在列表变化时校验，展开本身不触发
+  }, [issues])
 
   // 记忆分析窗口（localStorage），首次挂载与已记忆值不同步时生效
   useEffect(() => {
@@ -500,7 +513,7 @@ function GroupIssuesPanel(): React.JSX.Element {
           </select>
           <button
             type="button"
-            className={`gip-btn${excluded ? '' : ' ghost'}`}
+            className={`ui-btn gip-btn${excluded ? '' : ' ghost'}`}
             disabled={analyzing}
             onClick={onToggleScope}
             title={
@@ -513,7 +526,7 @@ function GroupIssuesPanel(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="gip-btn ghost"
+            className="ui-btn gip-btn ghost"
             disabled={analyzing}
             onClick={onReanalyze}
             title="重算本群问题:清空待处理记录后按当前窗口重新分析(历史已解决/归档保留)"
@@ -522,7 +535,7 @@ function GroupIssuesPanel(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="gip-btn danger"
+            className="ui-btn is-danger gip-btn"
             disabled={analyzing || issues.length === 0}
             onClick={onClearAll}
             title="删除本群全部问题记录(含历史/证据)并立即重新提取,不可恢复"

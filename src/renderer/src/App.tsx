@@ -133,7 +133,7 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
 const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }> = [
   { key: 'workbench', icon: 'workbench', label: 'AI' },
   { key: 'monitor', icon: 'monitor', label: '监控' },
-  { key: 'dashboard', icon: 'dashboard', label: '看板' },
+  { key: 'dashboard', icon: 'dashboard', label: '运营看板' },
   { key: 'chat', icon: 'chat', label: '对话' },
   { key: 'customers', icon: 'customers', label: '客户' },
   { key: 'duty', icon: 'duty', label: '值班' },

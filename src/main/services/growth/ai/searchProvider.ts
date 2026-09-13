@@ -143,7 +143,8 @@ async function serperImages(q: string, count: number, key: string): Promise<Imag
 }
 
 function requireKey(cfg: SearchConfig): string {
-  if (!cfg.enabled) throw new SearchSetupError('联网搜索未启用: 请到 设置 → AI 助手 → 联网搜索 开启并填写 Key')
+  if (!cfg.enabled)
+    throw new SearchSetupError('联网搜索未启用: 请到 设置 → AI 助手 → 联网搜索 开启并填写 Key')
   if (!cfg.apiKey) throw new SearchSetupError('联网搜索缺少 API Key(设置 → AI 助手 → 联网搜索)')
   return cfg.apiKey
 }
@@ -164,7 +165,9 @@ export async function searchWeb(
   else if (cfg.provider === 'serper') out = await serperWeb(query, count, key)
   else out = await bochaWeb(query, count, key)
   cache.set(ck, { at: Date.now(), web: out })
-  log.info('web search provider=' + cfg.provider + ' q=' + query.slice(0, 40) + ' n=' + String(out.length))
+  log.info(
+    'web search provider=' + cfg.provider + ' q=' + query.slice(0, 40) + ' n=' + String(out.length)
+  )
   return out
 }
 
@@ -181,9 +184,17 @@ export async function searchImages(
 
   let out: ImageResult[] = []
   if (cfg.provider === 'serper') out = await serperImages(query, count, key)
-  else if (cfg.provider === 'tavily') throw new SearchSetupError('Tavily 不支持图片检索: 请改用 bocha 或 serper')
+  else if (cfg.provider === 'tavily')
+    throw new SearchSetupError('Tavily 不支持图片检索: 请改用 bocha 或 serper')
   else out = await bochaImages(query, count, key)
   cache.set(ck, { at: Date.now(), images: out })
-  log.info('image search provider=' + cfg.provider + ' q=' + query.slice(0, 40) + ' n=' + String(out.length))
+  log.info(
+    'image search provider=' +
+      cfg.provider +
+      ' q=' +
+      query.slice(0, 40) +
+      ' n=' +
+      String(out.length)
+  )
   return out
 }

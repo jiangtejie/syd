@@ -13,6 +13,7 @@ import { useTeamNames } from '../lib/teamNames'
 import { PlanBanner, type DuplicatePlanView } from '../components/monitor/PlanBanner'
 import { KpiCard } from '../components/monitor/IssueBits'
 import { statusChip } from '../lib/monitorChips'
+import { nextSelection } from '../lib/selection'
 import { IssueDrawer } from '../components/monitor/IssueDrawer'
 import {
   buildAgeOption,
@@ -311,35 +312,50 @@ function MonitorPage(): React.JSX.Element {
     setDetailLoading(false)
   }
 
-  // 默认选中第一条(正式待办列表第一行;用户已选择或改动过筛选时不打扰)
+  /**
+   * 抽屉里那条问题跟着列表实时刷新。
+   *
+   * `active` 原来只是一个**快照**：处置/同事回写/重析之后列表更新了，抽屉里的状态、跟进人、优先级、
+   * 复发次数还是旧值（点完「已解决」右栏仍显示「待处理」就是这么来的）。
+   * 这里在列表里找到同 id 的最新那条回填；**当它已不在当前视野时直接返回**，把「推进到下一条」让给下一个 effect。
+   */
   useEffect(() => {
-    if (active || loading || statusFilter !== 'open') return
-    if (
+    if (!active) return
+    if (!filtered.some((i) => i.id === active.id)) return
+    const fresh = issues.find((i) => i.id === active.id)
+    if (!fresh || fresh === active) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 列表刷新后把抽屉同步成最新数据(全仓同款模式)
+    setActive(fresh)
+  }, [issues, filtered, active])
+
+  /**
+   * 选中项与当前列表保持一致（默认选中第一条 + 处置后自动推进）。
+   *
+   * 规则本身在 lib/selection.ts（纯函数、有自检）：选中项**离开视野**就切到列表第一条，
+   * 仍在列表里则不动（在「全部」页签改状态不打断用户），列表空了就收起详情。
+   * 之前的写法只在「没选中+没筛选+待处理页签」才默认选第一条，于是处置完一条后详情一直挂着它。
+   */
+  useEffect(() => {
+    const userFiltered = !!(
       keyword.trim() ||
       typeFilter !== 'all' ||
       groupFilter ||
       ownerFilter ||
       sevFilter !== 'all'
-    ) {
+    )
+    const action = nextSelection({ active, list: filtered, loading, userFiltered })
+    if (action.kind === 'clear') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 当前视野已空,收起详情(全仓同款模式)
+      setActive(null)
+      setDetail(null)
       return
     }
-    const first = formalIssues.find((i) => i.status === 'open')
-    if (!first) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面默认选中第一条并展开详情(全仓同款模式)
-    void openDetail(first)
+    if (action.kind === 'select' && action.item) {
+      // openDetail 内部是异步取数,setState 发生在 await 之后
+      void openDetail(action.item)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    issues,
-    formalIssues,
-    loading,
-    active,
-    statusFilter,
-    typeFilter,
-    groupFilter,
-    ownerFilter,
-    sevFilter,
-    keyword
-  ])
+  }, [filtered, loading, active, keyword, typeFilter, groupFilter, ownerFilter, sevFilter])
 
   // 指派/更换/取消跟进人：乐观更新(列表/抽屉/详情) + 回写，失败重载
   const applyAssignee = async (id: number, username: string): Promise<void> => {
@@ -681,7 +697,7 @@ function MonitorPage(): React.JSX.Element {
         <h2 className="page-title">问题监控</h2>
         <div className="mon-toolbar">
           <select
-            className="mon-select"
+            className="ui-select mon-select"
             value={range}
             onChange={(e) => setRange(Number(e.target.value))}
             title="趋势统计窗口"
@@ -694,7 +710,7 @@ function MonitorPage(): React.JSX.Element {
           </select>
           <button
             type="button"
-            className="mon-btn ghost"
+            className="ui-btn mon-btn ghost"
             disabled={loading}
             onClick={() => void load()}
           >
@@ -702,7 +718,7 @@ function MonitorPage(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="mon-btn ghost"
+            className="ui-btn mon-btn ghost"
             onClick={() => void exportSnapshot()}
             title="导出当前监控快照(KPI/图表/问题清单 JSON)"
           >
@@ -711,7 +727,7 @@ function MonitorPage(): React.JSX.Element {
           {/* 飞书多维表格同步:未配置时点一下就地配置;已配置则一键同步(详细记录在 设置 → 议题同步) */}
           <button
             type="button"
-            className="mon-btn ghost"
+            className="ui-btn mon-btn ghost"
             disabled={baseBusy !== '' || setupBusy}
             onClick={() => {
               if (baseSync?.configured) void syncBaseNow()
@@ -777,7 +793,7 @@ function MonitorPage(): React.JSX.Element {
           )}
           <button
             type="button"
-            className="mon-btn ghost"
+            className="ui-btn mon-btn ghost"
             disabled={anaBusy || loading}
             onClick={() => void runFullAnalyze()}
             title="对全部活跃群按近 7 天重新分析提取(数据量大时较慢,可中途取消)"
@@ -791,7 +807,7 @@ function MonitorPage(): React.JSX.Element {
           {anaBusy && (
             <button
               type="button"
-              className="mon-btn ghost"
+              className="ui-btn mon-btn ghost"
               onClick={() => void cancelAnalyze()}
               title="停止剩余群的分析;已扫过的群结果保留"
             >
@@ -800,7 +816,7 @@ function MonitorPage(): React.JSX.Element {
           )}
           <button
             type="button"
-            className="mon-btn ghost"
+            className="ui-btn mon-btn ghost"
             disabled={anaBusy}
             onClick={() => void runMergeDuplicates()}
             title="按标题/证据/客户判据找出历史上被重复提取的同一议题,先预览再合并"
@@ -809,7 +825,7 @@ function MonitorPage(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="mon-btn ghost"
+            className="ui-btn mon-btn ghost"
             disabled={anaBusy}
             onClick={() => void runArchiveStale()}
             title="把 90 天前已解决/已搁置的记录归档:不再占用活跃列表与盯办,闭环率与趋势照旧统计"
@@ -818,7 +834,7 @@ function MonitorPage(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="mon-btn danger"
+            className="ui-btn is-danger mon-btn danger"
             onClick={() => void runClearAll()}
             title="删除该账号全部问题记录(不可恢复)"
           >
@@ -853,14 +869,14 @@ function MonitorPage(): React.JSX.Element {
           </div>
           <div className="mon-sync-row">
             <input
-              className="mon-input"
+              className="ui-input mon-input"
               value={setupLink}
               onChange={(e) => setSetupLink(e.target.value)}
               placeholder="粘贴多维表格分享链接（…/base/xxxxx）"
             />
             <button
               type="button"
-              className="mon-btn"
+              className="ui-btn mon-btn"
               disabled={setupBusy}
               onClick={() => void runQuickSetup()}
             >
@@ -868,7 +884,7 @@ function MonitorPage(): React.JSX.Element {
             </button>
             <button
               type="button"
-              className="mon-btn ghost"
+              className="ui-btn mon-btn ghost"
               disabled={setupBusy}
               onClick={() => setSetupOpen(false)}
             >
@@ -952,7 +968,7 @@ function MonitorPage(): React.JSX.Element {
             <div className="mon-card mon-list-card">
               <div className="mon-filter-bar">
                 <select
-                  className="mon-select"
+                  className="ui-select mon-select"
                   value={statusFilter}
                   onChange={(e) => {
                     setStatusFilter(e.target.value as StatusFilter)
@@ -967,7 +983,7 @@ function MonitorPage(): React.JSX.Element {
                   <option value="archived">已归档</option>
                 </select>
                 <select
-                  className="mon-select"
+                  className="ui-select mon-select"
                   value={typeFilter}
                   onChange={(e) => {
                     setTypeFilter(e.target.value as 'all' | FeedbackIssueType)
@@ -982,7 +998,7 @@ function MonitorPage(): React.JSX.Element {
                   ))}
                 </select>
                 <select
-                  className="mon-select"
+                  className="ui-select mon-select"
                   value={sevFilter}
                   onChange={(e) => {
                     setSevFilter(e.target.value as 'all' | FeedbackIssueSeverity)
@@ -998,7 +1014,7 @@ function MonitorPage(): React.JSX.Element {
                   <option value="一般">一般</option>
                 </select>
                 <select
-                  className="mon-select"
+                  className="ui-select mon-select"
                   value={groupFilter}
                   onChange={(e) => {
                     setGroupFilter(e.target.value)
@@ -1013,7 +1029,7 @@ function MonitorPage(): React.JSX.Element {
                   ))}
                 </select>
                 <select
-                  className="mon-select"
+                  className="ui-select mon-select"
                   value={ownerFilter}
                   onChange={(e) => {
                     setOwnerFilter(e.target.value)
@@ -1030,7 +1046,7 @@ function MonitorPage(): React.JSX.Element {
                   ))}
                 </select>
                 <input
-                  className="mon-input"
+                  className="ui-input mon-input"
                   placeholder="搜索标题/摘要…"
                   value={keyword}
                   onChange={(e) => {
@@ -1128,7 +1144,7 @@ function MonitorPage(): React.JSX.Element {
                     </span>
                     <div className="mon-pager-ctrl">
                       <select
-                        className="mon-select"
+                        className="ui-select mon-select"
                         value={pageSize}
                         aria-label="每页条数"
                         title="每页条数"
@@ -1145,7 +1161,7 @@ function MonitorPage(): React.JSX.Element {
                       </select>
                       <button
                         type="button"
-                        className="mon-btn ghost"
+                        className="ui-btn mon-btn ghost"
                         disabled={curPage <= 1}
                         onClick={() => setPage(curPage - 1)}
                       >
@@ -1153,7 +1169,7 @@ function MonitorPage(): React.JSX.Element {
                       </button>
                       <button
                         type="button"
-                        className="mon-btn ghost"
+                        className="ui-btn mon-btn ghost"
                         disabled={curPage >= pageTotal}
                         onClick={() => setPage(curPage + 1)}
                       >

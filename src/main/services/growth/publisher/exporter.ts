@@ -93,7 +93,10 @@ export async function exportPublishPackage(
   if (picked.canceled || !picked.filePaths[0]) return { ok: false, error: '已取消导出' }
 
   const allOutputs = listRemixOutputViews(contentId, 30)
-  const outputs = outputIds.length > 0 ? allOutputs.filter((o) => outputIds.includes(o.id)) : allOutputs.slice(0, 6)
+  const outputs =
+    outputIds.length > 0
+      ? allOutputs.filter((o) => outputIds.includes(o.id))
+      : allOutputs.slice(0, 6)
 
   const dir = join(
     picked.filePaths[0],

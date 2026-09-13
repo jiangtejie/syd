@@ -29,8 +29,9 @@ body {
 }
 
 /* 浅色 UI 的正文基调；深色区（如左侧导航）各自显式覆盖文字色。
- * 放入 @layer base：避免「无 layer 样式」压过 HeroUI 组件（@layer components）里
- * button/input 的前景色，否则如 .button--primary 的白字会被下面 color:inherit 覆盖。 */
+ * 放入 @layer base：Tailwind 的 preflight 与之一同落在 layer 里，
+ * 而各页面的手写 CSS 是「无 layer 样式」—— 级联时无 layer 优先级更高，
+ * 所以这里只做「控件继承字体/颜色」这类兜底，不会反过来压掉页面自己的样式。 */
 @layer base {
   button,
   input,

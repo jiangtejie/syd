@@ -9,6 +9,7 @@ import { listTeamMembers } from '../../../db/repos/teamRepo'
 import { issueStatusLabel } from '../issueLabel'
 import { getSessions, getMessages } from '../../wechat/wxService'
 import { enqueueSend } from '../../send/sendService'
+import { fmtStamp } from '../../../../shared/monitorMetrics'
 import { sendAgentEnabled } from '../sendGate'
 import type { ChatMessage } from '../../../../shared/types'
 
@@ -68,12 +69,6 @@ export function schemaFromParams(
   return schema
 }
 
-function fmtTime(ts: number): string {
-  const d = new Date(ts)
-  const p = (n: number): string => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
-
 /** 单条微信消息转可读文本(助手展示用,不依赖解析对象内部形态) */
 function msgText(m: ChatMessage): string {
   const p = m.parsedContent
@@ -110,7 +105,7 @@ function issueLine(
 ): string {
   const sev = it.severity && it.severity !== '一般' ? `【${it.severity}】` : ''
   const g = withGroup ? `(群:${it.groupName || it.groupUsername || '-'})` : ''
-  return `- [${issueStatusLabel(it)}] ${sev}${it.type} ${it.title} ${g} 首现 ${fmtTime(it.occurAt)}${
+  return `- [${issueStatusLabel(it)}] ${sev}${it.type} ${it.title} ${g} 首现 ${fmtStamp(it.occurAt)}${
     it.msgCount ? `,${it.msgCount} 条证据` : ''
   }${it.assignee ? `,跟进人 ${it.assignee}` : ',未指派'}`
 }
@@ -288,7 +283,7 @@ export const BUILTIN_TOOLS: ToolDef[] = [
         `- 类型:${session.isGroup ? '群聊' : session.isOfficialAccount ? '公众号' : '个人'}${
           session.isWeCom ? '(企微)' : ''
         }`,
-        `- 未读 ${session.unreadCount} 条;最后消息时间 ${fmtTime(session.lastTimestamp)}`,
+        `- 未读 ${session.unreadCount} 条;最后消息时间 ${fmtStamp(session.lastTimestamp)}`,
         session.summary ? `- 最近消息摘要:${session.summary}` : ''
       ]
         .filter(Boolean)

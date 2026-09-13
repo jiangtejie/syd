@@ -205,7 +205,9 @@ export function registerGrowthHandlers(): void {
 
   // ── 批量 / 上传 / 导出 / 重下载 / 概览 ──
   ipcMain.handle('cs:growth:batchPatch', (_e, ids: unknown, patch: unknown) => {
-    const list = Array.isArray(ids) ? ids.map((v) => clampInt(v, 0, 1, Number.MAX_SAFE_INTEGER)).filter(Boolean) : []
+    const list = Array.isArray(ids)
+      ? ids.map((v) => clampInt(v, 0, 1, Number.MAX_SAFE_INTEGER)).filter(Boolean)
+      : []
     if (list.length === 0 || list.length > 200) return err('请选择 1-200 条素材')
     const p = (patch ?? {}) as Record<string, unknown>
     const usage = typeof p.usage === 'string' ? p.usage : undefined
@@ -219,7 +221,9 @@ export function registerGrowthHandlers(): void {
   })
 
   ipcMain.handle('cs:growth:batchRemove', (_e, ids: unknown) => {
-    const list = Array.isArray(ids) ? ids.map((v) => clampInt(v, 0, 1, Number.MAX_SAFE_INTEGER)).filter(Boolean) : []
+    const list = Array.isArray(ids)
+      ? ids.map((v) => clampInt(v, 0, 1, Number.MAX_SAFE_INTEGER)).filter(Boolean)
+      : []
     if (list.length === 0 || list.length > 200) return err('请选择 1-200 条素材')
     try {
       return ok({ removed: batchDeleteContents(list) })
@@ -231,7 +235,9 @@ export function registerGrowthHandlers(): void {
   ipcMain.handle('cs:growth:uploadLocal', async () => {
     try {
       const res = await importLocalMaterials()
-      return res.ok ? ok({ added: res.added, contentId: res.contentId, skipped: res.skipped }) : err(res.error ?? '导入失败')
+      return res.ok
+        ? ok({ added: res.added, contentId: res.contentId, skipped: res.skipped })
+        : err(res.error ?? '导入失败')
     } catch (e) {
       return err(e instanceof Error ? e.message : '导入失败')
     }
@@ -240,7 +246,9 @@ export function registerGrowthHandlers(): void {
   ipcMain.handle('cs:growth:exportPackage', async (_e, id: unknown, outputIds: unknown) => {
     const cid = clampInt(id, 0, 1, Number.MAX_SAFE_INTEGER)
     if (!cid) return err('非法素材 ID')
-    const outs = Array.isArray(outputIds) ? outputIds.map((v) => clampInt(v, 0, 1, Number.MAX_SAFE_INTEGER)).filter(Boolean) : []
+    const outs = Array.isArray(outputIds)
+      ? outputIds.map((v) => clampInt(v, 0, 1, Number.MAX_SAFE_INTEGER)).filter(Boolean)
+      : []
     try {
       const res = await exportPublishPackage(cid, outs)
       return res.ok ? ok({ dir: res.dir, files: res.files }) : err(res.error ?? '导出失败')
@@ -254,7 +262,9 @@ export function registerGrowthHandlers(): void {
     if (!cid) return err('非法素材 ID')
     try {
       const res = await redownloadMissingMedia(cid)
-      return res.ok ? ok({ added: res.added, failed: res.failed }) : err(res.error ?? '重新下载失败')
+      return res.ok
+        ? ok({ added: res.added, failed: res.failed })
+        : err(res.error ?? '重新下载失败')
     } catch (e) {
       return err(e instanceof Error ? e.message : '重新下载失败')
     }

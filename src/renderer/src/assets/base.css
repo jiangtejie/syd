@@ -87,6 +87,131 @@
   border: var(--sb-inset) solid transparent;
   background-clip: content-box;
 }
+
+/* ── 统一控件基元（ui-*）─────────────────────────────────────────────
+ * 为什么要有这一层:审计发现全项目有 13 套页面自带的按钮/输入类族(exp-/mon-/dt-/gth-/st-/db-…),
+ * 同一件事在不同页面长得不一样。这里给出**唯一一套**外观,页面只需要补布局(宽度/flex)。
+ * 用法:`className="ui-btn is-primary"`、`className="ui-input exp-input"`(后者只放布局)。
+ * 迁移方式:逐页替换,替换完删掉该页对应样式,别一次性重写全站。
+ */
+.ui-btn {
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-1);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.ui-btn:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.ui-btn.is-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
+}
+
+.ui-btn.is-primary:hover:not(:disabled) {
+  background: var(--brand-hover);
+  color: var(--on-brand);
+}
+
+.ui-btn.is-danger {
+  border-color: var(--danger-line);
+  color: var(--danger-hover);
+}
+
+.ui-btn.is-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger-hover);
+}
+
+.ui-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ui-input,
+.ui-select,
+.ui-textarea {
+  font-size: 13px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  color: inherit;
+  outline: none;
+}
+
+.ui-input:focus,
+.ui-select:focus,
+.ui-textarea:focus {
+  border-color: var(--brand);
+}
+
+.ui-textarea {
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+/* 分段/页签:同「选中态」一种表达,别再各页自定 */
+.ui-tab {
+  font-size: 13px;
+  padding: 6px 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.ui-tab.is-active {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* 胶囊筛选(可多选/单选的小圆片) */
+.ui-pill {
+  font-size: 12px;
+  padding: 4px 11px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.ui-pill.is-on {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* 文字链接按钮 */
+.ui-link {
+  background: none;
+  border: none;
+  color: var(--info);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ui-link:hover {
+  text-decoration: underline;
+}
 ::-webkit-scrollbar-thumb:hover {
   background: #aab0ba;
   border: var(--sb-inset) solid transparent;

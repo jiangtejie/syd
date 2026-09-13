@@ -1938,39 +1938,10 @@
   flex-wrap: wrap;
 }
 
+/* 外观走全局 ui-btn；这里只留右栏的密度（比工具栏再小一号） */
 .gip-btn {
   font-size: 12px;
   padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-panel);
-  color: var(--text-1);
-  cursor: pointer;
-}
-
-.gip-btn:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-
-.gip-btn.primary {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: var(--on-brand);
-}
-
-.gip-btn.primary:hover {
-  background: var(--brand-hover);
-}
-
-.gip-btn.ghost {
-  border-color: var(--border);
-  background: var(--bg-panel);
-}
-
-.gip-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 
 .gip-sync {
@@ -2428,7 +2399,6 @@
   color: var(--text-3);
 }
 
-
 /* 处理备注（来自飞书多维表格：同事在手机上填的结论，本地只读展示） */
 .gip-note {
   display: flex;
@@ -2449,4 +2419,3 @@
   color: var(--brand);
   font-weight: 600;
 }
-
