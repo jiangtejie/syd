@@ -27,7 +27,8 @@ const TABS: Array<{ key: MonitorTab; label: string; desc: string }> = [
   {
     key: 'ops',
     label: '运营看板',
-    desc: '会话与消息指标(真实微信库) · 待回复队列 · 发送统计与质量(真实审计 send_log)'
+    // 口径写死在壳上：连接微信数据前该页只有空态，所以这里不能像原来那样断言「来自真实微信库」
+    desc: '会话与消息指标(连接微信数据后展示) · 待回复队列 · 发送统计与质量(真实审计 send_log)'
   }
 ]
 

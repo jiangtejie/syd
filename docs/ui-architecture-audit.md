@@ -319,6 +319,14 @@
 - `npm run typecheck` 0 错误；`npx eslint .` 0/0；`npx electron-vite build` 通过；`npm run test:all`（16 个离线自检）全部通过。
 - 结构核验：全仓 `'dashboard'` 只剩 3 处 —— 别名收敛点、`VALID_PAGES`、以及注释；`NavIconName` 已无死成员。
 - 页签记忆：切到「运营看板」后重启应用仍停在运营看板（localStorage `cs.monitorTab`）。
+- 外壳外观用**真实构建 CSS** 渲染核对（该仓一贯手法）：标题与页签同一行、页签右对齐、活动页签绿底绿框加粗、
+  动作条右对齐；看板页签下 5 张指标卡仍是**一行**（证明换根容器没破坏 `.db-cards` 的 grid）。
+- **踩到的坑（已修）**：外壳样式一开始写在 `monitor.css` 里，而它由 `MonitorPage` 导入 → 只随「问题监控」的懒加载块
+  （`MonitorPage-*.css`）走。构建产物里 `mon-tabs/mon-head/mon-page` 确实只在那个文件里，于是「上次停在运营看板」的用户
+  一进来外壳就掉样式（`.mon-head` 不是 flex → 标题和页签竖排）。现在拆出 **`pages/monitor-shell.css`** 由
+  `MonitorShell.tsx` 直接导入，构建后落在 `MonitorShell-*.css`。**通用教训：外壳/共享布局的样式必须由外壳自己导入，
+  不能寄存在某个懒加载面板的 CSS 里。**
+- 运营看板页签的口径副标题改成「会话与消息指标(**连接微信数据后展示**)」——原来那句「来自真实微信库」在未连接时是假话。
 
 ### 仍未做（下一轮候选）
 
