@@ -335,6 +335,12 @@ export interface FeedbackIssueMsg {
   senderIsTeam?: boolean
   text: string
   imageMd5?: string
+  /** 视频证据 md5（微信 4.x 视频落地即明文 mp4） */
+  videoMd5?: string
+  /** 文件证据 md5（当前仅登记，不上传附件） */
+  fileMd5?: string
+  /** 文件证据原始文件名 */
+  fileName?: string
   localType?: number
 }
 
@@ -906,7 +912,7 @@ export interface LarkEvidenceConfig {
   maxChars: number
   /** 证据子表 id(未创建为空) */
   tableId: string
-  /** 是否把图片证据的真图传进「证据图」附件列(默认关:原图比文字更敏感) */
+  /** 是否把证据的图片/视频传到「证据图」附件列(默认关:原图比文字更敏感) */
   media: boolean
   /** 单张图片上限(MB) */
   maxMediaMB: number

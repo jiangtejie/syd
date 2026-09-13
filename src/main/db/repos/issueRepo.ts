@@ -57,6 +57,9 @@ interface MsgRow {
   is_team: number | null
   text: string
   image_md5: string | null
+  video_md5: string | null
+  file_md5: string | null
+  file_name: string | null
   local_type: number | null
 }
 
@@ -70,6 +73,9 @@ function rowToIssueMsg(m: MsgRow): FeedbackIssueMsg {
     senderIsTeam: m.is_team === 1,
     text: m.text,
     imageMd5: m.image_md5 ?? undefined,
+    videoMd5: m.video_md5 ?? undefined,
+    fileMd5: m.file_md5 ?? undefined,
+    fileName: m.file_name ?? undefined,
     localType: m.local_type ?? undefined
   }
 }
@@ -294,8 +300,9 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
   // 包在事务里:逐条自动提交在 WAL 下是数量级差距,且中途失败会留下"删了一半"的中间态
   const insMsg = db.prepare(
     `INSERT INTO issue_feedback_msg
-       (issue_id, seq, msg_time, sender_name, sender_username, is_send, is_team, text, image_md5, local_type)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (issue_id, seq, msg_time, sender_name, sender_username, is_send, is_team, text,
+        image_md5, video_md5, file_md5, file_name, local_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   const rebuildMsgs = db.transaction((rows: NewIssue['msgs']) => {
     db.prepare(`DELETE FROM issue_feedback_msg WHERE issue_id = ?`).run(row.id)
@@ -310,6 +317,9 @@ export function upsertIssue(issue: NewIssue): { id: number; created: boolean } {
         m.senderIsTeam ? 1 : 0,
         m.text,
         m.imageMd5 ?? null,
+        m.videoMd5 ?? null,
+        m.fileMd5 ?? null,
+        m.fileName ?? null,
         m.localType ?? null
       )
     })
@@ -450,6 +460,9 @@ export interface EvidenceForSync {
   isTeam: boolean
   text: string
   imageMd5?: string
+  videoMd5?: string
+  fileMd5?: string
+  fileName?: string
   localType?: number
 }
 
@@ -461,7 +474,8 @@ export function listEvidenceForSync(opts: { sinceMs: number; limit?: number }): 
   const rows = getDb()
     .prepare(
       `SELECT m.id AS msg_id, m.issue_id, m.seq, m.msg_time, m.sender_name, m.sender_username,
-              m.is_send, m.is_team, m.text, m.image_md5, m.local_type,
+              m.is_send, m.is_team, m.text, m.image_md5, m.video_md5, m.file_md5, m.file_name,
+              m.local_type,
               i.wxid AS account_wxid, i.title AS issue_title, i.group_name AS group_name,
               (SELECT COUNT(*) FROM issue_feedback_msg x WHERE x.issue_id = m.issue_id AND x.seq <= m.seq) AS seq_no
          FROM issue_feedback_msg m
@@ -487,6 +501,9 @@ export function listEvidenceForSync(opts: { sinceMs: number; limit?: number }): 
     isTeam: Number(r.is_team ?? 0) === 1,
     text: String(r.text ?? ''),
     imageMd5: r.image_md5 ? String(r.image_md5) : undefined,
+    videoMd5: r.video_md5 ? String(r.video_md5) : undefined,
+    fileMd5: r.file_md5 ? String(r.file_md5) : undefined,
+    fileName: r.file_name ? String(r.file_name) : undefined,
     localType:
       r.local_type === null || r.local_type === undefined ? undefined : Number(r.local_type)
   }))
@@ -829,8 +846,9 @@ export function applyIssueMerge(input: {
     db.prepare(`DELETE FROM issue_feedback_msg WHERE issue_id = ?`).run(input.id)
     const ins = db.prepare(
       `INSERT INTO issue_feedback_msg
-         (issue_id, seq, msg_time, sender_name, sender_username, is_send, is_team, text, image_md5, local_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (issue_id, seq, msg_time, sender_name, sender_username, is_send, is_team, text,
+          image_md5, video_md5, file_md5, file_name, local_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     input.msgs.forEach((m, i) => {
       ins.run(
@@ -843,6 +861,9 @@ export function applyIssueMerge(input: {
         m.senderIsTeam ? 1 : 0,
         m.text,
         m.imageMd5 ?? null,
+        m.videoMd5 ?? null,
+        m.fileMd5 ?? null,
+        m.fileName ?? null,
         m.localType ?? null
       )
     })

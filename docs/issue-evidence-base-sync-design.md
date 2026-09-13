@@ -103,8 +103,16 @@
 | **P0** | 子表「议题证据」+ 字段补齐 + kind=evidence 映射 + 增量推 + 三个上限 + 同步历史 | ✅ 已实现 |
 | P1 | 关联字段(失败即退化)+ 孤儿行清理 + 监控页待推计数 | ✅ 已实现,**关联字段已实测创建成功** |
 | **P2a** | 证据**图片**上传为附件(「证据图」列 + 素材上传 + md5 去重 + 补历史) | ✅ 已实现,真实凭证实测通过(见 §9) |
-| P2b | 视频/文件证据附件 | ⏳ 未做(本地证据表没有 video_md5/file_md5 列,要先改数据模型) |
-| P2c | 每议题一篇复盘文档(方案 C) | ⏳ 未做 |
+| P2b | 视频/文件证据附件 | ✅ **视频已支持,文件只登记**(2026-09,见下) |
+| P2c | 每议题一篇复盘文档(方案 C) | ❌ **不做**(2026-09 决策,理由见下) |
+
+> **P2c 为什么不做(用户判断 + 复核结论一致)**:一篇议题的「复盘」信息已经在三个地方各就各位 ——
+> ① 议题表行本身(状态/跟进人/处理备注三列,同事在手机上直接改);② 「议题证据」子表(逐条证据 + 证据图附件,
+> 首现→最新完整时间线);③ 聚合层面的飞书日报(digest,一次一篇覆盖当天的量级与趋势)。
+> 再给每个议题生成一篇 docx,等于把同一批数据搬进**第二个真源**:议题状态变了文档不会自动更新、
+> 每篇文档各有一份协作者与生命周期要管、量大时还会在飞书里堆出上百篇低信息量文档。
+> 真要「给同事/上级看一篇完整复盘」,更合适的是**按需、单议题**导出(选中议题 → 一键导出为飞书文档,走审批桥),
+> 而不是默认每议题一篇;那条等有真实诉求再做。
 
 ## 5. 风险与缓解(落地后回看)
 
@@ -220,3 +228,20 @@ md5 落库**,拿不到本地文件,所以这两类仍只写占位标记(要做�
 | `src/main/services/lark/client.ts` | `larkUploadMedia()`(处理 uploadAll 的特殊返回形状) |
 | `src/main/db/repos/larkMediaRepo.ts` + `schema/base.ts` | `lark_media_map` / `lark_evidence_attach` 两张小表 |
 | `src/main/services/report/mediaArchive.ts` | `resolveMediaUrl` 改为导出(URL → 本地文件,两边共用) |
+
+### P2b 落地(2026-09):视频附件打通,文件只登记
+
+| 层 | 改动 |
+| --- | --- |
+| 数据模型 | `issue_feedback_msg` 增列 `video_md5` / `file_md5` / `file_name`(走 `schema/columns.ts` 老库补列,幂等;新库由 base.ts 建表带列) |
+| 解析上游 | 无需新写:微信消息对象本来就带 `videoMd5`/`fileMd5`/`fileName`(queries.ts + content.ts),证据行只是把它们带上 |
+| 纯逻辑 | `evidenceMedia.ts` 泛化为 `evidenceMediaKind(localType, md5s)` → image/video/file;`mediaParentTypeOf`(图片 bitable_image、视频/文件 bitable_file);`maxMediaBytesOfKind`(图片 ≤20MB 默认 10、视频 ≤200MB 默认 50);跳过原因新增 `file-unsupported` |
+| 上传 | `mediaUpload.uploadEvidenceMedia`:图片走 `decryptImage`、视频走 `decryptVideo`(微信 4.x 视频本身就是明文 mp4,按 md5 定位),同一份媒体 md5 复用 file_token |
+| 同步 | `baseEvidence`:附件入队改为按类型判定;文件证据不入队(只写占位文本 + 表里留 md5/文件名) |
+| 设置页 | 开关文案改为「上传证据图片/视频（附件）」,说明里写清文件暂不上传 |
+
+**为什么文件证据不做上传**:微信文件附件是 `.dat`(需要按账号密钥走 `datDecrypt` 那条链路,还要从 XML 里解析原始文件名/大小),
+做半成品比不做更糟(会出现「有时传上去有时不传」的静默失败)。当前只把 md5 与文件名登记进证据表,
+等真有「客户发的报价单/合同要进 Base」的诉求再补。
+
+自检:`scripts/lark-sync-selftest.mjs` 第 [9] 节扩到 22 例(类型判定 / 父类型 / 分类型上限 / 文件跳过 / 命名前缀)。

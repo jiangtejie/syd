@@ -76,6 +76,9 @@ export function msgToSummaryMsg(
     senderIsTeam: senderIsTeam || undefined,
     text: msgToText(m),
     imageMd5: m.imageMd5,
+    videoMd5: m.videoMd5,
+    fileMd5: m.fileMd5,
+    fileName: m.fileName,
     localType: m.localType
   }
 }

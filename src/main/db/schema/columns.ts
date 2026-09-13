@@ -13,6 +13,24 @@ export interface ColumnMigration {
 
 export const COLUMN_MIGRATIONS: ColumnMigration[] = [
   {
+    table: 'issue_feedback_msg',
+    column: 'video_md5',
+    ddl: 'TEXT',
+    note: '视频证据 md5（微信 4.x 视频落地为明文 mp4，按 md5 定位后可上传 Base 附件）'
+  },
+  {
+    table: 'issue_feedback_msg',
+    column: 'file_md5',
+    ddl: 'TEXT',
+    note: '文件证据 md5（当前只登记不上传：本地文件附件解析未做）'
+  },
+  {
+    table: 'issue_feedback_msg',
+    column: 'file_name',
+    ddl: 'TEXT',
+    note: '文件证据原始文件名（附件卡片展示与排查用）'
+  },
+  {
     table: 'agent_reply',
     column: 'intent_source',
     ddl: "TEXT NOT NULL DEFAULT ''",

@@ -26,7 +26,11 @@ import {
   EVIDENCE_MEDIA_PARENT_TYPE,
   attachmentFieldValue,
   decideEvidenceMedia,
+  evidenceMediaKind,
+  evidenceMediaMd5Of,
   evidenceMediaName,
+  maxMediaBytesOfKind,
+  mediaParentTypeOf,
   imageMd5Of,
   isEvidenceImage,
   maxMediaBytesOf
@@ -216,38 +220,71 @@ log(!isEvidenceImage(1, undefined), '纯文本 → 不是图片')
 log(imageMd5Of('  ABCDEF0123456789ABCDEF0123456789 ') === 'abcdef0123456789abcdef0123456789', 'md5 归一化（去空格+小写）')
 log(imageMd5Of('not-a-md5') === null, '非法 md5 → null')
 log(
-  decideEvidenceMedia({ localType: 3, imageMd5: 'a'.repeat(32), maxBytes: 10 * MB }).action ===
-    'attach',
+  decideEvidenceMedia({ kind: 'image', md5: 'a'.repeat(32), maxBytes: 10 * MB }).action === 'attach',
   '正常图片 → 上传'
 )
 log(
   decideEvidenceMedia({
-    localType: 3,
-    imageMd5: 'a'.repeat(32),
+    kind: 'image',
+    md5: 'a'.repeat(32),
     cachedToken: 'tok',
     maxBytes: 10 * MB
   }).action === 'cached',
   '已上传过 → 复用 token（不再走网络）'
 )
 const big = decideEvidenceMedia({
-  localType: 3,
-  imageMd5: 'a'.repeat(32),
+  kind: 'image',
+  md5: 'a'.repeat(32),
   sizeBytes: 12 * MB,
   maxBytes: 10 * MB
 })
-log(big.action === 'skip' && big.reason === 'too-big', '超过单张上限 → 跳过（保留占位文本）')
+log(big.action === 'skip' && big.reason === 'too-big', '超过单文件上限 → 跳过（保留占位文本）')
 log(
-  decideEvidenceMedia({ localType: 1, maxBytes: 10 * MB }).action === 'skip',
-  '非图片证据 → 不传附件'
+  decideEvidenceMedia({ kind: null, maxBytes: 10 * MB }).action === 'skip',
+  '没有可上传媒体 → 不传附件'
 )
 log(
-  decideEvidenceMedia({ localType: 3, imageMd5: 'zz', maxBytes: 10 * MB }).reason === 'no-md5',
+  decideEvidenceMedia({ kind: 'image', md5: 'zz', maxBytes: 10 * MB }).reason === 'no-md5',
   '图片但没有合法 md5 → no-md5'
+)
+log(
+  decideEvidenceMedia({ kind: 'file', md5: 'b'.repeat(32), maxBytes: 10 * MB }).reason ===
+    'file-unsupported',
+  '文件证据 → 只登记不上传（file-unsupported）'
+)
+log(
+  decideEvidenceMedia({ kind: 'video', md5: 'c'.repeat(32), maxBytes: 50 * MB }).action === 'attach',
+  '视频证据 → 上传（parent_type 用 bitable_file）'
+)
+log(mediaParentTypeOf('image') === 'bitable_image', '图片父类型 bitable_image')
+log(mediaParentTypeOf('video') === 'bitable_file', '视频父类型 bitable_file')
+log(maxMediaBytesOfKind('video', undefined) === 50 * MB, '视频默认上限 50MB')
+log(maxMediaBytesOfKind('video', 999) === 200 * MB, '视频上限夹到 200MB')
+log(
+  evidenceMediaKind(43, {}) === 'video' && evidenceMediaKind(3, {}) === 'image',
+  'local_type 43/3 → 视频/图片'
+)
+log(
+  evidenceMediaKind(1, { videoMd5: 'c'.repeat(32) }) === 'video',
+  '带 video_md5 → 视频（不依赖 local_type）'
+)
+log(
+  evidenceMediaKind(1, { fileMd5: 'b'.repeat(32) }) === 'file',
+  '带 file_md5 → 文件'
+)
+log(evidenceMediaKind(1, {}) === null, '纯文本 → 没有可上传媒体')
+log(
+  evidenceMediaMd5Of('video', { videoMd5: 'C'.repeat(32) }) === 'c'.repeat(32),
+  '取对应类型的 md5 并归一化'
 )
 log(maxMediaBytesOf(10) === 10 * MB, '10MB → 字节数')
 log(maxMediaBytesOf(999) === 20 * MB, '超过 20MB 的上限被夹到 20（飞书单次上限）')
 log(maxMediaBytesOf(0) === 1 * MB, '低于 1MB 的配置夹到 1')
 log(evidenceMediaName('abcdef0123456789abcdef0123456789', 'jpg') === 'image_abcdef01.jpg', '附件名只带 md5 前缀（不泄露客户信息）')
+log(
+  evidenceMediaName('abcdef0123456789abcdef0123456789', 'mp4', 'video') === 'video_abcdef01.mp4',
+  '视频附件名带 video_ 前缀与真扩展名'
+)
 log(evidenceMediaName('abcdef0123456789abcdef0123456789', '.JPEG') === 'image_abcdef01.jpeg', '扩展名归一化')
 log(evidenceMediaName('abcdef0123456789abcdef0123456789', '') === 'image_abcdef01.jpg', '认不出扩展名 → 兜底 jpg')
 log(

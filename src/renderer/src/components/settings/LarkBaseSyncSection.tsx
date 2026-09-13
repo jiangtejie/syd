@@ -846,10 +846,10 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
           )}
           <StatusPill
             tone={baseStatus?.evidence?.media ? 'ok' : 'off'}
-            text={baseStatus?.evidence?.media ? '图片附件已开' : '图片附件未开'}
+            text={baseStatus?.evidence?.media ? '图片/视频附件已开' : '图片/视频附件未开'}
             title={
               baseStatus?.evidence?.media
-                ? '图片证据会解密后上传到「证据图」列'
+                ? '图片与视频证据会上传到「证据图」列'
                 : '只推文字，图片写「[图片]」占位'
             }
           />
@@ -870,10 +870,10 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
         <div className="st-hint">
           {'每个议题取「首现 1 条 + 最新若干条」，不是全量搬；上限在「高级信息」里调。'}
         </div>
-        {/* 附件:客户原图比文字更敏感,单独一个开关(默认关) */}
+        {/* 附件:客户原图/原片比文字更敏感,单独一个开关(默认关) */}
         <SwitchRow
-          label="上传证据图片（附件）"
-          desc="默认关闭。打开后把图片证据解密出的原图上传到「证据图」附件列，同事在 Base 里能直接看图、可下载；同一张图只上传一次。视频/文件消息本地没有 md5，仍只写占位标记。"
+          label="上传证据图片/视频（附件）"
+          desc="默认关闭。打开后把图片证据解密出的原图、视频证据的原片上传到「证据图」附件列，同事在 Base 里能直接看、可下载；同一份媒体只上传一次。文件证据目前只登记名称与 md5，不上传。"
           checked={!!baseStatus?.evidence?.media}
           onChange={(v) => void patchBaseEvidence({ media: v })}
         />
@@ -928,7 +928,7 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
           </div>
           {baseStatus?.evidence?.media && (
             <>
-              <div className="st-subtitle">图片附件</div>
+              <div className="st-subtitle">图片/视频附件</div>
               <div className="st-grid">
                 <FieldRow label="单张上限（MB）">
                   <input

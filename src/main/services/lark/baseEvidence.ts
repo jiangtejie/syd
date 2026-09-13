@@ -1,7 +1,7 @@
 /**
  * 飞书多维表格(Base)同步 —— 议题证据明细子表(默认关闭:客户原文外发,保守优先)。
  *
- * 覆盖:证据同步配置(天数/每议题条数/每条字数/附件开关)、按需建「议题证据」子表、
+ * 覆盖:证据同步配置(天数/每议题条数/每条字数/附件开关:图片+视频)、按需建「议题证据」子表、
  * 每议题挑选(首现 1 条 + 最新 N 条)、append-only 推送、图片证据上传成附件、孤儿行清理。
  */
 
@@ -16,13 +16,14 @@ import {
   hasAttached,
   markAttached
 } from '../../db/repos/larkMediaRepo'
-import { uploadEvidenceImage } from './mediaUpload'
+import { uploadEvidenceMedia } from './mediaUpload'
 import {
   DEFAULT_MAX_MEDIA_MB,
   DEFAULT_MAX_UPLOADS_PER_ROUND,
   attachmentFieldValue,
-  imageMd5Of,
-  isEvidenceImage
+  evidenceMediaKind,
+  evidenceMediaMd5Of,
+  type EvidenceMediaKind
 } from './evidenceMedia'
 import { createLogger } from '../logging'
 import {
@@ -89,7 +90,7 @@ export interface EvidenceConfig {
   maxPerIssue: number
   maxChars: number
   tableId: string
-  /** 是否把图片证据的真图传到「证据图」附件列(默认关:原图比文字更敏感) */
+  /** 是否把证据的图片/视频传到「证据图」附件列(默认关:原图比文字更敏感) */
   media: boolean
   /** 单张图片上限(MB) */
   maxMediaMB: number
@@ -216,6 +217,20 @@ export function pickPerIssue<T extends { issueId: number; seqNo: number }>(
  * 推送证据明细到子表(默认关闭;开启后受 天数 / 每议题条数 / 每条字数 三重上限)。
  * 证据 append-only:按 证据ID 映射一次即长期有效,不存在冲突。
  */
+/**
+ * 可上传附件的那一行属于哪种类型（图片/视频）。
+ * 文件证据目前只登记 md5 与文件名，不上传附件 → 返回 null（避免做出半成品解析）。
+ */
+function attachableKindOf(row: {
+  localType?: number
+  imageMd5?: string
+  videoMd5?: string
+  fileMd5?: string
+}): EvidenceMediaKind | null {
+  const kind = evidenceMediaKind(row.localType, row)
+  return kind === 'file' ? null : kind
+}
+
 export async function syncEvidenceOut(): Promise<SyncOutResult> {
   const at = Date.now()
   const empty: SyncOutResult = {
@@ -269,8 +284,9 @@ export async function syncEvidenceOut(): Promise<SyncOutResult> {
     msgId: number
     recordId: string
     accountWxid: string
-    localType?: number
-    imageMd5?: string
+    /** 可上传的类型（图片/视频）；文件证据不入队（只登记） */
+    kind: EvidenceMediaKind
+    md5: string
   }> = []
 
   /** 消息 id → 证据行(flush 里要把新建的图片行挑出来写附件,放在 flush 之前以免顺序被误改) */
@@ -311,14 +327,10 @@ export async function syncEvidenceOut(): Promise<SyncOutResult> {
         const recordId = records[idx]?.record_id
         const src = pickedByMsgId.get(b.id)
         if (!recordId || !src || !src.accountWxid) return
-        if (!isEvidenceImage(src.localType, src.imageMd5)) return
-        attachQueue.push({
-          msgId: src.msgId,
-          recordId,
-          accountWxid: src.accountWxid,
-          localType: src.localType,
-          imageMd5: src.imageMd5
-        })
+        const kind = attachableKindOf(src)
+        const md5 = kind ? evidenceMediaMd5Of(kind, src) : null
+        if (!kind || !md5) return
+        attachQueue.push({ msgId: src.msgId, recordId, accountWxid: src.accountWxid, kind, md5 })
       })
     }
     await sleep(BATCH_GAP_MS)
@@ -336,7 +348,9 @@ export async function syncEvidenceOut(): Promise<SyncOutResult> {
     for (const row of all) {
       if (attachQueue.length >= cfg.maxUploadsPerRound) break
       if (!row.accountWxid) continue
-      if (!isEvidenceImage(row.localType, row.imageMd5)) continue
+      const kind = attachableKindOf(row)
+      const md5 = kind ? evidenceMediaMd5Of(kind, row) : null
+      if (!kind || !md5) continue
       if (attachQueue.some((a) => a.msgId === row.msgId)) continue
       if (hasAttached(row.msgId)) continue
       const ref = getSyncRef('evidence', row.msgId)
@@ -345,8 +359,8 @@ export async function syncEvidenceOut(): Promise<SyncOutResult> {
         msgId: row.msgId,
         recordId: ref.recordId,
         accountWxid: row.accountWxid,
-        localType: row.localType,
-        imageMd5: row.imageMd5
+        kind,
+        md5
       })
     }
     await attachEvidenceImages({
@@ -379,8 +393,8 @@ export async function attachEvidenceImages(opts: {
     msgId: number
     recordId: string
     accountWxid: string
-    localType?: number
-    imageMd5?: string
+    kind: EvidenceMediaKind
+    md5: string
   }>
   cfg: EvidenceConfig
   out: SyncOutResult
@@ -419,11 +433,11 @@ export async function attachEvidenceImages(opts: {
   }
 
   for (const item of queue) {
-    const up = await uploadEvidenceImage({
+    const up = await uploadEvidenceMedia({
       appToken,
       accountWxid: item.accountWxid,
-      localType: item.localType,
-      imageMd5: item.imageMd5,
+      kind: item.kind,
+      md5: item.md5,
       maxMediaMB: cfg.maxMediaMB
     })
     if (!up.ok || !up.fileToken) {
@@ -432,9 +446,7 @@ export async function attachEvidenceImages(opts: {
       continue
     }
     if (up.cached) out.mediaCached = (out.mediaCached ?? 0) + 1
-    const md5 = imageMd5Of(item.imageMd5)
-    if (!md5) continue
-    batch.push({ recordId: item.recordId, msgId: item.msgId, md5, token: up.fileToken })
+    batch.push({ recordId: item.recordId, msgId: item.msgId, md5: item.md5, token: up.fileToken })
     if (batch.length >= BATCH_SIZE) await flush()
   }
   await flush()
