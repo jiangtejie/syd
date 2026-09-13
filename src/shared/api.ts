@@ -1008,6 +1008,10 @@ export interface CsApi {
       id: number,
       outputIds?: number[]
     ) => Promise<Result<{ dir?: string; files?: number }>>
+    /** 批量导出：只弹一次目录，每条素材在父目录下各建一个「标题-id」子目录 */
+    exportPackageBatch: (
+      ids: number[]
+    ) => Promise<Result<{ dir?: string; exported?: number; files?: number; failed?: string[] }>>
     redownloadMedia: (id: number) => Promise<Result<{ added?: number; failed?: number }>>
     overview: () => Promise<Result<{ overview?: GrowthOverview }>>
     configGet: () => Promise<

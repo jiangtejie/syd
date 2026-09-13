@@ -18,6 +18,8 @@ const KIND_LABEL: Record<string, string> = {
 
 export interface WarehousePanelProps {
   onChanged: () => void
+  /** 「用 AI 爆改」：交回页面去「找到或创建该素材的 AI 任务 + 切到 AI 工作台」 */
+  onOpenWorkbench?: (contentId: number) => void
 }
 
 /**
@@ -65,7 +67,10 @@ export const IngestBar = memo(function IngestBar({
   )
 })
 
-export function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.Element {
+export function WarehousePanel({
+  onChanged,
+  onOpenWorkbench
+}: WarehousePanelProps): React.JSX.Element {
   const PAGE_SIZE = 100
   const [items, setItems] = useState<GrowthContentItem[]>([])
   const [total, setTotal] = useState(0)
@@ -230,6 +235,29 @@ export function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.El
       toast.success('已更新 ' + String(res.updated ?? 0) + ' 条')
       setSelected(new Set())
       void load(true)
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  /** 批量导出发布包：只弹一次目录，每条素材在父目录下各建一个「标题-id」子目录 */
+  const batchExport = async (): Promise<void> => {
+    if (!growthApi?.exportPackageBatch || selected.size === 0) return
+    setBatchBusy(true)
+    try {
+      const res = await growthApi.exportPackageBatch(Array.from(selected))
+      // 用户取消目录选择不算失败，别弹红字
+      if (!res.ok) {
+        if (res.error !== '已取消导出') toast.error(res.error || '导出失败')
+        return
+      }
+      const parts = [
+        '已导出 ' + String(res.exported ?? 0) + ' 条(' + String(res.files ?? 0) + ' 个文件)'
+      ]
+      const failedCount = (res.failed ?? []).length
+      if (failedCount > 0) parts.push(String(failedCount) + ' 条失败')
+      toast.success(parts.join(' · '))
+      if (res.dir) window.api?.cs?.export?.openFolder?.(res.dir)
     } finally {
       setBatchBusy(false)
     }
@@ -532,6 +560,15 @@ export function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.El
               <option value={'archived'}>已归档</option>
             </select>
             <button
+              className={'ui-btn gth-btn sm'}
+              type={'button'}
+              disabled={batchBusy}
+              title={'导出选中素材的发布包：只选一次目录，每条素材在下面各建一个子目录'}
+              onClick={() => void batchExport()}
+            >
+              导出发布包（选中）
+            </button>
+            <button
               className={'ui-btn is-danger gth-btn sm'}
               type={'button'}
               disabled={batchBusy}
@@ -701,6 +738,17 @@ export function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.El
               <span className={'gth-card-title'}>素材详情</span>
               <span className={'gth-card-sub'}>#{detail.id}</span>
               <span className={'gth-detail-btns'}>
+                {/* 跨到 AI 工作台：这条素材若已有任务就直接切过去，没有就建一个（一个素材一个任务） */}
+                {onOpenWorkbench ? (
+                  <button
+                    className={'ui-btn is-primary gth-btn sm'}
+                    type={'button'}
+                    title={'在「AI 工作台」里爆改这条素材（已有任务直接切过去）'}
+                    onClick={() => onOpenWorkbench(detail.id)}
+                  >
+                    用 AI 爆改
+                  </button>
+                ) : null}
                 <button
                   className={'ui-btn gth-btn sm'}
                   type={'button'}
@@ -794,8 +842,10 @@ export function WarehousePanel({ onChanged }: WarehousePanelProps): React.JSX.El
               </dd>
               {detail.tags.length > 0 ? (
                 <>
-                  <dt>标签</dt>
-                  <dd>{detail.tags.join(', ')}</dd>
+                  <dt>系统标记</dt>
+                  <dd title={'由系统写入（例如舆情入库会自动标记「舆情」）'}>
+                    {detail.tags.join(', ')}
+                  </dd>
                 </>
               ) : null}
               <dt>媒体 / 拆解</dt>

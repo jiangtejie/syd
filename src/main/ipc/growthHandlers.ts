@@ -1,4 +1,4 @@
-import { clipboard, ipcMain, nativeImage } from 'electron'
+import { clipboard, dialog, ipcMain, nativeImage } from 'electron'
 import { getGrowthConfig, setGrowthConfigField } from '../services/growth/config'
 import { runCrawl } from '../services/growth/collector/service'
 import {
@@ -252,6 +252,42 @@ export function registerGrowthHandlers(): void {
     try {
       const res = await exportPublishPackage(cid, outs)
       return res.ok ? ok({ dir: res.dir, files: res.files }) : err(res.error ?? '导出失败')
+    } catch (e) {
+      return err(e instanceof Error ? e.message : '导出失败')
+    }
+  })
+
+  /**
+   * 批量导出发布包：**先弹一次目录**，再对每条素材复用同一个父目录（各自建「标题-id」子目录）。
+   * 逐条导出而不合成一个大包，是为了保留现有的目录结构（图片/文案/视频分开），
+   * 也避免一条素材出错就把整批拖失败 —— 返回里带上失败的素材，前端给一句汇总。
+   */
+  ipcMain.handle('cs:growth:exportPackageBatch', async (_e, ids: unknown) => {
+    const list = Array.isArray(ids)
+      ? ids.map((v) => clampInt(v, 0, 1, Number.MAX_SAFE_INTEGER)).filter(Boolean)
+      : []
+    if (list.length === 0) return err('请先勾选要导出的素材')
+    try {
+      const picked = await dialog.showOpenDialog({
+        title: '选择发布包导出目录（每条素材一个子目录）',
+        properties: ['openDirectory', 'createDirectory']
+      })
+      if (picked.canceled || !picked.filePaths[0]) return err('已取消导出')
+      const parent = picked.filePaths[0]
+      let exported = 0
+      let files = 0
+      const failed: string[] = []
+      for (const cid of list) {
+        const res = await exportPublishPackage(cid, [], parent)
+        if (res.ok) {
+          exported += 1
+          files += res.files ?? 0
+        } else {
+          failed.push(`#${cid}: ${res.error ?? '导出失败'}`)
+        }
+      }
+      if (exported === 0) return err(failed[0] ?? '导出失败')
+      return ok({ dir: parent, exported, files, failed })
     } catch (e) {
       return err(e instanceof Error ? e.message : '导出失败')
     }

@@ -78,19 +78,27 @@ function buildCopyDoc(input: {
 
 /**
  * 导出发布包。outputIds 为空则导出全部最新爆改产出。
+ *
+ * `targetDir` 用于**批量导出**：调用方先弹一次目录选择，再对多条素材复用同一个父目录
+ * （每条素材在父目录下各自建一个「标题-id」子目录，见下面的 dir 生成）。不传则照旧弹选择框。
  */
 export async function exportPublishPackage(
   contentId: number,
-  outputIds: number[] = []
+  outputIds: number[] = [],
+  targetDir?: string
 ): Promise<ExportPackageResult> {
   const detail = getContentDetail(contentId)
   if (!detail) return { ok: false, error: '素材不存在' }
 
-  const picked = await dialog.showOpenDialog({
-    title: '选择发布包导出目录',
-    properties: ['openDirectory', 'createDirectory']
-  })
-  if (picked.canceled || !picked.filePaths[0]) return { ok: false, error: '已取消导出' }
+  let parentDir = (targetDir ?? '').trim()
+  if (!parentDir) {
+    const picked = await dialog.showOpenDialog({
+      title: '选择发布包导出目录',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false, error: '已取消导出' }
+    parentDir = picked.filePaths[0]
+  }
 
   const allOutputs = listRemixOutputViews(contentId, 30)
   const outputs =
@@ -99,7 +107,7 @@ export async function exportPublishPackage(
       : allOutputs.slice(0, 6)
 
   const dir = join(
-    picked.filePaths[0],
+    parentDir,
     safeFileName(detail.title || '素材', { maxLength: 40, fallback: '素材' }) +
       '-' +
       String(contentId)

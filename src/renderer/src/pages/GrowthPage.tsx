@@ -32,7 +32,7 @@ const TAB_DESC: Record<GrowthTab, string> = {
   ai: '任务式爆改工作台: 左边素材任务列表, 右边与 AI 对话逐项改标题/正文/配图, 右侧产出面板点选采用',
   sources: '订阅同城/同行的爆款内容源, 由第三方数据服务定时拉取入库',
   warehouse:
-    '本地爆款素材仓库: 粘贴链接入库、检索、打标、批量导出; AI 拆解与爆改在「AI 工作台」进行',
+    '本地爆款素材仓库: 粘贴链接/口令入库、检索与筛选、批量改用途/状态/删除、批量导出发布包; AI 拆解与爆改在「AI 工作台」进行(详情里可一键跳过去)',
   provider: '第三方数据服务商与自动采集总开关(适配器 Phase 1 接入)'
 }
 
@@ -52,6 +52,33 @@ export default function GrowthPage(): React.JSX.Element {
   useEffect(() => {
     loadStats()
   }, [loadStats])
+
+  /**
+   * 素材仓库 → AI 工作台：**先找已有任务，没有再建**（一个素材一个任务）。
+   * 直接调 createTask 会在重复点击时堆出一串同名任务，所以这里以 contentId 去重。
+   */
+  const openWorkbenchForContent = useCallback(async (contentId: number): Promise<void> => {
+    const ai = window.api?.cs?.growthai
+    if (!ai) {
+      toast.error('AI 工作台不可用(请重启应用以加载最新主进程)')
+      return
+    }
+    const list = await ai.listTasks()
+    const tasks = (list.ok ? (list.tasks ?? []) : []) as Array<{ id: number; contentId: number }>
+    const existing = tasks.find((t) => t.contentId === contentId)
+    if (existing) {
+      setAiFocusTask(existing.id)
+      setTab('ai')
+      return
+    }
+    const res = await ai.createTask({ contentId })
+    if (!res.ok || !res.taskId) {
+      toast.error(res.error ?? '创建爆改任务失败')
+      return
+    }
+    setAiFocusTask(res.taskId)
+    setTab('ai')
+  }, [])
 
   useEffect(() => {
     if (!growthApi?.onProgress) return
@@ -162,7 +189,12 @@ export default function GrowthPage(): React.JSX.Element {
         </>
       ) : null}
       {tab === 'sources' ? <SourcesPanel onChanged={loadStats} /> : null}
-      {tab === 'warehouse' ? <WarehousePanel onChanged={loadStats} /> : null}
+      {tab === 'warehouse' ? (
+        <WarehousePanel
+          onChanged={loadStats}
+          onOpenWorkbench={(cid) => void openWorkbenchForContent(cid)}
+        />
+      ) : null}
       {tab === 'buzz' ? (
         <BuzzPanel
           onChanged={loadStats}

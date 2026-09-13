@@ -1011,6 +1011,16 @@ const api: PreloadApi = {
         outputIds?: number[]
       ): Promise<{ ok: boolean; dir?: string; files?: number; error?: string }> =>
         ipcRenderer.invoke('cs:growth:exportPackage', id, outputIds),
+      exportPackageBatch: (
+        ids: number[]
+      ): Promise<{
+        ok: boolean
+        dir?: string
+        exported?: number
+        files?: number
+        failed?: string[]
+        error?: string
+      }> => ipcRenderer.invoke('cs:growth:exportPackageBatch', ids),
       redownloadMedia: (
         id: number
       ): Promise<{ ok: boolean; added?: number; failed?: number; error?: string }> =>
