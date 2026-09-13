@@ -391,7 +391,16 @@ CSS 可精简估算：**约 1,020 行（9.2%）**，激进约 1,300 行（11.7%�
    产物：`service.ts` 178→103 行、`prompts.ts` 146→83 行、`growthOpsRepo` −50 行。
    **历史数据的读取路径保留**（`listRemixOutputViews` 仍被页面与导出器使用），需要恢复该链路见 git 历史。
 3. **删除 Tailwind 本体**：见 7.4，需目视回归。
-4. **`issueRepo` 列表 SQL 加 LIMIT / `cs:wb:messages` 分页**：会改变 IPC 契约与渲染端分页行为，建议单独排期。
+4. ~~**`issueRepo` 列表 SQL 加 LIMIT / `cs:wb:messages` 分页**：会改变 IPC 契约与渲染端分页行为，建议单独排期。~~
+   → **已核实：不加（2026-09）**。理由：
+   - `listChatMessages(sessionId)` 有 **10+ 个调用方**，其中一半在**主进程引擎**里（`ai/chat/service`、`workbench/engine` ×3、`growthEngine`、`wechatClawService`）——
+     它们是拿全量消息去做**上下文构建/压缩**的，在仓储层加 LIMIT 等于悄悄改掉模型看到的上下文（压缩逻辑在引擎里，已有明确策略）。
+     真要治理「超长会话」，正确的口子是引擎的上下文预算，而不是给 SQL 加一个全局上限。
+   - `listIssues(wxid)` 确实没有 LIMIT，但议题是「按群分析出的问题」量级（本机当前 58 条），
+     加 LIMIT 反而会让监控页**静默少显示**（没有分页 UI 承接）。
+   - 已有按需分页的现成口子：`listChatMessagesTail(sessionId, limit)`、渲染端消息 keyset 翻页、`listIssuesByGroup` 的群级视图。
+   结论：这条从「待办」改成「**按需再说**」——等真出现某个群/某会话数据量异常，再针对那一条路径做分页（并配套 UI），
+   不做「全局加个 LIMIT」这种既改契约又可能丢数据的动作。
 5. **`settings.css` 等文件里双重编码乱码注释**：只删了随死代码一起消失的部分，全量重写属独立清理。
 
 ---
