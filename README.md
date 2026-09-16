@@ -269,7 +269,7 @@ npm run build:linux       # 打包 Linux
 ```bash
 npm run typecheck        # tsc --noEmit（主进程 + 渲染端）
 npm run lint             # ESLint
-npm run test:all         # 十三套自检串跑（schema 迁移 / 库解密 / ct-media 路径 / 媒体缓存淘汰 / 图片档位优先级 / 大图预览几何 / 云转写 / 话术判定 / 飞书映射 / 日报文案 / 发送闸门 / 跟进判定 / 议题同一性），全部离线
+npm run test:all         # 十四套自检串跑（schema 迁移 / 库解密 / ct-media 路径 / 媒体缓存淘汰 / 图片档位优先级 / 大图预览几何 / wxgf(HEVC) 解析 / 云转写 / 话术判定 / 飞书映射 / 日报文案 / 发送闸门 / 跟进判定 / 议题同一性），全部离线
 npm run test:feedback    # 仅跟进判定（回复归属）+ 议题同一性判据 + 文本降噪
 npm run test:matcher     # 仅数字员工话术判定（真实群原话当夹具）
 npm run test:lark        # 仅飞书同步字段映射（状态往返/跟进人匹配/冲突比对）
@@ -281,6 +281,7 @@ npm run test:media-proto # 仅 ct-media 路径解析（图片两段 / 语音三�
 npm run test:media-cache # 仅媒体缓存淘汰策略（哪些能删、归档永不删、年龄与容量双约束）
 npm run test:media-tier  # 仅图片档位优先级（高清原图优先、缩略图不再压过高清、附件名与日志档位口径）
 npm run test:image-fit   # 仅大图预览几何（显示宽高比 == 原图宽高比、自适应放得进弹层、脏输入兜底）
+npm run test:wxgf        # 仅 wxgf(HEVC) NAL 解析（起始码剥离、多图分段、段选择、内嵌图优先、无 ffmpeg 时返回 null）
 npm run test:asr         # 仅腾讯云转写纯逻辑（TC3 签名对官方 SDK 黄金向量、请求体字段、响应解析）
 npm run test:win         # 仅微信窗口识别 + 搜索结果行/会话标题判定（真实 OCR 夹具，需 Windows PowerShell）
 ```

@@ -253,55 +253,51 @@ export function decryptDatFile(
 // 1) 优先内嵌 JPEG/PNG 截取；2) 纯 HEVC 时切 NAL 流交外部 ffmpeg 转 JPEG 首帧
 // ─────────────────────────────────────────────────────────────
 
-/** HEVC NAL type（VPS=32，作为一段流的起点分组） */
+/** HEVC NAL type（VPS=32，作为一段流的起点分组）。入参是**去掉起始码**的 NAL */
 function hevcNalType(unit: Buffer): number {
   return unit.length ? (unit[0] >> 1) & 0x3f : -1
 }
 
-/** 从 wxgf 载荷切出 NAL 单元（识别 4/3 字节起始码，跳过容器头） */
+/**
+ * 从 wxgf 载荷切出 NAL 单元（**payload 不含起始码**，>2 字节才收）。
+ *
+ * 为什么必须剔除起始码：早期实现把起始码一起切进 unit（`subarray(i, nalEnd)`），于是
+ * `hevcNalType(unit)` 读到的永远是起始码首字节 0x00 —— 类型恒为 0，「按 VPS 分组」的分支
+ * 从来没进过。一个 wxgf 里若装了两张图（微信常在真图前放一张纯白占位帧），就会被当成
+ * 一整段交给 ffmpeg，而 `-vframes 1` 只解第一张 = 纯白图。实测本机 232 张 HEVC 默认图里
+ * 42 张（18%）栽在这条上：配上 ffmpeg 反而得到白图，比原来的 180px 缩略图更糟。
+ */
 function extractHevcNaluUnits(buffer: Buffer): Buffer[] {
   const nalUnits: Buffer[] = []
-  let i = 4 // 'wxgf' 4 字节头
-  const push = (unit: Buffer): void => {
-    if (unit.length > 4) nalUnits.push(unit)
+  const push = (from: number, to: number): void => {
+    if (to - from > 2) nalUnits.push(buffer.subarray(from, to))
   }
-  while (i < buffer.length - 4) {
+  let i = 4 // 'wxgf' 4 字节头
+  while (i < buffer.length - 3) {
     const b = buffer
-    if (b[i] === 0 && b[i + 1] === 0 && b[i + 2] === 0 && b[i + 3] === 1) {
-      let nalEnd = buffer.length
-      for (let j = i + 4; j < buffer.length - 3; j++) {
-        if (
-          b[j] === 0 &&
-          b[j + 1] === 0 &&
-          (b[j + 2] === 1 || (b[j + 2] === 0 && j + 3 < buffer.length && b[j + 3] === 1))
-        ) {
-          nalEnd = j
-          break
-        }
-      }
-      push(buffer.subarray(i, nalEnd))
-      i = nalEnd
-    } else if (b[i] === 0 && b[i + 1] === 0 && b[i + 2] === 1) {
-      let nalEnd = buffer.length
-      for (let j = i + 3; j < buffer.length - 2; j++) {
-        if (
-          b[j] === 0 &&
-          b[j + 1] === 0 &&
-          (b[j + 2] === 1 || (b[j + 2] === 0 && j + 3 < buffer.length && b[j + 3] === 1))
-        ) {
-          nalEnd = j
-          break
-        }
-      }
-      const unit = buffer.subarray(i, nalEnd)
-      if (unit.length > 3) nalUnits.push(unit)
-      i = nalEnd
-    } else {
+    let startCode = 0
+    if (b[i] === 0 && b[i + 1] === 0 && b[i + 2] === 0 && b[i + 3] === 1) startCode = 4
+    else if (b[i] === 0 && b[i + 1] === 0 && b[i + 2] === 1) startCode = 3
+    if (startCode === 0) {
       i++
+      continue
     }
+    let nalEnd = buffer.length
+    for (let j = i + startCode; j < buffer.length - 2; j++) {
+      if (
+        b[j] === 0 &&
+        b[j + 1] === 0 &&
+        (b[j + 2] === 1 || (b[j + 2] === 0 && j + 3 < buffer.length && b[j + 3] === 1))
+      ) {
+        nalEnd = j
+        break
+      }
+    }
+    push(i + startCode, nalEnd)
+    i = nalEnd
   }
   if (nalUnits.length === 0) {
-    // 无起始码：尝试按首个 4 字节起始码之后的裸流整体返回
+    // 无起始码：按首个起始码之后的裸流整体返回（payload 起点同样跳过起始码）
     for (let j = 4; j < buffer.length - 4; j++) {
       if (buffer[j] === 0 && buffer[j + 1] === 0 && buffer[j + 2] === 0 && buffer[j + 3] === 1) {
         return [buffer.subarray(j + 4)]
@@ -390,9 +386,16 @@ export function convertHevcToJpeg(hevcData: Buffer, ffmpegPath: string): Promise
   })
 }
 
+/** 小于这个字节数的解码结果视为无效帧（空白/半帧） */
+export const WXGF_MIN_FRAME_BYTES = 1024
+
 /**
  * wxgf 载荷 → 可视图片数据：
  * 内嵌 JPEG/PNG 优先直接截取；纯 HEVC 流需 ffmpeg（ffmpegPath 为空则跳过返回 null）。
+ *
+ * 多段时**按载荷从大到小尝试，取第一个解得出帧的段**：占位帧的载荷只有几百字节，
+ * 真图那段才是大的。早期写的是「按文件顺序、第一个解出 >1KB 的就返回」——占位帧解出来
+ * 有 6~9KB，照样通过，于是把纯白图当成了结果（与上面 NAL 分组失效是同一个故障的两半）。
  */
 export async function extractWxgfViewable(
   buf: Buffer,
@@ -402,9 +405,10 @@ export async function extractWxgfViewable(
   const embedded = extractEmbeddedImage(buf)
   if (embedded) return embedded
   if (!ffmpegPath) return null
-  for (const stream of extractHevcNaluStreams(buf)) {
+  const streams = extractHevcNaluStreams(buf).sort((a, b) => b.length - a.length)
+  for (const stream of streams) {
     const jpg = await convertHevcToJpeg(stream, ffmpegPath)
-    if (jpg && jpg.length > 1024) return jpg // 跳过极小空白占位帧
+    if (jpg && jpg.length > WXGF_MIN_FRAME_BYTES) return jpg
   }
   return null
 }
