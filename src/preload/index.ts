@@ -7,6 +7,7 @@ import type {
   Result,
   WarmupReport
 } from '../shared/api'
+import type { ImageKind, ImageTier } from '../shared/imageTier'
 import type {
   ChatMsgItem,
   ChatSessionItem,
@@ -271,10 +272,17 @@ const api: PreloadApi = {
       decryptImage: (opts: {
         wxid: string
         imageMd5: string
-        kind?: 'orig' | 'thumb' | 'hd'
+        /** best=最好可用（默认）/ orig / thumb / hd */
+        kind?: ImageKind
         dbPath?: string
-      }): Promise<{ ok: boolean; url?: string; ext?: string; error?: string }> =>
-        ipcRenderer.invoke('cs:media:decryptImage', opts),
+      }): Promise<{
+        ok: boolean
+        url?: string
+        ext?: string
+        /** 实际命中档位（回退时如实回传） */
+        foundKind?: ImageTier
+        error?: string
+      }> => ipcRenderer.invoke('cs:media:decryptImage', opts),
       decryptVideo: (opts: {
         wxid: string
         videoMd5: string
@@ -284,8 +292,13 @@ const api: PreloadApi = {
       testImageDecrypt: (
         wxid: string,
         dbPath?: string
-      ): Promise<{ ok: boolean; url?: string; ext?: string; error?: string }> =>
-        ipcRenderer.invoke('cs:media:testImageDecrypt', wxid, dbPath),
+      ): Promise<{
+        ok: boolean
+        url?: string
+        ext?: string
+        foundKind?: ImageTier
+        error?: string
+      }> => ipcRenderer.invoke('cs:media:testImageDecrypt', wxid, dbPath),
       resolveEmoji: (
         wxid: string,
         input: { md5?: string; productId?: string; cdnUrl?: string }

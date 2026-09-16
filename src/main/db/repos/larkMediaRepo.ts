@@ -1,3 +1,4 @@
+import type { ImageTier } from '../../../shared/imageTier'
 import { getDb } from '../database'
 
 /**
@@ -12,6 +13,14 @@ export interface MediaRef {
   fileName: string
   size: number
   uploadedAt: number
+  /** 上传时的档位：证据附件优先高清原图，靠它判断缓存那份够不够好（老行为空 = 未知） */
+  tier?: ImageTier
+}
+
+/** 归一化库里存的档位字符串（未知/老行 → undefined） */
+function toTier(value: unknown): ImageTier | undefined {
+  const t = String(value ?? '').trim()
+  return t === 'hd' || t === 'orig' || t === 'thumb' ? t : undefined
 }
 
 export function getMediaRef(md5: string): MediaRef | null {
@@ -19,7 +28,7 @@ export function getMediaRef(md5: string): MediaRef | null {
   if (!key) return null
   const row = getDb()
     .prepare(
-      'SELECT md5, file_token, file_name, size, uploaded_at FROM lark_media_map WHERE md5 = ?'
+      'SELECT md5, file_token, file_name, size, uploaded_at, tier FROM lark_media_map WHERE md5 = ?'
     )
     .get(key) as
     | {
@@ -28,6 +37,7 @@ export function getMediaRef(md5: string): MediaRef | null {
         file_name: string | null
         size: number | null
         uploaded_at: number
+        tier: string | null
       }
     | undefined
   if (!row) return null
@@ -36,7 +46,8 @@ export function getMediaRef(md5: string): MediaRef | null {
     fileToken: row.file_token,
     fileName: row.file_name ?? '',
     size: Number(row.size ?? 0),
-    uploadedAt: Number(row.uploaded_at ?? 0)
+    uploadedAt: Number(row.uploaded_at ?? 0),
+    tier: toTier(row.tier)
   }
 }
 
@@ -45,23 +56,27 @@ export function saveMediaRef(ref: {
   fileToken: string
   fileName?: string
   size?: number
+  /** 本次上传的档位（视频无档位概念，传 undefined） */
+  tier?: ImageTier
 }): void {
   getDb()
     .prepare(
-      `INSERT INTO lark_media_map (md5, file_token, file_name, size, uploaded_at)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO lark_media_map (md5, file_token, file_name, size, uploaded_at, tier)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(md5) DO UPDATE SET
          file_token = excluded.file_token,
          file_name = excluded.file_name,
          size = excluded.size,
-         uploaded_at = excluded.uploaded_at`
+         uploaded_at = excluded.uploaded_at,
+         tier = excluded.tier`
     )
     .run(
       ref.md5.trim().toLowerCase(),
       ref.fileToken,
       ref.fileName ?? '',
       Math.max(0, Math.round(ref.size ?? 0)),
-      Date.now()
+      Date.now(),
+      ref.tier ?? ''
     )
 }
 

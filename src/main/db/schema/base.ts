@@ -241,7 +241,9 @@ export const CORE_TABLES: string[] = [
     file_token TEXT NOT NULL,
     file_name TEXT,
     size INTEGER,
-    uploaded_at INTEGER NOT NULL
+    uploaded_at INTEGER NOT NULL,
+    -- 素材档位（hd/orig/thumb）：高清原图比默认图清楚得多，缓存里那份不够好时要重传
+    tier TEXT
   )`,
   /*
    * 证据行 ↔ 附件写入状态：一行一条证据，记它那条 Base 记录是否已经写进附件。

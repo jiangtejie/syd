@@ -288,6 +288,9 @@ log(
 )
 log(evidenceMediaName('abcdef0123456789abcdef0123456789', '.JPEG') === 'image_abcdef01.jpeg', '扩展名归一化')
 log(evidenceMediaName('abcdef0123456789abcdef0123456789', '') === 'image_abcdef01.jpg', '认不出扩展名 → 兜底 jpg')
+log(evidenceMediaName('abcdef0123456789abcdef0123456789', 'jpg', 'image', 'hd') === 'image_abcdef01_hd.jpg', '附件名带档位:高清原图一眼可辨')
+log(evidenceMediaName('abcdef0123456789abcdef0123456789', 'jpg', 'image', 'thumb') === 'image_abcdef01_thumb.jpg', '缩略图档位同样标出(不再是同名不同质)')
+log(evidenceMediaName('abcdef0123456789abcdef0123456789', 'jpg', 'image', null) === 'image_abcdef01.jpg', '档位未知 → 保持老命名(视频同理)')
 log(
   JSON.stringify(attachmentFieldValue('tok')) === '[{"file_token":"tok"}]',
   '附件字段值形状 [{file_token}]（飞书要求）'

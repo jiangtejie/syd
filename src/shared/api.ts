@@ -1,3 +1,4 @@
+import type { ImageKind, ImageTier } from './imageTier'
 import type { MonitorData } from './monitorMetrics'
 import type { DeriveImageKeysResult } from './types'
 import type {
@@ -347,9 +348,17 @@ export interface CsApi {
     decryptImage: (opts: {
       wxid: string
       imageMd5: string
-      kind?: 'orig' | 'thumb' | 'hd'
+      /** best=最好可用（默认，高清原图→默认图→缩略图）/ orig / thumb / hd */
+      kind?: ImageKind
       dbPath?: string
-    }) => Promise<{ ok: boolean; url?: string; ext?: string; error?: string }>
+    }) => Promise<{
+      ok: boolean
+      url?: string
+      ext?: string
+      /** 实际命中的档位：回退成功时也如实回传，界面据此标注而不是当成原图 */
+      foundKind?: ImageTier
+      error?: string
+    }>
     decryptVideo: (opts: {
       wxid: string
       videoMd5: string
@@ -358,7 +367,13 @@ export interface CsApi {
     testImageDecrypt: (
       wxid: string,
       dbPath?: string
-    ) => Promise<{ ok: boolean; url?: string; ext?: string; error?: string }>
+    ) => Promise<{
+      ok: boolean
+      url?: string
+      ext?: string
+      foundKind?: ImageTier
+      error?: string
+    }>
     resolveEmoji: (
       wxid: string,
       input: { md5?: string; productId?: string; cdnUrl?: string }

@@ -9,6 +9,8 @@
  * 文件证据目前只登记 md5/文件名，不上传附件（本地文件附件解析未做，见 skip 原因 file-unsupported）。
  */
 
+import type { ImageTier } from '../../../shared/imageTier'
+
 /** 证据附件的类型（决定 parent_type 与单文件上限） */
 export type EvidenceMediaKind = 'image' | 'video' | 'file'
 
@@ -119,14 +121,20 @@ export function maxMediaBytesOf(maxMediaMB: number | undefined): number {
 /**
  * 上传到 Base 的文件名：用 md5 前缀，不带任何客户信息（文件名会显示在附件卡片上）。
  * 保留扩展名，Base 预览靠它决定渲染方式。
+ *
+ * tier 已知时带上档位后缀（image_<md5:8>_hd.jpg）：同事在 Base 里一眼能看出这张是高清原图，
+ * 还是本机只落到了默认图/缩略图（高清要在微信里点开「查看原图」才有）——
+ * 以前两种情况同名，只有点开对比才发现「证据图怎么这么糊」。
  */
 export function evidenceMediaName(
   md5: string,
   ext: string,
-  kind: EvidenceMediaKind = 'image'
+  kind: EvidenceMediaKind = 'image',
+  tier?: ImageTier | null
 ): string {
   const clean = ext.replace(/[^a-z0-9]/gi, '').toLowerCase() || (kind === 'video' ? 'mp4' : 'jpg')
-  return kind + '_' + md5.slice(0, 8) + '.' + clean
+  const base = kind + '_' + md5.slice(0, 8)
+  return tier ? `${base}_${tier}.${clean}` : `${base}.${clean}`
 }
 
 /** 附件字段的写入值：飞书要求 [{file_token}] */

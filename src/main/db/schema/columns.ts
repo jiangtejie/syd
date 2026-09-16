@@ -209,5 +209,11 @@ export const COLUMN_MIGRATIONS: ColumnMigration[] = [
     column: 'meta_json',
     ddl: "TEXT NOT NULL DEFAULT '{}'",
     note: '产出元信息'
+  },
+  {
+    table: 'lark_media_map',
+    column: 'tier',
+    ddl: "TEXT NOT NULL DEFAULT ''",
+    note: '素材档位（hd/orig/thumb）：证据附件优先传高清原图，靠它判断缓存里那份够不够好、要不要重传（老行留空按「未知」处理）'
   }
 ]

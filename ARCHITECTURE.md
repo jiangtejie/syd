@@ -436,6 +436,9 @@ src/
 ## 10. 媒体与文件
 
 - **图片**：`mediaService` + `datDecrypt` —— 定位 `msg/attach` 下 `<md5>.dat`；V1/V2（15B 头 + AES-128-ECB + XOR）、V3（整文件 XOR）；解密后处理 wxgf（HEVC 容器）：优先内嵌 JPEG/PNG，纯 HEVC 交外部 ffmpeg 转首帧；结果写 `media/<wxid>/`，经自定义 `ct-media://` 协议暴露（含路径与文件名强校验）。
+- **图片档位（`shared/imageTier.ts` 纯函数 + 自检）**：微信把一张图按三档落地 —— `<md5>_t.dat` 缩略图（接收即落地）、`<md5>.dat` 默认图（PC 端自动下载）、`<md5>_h.dat` 高清原图（要在客户端点开「查看原图」才有）。
+  请求语义只有一条：**`best` = 高清 → 默认 → 缩略图**（`orig` 的兜底是 默认 → 高清 → 缩略图，缩略图永远排最后）。实测本机账号群内近 14 天 301 张图：默认图 299 张、高清原图 169 张、只有缩略图的 2 张 —— 也就是**高清往往就在磁盘上**，早先固定取 `orig` 等于白扔一半清晰度，而回退成功时返回的 `ok:true` 让「拿到的是缩略图」这件事完全静默（大图预览、飞书证据附件、上报归档都以为自己拿的是原图）。
+  现在 `decryptImage` 回传 `foundKind`，三处消费方各自标注：大图预览工具栏显示档位徽标（降级时给出「在微信里点开查看原图后重开即可升级」的提示）、飞书附件名带档位后缀（`image_<md5:8>_hd.jpg`）且 `lark_media_map.tier` 记住缓存那份的档位（拿到更好的档会重传，更好的才重传）、上报归档日志按档位计数（全高清不写噪音）。
 - **语音**：`media/voice.ts` —— 微信 4.x 把语音 SILK 放在 `db_storage/message/media_*.db` 的 `VoiceInfo` 表（`svr_id / local_id / create_time / voice_data`）。按「消息行自己的 serverId」优先、`local_id + create_time`（按量级自动选秒/毫秒窗口）兜底定位，`silk-wasm` 解码成 PCM → 包 44 字节 WAV 头（24kHz 单声道）→ 落 `media/<wxid>/voices/<id>.wav`。渲染端只在用户点播放时才要音频（IPC `cs:media:voiceWav`），不在打开会话时批量解码。
   ct-media 协议因此多了**三段布局** `/<wxid>/voices/<id>.wav`（图片/视频仍是两段 `/<wxid>/<md5>_<kind>.<ext>`）；解析规则抽到纯函数 `media/mediaProtocol.ts` 并有自检 —— 早期把 `voices/x.wav` 整体 `encodeURIComponent`，`/` 变 `%2F` 导致整条路径只剩两段被判 403，渲染端只看到「播放失败」；现在这类 URL 由自检直接拦下。
 - **语音转写（腾讯云「一句话识别」，`media/asrTencent.ts` + 纯逻辑 `asrTencentPure.ts`）**：
@@ -459,6 +462,12 @@ src/
   淘汰；上报归档与不认识的命名一律不动。**容量上限只算可回收部分**，否则归档一大就会把缓存全删光
   （这条语义有自检钉死）。展示缓存与归档都由 6 小时一轮的后台治理处理（`startMediaHousekeeping`），
   也挂在「文件管理 → 清理过期/孤儿」这个入口上。
+- **大图预览几何（`renderer/src/lib/imageFit.ts` 纯函数 + 自检）**：预览的 `src` 是**会变**的（占位 → 解密真图 → 更高档位），
+  而 naturalWidth/Height 是每张图各自的事实。早先把「上一张图的原图尺寸 × 缩放」写进 `style`，且尺寸一旦量到就再也不重测 ——
+  本地占位 SVG（360×480）先 onLoad 定下 3:4 的盒子，随后到来的横图被强行拉成 3:4，**看起来只是图丑了**，没有任何报错。
+  现在几何全部走纯函数：自然尺寸与 `src` 绑定（换图即作废、等新图 onLoad 重测），显示宽高 = 原图宽高 × 同一个缩放系数（不取整，避免小图被舍入歪比例），
+  自适应可用区与 `overlays.css` 同口径（92vw / 80vh 减去弹层内边距与工具栏），窗口缩放时自适应状态会重算；解密中与加载失败各有中性提示，不再闪占位图。
+  自检钉死两条不变量：**显示宽高比 == 原图宽高比**、**自适应结果放得进弹层**。
 - **上报归档独立成目录**：`<cache>/media/<账号>/archive/`。以前归档与展示缓存是**同一个文件**，
   一次缓存清理就会让用户 PG 里的 `media_path` 指向空气；现在归档只复制不淘汰，`media_path`
   写 `media/<账号>/archive/<文件>`（由绝对路径反推，不再拼 basename）。历史散落在 media 根的归档
@@ -574,6 +583,8 @@ npm run test:send     # 发送前目标唯一性与文本比对（纯函数）
 npm run test:schema   # schema 迁移自检：合成老库上跑三条数据迁移 + 幂等性（不碰真实库）
 npm run test:crypto   # 库解密：合成 SQLCipher 页/WAL 帧，验密钥校验、篡改拒绝、页往返、WAL commit/nTruncate/断帧/跨周期
 npm run test:media-proto # ct-media 路径解析：两段/三段布局、整体编码回归、目录穿越与非法命名
+npm run test:media-tier  # 图片档位优先级：best/orig/thumb 的尝试顺序、后缀与中文口径、附件名带档位、归档日志文案
+npm run test:image-fit   # 大图预览几何：宽高比不变量、占位图尺寸污染回归、自适应放得进弹层、脏输入兜底
 npm run test:asr      # 腾讯云转写：TC3 签名对官方 SDK 黄金向量、请求体字段、响应解析
 npm run test:win      # 微信窗口识别 + 搜索结果行/会话标题判定（真机 OCR 夹具，需 Windows PowerShell）
 npm run build         # typecheck + electron-vite 三端构建

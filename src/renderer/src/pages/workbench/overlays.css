@@ -54,6 +54,23 @@
 .wb-img-el {
   display: block;
   flex: none;
+  /* 兜底：即便外层给了盒子尺寸，也只等比缩放不拉伸（几何见 lib/imageFit.ts） */
+  object-fit: contain;
+}
+
+/* 解密中 / 加载失败：固定一块中性占位，避免盒子塌成一条线 */
+.wb-img-box-empty {
+  min-width: 320px;
+  min-height: 180px;
+  cursor: default;
+}
+
+.wb-img-hint {
+  padding: 24px 32px;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.7;
 }
 
 .wb-img-toolbar {
@@ -88,6 +105,29 @@
   border: none;
   background: none;
   cursor: pointer;
+}
+
+/* 档位标注：高清原图=绿色；默认图/缩略图=警示色（解密层降级不再静默） */
+.wb-img-tier {
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  cursor: help;
+}
+
+.wb-img-tier.is-hd {
+  color: var(--brand);
+  border-color: var(--brand-line);
+}
+
+.wb-img-tier.is-degraded {
+  color: var(--warn-text);
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
 }
 
 .wb-att-video-hint {

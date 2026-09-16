@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, basename, extname } from 'node:path'
 import type { Client } from 'pg'
+import { tierTallyText, type ImageTier } from '../../../shared/imageTier'
 import { decryptImage, decryptVideo } from '../media/mediaService'
 import { decodeSilkToWav, getVoiceSilk } from '../media/voice'
 import { getDecryptedKey } from '../keyStoreService'
@@ -299,6 +300,8 @@ export async function archiveMediaJobs(
   if (jobs.length === 0) return sum
   const root = archiveRoot(opts.accountWxid)
   const effective = jobs.slice(0, budget)
+  // 图片档位分布：归档走 best（高清原图 → 默认图 → 缩略图），日志里说清楚这批拿到了什么
+  const tierTally: Record<ImageTier, number> = { hd: 0, orig: 0, thumb: 0 }
   for (const j of effective) {
     if (signal?.aborted) break
     await tick() // 每项前让出主进程(同步解密/目录遍历较多)
@@ -316,10 +319,11 @@ export async function archiveMediaJobs(
         const res = await decryptImage({
           wxid: opts.accountWxid,
           imageMd5: j.md5!,
-          kind: 'orig',
+          kind: 'best',
           dbPath: opts.dbPath
         })
         if (res.ok && res.url) {
+          if (res.foundKind) tierTally[res.foundKind]++
           const hit = resolveMediaUrl(res.url)
           if (hit) {
             src = hit.abs
@@ -373,7 +377,10 @@ export async function archiveMediaJobs(
     }
   }
   if (sum.done > 0 || sum.failed > 0 || sum.skippedNoSource > 0) {
-    mediaLog.info(`媒体归档:成功 ${sum.done},缺源 ${sum.skippedNoSource},失败 ${sum.failed}`)
+    mediaLog.info(
+      `媒体归档:成功 ${sum.done},缺源 ${sum.skippedNoSource},失败 ${sum.failed}` +
+        tierTallyText(tierTally)
+    )
   }
   return sum
 }
@@ -572,6 +579,7 @@ export async function backfillMissingMedia(
   ).rows as MissingMediaRow[]
   if (rows.length === 0) return sum
   const root = archiveRoot(opts.accountWxid)
+  const tierTally: Record<ImageTier, number> = { hd: 0, orig: 0, thumb: 0 }
   for (const r of rows) {
     await tick() // 每行前让出主进程
     let destName = ''
@@ -582,9 +590,10 @@ export async function backfillMissingMedia(
         const res = await decryptImage({
           wxid: opts.accountWxid,
           imageMd5: md5,
-          kind: 'orig',
+          kind: 'best',
           dbPath: opts.dbPath
         })
+        if (res.ok && res.foundKind) tierTally[res.foundKind]++
         if (res.ok && res.url) {
           const hit = resolveMediaUrl(res.url)
           if (hit) {
@@ -655,7 +664,10 @@ export async function backfillMissingMedia(
     }
   }
   if (sum.done + sum.failed + sum.skippedNoSource > 0) {
-    mediaLog.info(`媒体补全(历史):成功 ${sum.done},缺源 ${sum.skippedNoSource},失败 ${sum.failed}`)
+    mediaLog.info(
+      `媒体补全(历史):成功 ${sum.done},缺源 ${sum.skippedNoSource},失败 ${sum.failed}` +
+        tierTallyText(tierTally)
+    )
   }
   return sum
 }

@@ -11,14 +11,26 @@ import {
   parseAesKey,
   parseXorKey
 } from './datDecrypt'
+import {
+  normalizeKind,
+  tierLabel,
+  tierSuffix,
+  tierOrder,
+  type ImageKind,
+  type ImageTier
+} from '../../../shared/imageTier'
 
 /**
  * 微信媒体（图片 .dat）解密服务（M3 图片消费方）。
  *
  * 微信 4.x 图片附件位于 xwechat_files 数据目录 msg/attach 下的 Img 子目录，文件名为
- * - &lt;md5&gt;.dat       原图（V1/V2 加密，解密后多为 wxgf/HEVC 或内嵌 JPEG）
+ * - &lt;md5&gt;.dat       默认图（V1/V2 加密，解密后多为 wxgf/HEVC 或内嵌 JPEG）
  * - &lt;md5&gt;_t.dat     缩略图（解密后通常为 JPEG，可直接展示）
- * - &lt;md5&gt;_h.dat     高清图
+ * - &lt;md5&gt;_h.dat     高清原图（要在客户端点开「查看原图」才会落地）
+ *
+ * **档位优先级**：请求语义与尝试顺序由 shared/imageTier 决定（默认 best = 高清 → 默认 → 缩略图），
+ * 实际命中的档位由 foundKind 回传 —— 早先 orig 的兜底把缩略图排在高清前面，且回退后不告诉调用方，
+ * 大图预览/飞书证据/上报归档会把缩略图当原图用（详见 shared/imageTier.ts 注释）。
  *
  * 密钥来自设置页 img:{wxid}:xorKey / img:{wxid}:aesKey（外部注入），
  * 明文 key 不落盘：仅每次解密时从 app_config 读取内存使用。
@@ -32,8 +44,8 @@ export interface DecryptImageOptions {
   wxid: string
   /** 消息中的图片 md5 */
   imageMd5: string
-  /** 文件种类：orig=原图 thumb=缩略图 hd=高清（默认 orig） */
-  kind?: 'orig' | 'thumb' | 'hd'
+  /** 文件种类：best=最好可用（默认）/ orig=默认图 / thumb=缩略图 / hd=高清原图 */
+  kind?: ImageKind
   /** 微信数据根路径（xwechat_files 上级目录）；缺省尝试 key_store 中的 db_path */
   dbPath?: string
 }
@@ -42,6 +54,8 @@ export interface DecryptImageResult {
   ok: boolean
   url?: string
   ext?: string
+  /** 实际命中的档位：回退成功时也如实回传，调用方据此标注「缩略图/默认图/高清原图」 */
+  foundKind?: ImageTier
   source?: 'cache' | 'new'
   error?: string
 }
@@ -69,7 +83,7 @@ function listDirNames(dir: string): string[] {
 }
 
 /** 缓存目录快照：查找已解出的 <md5>_<kind>.* 文件（命中即跳过重新扫描/解密，返回文件名） */
-function findCachedMedia(wxid: string, md5: string, kind: 'orig' | 'thumb' | 'hd'): string | null {
+function findCachedMedia(wxid: string, md5: string, kind: ImageTier): string | null {
   const cacheDir = getMediaCacheDir(wxid)
   const prefix = `${md5}_${kind}.`
   for (const name of listDirNames(cacheDir)) {
@@ -165,8 +179,8 @@ function findDatByMd5(root: string, md5: string, suffix: string): string | null 
 }
 
 /**
- * 解密图片 .dat → 写入缓存目录 → 返回 ct-media:// URL。
- * 缩略图优先（_t.dat 多为 JPEG 可直接用）；原图为纯 HEVC 时用 ffmpeg 转 JPEG。
+ * 解密图片 .dat → 写入缓存目录 → 返回 ct-media:// URL（含实际命中的档位 foundKind）。
+ * 按 tierOrder(kind) 由好到差逐级尝试；纯 HEVC 的档位用 ffmpeg 转 JPEG。
  */
 export async function decryptImage(opts: DecryptImageOptions): Promise<DecryptImageResult> {
   const wxid = opts.wxid?.trim()
@@ -201,16 +215,8 @@ export async function decryptImage(opts: DecryptImageOptions): Promise<DecryptIm
     return { ok: false, error: '未配置图片解密密钥，请到 设置 → 图片解密 填写' }
   }
 
-  // 3. 逐 kind 查找并解密：解密失败（如 wxgf 不可用）时继续尝试下一级
-  const kind = opts.kind ?? 'orig'
-  const suffixFor = (k: 'orig' | 'thumb' | 'hd'): string =>
-    k === 'thumb' ? '_t' : k === 'hd' ? '_h' : ''
-  const order: Array<'orig' | 'thumb' | 'hd'> =
-    kind === 'thumb'
-      ? ['thumb', 'orig', 'hd']
-      : kind === 'hd'
-        ? ['hd', 'orig', 'thumb']
-        : ['orig', 'thumb', 'hd']
+  // 3. 按档位优先级由好到差查找并解密：某一档缺失/解密失败（如 wxgf 不可用）继续下一级
+  const order = tierOrder(normalizeKind(opts.kind))
 
   let lastMiss = ''
   let lastFail = ''
@@ -219,11 +225,11 @@ export async function decryptImage(opts: DecryptImageOptions): Promise<DecryptIm
     const cached = findCachedMedia(wxid, md5, k)
     if (cached) {
       const ext = extname(cached).slice(1)
-      return { ok: true, url: toMediaUrl(wxid, cached), ext, source: 'cache' }
+      return { ok: true, url: toMediaUrl(wxid, cached), ext, foundKind: k, source: 'cache' }
     }
-    const datPath = findDatByMd5(attachRoot, md5, suffixFor(k))
+    const datPath = findDatByMd5(attachRoot, md5, tierSuffix(k))
     if (!datPath) {
-      lastMiss = lastMiss || `未找到 ${md5}${suffixFor(k)}.dat`
+      lastMiss = lastMiss || `未找到 ${md5}${tierSuffix(k)}.dat`
       continue
     }
     const tried = await tryDecryptOne(datPath, wxid, xorKey, aesKey, md5, k)
@@ -243,7 +249,7 @@ async function tryDecryptOne(
   xorKey: number | null,
   aesKey: Buffer | null,
   md5: string,
-  foundKind: 'orig' | 'thumb' | 'hd'
+  foundKind: ImageTier
 ): Promise<DecryptImageResult> {
   try {
     const { data } = decryptDatFile(datPath, xorKey, aesKey)
@@ -271,7 +277,7 @@ async function tryDecryptOne(
     const cacheName = `${md5}_${foundKind}${ext}`
     const cacheFile = join(cacheDir, cacheName)
     writeFileSync(cacheFile, finalData)
-    return { ok: true, url: toMediaUrl(wxid, cacheName), ext, source: 'new' }
+    return { ok: true, url: toMediaUrl(wxid, cacheName), ext, foundKind, source: 'new' }
   } catch (e) {
     return {
       ok: false,
@@ -334,23 +340,15 @@ export async function testImageDecrypt(wxid: string, dbPath?: string): Promise<D
     return { ok: false, error: 'attach 目录中未找到任何 .dat 图片文件' }
   }
 
-  const result = await decryptImage({ wxid: id, imageMd5: hit.md5, kind: 'orig', dbPath })
+  // best = 高清 → 默认 → 缩略图，逐级兜底在 decryptImage 内部完成，这里只如实报命中档位
+  const result = await decryptImage({ wxid: id, imageMd5: hit.md5, kind: 'best', dbPath })
   if (result.ok) {
     return {
       ok: true,
       url: result.url,
       ext: result.ext,
-      error: `找到 ${hit.md5} 并成功解密`
-    }
-  }
-  // 原图失败可退回缩略图再试一次（缩略图多为 JPEG 更易成功）
-  const thumbResult = await decryptImage({ wxid: id, imageMd5: hit.md5, kind: 'thumb', dbPath })
-  if (thumbResult.ok) {
-    return {
-      ok: true,
-      url: thumbResult.url,
-      ext: thumbResult.ext,
-      error: `原图 ${result.error}；已用缩略图验证成功`
+      foundKind: result.foundKind,
+      error: `找到 ${hit.md5} 并成功解密（${tierLabel(result.foundKind)}）`
     }
   }
   return { ok: false, error: `解密失败：${result.error}` }
