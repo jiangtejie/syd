@@ -28,6 +28,28 @@ export function voiceCacheName(serverId?: string, localId?: number): string {
     : ''
 }
 
+/**
+ * 按 local_id 找语音时，create_time 的候选单位（调用方单位优先，另一种兜底）。
+ *
+ * 这条规则是真踩过的坑：**VoiceInfo.create_time 存的是秒**（实测 4.x media_*.db，与消息表一致），
+ * 而渲染层传进来的是毫秒（ChatMessage.createTime 已 toMs）——上报层第一版也顺手 ×1000 传了毫秒，
+ * 结果 11 条历史语音全部「在 VoiceInfo 里没找到这条语音」，库里一条都没转写。
+ * 容差窗口跟着单位走：毫秒 60s、秒 60s（都留了余量，同一 local_id 的邻居不会被误取）。
+ */
+export function voiceTimeCandidates(createTime?: number): { value: number; tolerance: number }[] {
+  const ct = typeof createTime === 'number' && createTime > 0 ? createTime : 0
+  if (ct <= 0) return [{ value: 0, tolerance: 0 }]
+  return ct > 1e11
+    ? [
+        { value: ct, tolerance: 60_000 },
+        { value: Math.round(ct / 1000), tolerance: 60 }
+      ]
+    : [
+        { value: ct, tolerance: 60 },
+        { value: ct * 1000, tolerance: 60_000 }
+      ]
+}
+
 /** 转写产物名：与 WAV 同名、改扩展名（同名便于按 serverId 直接查） */
 export function transcriptNameFor(wavName: string): string {
   return wavName.replace(/\.wav$/i, '') + '.txt'
@@ -126,7 +148,7 @@ export interface VoiceAsrTask extends VoicePlanRow {
  * 规则（每条都由自检钉住）：
  * - **预算 = 尝试次数**：包含失败的，避免一条坏语音每轮吃掉名额却永远不成功；
  * - **新→旧**：客服场景里最近发的语音最该先有文本；
- * - 跳过已转写（缓存里有 .txt）、跳过超长（> maxDurationMs）、跳过内存里连续失败的；
+ * - 跳过已转写（缓存里有 .txt，serverId / localId 两种命名都看）、跳过超长（> maxDurationMs）、跳过内存里连续失败的；
  * - 按缓存名去重（同一条语音可能散在多个分片库里）。
  */
 export function pickVoiceAsrTasks(
@@ -153,7 +175,10 @@ export function pickVoiceAsrTasks(
     if (!cacheName || seen.has(cacheName)) continue
     seen.add(cacheName)
     if (r.durationMs !== null && r.durationMs > maxDur) continue
-    if (opts.hasTranscript(cacheName)) continue
+    // 已转写判定要看**两种命名**：新语音走 <serverId>.txt，历史补写只有 local_id、写的是 <localId>.txt；
+    // 只认一种的话，同一条语音换个调用路径就会被重复转写（白烧一次配额）
+    const nameVariants = [cacheName, voiceCacheName(undefined, r.localId)].filter(Boolean)
+    if (nameVariants.some((n) => opts.hasTranscript(n))) continue
     if (opts.skip?.(cacheName)) continue
     out.push({
       ...r,

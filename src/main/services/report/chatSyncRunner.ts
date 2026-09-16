@@ -124,7 +124,9 @@ async function selectVoiceRowsMissingText(
   return rows.map((r) => ({
     sessionWxid: String(r.session_wxid ?? ''),
     localId: Number(r.local_id) || 0,
-    createTime: (Number(r.create_time) || 0) * 1000
+    // 原样传库里的秒：VoiceInfo.create_time 就是秒（实测 4.x media_*.db，与消息表同一口径）。
+    // 传毫秒也能被 findVoiceSilk 的换算兜底，但没必要多绕一次查询
+    createTime: Number(r.create_time) || 0
   }))
 }
 

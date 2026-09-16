@@ -4,6 +4,7 @@ import { getConfigNumber } from '../../db/repos/config'
 import { openWxDbFile } from '../wechat/decrypt'
 import { locateWeChatDbs } from '../wechat/dbLocator'
 import { toVoiceMediaUrl } from './mediaProtocol'
+import { voiceTimeCandidates } from './voiceText'
 import { getMediaCacheDir } from '../paths'
 import * as keyRepo from '../../db/repos/keyStore'
 import { createLogger } from '../logging'
@@ -144,22 +145,23 @@ function findVoiceSilk(
             .get(serverId) as VoiceRow | undefined
         }
       }
-      if (!row && typeof opts.localId === 'number') {
-        // create_time 的单位随库版本变化（秒 / 毫秒），按量级选窗口，避免拿错同 local_id 的另一条语音
-        const window =
-          typeof opts.createTime === 'number' && opts.createTime > 0
-            ? opts.createTime > 1e11
-              ? 60000
-              : 60
-            : 0
-        row = db
-          .prepare(
-            'SELECT voice_data, create_time FROM VoiceInfo WHERE local_id = ?' +
-              (window ? ' AND ABS(create_time - ?) < ' + window : '') +
-              ' LIMIT 1'
-          )
-          .get(...(window ? [opts.localId, opts.createTime as number] : [opts.localId])) as
-          VoiceRow | undefined
+      if (!row && typeof opts.localId === 'number' && opts.localId > 0) {
+        // create_time 的单位随库版本变化：**实测 4.x 的 media_*.db 存的是秒**（与消息表一致），
+        // 而渲染层传进来的是毫秒（ChatMessage.createTime 已 toMs），上报层又有秒/毫秒两种来源 ——
+        // 所以这里不再靠「按量级猜窗口」猜一次就完事：调用方单位先试，另一种单位兜底各试一次，
+        // 并且取时间最接近的那条（窗口内同 local_id 理论上只有一条，ORDER BY 只是兜底防拿错邻居）。
+        for (const { value, tolerance: window } of voiceTimeCandidates(opts.createTime)) {
+          row = db
+            .prepare(
+              'SELECT voice_data, create_time FROM VoiceInfo WHERE local_id = ?' +
+                (window ? ' AND ABS(create_time - ?) < ' + window : '') +
+                (window ? ' ORDER BY ABS(create_time - ?) ASC' : '') +
+                ' LIMIT 1'
+            )
+            .get(...(window ? [opts.localId, value, value] : [opts.localId])) as
+            VoiceRow | undefined
+          if (row?.voice_data) break
+        }
       }
       if (row?.voice_data) {
         const raw = row.voice_data

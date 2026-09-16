@@ -17,7 +17,8 @@ import {
   voiceArchiveName,
   voiceCacheName,
   voiceColumnsOf,
-  voiceRowOf
+  voiceRowOf,
+  voiceTimeCandidates
 } from '../src/main/services/media/voiceText.ts'
 import { contentFor, localTypeName } from '../src/main/services/report/messageText.ts'
 
@@ -51,6 +52,30 @@ log(voiceCacheName('', 0) === '', '都没有 → 空串')
 log(transcriptNameFor('42.wav') === '42.txt', '转写产物同名换扩展名')
 log(transcriptNameFor('x.WAV') === 'x.txt', '大小写不敏感')
 
+console.log('\n[2b] create_time 单位候选：VoiceInfo 实测存秒，界面/上报可能给毫秒')
+log(
+  JSON.stringify(voiceTimeCandidates(1789355819)) ===
+    JSON.stringify([
+      { value: 1789355819, tolerance: 60 },
+      { value: 1789355819000, tolerance: 60000 }
+    ]),
+  '秒 → 先按秒试、再按毫秒兜底',
+  JSON.stringify(voiceTimeCandidates(1789355819))
+)
+log(
+  JSON.stringify(voiceTimeCandidates(1789355819000)) ===
+    JSON.stringify([
+      { value: 1789355819000, tolerance: 60000 },
+      { value: 1789355819, tolerance: 60 }
+    ]),
+  '毫秒 → 先按毫秒试、再按秒兜底（这次线上就是毫秒一路 miss）',
+  JSON.stringify(voiceTimeCandidates(1789355819000))
+)
+log(
+  voiceTimeCandidates(0).length === 1 && voiceTimeCandidates(undefined)[0].tolerance === 0,
+  '没有时间戳 → 只按 local_id 查（无窗口）'
+)
+
 console.log('\n[3] 消息 → 语音任务行')
 const voiceMsg = { localType: 34, localId: 49, serverId: '8431291791001192000', createTime: 1789538667000, voiceDuration: 8000 }
 const row = voiceRowOf('44985433530@chatroom', voiceMsg)
@@ -79,6 +104,13 @@ log(
 log(
   pickVoiceAsrTasks(rows, { hasTranscript: () => false, budget: 3, skip: (n) => n === 's2.wav' }).map((t) => t.cacheName).join(',') === 's5.wav,s3.wav,s1.wav',
   '连续失败的跳过（进程内记忆）'
+)
+log(
+  pickVoiceAsrTasks(rows, { hasTranscript: (n) => n === '1.txt', budget: 3 })
+    .map((t) => t.cacheName)
+    .join(',') === 's2.wav,s5.wav,s3.wav',
+  '历史命名（<localId>.txt）也算已转写 → 跳过 s1（localId=1）',
+  pickVoiceAsrTasks(rows, { hasTranscript: (n) => n === '1.txt', budget: 3 }).map((t) => t.cacheName).join(',')
 )
 log(pickVoiceAsrTasks(rows, { hasTranscript: () => false, budget: 0 }).length === 0, '预算 0 → 不做事')
 log(pickVoiceAsrTasks([{ ...rows[0] }, { ...rows[0] }], { hasTranscript: () => false, budget: 5 }).length === 1, '同一条语音（分片库重复）去重')
