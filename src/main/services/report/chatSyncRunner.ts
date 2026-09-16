@@ -164,6 +164,12 @@ async function transcribeVoiceBatch(opts: {
   let budgetLeft = opts.budget
   let ok = 0
   let failed = 0
+  // 失败原因汇总：只记第一条会让人以为"都一个原因"，这里按原因分桶，日志末尾一次说清
+  const failReasons = new Map<string, number>()
+  const noteFail = (reason: string): void => {
+    const key = (reason || '未知原因').replace(/\s+/g, ' ').slice(0, 40)
+    failReasons.set(key, (failReasons.get(key) ?? 0) + 1)
+  }
   const updates: VoicePgUpdate[] = []
 
   const attempt = async (
@@ -202,6 +208,7 @@ async function transcribeVoiceBatch(opts: {
     }
     failed++
     asrFails.set(cacheName, (asrFails.get(cacheName) ?? 0) + 1)
+    noteFail(res.error ?? '未知原因')
     if (failed === 1) {
       clawLog.warn(`job=${opts.jobId} 语音转写失败 ${cacheName}: ${res.error ?? '未知原因'}`)
     }
@@ -264,7 +271,12 @@ async function transcribeVoiceBatch(opts: {
     }
   }
   if (ok > 0 || failed > 0) {
-    clawLog.info(`job=${opts.jobId} 语音转写：成功 ${ok} 条，失败 ${failed} 条`)
+    const reasons = [...failReasons.entries()]
+      .map(([reason, n]) => (n > 1 ? `${reason}×${n}` : reason))
+      .join('、')
+    clawLog.info(
+      `job=${opts.jobId} 语音转写：成功 ${ok} 条，失败 ${failed} 条${reasons ? `（${reasons}）` : ''}`
+    )
   }
   if (ok === 0 && failed === 0) return { note: '' }
   return { note: ` · 语音转写 ${ok} 条${failed > 0 ? `(失败 ${failed})` : ''}` }
