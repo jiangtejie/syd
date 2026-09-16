@@ -55,10 +55,47 @@ CipherTalkChatSync /ENABLE` 恢复),避免两套游标重复拉取。chat-sync �
   图片/视频/文件消息归档到**缓存目录** `<cacheRoot>/media/<账号>/`(与解密产物同目录,命名沿用
   缓存规范:`<md5>_orig|thumb|hd.<ext>` 图、`<md5>_video.<ext>` 视频、`<md5>_file.<ext>` 文件);
   **PG `media_path` 存相对缓存根的地址 `media/<账号>/<文件名>`**(正斜杠),读取方用缓存目录
-  (设置 → 偏好与数据 的缓存路径)拼接即得真实文件;仅目标为空时写入;语音/表情仅补 md5;
+  (设置 → 偏好与数据 的缓存路径)拼接即得真实文件;仅目标为空时写入;语音为 `<serverId|localId>_voice.wav`(见下节)、表情仅补 md5;
   单轮归档/补全各限量 200,失败或缺源(微信延迟下载)留空下轮自动续。
 - 运行历史保留:每任务最近 200 条且 ≤30 天,自动清理;
 - 同来源账号同类型任务唯一(创建/启用时校验),避免重复上报。
+
+## 语音消息:从「[语音] 占位」到可读文本
+
+微信语音在库里是 SILK 二进制 + 一条只有 `<voicemsg voicelength="8000"/>` 的 XML,消息正文解析出来**只有 `[语音]` 占位**。
+读取层本来会把已转写的文本合流进正文(见 `media/voiceTranscript.ts`),但那条合流只在 `skipEnrich=false` 时发生,
+而**批量上报走的就是 skipEnrich** —— 所以不做处理的话,PG 里的语音永远只有 `[语音]`,下游(AI / RAG / 报表)看不到语音说了什么。
+
+本模块为此加了三件事(2026-09-16):
+
+| 环节 | 做什么 | 位置 |
+| --- | --- | --- |
+| 合流 | 会话收尾时对整批消息跑一次 `decorateVoiceTranscripts`,已转写的直接进正文 | `chatSyncRunner`(会话收尾) |
+| 落库 | `messages` 增列 **`voice_text`**(转写文本)与 **`voice_duration_ms`**(时长,来自 XML `voicelength`,**未转写也有**);正文同步变成 `[语音] 8″ 文本` | `pgWriter` / `report/messageRow.ts` |
+| 转写 | 每轮按预算调腾讯云一句话识别:SILK 直传、产物写 `<cache>/media/<账号>/voices/<id>.txt`,完事回写 PG | `chatSyncRunner.transcribeVoiceBatch` |
+| 归档 | 语音按 WAV 归档到 `archive/<serverId|localId>_voice.wav` 并写 `media_path`(与图片/视频同一条管线) | `report/mediaArchive.ts` |
+
+**预算与节流**(任务表单里的「语音转写 N 条/轮」,默认 5,0=关闭):
+
+- 预算 = **尝试次数**(含失败),每轮封顶;同一段语音连续失败 3 次后本轮起不再尝试(进程内记忆,重启复位);
+- 挑选规则:新→旧、跳过已转写、跳过 >60s(腾讯云一句话识别上限)、按缓存名去重(分片库可能重复);
+- 先转**本轮新入库**的语音,剩余预算给**历史仍是 `[语音]`** 的行补写(历史行早就过了游标,不会再被扫到);
+- 转写是网络调用(单条 1~3s),放在媒体阶段(游标已落库之后),超时/中断不影响入库;
+- 腾讯云 ASR 未配置时**静默跳过**并只在日志提示一次(不刷屏、不报错)。
+
+**命名/口径只有一处**(纯函数,零依赖,自检覆盖):`media/voiceText.ts`
+—— 缓存名 `<serverId|localId>.wav`、转写产物同名 `.txt`、正文 `[语音] N″ 文本`、
+挑选与归档命名都在这里;`report/messageText.ts` 放类型名/占位正文。两个文件都不 import 本地模块,
+所以 `node --experimental-strip-types scripts/report-voice-selftest.mjs` 能直接跑(仓库 src 里是无扩展名导入,node 的 ESM 解析器不认)。
+
+**为什么语音归档 WAV 而不是原始 SILK**:SILK 小约 20 倍,但下游拿到还得再解码;语音在真实账号里很稀疏
+(实测某门店号 10 天 11 条 ≈ 3MB,与图片同量级),不值得为省这点空间牺牲可用性。
+
+**已知边界**:
+
+- 历史行只补文本(转写成功时顺手归档音频);转写一直失败的语音不会单独归档音频;
+- `msg_type` 命名里 40 也叫「语音消息」,但解析/转写只认 34(微信语音的本地类型);
+- 转写走第三方云(腾讯云),语音内容会离开本机 —— 与「上报到外部 PG」同级的隐私事项,已在设置页明示。
 
 ## 扩展位
 
@@ -70,6 +107,11 @@ CipherTalkChatSync /ENABLE` 恢复),避免两套游标重复拉取。chat-sync �
 - 目标不可达:本轮 fail,历史与任务行可见原因;游标不推进,恢复后自动续传;
 - 某会话持续失败/超时:该会话游标不动,其余会话不受影响;
 - 来源账号未导入密钥:任务失败提示去「微信数据」导入;
+- **语音没有转写**:① 腾讯云 ASR 未配置(上报日志里只有一条提示,不报错)→ 设置 → 微信数据 → 语音转写;
+  ② 任务表单「语音转写」是 0;③ 语音 >60s(超上限直接跳过)。库侧自查:
+  `SELECT count(*) FILTER (WHERE voice_text IS NOT NULL) AS done, count(*) AS total FROM chat.messages WHERE msg_type = '语音消息';`
+- **语音链路冒烟**(需要真库,不进 `test:all`):`PGHOST=… PGPORT=… PGUSER=… PGPASSWORD=… PGDATABASE=… npm run test:report-voice-pg`
+  —— 补列 / 15 列 upsert / 转写回写 / 历史补写查询全在事务里验一遍并回滚;
 - 日志:统一日志 `report` 通道(app-YYYYMMDD.log),运行历史自带错误明细。
 
 ## 长任务体验

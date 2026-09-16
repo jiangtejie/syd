@@ -1,7 +1,10 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, basename, extname } from 'node:path'
 import type { Client } from 'pg'
 import { decryptImage, decryptVideo } from '../media/mediaService'
+import { decodeSilkToWav, getVoiceSilk } from '../media/voice'
+import { getDecryptedKey } from '../keyStoreService'
+import { voiceArchiveName } from '../media/voiceText'
 import { safeFileName } from '../_filename'
 import { getCachePath, getMediaArchiveDir, getMediaRootDir } from '../paths'
 import { createLogger } from '../logging'
@@ -14,8 +17,11 @@ import type { ChatMessage } from '../../../shared/types'
  * - 为什么要分开:media 根目录里放的是「可再生的展示缓存」(会被保留策略淘汰),
  *   而 media_path 指的是用户自己的数据 —— 以前两者是同一个文件,一次缓存清理就会让下游缺文件;
  * - 命名:图片沿用解密缓存名 <md5>_orig|thumb|hd.<ext>;视频 <md5>_video.<ext>;
- *   文件 <md5>_file.<ext>(无 md5 时用安全化的原始文件名);
- * - media_path 仅当目标为空时写入;语音/表情仅补 md5;单轮限量,失败/缺源留空下轮续。
+ *   文件 <md5>_file.<ext>(无 md5 时用安全化的原始文件名);语音 <serverId|localId>_voice.wav(解码后的 WAV);
+ * - media_path 仅当目标为空时写入;表情只补 md5(没有可归档的文件);单轮限量,失败/缺源留空下轮续。
+ *
+ * 语音为什么要归档成 WAV 而不是原始 SILK：SILK 更小(约 1/20),但下游拿到它还得再解一次码才能播/转写;
+ * 语音消息在真实账号里很稀疏(某门店号 10 天 11 条 ≈ 3MB),与图片/视频同量级,不值得为省这点空间牺牲可用性。
  */
 
 const mediaLog = createLogger('report')
@@ -27,10 +33,13 @@ const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
 export interface MediaJob {
   sessionWxid: string
   localId: number
-  kind: 'image' | 'video' | 'file'
+  kind: 'image' | 'video' | 'file' | 'voice'
   /** 图片/视频的 md5(文件消息可空:按原始文件名定位) */
   md5?: string
   fileName?: string
+  /** 语音专有:VoiceInfo 定位键(SILK → WAV 后归档) */
+  serverId?: string
+  createTime?: number
 }
 
 /** 消息 → 归档任务(仅归档范围内类型);不匹配返回 null */
@@ -47,6 +56,18 @@ export function mediaJobOf(sessionWxid: string, m: ChatMessage): MediaJob | null
     return /^[0-9a-f]{32}$/i.test(md5)
       ? { sessionWxid, localId: m.localId, kind: 'video', md5: md5.toLowerCase() }
       : null
+  }
+  if (t === 34) {
+    // 语音:微信原生是 SILK,归档成 WAV(下游免解码);定位键与 VoiceInfo 一致(serverId 优先,退回 localId)
+    const serverId = (m.serverId ?? '').trim()
+    if (!serverId && !(m.localId > 0)) return null
+    return {
+      sessionWxid,
+      localId: m.localId,
+      kind: 'voice',
+      serverId: serverId || undefined,
+      createTime: m.createTime
+    }
   }
   if (t === 49 && (m.fileName || m.fileMd5)) {
     return {
@@ -166,6 +187,21 @@ function archiveInto(root: string, fileName: string, src: string): string | null
   }
 }
 
+/** 把内存里的字节写进归档根(语音 WAV 走这条:没有源文件,不需要 copy) */
+function archiveBufferInto(root: string, fileName: string, buf: Buffer): string | null {
+  try {
+    mkdirSync(root, { recursive: true })
+    const dest = join(
+      root,
+      safeFileName(fileName, { maxLength: 180, fallback: 'voice', trim: false, collapse: false })
+    )
+    if (!existsSync(dest)) writeFileSync(dest, buf)
+    return dest.replace(/\\/g, '/')
+  } catch {
+    return null
+  }
+}
+
 /** 文件类归档命名:<md5>_file<ext>(无 md5 回退安全化原始名,保证扁平目录不冲突) */
 function fileDestName(md5: string | undefined, src: string, original?: string): string {
   const ext = extname(src) || (original ? extname(original) : '')
@@ -205,6 +241,48 @@ export interface ArchiveSummary {
   skippedNoSource: number
 }
 
+/**
+ * 单条语音归档：VoiceInfo 取 SILK → 解码 WAV → 写 archive/ → 回填 media_path（仅空时）。
+ *
+ * 抽成导出函数是为了让「历史补写」也能复用：上报轮次里语音行已经入库、media_path 空着，
+ * 转写补文本时顺手把音频也归档掉，不必等下一轮扫到同一条消息（那条消息早就过了游标）。
+ */
+export async function archiveVoiceMedia(
+  client: Client,
+  opts: { schema: string; accountWxid: string },
+  job: { sessionWxid: string; localId: number; serverId?: string; createTime?: number }
+): Promise<'done' | 'failed' | 'skippedNoSource'> {
+  const destName = voiceArchiveName(job.serverId, job.localId)
+  if (!destName) return 'skippedNoSource'
+  let hexKey = ''
+  try {
+    hexKey = getDecryptedKey(opts.accountWxid) ?? ''
+  } catch {
+    hexKey = ''
+  }
+  if (!hexKey) return 'skippedNoSource'
+  const silk = getVoiceSilk({
+    wxid: opts.accountWxid,
+    hexKey,
+    serverId: job.serverId,
+    localId: job.localId,
+    createTime: job.createTime
+  })
+  if (!silk.ok || !silk.silk) return 'skippedNoSource'
+  const decoded = await decodeSilkToWav(silk.silk)
+  if (!decoded.ok) return 'failed'
+  const stored = archiveBufferInto(archiveRoot(opts.accountWxid), destName, decoded.wav)
+  if (!stored) return 'failed'
+  await writePathIfEmpty(
+    client,
+    opts.schema,
+    job.sessionWxid,
+    job.localId,
+    mediaValue(opts.accountWxid, stored)
+  )
+  return 'done'
+}
+
 /** 处理一批(扫描中积累的)媒体任务;同轮限流,失败留空下轮续 */
 export async function archiveMediaJobs(
   client: Client,
@@ -224,6 +302,13 @@ export async function archiveMediaJobs(
   for (const j of effective) {
     if (signal?.aborted) break
     await tick() // 每项前让出主进程(同步解密/目录遍历较多)
+    if (j.kind === 'voice') {
+      const r = await archiveVoiceMedia(client, opts, j)
+      if (r === 'done') sum.done++
+      else if (r === 'failed') sum.failed++
+      else sum.skippedNoSource++
+      continue
+    }
     let src: string | null = null
     let destName = ''
     try {

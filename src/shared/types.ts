@@ -664,6 +664,11 @@ export interface ReportChatScope {
   maxPerRun: number
   /** 每轮处理会话数上限(0=不限;首轮全量可切小,未处理会话下轮续) */
   sessionsPerRun?: number
+  /**
+   * 每轮最多转写几条语音(0=关闭)。语音在微信里是 SILK、消息里只有 [语音] 占位,
+   * 不主动转写的话下游只能看到占位;预算=尝试次数,见 services/report/voicePlan。
+   */
+  asrPerRun?: number
 }
 
 export type ReportScheduleKind = 'interval' | 'daily' | 'manual'

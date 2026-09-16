@@ -31,7 +31,7 @@ const emptyForm = (): ReportJobInput => ({
   intervalSec: 300,
   dailyTime: '09:00',
   accountWxid: '',
-  scope: { sessionMode: 'all', sessionList: '', daysBack: 30, maxPerRun: 0 },
+  scope: { sessionMode: 'all', sessionList: '', daysBack: 30, maxPerRun: 0, asrPerRun: 5 },
   target: { host: '', port: 5432, database: '', user: '', schema: 'chat', password: '' }
 })
 
@@ -276,7 +276,9 @@ export default function ReportJobsSection(): React.JSX.Element {
         : j.scope.daysBack > 0
           ? `首轮回溯 ${j.scope.daysBack} 天`
           : ''
-    return `${m}${extra ? ` ${extra}` : ''}`
+    const asr =
+      (j.scope.asrPerRun ?? 5) > 0 ? `语音转写 ${j.scope.asrPerRun ?? 5} 条/轮` : '语音不转写'
+    return `${m}${extra ? ` ${extra}` : ''} · ${asr}`
   }
 
   const STATUS_CLS: Record<string, string> = {
@@ -476,6 +478,19 @@ export default function ReportJobsSection(): React.JSX.Element {
                 className="st-input st-th-input"
                 value={form.scope.sessionsPerRun ?? 0}
                 onChange={(e) => patchScope({ sessionsPerRun: Number(e.target.value) || 0 })}
+              />
+            </FieldRow>
+            <FieldRow
+              label="语音转写"
+              hint="每轮最多转写几条语音(0=关);语音在微信里只是 [语音] 占位,转写后 content 带文本"
+            >
+              <input
+                type="number"
+                min={0}
+                max={50}
+                className="st-input st-th-input"
+                value={form.scope.asrPerRun ?? 5}
+                onChange={(e) => patchScope({ asrPerRun: Number(e.target.value) || 0 })}
               />
             </FieldRow>
           </div>

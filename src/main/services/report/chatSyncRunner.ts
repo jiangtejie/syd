@@ -10,18 +10,31 @@ import type { ChatMessage, SessionSummary } from '../../../shared/types'
 import { createLogger } from '../logging'
 import { Client } from 'pg'
 import { listJobCursors, saveJobCursors } from '../../db/repos/reportRepo'
-import { fmtStamp } from '../../../shared/monitorMetrics'
+import { toPgRow } from './messageRow'
+import { asrTencentStatus, hasVoiceTranscript, transcribeVoice } from '../media/asrTencent'
+import { decorateVoiceTranscripts } from '../media/voiceTranscript'
+import {
+  composeVoiceContent,
+  DEFAULT_ASR_PER_RUN,
+  pickVoiceAsrTasks,
+  voiceCacheName,
+  voiceRowOf,
+  type VoicePlanRow
+} from '../media/voiceText'
 import {
   ensurePgSchema,
+  updatePgVoice,
   upsertPgMessages,
   upsertPgSessions,
   refreshPgSessionStats,
   closePg,
   type PgMessageRow,
+  type VoicePgUpdate,
   type PgSessionRow
 } from './pgWriter'
 import {
   archiveMediaJobs,
+  archiveVoiceMedia,
   backfillMissingMedia,
   mediaJobOf,
   repairMediaPaths,
@@ -55,6 +68,11 @@ const SESSION_TIMEOUT_MS = 90_000
 const NO_MSG_MEMORY_MS = 30 * 60_000
 const RECHECK_INTERVAL_MS = 5 * 60_000
 
+/** 语音转写失败记忆(进程内):同一段语音连续失败 3 次就不再尝试,免得每轮白烧预算;重启复位 */
+const asrFails = new Map<string, number>()
+/** 「ASR 未配置」提示只打一次(任务每 2 分钟一轮,别把日志刷满) */
+let asrWarned = false
+
 /** 让出事件循环(同步读库/解密之间存在大量同步热点,保证主进程 UI 不被饿死) */
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
 
@@ -80,74 +98,174 @@ export interface ChatSyncRunResult {
   summary: string
 }
 
-/** 消息类型号 → 中文类型(chat-sync 命名对齐;49 型按解析字段细分) */
-function localTypeName(m: ChatMessage): string {
-  const t = m.localType
-  if (t === 1) return '文本消息'
-  if (t === 3) return '图片消息'
-  if (t === 34 || t === 40) return '语音消息'
-  if (t === 43) return '视频消息'
-  if (t === 47) return '表情消息'
-  if (t === 42) return '名片消息'
-  if (t === 48) return '位置消息'
-  if (t === 10000 || t === 10002) return '系统消息'
-  if (t === 49) {
-    if (m.chatRecordList && m.chatRecordList.length > 0) return '聊天记录'
-    if (m.transferPayerUsername || m.transferReceiverUsername) return '转账消息'
-    if (m.redEnvelopeSendId) return '红包消息'
-    if (m.fileName) return '文件消息'
-    if (m.productId) return '小程序消息'
-    if (m.quotedContent || m.quotedImageMd5 || m.quotedEmojiMd5) return '引用消息'
-    return '其他消息'
-  }
-  return '其他消息'
+/** 同一段语音连续失败几次后不再尝试（进程内记忆；重启复位） */
+const ASR_MAX_FAILS = 3
+
+/** PG 标识符 quoting（语音补写要自己拼一条 SELECT，schema 名来自配置） */
+function quoteSchema(schema: string): string {
+  return `"${(schema || 'chat').replace(/"/g, '""')}"`
 }
 
-function contentFor(m: ChatMessage, typeName: string): string {
-  const p = (m.parsedContent ?? '').trim()
-  if (p) return p
-  const map: Record<string, string> = {
-    文本消息: '[文本]',
-    图片消息: '[图片]',
-    语音消息: '[语音]',
-    视频消息: '[视频]',
-    表情消息: '[表情]',
-    名片消息: '[名片]',
-    位置消息: '[位置]',
-    系统消息: '[系统消息]',
-    文件消息: `[文件]${m.fileName ? ` ${m.fileName}` : ''}`,
-    聊天记录: '[聊天记录]',
-    转账消息: '[转账]',
-    红包消息: '[红包]',
-    小程序消息: `[小程序]${m.productId ? ` ${m.productId}` : ''}`,
-    引用消息: '[引用消息]'
-  }
-  return map[typeName] ?? '[消息]'
+/** 库里仍是占位、且没有转写文本的语音行（历史补写用；新→旧） */
+async function selectVoiceRowsMissingText(
+  client: Client,
+  schema: string,
+  limit: number
+): Promise<{ sessionWxid: string; localId: number; createTime: number }[]> {
+  if (limit <= 0) return []
+  const rows = (
+    await client.query(
+      `SELECT session_wxid, local_id, create_time FROM ${quoteSchema(schema)}.messages
+       WHERE msg_type = '语音消息' AND (voice_text IS NULL OR voice_text = '')
+       ORDER BY create_time DESC LIMIT $1`,
+      [limit]
+    )
+  ).rows as { session_wxid: string; local_id: number; create_time: number }[]
+  return rows.map((r) => ({
+    sessionWxid: String(r.session_wxid ?? ''),
+    localId: Number(r.local_id) || 0,
+    createTime: (Number(r.create_time) || 0) * 1000
+  }))
 }
 
-/** 时间一律走共享口径（YYYY-MM-DD HH:mm:ss，精确到秒）；0 表示没有时间，保持空串 */
-const fmtTime = (ms: number): string => (ms && ms > 0 ? fmtStamp(ms) : '')
-
-function toPgRow(sessionWxid: string, m: ChatMessage): PgMessageRow | null {
-  const localId = Number(m.localId)
-  if (!Number.isInteger(localId) || localId < 0) return null
-  const typeName = localTypeName(m)
-  const createSec = Math.floor(m.createTime / 1000)
-  return {
-    sessionWxid,
-    localId,
-    createTime: createSec,
-    formattedTime: fmtTime(toMs(m.createTime)),
-    msgType: typeName,
-    content: contentFor(m, typeName),
-    isSend: m.isSend ? 1 : 0,
-    senderUsername: m.senderUsername ?? null,
-    senderDisplayName: m.senderNickname?.trim() ? m.senderNickname.trim() : null,
-    groupNickname: null,
-    replyToMessageId: null,
-    mediaMd5: (m.imageMd5 ?? m.videoMd5 ?? m.fileMd5 ?? m.emojiMd5 ?? '').trim() || null,
-    mediaPath: null
+/**
+ * 语音转写一批：**本轮新入库的**优先，剩余预算给**历史仍是 `[语音]`**的行补文本。
+ *
+ * 为什么要主动转：批量上报走 skipEnrich，读取层那次「已有转写合流」不会发生 ——
+ * 不主动转，PG 里的语音永远只有 `[语音]` 占位，下游（AI / 报表 / RAG）等于看不到这条语音说了什么。
+ *
+ * 预算 = **尝试次数**（含失败），每轮封顶：一条坏语音不会把名额一直吃掉
+ * —— 同一段连续失败 ${ASR_MAX_FAILS} 次后不再尝试（进程内记忆；重启复位）。
+ */
+async function transcribeVoiceBatch(opts: {
+  client: Client
+  schema: string
+  accountWxid: string
+  budget: number
+  jobId: number
+  /** 本轮新入库的语音 */
+  fresh: VoicePlanRow[]
+  signal?: AbortSignal
+}): Promise<{ note: string }> {
+  if (opts.budget <= 0) return { note: '' }
+  const status = asrTencentStatus()
+  if (!status.available) {
+    if (opts.fresh.length > 0 && !asrWarned) {
+      asrWarned = true
+      clawLog.info(
+        `job=${opts.jobId} 有 ${opts.fresh.length} 条语音待转写，但腾讯云 ASR 未就绪：${status.reason ?? '未配置'}`
+      )
+    }
+    return { note: '' }
   }
+
+  let budgetLeft = opts.budget
+  let ok = 0
+  let failed = 0
+  const updates: VoicePgUpdate[] = []
+
+  const attempt = async (
+    row: {
+      sessionWxid: string
+      localId: number
+      serverId?: string
+      createTime: number
+      durationMs: number | null
+    },
+    cacheName: string,
+    secondsFallback: number | null
+  ): Promise<boolean> => {
+    const res = await transcribeVoice({
+      wxid: opts.accountWxid,
+      serverId: row.serverId || undefined,
+      localId: row.localId || undefined,
+      createTime: row.createTime || undefined
+    })
+    budgetLeft--
+    if (res.ok && res.text) {
+      ok++
+      asrFails.delete(cacheName)
+      const byAsr =
+        typeof res.audioDurationMs === 'number' && res.audioDurationMs > 0
+          ? Math.max(1, Math.round(res.audioDurationMs / 1000))
+          : null
+      updates.push({
+        sessionWxid: row.sessionWxid,
+        localId: row.localId,
+        content: composeVoiceContent(byAsr ?? secondsFallback, res.text),
+        voiceText: res.text,
+        voiceDurationMs: row.durationMs ?? res.audioDurationMs ?? null
+      })
+      return true
+    }
+    failed++
+    asrFails.set(cacheName, (asrFails.get(cacheName) ?? 0) + 1)
+    if (failed === 1) {
+      clawLog.warn(`job=${opts.jobId} 语音转写失败 ${cacheName}: ${res.error ?? '未知原因'}`)
+    }
+    return false
+  }
+
+  // ① 本轮新入库的语音（新→旧，跳过已转写 / 超长 / 连续失败的）
+  const tasks = pickVoiceAsrTasks(opts.fresh, {
+    hasTranscript: (name) => hasVoiceTranscript(opts.accountWxid, name),
+    budget: budgetLeft,
+    skip: (name) => (asrFails.get(name) ?? 0) >= ASR_MAX_FAILS
+  })
+  for (const t of tasks) {
+    if (opts.signal?.aborted || budgetLeft <= 0) break
+    await tick()
+    await attempt(t, t.cacheName, t.seconds)
+  }
+
+  // ② 历史补写：库里仍是 [语音] 的行（本轮剩余预算）；只按 localId + create_time 定位 SILK
+  if (!opts.signal?.aborted && budgetLeft > 0) {
+    let history: { sessionWxid: string; localId: number; createTime: number }[] = []
+    try {
+      history = await selectVoiceRowsMissingText(opts.client, opts.schema, budgetLeft)
+    } catch (e) {
+      clawLog.warn(
+        `job=${opts.jobId} 查询待补语音失败: ${e instanceof Error ? e.message : String(e)}`
+      )
+    }
+    for (const r of history) {
+      if (opts.signal?.aborted || budgetLeft <= 0) break
+      const cacheName = voiceCacheName(undefined, r.localId)
+      if (!cacheName) continue
+      if ((asrFails.get(cacheName) ?? 0) >= ASR_MAX_FAILS) continue
+      await tick()
+      const okRow = await attempt({ ...r, serverId: undefined, durationMs: null }, cacheName, null)
+      if (okRow) {
+        // 历史行早就过了游标，不会再出现在 mediaJobs 里：转写成功时顺手把音频也归档掉
+        try {
+          await archiveVoiceMedia(
+            opts.client,
+            { schema: opts.schema, accountWxid: opts.accountWxid },
+            r
+          )
+        } catch (e) {
+          clawLog.warn(
+            `job=${opts.jobId} 语音归档失败 ${cacheName}: ${e instanceof Error ? e.message : String(e)}`
+          )
+        }
+      }
+    }
+  }
+
+  if (updates.length > 0) {
+    try {
+      await updatePgVoice(opts.client, opts.schema, updates)
+    } catch (e) {
+      clawLog.warn(
+        `job=${opts.jobId} 语音转写回写失败: ${e instanceof Error ? e.message : String(e)}`
+      )
+    }
+  }
+  if (ok > 0 || failed > 0) {
+    clawLog.info(`job=${opts.jobId} 语音转写：成功 ${ok} 条，失败 ${failed} 条`)
+  }
+  if (ok === 0 && failed === 0) return { note: '' }
+  return { note: ` · 语音转写 ${ok} 条${failed > 0 ? `(失败 ${failed})` : ''}` }
 }
 
 export async function runChatSyncJob(
@@ -161,6 +279,8 @@ export async function runChatSyncJob(
       maxPerRun: number
       sessionsPerRun?: number
       mediaDir?: string
+      /** 每轮最多转写几条语音（0=关闭）；缺省走 DEFAULT_ASR_PER_RUN */
+      asrPerRun?: number
     }
     target: {
       host: string
@@ -324,6 +444,8 @@ export async function runChatSyncJob(
     const newCursors = new Map<string, { seq: number; ms: number; lastFetch: number }>()
     const touched: string[] = []
     const mediaJobs: MediaJob[] = []
+    /** 本轮新入库的语音(localType 34):媒体阶段按预算转写 */
+    const voiceJobs: VoicePlanRow[] = []
     const maxPerRun = scope.maxPerRun || 0
 
     clawLog.info(
@@ -403,6 +525,13 @@ export async function runChatSyncJob(
           } catch {
             /* 联系人/群昵称库不可读:展示名留空 */
           }
+          // 已转写过的语音:把文本并进 parsedContent,落库时 content 就是「[语音] N″ 文本」
+          // (读取层的合流只在 skipEnrich=false 时发生,批量同步必须自己补这一步)
+          try {
+            decorateVoiceTranscripts(raw, cfg.accountWxid)
+          } catch {
+            /* 缓存目录不可读:按未转写处理 */
+          }
           try {
             const rows: PgMessageRow[] = []
             for (const m of raw) {
@@ -410,6 +539,8 @@ export async function runChatSyncJob(
               if (r) rows.push(r)
               const mj = mediaJobOf(s.username, m)
               if (mj) mediaJobs.push(mj)
+              const vj = voiceRowOf(s.username, m)
+              if (vj) voiceJobs.push(vj)
             }
             for (let i = 0; i < rows.length; i += BATCH) {
               await upsertPgMessages(client, cfg.target.schema || 'chat', rows.slice(i, i + BATCH))
@@ -462,6 +593,7 @@ export async function runChatSyncJob(
     saveJobCursors(jobId, newCursors, noMsg)
     await refreshPgSessionStats(client, cfg.target.schema || 'chat', touched)
     let mediaNote = ''
+    let voiceNote = ''
     if (!signal?.aborted) {
       report('media', work.length, doneCount, added)
       const archOpts = {
@@ -488,11 +620,22 @@ export async function runChatSyncJob(
           ` · 媒体归档 ${mediaArch.done + backfill.done} 份(缺源 ${mediaArch.skippedNoSource + backfill.skippedNoSource}、失败 ${mediaArch.failed + backfill.failed})` +
           (repair.repaired > 0 ? ` · 路径修复 ${repair.repaired}` : '')
       }
+      // 语音：本轮新入库的 + 历史仍是 `[语音]` 的，共用一份预算补转写文本
+      const asr = await transcribeVoiceBatch({
+        client,
+        schema: archOpts.schema,
+        accountWxid: cfg.accountWxid,
+        budget: Math.max(0, Math.floor(scope.asrPerRun ?? DEFAULT_ASR_PER_RUN)),
+        jobId,
+        fresh: voiceJobs,
+        signal
+      })
+      voiceNote = asr.note
     }
     const interrupted = signal?.aborted === true
     const remaining =
       sessionBudget < toFetch.length ? `,剩 ${toFetch.length - sessionBudget} 会话下轮续` : ''
-    const summary = `会话 ${sessionOk}/${work.length} 成功${sessionSkip ? `,跳过 ${sessionSkip}` : ''}${remaining} · 上报 ${added} 条${mediaNote} · 耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`
+    const summary = `会话 ${sessionOk}/${work.length} 成功${sessionSkip ? `,跳过 ${sessionSkip}` : ''}${remaining} · 上报 ${added} 条${mediaNote}${voiceNote} · 耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`
     report('done', work.length, doneCount, added)
     if (sessionSkip > 0 || errors.length > 0) clawLog.warn(`job=${jobId} ${summary}`)
     else clawLog.info(`job=${jobId} ${summary}`)

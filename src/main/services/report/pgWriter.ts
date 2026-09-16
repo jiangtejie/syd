@@ -34,6 +34,19 @@ export interface PgMessageRow {
   replyToMessageId: string | null
   mediaMd5: string | null
   mediaPath: string | null
+  /** 语音转写文本（非语音 / 未转写为 null）；与 content 里的「[语音] N″ 文本」同源，供下游直接筛 */
+  voiceText: string | null
+  /** 语音时长（毫秒，来自消息 XML 的 voicelength；非语音为 null） */
+  voiceDurationMs: number | null
+}
+
+/** 语音转写完成后回写的行（消息已入库，只补语音相关列） */
+export interface VoicePgUpdate {
+  sessionWxid: string
+  localId: number
+  content: string
+  voiceText: string
+  voiceDurationMs: number | null
 }
 
 function clientOf(t: ReportPgTarget): Client {
@@ -76,7 +89,8 @@ export async function ensurePgSchema(c: Client, schema: string): Promise<void> {
     id SERIAL, session_wxid TEXT, local_id INTEGER, create_time BIGINT,
     formatted_time TEXT, msg_type TEXT, content TEXT, is_send SMALLINT,
     sender_username TEXT, sender_display_name TEXT, group_nickname TEXT,
-    reply_to_message_id TEXT, media_md5 TEXT, media_path TEXT
+    reply_to_message_id TEXT, media_md5 TEXT, media_path TEXT,
+    voice_text TEXT, voice_duration_ms INTEGER
   )`)
   // 唯一约束(表已存在时补加)
   await q(`DO $$ BEGIN
@@ -99,6 +113,11 @@ export async function ensurePgSchema(c: Client, schema: string): Promise<void> {
   // 旧表缺列补加(媒体元数据)
   await q(`ALTER TABLE ${qn(schema, 'messages')} ADD COLUMN IF NOT EXISTS media_md5 TEXT`)
   await q(`ALTER TABLE ${qn(schema, 'messages')} ADD COLUMN IF NOT EXISTS media_path TEXT`)
+  // 语音：时长（所有语音都有）+ 转写文本（转写成功后回写）
+  await q(`ALTER TABLE ${qn(schema, 'messages')} ADD COLUMN IF NOT EXISTS voice_text TEXT`)
+  await q(
+    `ALTER TABLE ${qn(schema, 'messages')} ADD COLUMN IF NOT EXISTS voice_duration_ms INTEGER`
+  )
 }
 
 function quoteId(s: string): string {
@@ -157,7 +176,7 @@ export async function upsertPgMessages(
   let i = 1
   for (const r of rows) {
     values.push(
-      `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`
+      `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`
     )
     params.push(
       r.sessionWxid,
@@ -172,13 +191,16 @@ export async function upsertPgMessages(
       r.groupNickname,
       r.replyToMessageId,
       r.mediaMd5,
-      r.mediaPath
+      r.mediaPath,
+      r.voiceText,
+      r.voiceDurationMs
     )
   }
   await c.query(
     `INSERT INTO ${qn(schema, 'messages')}
        (session_wxid, local_id, create_time, formatted_time, msg_type, content, is_send,
-        sender_username, sender_display_name, group_nickname, reply_to_message_id, media_md5, media_path)
+        sender_username, sender_display_name, group_nickname, reply_to_message_id, media_md5, media_path,
+        voice_text, voice_duration_ms)
      VALUES ${values.join(',')}
      ON CONFLICT (session_wxid, local_id) DO UPDATE SET
        content = EXCLUDED.content,
@@ -188,6 +210,8 @@ export async function upsertPgMessages(
        sender_display_name = EXCLUDED.sender_display_name,
        sender_username = COALESCE(EXCLUDED.sender_username, ${qn(schema, 'messages')}.sender_username),
        media_md5 = COALESCE(EXCLUDED.media_md5, ${qn(schema, 'messages')}.media_md5),
+       voice_text = COALESCE(EXCLUDED.voice_text, ${qn(schema, 'messages')}.voice_text),
+       voice_duration_ms = COALESCE(EXCLUDED.voice_duration_ms, ${qn(schema, 'messages')}.voice_duration_ms),
        media_path = CASE WHEN EXCLUDED.media_path IS NOT NULL AND EXCLUDED.media_path != ''
                           AND (${qn(schema, 'messages')}.media_path IS NULL OR ${qn(schema, 'messages')}.media_path = '')
                         THEN EXCLUDED.media_path ELSE ${qn(schema, 'messages')}.media_path END`,
@@ -216,4 +240,32 @@ export async function refreshPgSessionStats(
 
 export async function closePg(c: Client): Promise<void> {
   await c.end().catch(() => undefined)
+}
+
+/**
+ * 语音转写回写：消息已经入库（content 是 `[语音]`），转写成功后把文本补进去。
+ *
+ * 只对「还没有 voice_text 或 content 仍是 `[语音]` 占位」的行生效 —— 不回写就不会覆盖下游/人工改过的内容。
+ * 单轮条数由调用方预算控制（几条到几十条），逐条 UPDATE 足够，不必拼批量 VALUES。
+ */
+export async function updatePgVoice(
+  c: Client,
+  schema: string,
+  rows: VoicePgUpdate[]
+): Promise<number> {
+  if (rows.length === 0) return 0
+  let done = 0
+  for (const r of rows) {
+    const res = await c.query(
+      `UPDATE ${qn(schema, 'messages')}
+          SET content = $1,
+              voice_text = $2,
+              voice_duration_ms = COALESCE($3, voice_duration_ms)
+        WHERE session_wxid = $4 AND local_id = $5
+          AND (voice_text IS NULL OR voice_text = '' OR content = '[语音]')`,
+      [r.content, r.voiceText, r.voiceDurationMs, r.sessionWxid, r.localId]
+    )
+    done += res.rowCount ?? 0
+  }
+  return done
 }

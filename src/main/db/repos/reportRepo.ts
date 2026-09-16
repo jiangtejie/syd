@@ -55,6 +55,8 @@ interface StoredParams {
   daysBack?: number
   maxPerRun?: number
   sessionsPerRun?: number
+  /** 每轮最多转写几条语音(0=关闭);缺省 5,见 services/report/voicePlan.DEFAULT_ASR_PER_RUN */
+  asrPerRun?: number
   target?: {
     host: string
     port: number
@@ -93,7 +95,9 @@ export function openJobRunConfig(jobId: number): {
       sessionList: p.sessionList,
       daysBack: typeof p.daysBack === 'number' ? p.daysBack : 0,
       maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0,
-      sessionsPerRun: typeof p.sessionsPerRun === 'number' ? p.sessionsPerRun : 0
+      sessionsPerRun: typeof p.sessionsPerRun === 'number' ? p.sessionsPerRun : 0,
+      // 历史任务没存过这一项:按默认值给能力(想关就把任务里的「语音转写」改成 0)
+      asrPerRun: typeof p.asrPerRun === 'number' ? p.asrPerRun : 5
     },
     target: {
       host: t.host,
@@ -114,7 +118,8 @@ function toInfo(r: JobRow): ReportJobInfo {
     sessionList: p.sessionList,
     daysBack: typeof p.daysBack === 'number' ? p.daysBack : 0,
     maxPerRun: typeof p.maxPerRun === 'number' ? p.maxPerRun : 0,
-    sessionsPerRun: typeof p.sessionsPerRun === 'number' ? p.sessionsPerRun : 0
+    sessionsPerRun: typeof p.sessionsPerRun === 'number' ? p.sessionsPerRun : 0,
+    asrPerRun: typeof p.asrPerRun === 'number' ? p.asrPerRun : 5
   }
   return {
     id: r.id,
@@ -201,6 +206,10 @@ export function saveReportJob(input: ReportJobInput): { ok: boolean; error?: str
     daysBack: Math.max(0, Math.floor(Number(input.scope.daysBack) || 0)),
     maxPerRun: Math.max(0, Math.floor(Number(input.scope.maxPerRun) || 0)),
     sessionsPerRun: Math.max(0, Math.floor(Number(input.scope.sessionsPerRun) || 0)),
+    asrPerRun: Math.max(
+      0,
+      Math.floor(input.scope.asrPerRun === undefined ? 5 : Number(input.scope.asrPerRun) || 0)
+    ),
     target: tgt
   }
   const prevParams =
