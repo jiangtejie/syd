@@ -9,6 +9,7 @@
  */
 import {
   IMAGE_TIERS,
+  degradedReasonText,
   isBetterTier,
   normalizeKind,
   tierLabel,
@@ -92,6 +93,14 @@ log(
   tierTallyText(tally(3, 2, 1)).includes('缩略图1 张是微信里没点开查看原图'),
   '有缩略图 → 顺带说清为什么糊'
 )
+
+console.log('\n[7] 降级原因文案：可修复的要直接给出修复动作（用户看到的是糊图，不是日志）')
+log(
+  degradedReasonText('ffmpeg-missing').includes('ffmpeg') &&
+    degradedReasonText('ffmpeg-missing').includes('设置'),
+  'ffmpeg 缺失 → 文案指到「设置 → 图片解密 → ffmpeg 路径」'
+)
+log(degradedReasonText('hevc-decode-failed').length > 0, 'HEVC 解不出 → 也有可读说明')
 
 if (failed > 0) {
   console.error(`\n${failed} 项失败`)

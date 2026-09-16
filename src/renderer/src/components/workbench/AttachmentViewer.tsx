@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { tierLabel, type ImageKind, type ImageTier } from '../../../../shared/imageTier'
+import {
+  degradedReasonText,
+  tierLabel,
+  type ImageDegradedReason,
+  type ImageKind,
+  type ImageTier
+} from '../../../../shared/imageTier'
 import {
   clampScale,
   displaySize,
@@ -40,6 +46,8 @@ export const PLACEHOLDER_IMAGE_URL = `data:image/svg+xml;charset=utf-8,${encodeU
 interface DecryptImageOutcome {
   url: string | null
   tier?: ImageTier
+  /** 降级原因（如 ffmpeg 缺失）：界面据此给出可执行提示，而不只是把徽标标成「缩略图」 */
+  degradedReason?: ImageDegradedReason
 }
 
 /**
@@ -68,7 +76,9 @@ function requestDecryptImage(
     p = (media?.decryptImage({ wxid, imageMd5, kind }) ?? Promise.resolve({ ok: false as const }))
       .then((res) => {
         const outcome: DecryptImageOutcome =
-          res.ok && res.url ? { url: res.url, tier: res.foundKind } : { url: null }
+          res.ok && res.url
+            ? { url: res.url, tier: res.foundKind, degradedReason: res.degradedReason }
+            : { url: null, degradedReason: res.degradedReason }
         decryptUrlCache.set(key, outcome)
         return outcome
       })
@@ -121,19 +131,26 @@ function requestDecryptVideo(wxid: string, videoMd5: string): Promise<string | n
 function useDecryptImage(
   imageMd5?: string,
   kind: ImageKind = 'best'
-): { url: string | null; busy: boolean; tier: ImageTier | null } {
+): {
+  url: string | null
+  busy: boolean
+  tier: ImageTier | null
+  degradedReason: ImageDegradedReason | null
+} {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const source = useWorkbenchStore((s) => s.source)
   const [url, setUrl] = useState<string | null>(null)
   const [tier, setTier] = useState<ImageTier | null>(null)
+  const [degradedReason, setDegradedReason] = useState<ImageDegradedReason | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     let alive = true
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 切换 md5/账号时先清空上一张图,避免异步返回后串图
     setUrl(null)
-    // 档位与新图同步清空,避免上一张的标注留在新图上（同一段 effect 里 setUrl 已带 disable,这里无需重复）
+    // 档位/降级原因与新图同步清空,避免上一张的标注留在新图上（同一段 effect 里 setUrl 已带 disable,这里无需重复）
     setTier(null)
+    setDegradedReason(null)
     if (!imageMd5 || source !== 'wx' || !wxid) {
       setBusy(false)
       return () => {
@@ -153,6 +170,7 @@ function useDecryptImage(
     if (hit) {
       setUrl(hit.url)
       setTier(hit.tier ?? null)
+      setDegradedReason(hit.degradedReason ?? null)
       setBusy(false)
       return () => {
         alive = false
@@ -163,6 +181,7 @@ function useDecryptImage(
       if (alive) {
         setUrl(outcome.url)
         setTier(outcome.tier ?? null)
+        setDegradedReason(outcome.degradedReason ?? null)
         setBusy(false)
       }
     })
@@ -171,7 +190,7 @@ function useDecryptImage(
     }
   }, [imageMd5, wxid, source, kind])
 
-  return { url, busy, tier }
+  return { url, busy, tier, degradedReason }
 }
 
 /**
@@ -298,8 +317,13 @@ const STEP = 0.1
  * 档位说明：让同事知道「为什么这张不清楚」以及怎么才能拿到更好的档 ——
  * 高清原图要在微信里点开这张图并选「查看原图」才会下载到本机，随后重开预览自动升级。
  */
-function tierHint(tier: ImageTier | null | undefined): string {
+function tierHint(
+  tier: ImageTier | null | undefined,
+  degradedReason?: ImageDegradedReason | null
+): string {
   if (!tier) return '未能取到本地图片档位'
+  // 可修复的降级（如没配 ffmpeg）优先说清楚——这比「只有缩略图」有用得多
+  if (degradedReason) return degradedReasonText(degradedReason)
   if (tier === 'hd') return '本地已落地的高清原图'
   return `本地只有${tierLabel(tier)}：在微信里点开这张图并选「查看原图」后，回这里重开即可自动用上高清原图`
 }
@@ -315,10 +339,13 @@ function tierHint(tier: ImageTier | null | undefined): string {
 function ImagePreviewer({
   src,
   tier,
+  degradedReason,
   loading
 }: {
   src: string
   tier?: ImageTier | null
+  /** 降级原因：有值时在工具栏下方直接给出可执行的修复建议 */
+  degradedReason?: ImageDegradedReason | null
   /** 真图还在解密：显示中性提示，不渲染占位图（避免「图片暂时无法预览」的字样闪一下） */
   loading?: boolean
 }): React.JSX.Element {
@@ -406,7 +433,7 @@ function ImagePreviewer({
       <div className="wb-img-toolbar">
         <span
           className={`wb-img-tier${tier ? (tier === 'hd' ? ' is-hd' : ' is-degraded') : ''}`}
-          title={tierHint(tier)}
+          title={tierHint(tier, degradedReason)}
         >
           {tierLabel(tier)}
         </span>
@@ -433,6 +460,7 @@ function ImagePreviewer({
           ⤢ 适应
         </button>
       </div>
+      {degradedReason && <div className="wb-img-degrade">{degradedReasonText(degradedReason)}</div>}
     </div>
   )
 }
@@ -451,7 +479,12 @@ function AttachmentViewer({
 }): React.JSX.Element {
   // 气泡已解密出 URL 时直接复用；否则按「最好可用」再解一次
   // （best = 高清原图 → 默认图 → 缩略图，命中的档位由 tier 带回来标注）
-  const { url: decrypted, tier, busy } = useDecryptImage(attachment.imageMd5, 'best')
+  const {
+    url: decrypted,
+    tier,
+    degradedReason,
+    busy
+  } = useDecryptImage(attachment.imageMd5, 'best')
   const src = attachment.url || decrypted || PLACEHOLDER_IMAGE_URL
   // 真图还在解密：给中性提示，别先闪一张写着「图片暂时无法预览」的占位图
   const loading = !attachment.url && !decrypted && busy
@@ -468,7 +501,7 @@ function AttachmentViewer({
     <div className="wb-att-overlay" onClick={onClose}>
       <div className="wb-att-dialog" onClick={(e) => e.stopPropagation()}>
         {attachment.kind === 'image' ? (
-          <ImagePreviewer src={src} tier={tier} loading={loading} />
+          <ImagePreviewer src={src} tier={tier} degradedReason={degradedReason} loading={loading} />
         ) : attachment.kind === 'video' ? (
           <VideoPlayer videoMd5={attachment.videoMd5} />
         ) : (

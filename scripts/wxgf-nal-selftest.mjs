@@ -15,6 +15,7 @@ import {
   extractEmbeddedImage,
   extractHevcNaluStreams,
   extractWxgfViewable,
+  extractWxgfViewableDetailed,
   isWxgf
 } from '../src/main/services/media/datDecrypt.ts'
 
@@ -98,6 +99,26 @@ log(
   '内嵌图优先于 HEVC 解码（无 ffmpeg 也能出图）'
 )
 log((await extractWxgfViewable(Buffer.from('not-a-wxgf'), null)) === null, '非 wxgf → null')
+
+console.log('\n[6] 失败原因要能区分「可修复」与「真解不出」（界面/日志据此给建议）')
+const notWxgf = await extractWxgfViewableDetailed(Buffer.from('not-a-wxgf'), null)
+log(
+  notWxgf.data === null && notWxgf.reason === 'not-wxgf',
+  '非 wxgf → not-wxgf',
+  String(notWxgf.reason)
+)
+const noFfmpeg = await extractWxgfViewableDetailed(wxgf(realPicture), null)
+log(
+  noFfmpeg.data === null && noFfmpeg.reason === 'no-ffmpeg',
+  '纯 HEVC + 没有 ffmpeg → no-ffmpeg（可修复：提示去设置里填路径）',
+  String(noFfmpeg.reason)
+)
+const embeddedOutcome = await extractWxgfViewableDetailed(withEmbedded, null)
+log(
+  !!embeddedOutcome.data && embeddedOutcome.via === 'embedded',
+  '内嵌 JPEG → via=embedded（无需 ffmpeg）',
+  String(embeddedOutcome.via)
+)
 
 if (failed > 0) {
   console.error(`\n${failed} 项失败`)

@@ -452,6 +452,12 @@ src/
   - 比清晰度更要命的是**解得开解不开**：本机 **232/484（48%）的默认图是纯 HEVC**，而 ffmpeg 没配上时旧顺序（orig 优先）对这批**根本解不出来**（0 张能靠内嵌图直接出），只能退回 180px 缩略图；改成高清优先后其中 75 张可直接拿到真原图。
   - 配上 ffmpeg、把 HEVC 正确解码之后复核过一遍（75 张同时有高清档的图）：**高清档像素更多 10 张、基本持平 65 张、更少 0 张** —— 高清优先不会更差，这条顺序可以放心用。
   而回退成功时返回的 `ok:true` 让「拿到的是缩略图」这件事完全静默（大图预览、飞书证据附件、上报归档都以为自己拿的是原图）。
+  **降级必须是可诊断的**：这条链路原来完全静默 —— 用户只看到一张糊图，日志里一个字都没有。现在
+  `extractWxgfViewableDetailed` 区分 `no-ffmpeg`（可修复）与 `decode-failed`，`decryptImage` 把它归一成
+  `degradedReason` 回传，主进程按「同一张图只记一次」打一条 WARN（含 md5 前 8 位与修复指引），
+  渲染端在大图预览里直接写出「这张图的默认图是 HEVC，本机没有可用的 ffmpeg …… 设置 → 图片解密」。
+  起因是一次真实事故：宜家德邦快运群 47 张图 **100% 是 HEVC**，而应用进程的 PATH 是 09-08 的环境快照
+  （ffmpeg 后来才加进机器 PATH），spawn 报 ENOENT → 整群退回 180px 缩略图，且无处可查。
   现在 `decryptImage` 回传 `foundKind`，三处消费方各自标注：大图预览工具栏显示档位徽标（降级时给出「在微信里点开查看原图后重开即可升级」的提示）、飞书附件名带档位后缀（`image_<md5:8>_hd.jpg`）且 `lark_media_map.tier` 记住缓存那份的档位（拿到更好的档会重传，更好的才重传）、上报归档日志按档位计数（全高清不写噪音）。
 - **语音**：`media/voice.ts` —— 微信 4.x 把语音 SILK 放在 `db_storage/message/media_*.db` 的 `VoiceInfo` 表（`svr_id / local_id / create_time / voice_data`）。按「消息行自己的 serverId」优先、`local_id + create_time`（按量级自动选秒/毫秒窗口）兜底定位，`silk-wasm` 解码成 PCM → 包 44 字节 WAV 头（24kHz 单声道）→ 落 `media/<wxid>/voices/<id>.wav`。渲染端只在用户点播放时才要音频（IPC `cs:media:voiceWav`），不在打开会话时批量解码。
   ct-media 协议因此多了**三段布局** `/<wxid>/voices/<id>.wav`（图片/视频仍是两段 `/<wxid>/<md5>_<kind>.<ext>`）；解析规则抽到纯函数 `media/mediaProtocol.ts` 并有自检 —— 早期把 `voices/x.wav` 整体 `encodeURIComponent`，`/` 变 `%2F` 导致整条路径只剩两段被判 403，渲染端只看到「播放失败」；现在这类 URL 由自检直接拦下。

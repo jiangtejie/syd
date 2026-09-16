@@ -65,6 +65,19 @@
   cursor: default;
 }
 
+/* 降级提示：把「为什么糊 + 怎么修」写在图上，而不是只把徽标标成缩略图 */
+.wb-img-degrade {
+  max-width: 92vw;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
 .wb-img-hint {
   padding: 24px 32px;
   color: var(--text-3);

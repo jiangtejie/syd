@@ -3,22 +3,27 @@ import { extname, join } from 'node:path'
 import { getMediaCacheDir } from '../paths'
 import { getConfig } from '../../db/repos/config'
 import * as keyRepo from '../../db/repos/keyStore'
+import { createLogger } from '../logging'
 import {
   decryptDatFile,
   detectImageExtension,
-  extractWxgfViewable,
+  extractWxgfViewableDetailed,
   isWxgf,
   parseAesKey,
   parseXorKey
 } from './datDecrypt'
 import {
+  degradedReasonText,
   normalizeKind,
   tierLabel,
   tierSuffix,
   tierOrder,
+  type ImageDegradedReason,
   type ImageKind,
   type ImageTier
 } from '../../../shared/imageTier'
+
+const mediaLog = createLogger('media')
 
 /**
  * 微信媒体（图片 .dat）解密服务（M3 图片消费方）。
@@ -56,6 +61,11 @@ export interface DecryptImageResult {
   ext?: string
   /** 实际命中的档位：回退成功时也如实回传，调用方据此标注「缩略图/默认图/高清原图」 */
   foundKind?: ImageTier
+  /**
+   * 降级原因：本来有更好的一档、却因为「可修复」的问题没拿到时一并回传
+   * （目前是 ffmpeg 缺失/解不出 HEVC）。界面据此给出可执行提示，日志也会记一条（同一张图只记一次）。
+   */
+  degradedReason?: ImageDegradedReason
   source?: 'cache' | 'new'
   error?: string
 }
@@ -220,6 +230,8 @@ export async function decryptImage(opts: DecryptImageOptions): Promise<DecryptIm
 
   let lastMiss = ''
   let lastFail = ''
+  // 逐级尝试时记下「本来能更好」的原因，回退成功后一并带回（否则用户只看到一张糊图，无从下手）
+  let degradedReason: ImageDegradedReason | undefined
   for (const k of order) {
     // 缓存快路径：已解出过则直接返回，避免每次打开会话都重扫目录树 + 重解密
     const cached = findCachedMedia(wxid, md5, k)
@@ -233,13 +245,44 @@ export async function decryptImage(opts: DecryptImageOptions): Promise<DecryptIm
       continue
     }
     const tried = await tryDecryptOne(datPath, wxid, xorKey, aesKey, md5, k)
-    if (tried.ok) return tried
+    if (tried.ok) {
+      // 命中档位不是首选档 = 确实降级了，才把原因带出去（列表气泡要 thumb，就不算降级）
+      if (degradedReason && k !== order[0]) {
+        warnDegradedOnce(wxid, md5, k, degradedReason)
+        return { ...tried, degradedReason }
+      }
+      return tried
+    }
+    degradedReason = degradedReason ?? tried.degradedReason
     lastFail = tried.error || lastFail
   }
+  if (degradedReason) warnDegradedOnce(wxid, md5, undefined, degradedReason)
   return {
     ok: false,
+    degradedReason,
     error: lastFail || lastMiss || `微信附件目录中未找到 ${md5} 的 .dat 文件`
   }
+}
+
+/**
+ * 降级告警：同一张图只记一次（列表滚动会把同一张图问很多遍），避免把日志刷满。
+ * 这条日志是「用户在群里看到糊图 → 运维能直接查到原因」的唯一线索：以前整条链路完全静默，
+ * 只能靠肉眼发现图糊了。
+ */
+const degradedWarned = new Set<string>()
+function warnDegradedOnce(
+  wxid: string,
+  md5: string,
+  foundKind: ImageTier | undefined,
+  reason: ImageDegradedReason
+): void {
+  const key = `${wxid}:${md5}:${reason}`
+  if (degradedWarned.has(key)) return
+  if (degradedWarned.size > 500) degradedWarned.clear()
+  degradedWarned.add(key)
+  mediaLog.warn(
+    `图片降级为${foundKind ? tierLabel(foundKind) : '不可用'}（${md5.slice(0, 8)}…，账号 ${wxid}）：${degradedReasonText(reason)}`
+  )
 }
 
 /** 解密单个 dat → 缓存 → ct-media:// URL（不成功返回错误） */
@@ -257,17 +300,22 @@ async function tryDecryptOne(
     // 解密后处理：wxgf 优先内嵌 JPEG/PNG；纯 HEVC 时用 ffmpeg 转 JPEG 首帧
     let finalData = data
     let ext = detectImageExtension(finalData)
+    let degradedReason: ImageDegradedReason | undefined
     if (!ext && isWxgf(finalData)) {
-      const viewable = await extractWxgfViewable(finalData, resolveFfmpeg())
-      if (viewable) {
-        finalData = viewable
+      const viewable = await extractWxgfViewableDetailed(finalData, resolveFfmpeg())
+      if (viewable.data) {
+        finalData = viewable.data
         ext = detectImageExtension(finalData)
+      } else {
+        // 分清「没配 ffmpeg」和「配了也解不出」——前者是可修复的，界面要给出可执行提示
+        degradedReason = viewable.reason === 'no-ffmpeg' ? 'ffmpeg-missing' : 'hevc-decode-failed'
       }
     }
     if (!ext) {
       return {
         ok: false,
-        error: `${md5}_${foundKind} 为纯 HEVC 原图（wxgf），需 ffmpeg 转码；请在设置中配置 ffmpeg 路径`
+        degradedReason,
+        error: `${md5}_${foundKind} 为纯 HEVC 原图（wxgf），${degradedReason ? degradedReasonText(degradedReason) : '解不出可视画面'}`
       }
     }
 
@@ -343,15 +391,23 @@ export async function testImageDecrypt(wxid: string, dbPath?: string): Promise<D
   // best = 高清 → 默认 → 缩略图，逐级兜底在 decryptImage 内部完成，这里只如实报命中档位
   const result = await decryptImage({ wxid: id, imageMd5: hit.md5, kind: 'best', dbPath })
   if (result.ok) {
+    const degraded = result.degradedReason
+      ? `；注意：${degradedReasonText(result.degradedReason)}`
+      : ''
     return {
       ok: true,
       url: result.url,
       ext: result.ext,
       foundKind: result.foundKind,
-      error: `找到 ${hit.md5} 并成功解密（${tierLabel(result.foundKind)}）`
+      degradedReason: result.degradedReason,
+      error: `找到 ${hit.md5} 并成功解密（${tierLabel(result.foundKind)}）${degraded}`
     }
   }
-  return { ok: false, error: `解密失败：${result.error}` }
+  return {
+    ok: false,
+    degradedReason: result.degradedReason,
+    error: `解密失败：${result.error}`
+  }
 }
 
 export interface DecryptVideoOptions {

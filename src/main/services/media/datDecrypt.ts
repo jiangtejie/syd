@@ -389,6 +389,16 @@ export function convertHevcToJpeg(hevcData: Buffer, ffmpegPath: string): Promise
 /** 小于这个字节数的解码结果视为无效帧（空白/半帧） */
 export const WXGF_MIN_FRAME_BYTES = 1024
 
+/** wxgf 取不到可视图片时的原因（调用方据此把「可修复」的失败讲清楚，而不是静默降级） */
+export type WxgfViewableReason = 'not-wxgf' | 'no-ffmpeg' | 'decode-failed'
+
+export interface WxgfViewableResult {
+  data: Buffer | null
+  reason?: WxgfViewableReason
+  /** 成功时的来源：内嵌 JPEG/PNG，还是 HEVC 转码 */
+  via?: 'embedded' | 'hevc'
+}
+
 /**
  * wxgf 载荷 → 可视图片数据：
  * 内嵌 JPEG/PNG 优先直接截取；纯 HEVC 流需 ffmpeg（ffmpegPath 为空则跳过返回 null）。
@@ -397,18 +407,27 @@ export const WXGF_MIN_FRAME_BYTES = 1024
  * 真图那段才是大的。早期写的是「按文件顺序、第一个解出 >1KB 的就返回」——占位帧解出来
  * 有 6~9KB，照样通过，于是把纯白图当成了结果（与上面 NAL 分组失效是同一个故障的两半）。
  */
+export async function extractWxgfViewableDetailed(
+  buf: Buffer,
+  ffmpegPath: string | null
+): Promise<WxgfViewableResult> {
+  if (!isWxgf(buf)) return { data: null, reason: 'not-wxgf' }
+  const embedded = extractEmbeddedImage(buf)
+  if (embedded) return { data: embedded, via: 'embedded' }
+  if (!ffmpegPath) return { data: null, reason: 'no-ffmpeg' }
+  const streams = extractHevcNaluStreams(buf).sort((a, b) => b.length - a.length)
+  if (streams.length === 0) return { data: null, reason: 'decode-failed' }
+  for (const stream of streams) {
+    const jpg = await convertHevcToJpeg(stream, ffmpegPath)
+    if (jpg && jpg.length > WXGF_MIN_FRAME_BYTES) return { data: jpg, via: 'hevc' }
+  }
+  return { data: null, reason: 'decode-failed' }
+}
+
+/** 只要数据的老口径（保留给既有调用方与自检） */
 export async function extractWxgfViewable(
   buf: Buffer,
   ffmpegPath: string | null
 ): Promise<Buffer | null> {
-  if (!isWxgf(buf)) return null
-  const embedded = extractEmbeddedImage(buf)
-  if (embedded) return embedded
-  if (!ffmpegPath) return null
-  const streams = extractHevcNaluStreams(buf).sort((a, b) => b.length - a.length)
-  for (const stream of streams) {
-    const jpg = await convertHevcToJpeg(stream, ffmpegPath)
-    if (jpg && jpg.length > WXGF_MIN_FRAME_BYTES) return jpg
-  }
-  return null
+  return (await extractWxgfViewableDetailed(buf, ffmpegPath)).data
 }

@@ -1,4 +1,4 @@
-import type { ImageKind, ImageTier } from './imageTier'
+import type { ImageDegradedReason, ImageKind, ImageTier } from './imageTier'
 import type { MonitorData } from './monitorMetrics'
 import type { DeriveImageKeysResult } from './types'
 import type {
@@ -357,6 +357,8 @@ export interface CsApi {
       ext?: string
       /** 实际命中的档位：回退成功时也如实回传，界面据此标注而不是当成原图 */
       foundKind?: ImageTier
+      /** 降级原因（如 ffmpeg 缺失）：界面据此给出可执行提示，而不是只说「这是缩略图」 */
+      degradedReason?: ImageDegradedReason
       error?: string
     }>
     decryptVideo: (opts: {
@@ -372,6 +374,7 @@ export interface CsApi {
       url?: string
       ext?: string
       foundKind?: ImageTier
+      degradedReason?: ImageDegradedReason
       error?: string
     }>
     resolveEmoji: (

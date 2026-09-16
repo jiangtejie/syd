@@ -7,7 +7,7 @@ import type {
   Result,
   WarmupReport
 } from '../shared/api'
-import type { ImageKind, ImageTier } from '../shared/imageTier'
+import type { ImageDegradedReason, ImageKind, ImageTier } from '../shared/imageTier'
 import type {
   ChatMsgItem,
   ChatSessionItem,
@@ -281,6 +281,8 @@ const api: PreloadApi = {
         ext?: string
         /** 实际命中档位（回退时如实回传） */
         foundKind?: ImageTier
+        /** 降级原因（如 ffmpeg 缺失），界面据此给可执行提示 */
+        degradedReason?: ImageDegradedReason
         error?: string
       }> => ipcRenderer.invoke('cs:media:decryptImage', opts),
       decryptVideo: (opts: {
@@ -297,6 +299,7 @@ const api: PreloadApi = {
         url?: string
         ext?: string
         foundKind?: ImageTier
+        degradedReason?: ImageDegradedReason
         error?: string
       }> => ipcRenderer.invoke('cs:media:testImageDecrypt', wxid, dbPath),
       resolveEmoji: (

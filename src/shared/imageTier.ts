@@ -78,6 +78,19 @@ export function isBetterTier(
   return tierRank(a) < tierRank(b)
 }
 
+/** 拿到的是「不够好的一档」时的可执行原因（主进程日志与渲染端提示共用同一套说法） */
+export type ImageDegradedReason = 'ffmpeg-missing' | 'hevc-decode-failed'
+
+/**
+ * 降级原因的说明文案。要点是**可执行**：这类降级绝大多数是「配一下 ffmpeg 就能好」，
+ * 别只写「本地只有缩略图」——本机就出现过用户在群里看到糊图、却无从下手的情况。
+ */
+export function degradedReasonText(reason: ImageDegradedReason): string {
+  return reason === 'ffmpeg-missing'
+    ? '这张图的默认图是 HEVC(wxgf)，本机没有可用的 ffmpeg，只能显示缩略图 —— 在「设置 → 图片解密 → ffmpeg 路径」填上 ffmpeg.exe 后重开此图即可'
+    : '这张图的 HEVC 流解不出画面（可能只落地了占位帧），只能显示缩略图'
+}
+
 /** 归一化外部传入的 kind（IPC / 旧前端可能传未知值或空） */
 export function normalizeKind(kind: unknown): ImageKind {
   return kind === 'thumb' || kind === 'orig' || kind === 'hd' ? kind : 'best'
