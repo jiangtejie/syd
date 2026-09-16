@@ -108,11 +108,16 @@ CipherTalkChatSync /ENABLE` 恢复),避免两套游标重复拉取。chat-sync �
 - 某会话持续失败/超时:该会话游标不动,其余会话不受影响;
 - 来源账号未导入密钥:任务失败提示去「微信数据」导入;
 - **语音没有转写**:① 腾讯云 ASR 未配置(上报日志里只有一条提示,不报错)→ 设置 → 微信数据 → 语音转写;
-  ② 任务表单「语音转写」是 0;③ 语音 >60s(超上限直接跳过)。库侧自查:
+  ② 任务表单「语音转写」是 0;③ 语音 >60s(超上限直接跳过);
+  ④ 日志出现「**在 VoiceInfo 里没找到这条语音**」:多半是时间单位对不上 —— VoiceInfo.create_time 存**秒**
+  (与消息表一致),而渲染层传的是毫秒;voiceTimeCandidates() 会按"调用方单位优先、另一种兜底"各试一次,
+  若仍 miss 则是微信侧确实没这条语音的 SILK(实测最新一条语音就还没落 VoiceInfo,属正常跳过)。库侧自查:
   `SELECT count(*) FILTER (WHERE voice_text IS NOT NULL) AS done, count(*) AS total FROM chat.messages WHERE msg_type = '语音消息';`
 - **语音链路冒烟**(需要真库,不进 `test:all`):`PGHOST=… PGPORT=… PGUSER=… PGPASSWORD=… PGDATABASE=… npm run test:report-voice-pg`
   —— 补列 / 15 列 upsert / 转写回写 / 历史补写查询全在事务里验一遍并回滚;
-- 日志:统一日志 `report` 通道(app-YYYYMMDD.log),运行历史自带错误明细。
+- 日志:统一日志 `report` 通道(app-YYYYMMDD.log),运行历史自带错误明细;
+- **改主进程代码后必须重启应用**:实测 dev 下 electron-vite 不会热重启主进程(进程号与内存状态都不变),
+  语音/上报这些跑在主进程里的能力,不重启就还是旧逻辑在跑。
 
 ## 长任务体验
 
