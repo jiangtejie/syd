@@ -3,6 +3,7 @@ import type { AiGenOptions, ChatMessage } from '../../shared/types'
 import { generateSuggestions } from '../services/ai/suggest'
 import { listRemoteModels, readProviderConfig, testAiConnection } from '../services/ai/provider'
 import { createLogger } from '../services/logging'
+import { aiRunSummary } from '../db/repos/aiRunRepo'
 
 const aiLog = createLogger('ai')
 
@@ -65,6 +66,19 @@ export function registerAiHandlers(): void {
         : { ok: false as const, error: res.error }
     }
   )
+
+  /**
+   * AI 运行与成本汇总（近 N 天，落库）。
+   * 与 cs:wb:reliability 的区别：那张卡是内存态、重启清零、只覆盖工作台；
+   * 这里是**所有模块**每次真实调用的记录（含后台的群问题提取与数字员工值班）。
+   */
+  ipcMain.handle('cs:ai:runSummary', async (_e, days?: number) => {
+    try {
+      return { ok: true as const, summary: aiRunSummary(Number(days) || 7) }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : '读取失败' }
+    }
+  })
 
   ipcMain.handle(
     'cs:ai:models',

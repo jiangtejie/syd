@@ -226,6 +226,7 @@ export const CORE_TABLES: string[] = [
     app_token TEXT NOT NULL,
     table_id TEXT NOT NULL,
     record_id TEXT NOT NULL,
+    remote_uid TEXT NOT NULL DEFAULT '',
     content_hash TEXT NOT NULL DEFAULT '',
     synced_at INTEGER NOT NULL,
     PRIMARY KEY (kind, local_id)

@@ -280,7 +280,7 @@ export async function analyzeGroupIssues(
       const msgs = read.msgs
       const coverage: IssueCoverage = { msgs: msgs.length, truncated: read.truncated }
       const team = getTeamUsernamesCached(wxid)
-      const provider = createAiProvider()
+      const provider = createAiProvider('issue-analyze')
       if (msgs.length === 0) {
         const method: 'llm' | 'rule' = provider ? 'llm' : 'rule'
         stampNow(Date.now(), { method, count: 0 })
@@ -610,7 +610,7 @@ export async function analyzeIssues(
   const runPromise = new Promise<void>((r) => (resolveRun = r))
   runningWxids.set(wxid, runPromise)
   try {
-    const provider = createAiProvider()
+    const provider = createAiProvider('issue-analyze')
     const method: 'llm' | 'rule' = provider ? 'llm' : 'rule'
 
     const sessionsRes = wxService.getSessions(wxid)

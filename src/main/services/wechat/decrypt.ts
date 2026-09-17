@@ -29,6 +29,7 @@ import {
   verifyPage1
 } from './crypto/sqlcipher'
 import { mergeWalIntoPlainFile, type WalSummary } from './crypto/wal'
+import { shouldRefreshFromWal } from './dbFileWatch'
 
 const decryptLog = createLogger('wechat-decrypt')
 
@@ -425,6 +426,38 @@ export function prunePlainDbCache(keepPath?: string): { removed: number; freedBy
   return { removed, freedBytes }
 }
 
+/**
+ * 清空明文库副本缓存（退出时可选调用，见 security.clearPlainCacheOnExit 开关）。
+ *
+ * 为什么默认**不**在退出时清：明文副本是解密缓存，清了意味着下次启动要把每个消息库
+ * （几百 MB × 分片数）重新完整 AES 解密一遍 —— 对一个每天开机的客服工具，这个代价换来的是
+ * 「关机后磁盘上少一份明文」。**默认保留**，把选择权交给对机器物理安全有要求的用户。
+ * 相比之下注入截图默认就清：那里面是客户聊天画面，且没有缓存价值。
+ */
+export function clearPlainDbCache(): { removed: number; freedBytes: number } {
+  let removed = 0
+  let freedBytes = 0
+  try {
+    const dir = getPlainDbDir()
+    for (const name of readdirSync(dir)) {
+      const lower = name.toLowerCase()
+      if (!lower.endsWith('.db') && !lower.endsWith('.part')) continue
+      const full = join(dir, name)
+      try {
+        const size = statSync(full).size
+        unlinkSync(full)
+        removed += 1
+        freedBytes += size
+      } catch {
+        /* 被占用：跳过 */
+      }
+    }
+  } catch {
+    /* 目录不存在等：无需处理 */
+  }
+  return { removed, freedBytes }
+}
+
 /** 生成稳定的明文库缓存路径（同一源库 + key 复用同一文件，重复打开会覆盖刷新） */
 export function getPlainDbPath(filePath: string, hexKey: string): string {
   const hash = createHash('md5')
@@ -487,8 +520,12 @@ export function openWxDbFile(
 
   const plainPath = getPlainDbPath(filePath, hexKey)
   if (!isPlainCacheFresh(filePath, plainPath)) {
-    const decrypted = decryptWxDbFile(filePath, hexKey, plainPath)
-    if (!decrypted.ok) return { error: decrypted.error }
+    // 先试增量：只有 WAL 追加（主库没动）时把新帧合进已有副本，省掉整库重解。
+    // 任何不成立的情形都返回 false —— 那时原样走整库重解，与升级前行为完全一致。
+    if (!refreshPlainFromWal(filePath, plainPath, hexKey)) {
+      const decrypted = decryptWxDbFile(filePath, hexKey, plainPath)
+      if (!decrypted.ok) return { error: decrypted.error }
+    }
   }
 
   const first = openReadonly(plainPath)
@@ -501,6 +538,51 @@ export function openWxDbFile(
   const second = openReadonly(plainPath)
   if (second.db) return second
   return { error: `${first.error}；重解后仍打不开: ${second.error}` }
+}
+
+/**
+ * 明文副本的**增量刷新**：只在「主库没动、WAL 又长了一截」时，把当前日志的帧直接合并进
+ * 已有副本，省掉整库 AES 重解密（几百 MB × 分片数，是主进程卡顿的主要来源）。
+ *
+ * 为什么是安全的：
+ * - 只在 **主库没变**（plain.mtimeMs >= main.mtimeMs 且尺寸不缩水）时走这条路 ——
+ *   主库自己变了说明 checkpoint 已经把页写回去了，必须整库重解；
+ * - mergeWalIntoPlainFile 只处理「头部 salt == 首帧 salt」的当前日志，checkpoint 后的旧世代帧
+ *   一律不合并（照合会把旧内容盖回新库）；同一批已提交帧重复应用写回的是同样的页内容，幂等；
+ * - 合并后跑 quick_check，不通过就返回 false 让调用方走整库重解 —— 绝不把坏副本留在缓存里。
+ *
+ * 返回 true 表示副本已是最新、可以直接打开。
+ */
+function refreshPlainFromWal(filePath: string, plainPath: string, hexKey: string): boolean {
+  if (!shouldRefreshFromWal(stampOf(filePath), stampOf(plainPath))) return false
+  if (!isPlainFileUsable(plainPath)) return false
+  const key = normalizeKey(hexKey)
+  if (!key) return false
+  let salt: Buffer
+  try {
+    const fd = openSync(filePath, 'r')
+    try {
+      salt = Buffer.alloc(SALT_SIZE)
+      readInto(fd, salt, 0)
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    return false
+  }
+  const wal = mergeWalIntoPlainFile(`${filePath}-wal`, plainPath, deriveEncryptionKey(key, salt))
+  if (!wal.merged) return false
+  const check = quickCheckPlainDb(plainPath)
+  if (!check.ok) {
+    decryptLog.warn(
+      `${basename(filePath)}: WAL 增量合并未通过 quick_check（${check.error ?? '未知'}），改走整库重解`
+    )
+    return false
+  }
+  decryptLog.debug(
+    `${basename(filePath)}: 明文副本按 WAL 增量刷新（${wal.appliedFrames} 帧，未整库重解）`
+  )
+  return true
 }
 
 /** 供诊断/自检：当前源库签名（源库或 WAL 变化即变化） */

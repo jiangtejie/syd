@@ -6,6 +6,7 @@ import SkeletonRows from './SkeletonRows'
 import { growthApi } from './meta'
 import { Badge, SearchInput, EmptyState, ErrBar } from './common'
 import { MediaGallery } from './MediaGallery'
+import PublishRecordForm from './PublishRecordForm'
 import { remoteImageUrlsOf, remoteVideoUrlOf } from './meta'
 import type { GrowthContentDetailView, GrowthContentItem } from '../../../../shared/growth'
 import { useAsyncEffect } from '../../lib/useAsyncEffect'
@@ -914,6 +915,14 @@ export function WarehousePanel({
                 工作台」原创化处理。
               </div>
             </div>
+
+            {/* 发布登记 + 效果历史：看板空态一直指引的这个入口，此前并不存在 */}
+            <PublishRecordForm
+              contentId={detail.id}
+              metrics={detail.metrics ?? []}
+              outputs={detail.remixOutputs ?? []}
+              onSaved={() => refreshDetail(detail.id)}
+            />
           </div>
         </div>
       ) : null}

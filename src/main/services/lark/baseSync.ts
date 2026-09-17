@@ -18,10 +18,12 @@ import {
   getSyncRef,
   listSyncRefs,
   saveRemoteCollab,
-  saveSyncRef
+  saveSyncRef,
+  setSyncRefUid
 } from '../../db/repos/larkSyncRepo'
 import {
   getIssueById,
+  listIssues,
   listIssuesChangedSince,
   setIssueAssignee,
   setIssueNote,
@@ -36,9 +38,11 @@ import {
   diffCollab,
   hashOf,
   issueToFields,
+  issueUid,
   mapFieldName,
   replyToFields,
   statusFromText,
+  UID_FIELD,
   FieldMap
 } from './baseMapping'
 import { countAttached, countMediaRefs } from '../../db/repos/larkMediaRepo'
@@ -265,6 +269,16 @@ export async function syncIssuesOut(
       error: `列「${colOf('议题ID')}」类型不符(需要文本),无法建立映射:请在飞书里把它改成文本列,或在设置页做列名映射`
     }
   }
+  // 议题UID（跨机器稳定 ID）：新表由「执行并建表」自动带上；老表 / 用户自建表可能没有。
+  // 写一个不存在的列会让飞书**整条记录拒收**（同类坑实测 58 条全失败），所以先探测再决定写不写；
+  // 探测失败就当作没有 —— 本轮的匹配退回按行号，与升级前行为一致，不会更差。
+  const uidCol = colOf(UID_FIELD)
+  let hasUidCol = false
+  try {
+    hasUidCol = (await listFields(appToken, tableId)).some((f) => f.name === uidCol)
+  } catch {
+    hasUidCol = false
+  }
   const out: SyncOutResult = {
     ok: true,
     scanned: rows.length,
@@ -276,7 +290,12 @@ export async function syncIssuesOut(
   }
 
   // 待新建的攒批；待更新的逐条（Base 单条更新更稳，量也不大）
-  let pendingCreates: Array<{ id: number; fields: Record<string, unknown>; hash: string }> = []
+  let pendingCreates: Array<{
+    id: number
+    fields: Record<string, unknown>
+    hash: string
+    uid: string
+  }> = []
 
   const flushCreates = async (): Promise<void> => {
     if (pendingCreates.length === 0) return
@@ -303,6 +322,7 @@ export async function syncIssuesOut(
       saveSyncRef('issue', b.id, appToken, tableId, recordId, b.hash, {
         status: String(b.fields[colOf('状态')] ?? ''),
         assignee: String(b.fields[colOf('跟进人')] ?? ''),
+        uid: b.uid,
         pushed: true
       })
       out.created++
@@ -325,14 +345,17 @@ export async function syncIssuesOut(
         ? { name: person.field, openId: openIdOf(personName) }
         : undefined
     const fields = issueToFields(issue, names, { fieldMap, primaryField, personField })
+    if (!hasUidCol) delete fields[uidCol]
     if (conflicts.size > 0) {
       for (const k of Object.keys(fields)) if (conflicts.has(k)) delete fields[k]
       out.skippedFields = (out.skippedFields ?? 0) + 1
     }
     const hash = hashOf(fields)
+    // 记进映射表：拉取时用「Base 记录的议题UID → 本地行」对齐，不再依赖本地自增行号
+    const uid = hasUidCol && !conflicts.has(uidCol) ? issueUid(issue.wxid, issue.key) : ''
     const ref = getSyncRef('issue', issue.id)
     if (!ref) {
-      pendingCreates.push({ id: issue.id, fields, hash })
+      pendingCreates.push({ id: issue.id, fields, hash, uid })
       if (pendingCreates.length >= BATCH_SIZE) await flushCreates()
       continue
     }
@@ -351,7 +374,7 @@ export async function syncIssuesOut(
       // 判定要窄（字段类错误码同样是 1254xxx，误判会导致重复插入）：见 baseCore.isRecordMissingError。
       if (isRecordMissingError(r.error)) {
         saveSyncRef('issue', issue.id, appToken, tableId, ref.recordId, '')
-        pendingCreates.push({ id: issue.id, fields, hash })
+        pendingCreates.push({ id: issue.id, fields, hash, uid })
         continue
       }
       out.failed++
@@ -361,6 +384,7 @@ export async function syncIssuesOut(
     saveSyncRef('issue', issue.id, appToken, tableId, ref.recordId, hash, {
       status: String(fields[colOf('状态')] ?? ''),
       assignee: String(fields[colOf('跟进人')] ?? ''),
+      uid,
       pushed: true
     })
     out.updated++
@@ -390,32 +414,48 @@ export interface ClaimResult {
 
 /**
  * 认领既有行：目标表本来就是用户的表，里面可能已经有行（他们手工写的，或换表前的历史）。
- * 按「议题ID」列把 Base 行与本地议题对上并写入映射，避免同步时**重复插入**。
+ *
+ * 对齐顺序：**先按「议题UID」（跨机器稳定）**，认不出才退回「议题ID」（本地行号）。
+ * 只按行号认领在多机器共用一张表时会认错人 —— 两台机器的行号各自从 1 开始，
+ * 于是把 B 机的议题钉到 A 机的记录上，之后同事的处置全写错议题。
+ *
  * 不写入协作列的上次已知值 —— 让首轮拉取能把同事已填的状态/跟进人带进本地。
  */
 export async function claimExistingRecords(
   appToken: string,
-  tableId: string
+  tableId: string,
+  wxid = ''
 ): Promise<ClaimResult> {
   const out: ClaimResult = { ok: false, scanned: 0, claimed: 0, already: 0, unmatched: 0 }
   const map = getFieldMap()
   const idCol = mapFieldName('议题ID', map)
-  const records = await listIssueRecords(appToken, tableId, [idCol])
+  const uidCol = mapFieldName(UID_FIELD, map)
+  const fields = await listFields(appToken, tableId).catch(() => [])
+  const hasUidCol = fields.some((f) => f.name === uidCol)
+  const records = await listIssueRecords(appToken, tableId, [idCol, ...(hasUidCol ? [uidCol] : [])])
+  // 本机全部议题的「稳定 ID → 行号」表：用它把 Base 行认回本地，而不是信行号
+  const uidToLocal = new Map<string, number>()
+  if (hasUidCol && wxid) {
+    for (const it of listIssues(wxid)) uidToLocal.set(issueUid(it.wxid, it.key), it.id)
+  }
   out.scanned = records.length
   for (const rec of records) {
+    const uid = hasUidCol ? String(rec.fields[uidCol] ?? '').trim() : ''
+    const byUid = uid ? uidToLocal.get(uid) : undefined
     const idText = String(rec.fields[idCol] ?? '').trim()
-    const localId = Number.parseInt(idText, 10)
+    const localId = byUid ?? Number.parseInt(idText, 10)
     if (!Number.isFinite(localId) || !getIssueById(localId)) {
       out.unmatched++
       continue
     }
     const ref = getSyncRef('issue', localId)
     if (ref && ref.recordId === rec.recordId) {
+      if (uid) setSyncRefUid('issue', localId, uid)
       out.already++
       continue
     }
     // contentHash 留空 → 下一轮推送会补写程序列(把我们的列填上);协作列留给首轮拉取
-    saveSyncRef('issue', localId, appToken, tableId, rec.recordId, '')
+    saveSyncRef('issue', localId, appToken, tableId, rec.recordId, '', { uid })
     out.claimed++
   }
   out.ok = true
@@ -477,9 +517,12 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
 
   const map = getFieldMap()
   const idCol = mapFieldName('议题ID', map)
+  const uidCol = mapFieldName(UID_FIELD, map)
+  let hasUidCol = false
   // 回写闸门:目标表没有 状态/跟进人/处理备注 三列时,同步退化为单向(不再报错刷日志)
   try {
     const have = (await listFields(appToken, tableId)).map((f) => f.name)
+    hasUidCol = have.includes(uidCol)
     const conflicted = new Set(getConflictedFields())
     const collabBlocked = COLLAB_KEYS.some((k) => conflicted.has(mapFieldName(k, map)))
     if (collabBlocked) {
@@ -512,6 +555,7 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
   try {
     records = await listIssueRecords(appToken, tableId, [
       idCol,
+      ...(hasUidCol ? [uidCol] : []),
       mapFieldName('状态', map),
       mapFieldName('跟进人', map),
       mapFieldName('处理备注', map)
@@ -520,7 +564,11 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
     return { ...empty, error: e instanceof Error ? e.message : String(e) }
   }
 
-  const refs = new Map(listSyncRefs('issue').map((r) => [r.localId, r]))
+  const refList = listSyncRefs('issue')
+  const refs = new Map(refList.map((r) => [r.localId, r]))
+  // 稳定 ID → 本地映射：多机器共用一张表时靠它对齐。
+  // 升级前建立的映射 remoteUid 为空，会走下面的行号兜底（并在命中后补写 uid）。
+  const uidRefs = new Map(refList.filter((r) => r.remoteUid).map((r) => [r.remoteUid, r] as const))
   const members = listTeamMembers(wxid).map((m) => ({ username: m.username, label: m.label ?? '' }))
   const out: PullResult = {
     ok: true,
@@ -532,16 +580,26 @@ export async function pullIssuesBack(wxid: string): Promise<PullResult> {
   }
 
   for (const rec of records) {
+    // 优先用 Base 的 议题UID 对齐：本地自增行号在多机器共用一张表时会撞车
+    // （A 机的 #12 与 B 机的 #12 是不同议题），撞了就会把同事的处置写到别人的议题上。
+    const uid = hasUidCol ? String(rec.fields[uidCol] ?? '').trim() : ''
+    const byUid = uid ? uidRefs.get(uid) : undefined
     const idText = String(rec.fields[idCol] ?? '').trim()
-    const localId = Number.parseInt(idText, 10)
+    const localId = byUid ? byUid.localId : Number.parseInt(idText, 10)
     if (!Number.isFinite(localId)) {
       out.unmatched++
       continue
     }
-    const ref = refs.get(localId)
+    const ref = byUid ?? refs.get(localId)
     if (!ref) {
       out.unmatched++
       continue
+    }
+    // 这条 Base 行带稳定 ID、而映射还没有：顺手补上，下一轮起就不必再退回行号匹配
+    if (uid && !ref.remoteUid) {
+      setSyncRefUid('issue', ref.localId, uid)
+      ref.remoteUid = uid
+      uidRefs.set(uid, ref)
     }
     const remote = collabOf(rec.fields, map)
     const diff = diffCollab(remote, {

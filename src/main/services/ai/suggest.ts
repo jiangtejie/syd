@@ -128,7 +128,7 @@ export async function generateSuggestions(
   // AI 通道未启用 / 未配置 Key / 配置异常 → 不产出任何候选（无内置话术），由 UI 引导配置
   let provider: AiProvider | null = null
   try {
-    provider = createAiProvider()
+    provider = createAiProvider('suggest')
   } catch (e) {
     aiLog.warn(`provider config error: ${e instanceof Error ? e.message : String(e)}`)
   }

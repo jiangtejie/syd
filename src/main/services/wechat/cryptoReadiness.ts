@@ -14,6 +14,7 @@ import { getCachePath } from '../paths'
 import { deriveImageKeys } from '../media/imageKeys'
 import { mediaCachePolicy, mediaCacheStats } from '../media/mediaCache'
 import { createLogger } from '../logging'
+import { openSecret, sealSecret } from '../secrets'
 
 const log = createLogger('crypto-center')
 
@@ -160,8 +161,9 @@ export function accountReadiness(wxid: string): AccountReadiness {
   const info = getKeyStatus(id)
   const accountDir = (info.dbPath ?? '').trim()
   const { storage, dbs } = probeDbs(id, accountDir)
-  const xorKey = (getConfig(`img:${id}:xorKey`) ?? '').trim()
-  const aesKey = (getConfig(`img:${id}:aesKey`) ?? '').trim()
+  // 图片密钥已改为加封存储（enc1:），读侧必须开封 —— 否则会把密文当成密钥值去比对
+  const xorKey = openSecret(getConfig(`img:${id}:xorKey`)).trim()
+  const aesKey = openSecret(getConfig(`img:${id}:aesKey`)).trim()
   const cache = mediaCacheStats()
   const policy = mediaCachePolicy()
 
@@ -452,8 +454,11 @@ export async function onboardAccount(opts: {
   try {
     const derived = deriveImageKeys(accountDir)
     if (derived.ok && typeof derived.xorKey === 'number') {
-      setConfig(`img:${wxid}:xorKey`, `0x${derived.xorKey.toString(16).toUpperCase()}`)
-      if (derived.aesVerified && derived.aesKey) setConfig(`img:${wxid}:aesKey`, derived.aesKey)
+      // 加封后再落库：密钥（哪怕只是图片 XOR 密钥）不该以明文长期躺在 app_config 里
+      setConfig(`img:${wxid}:xorKey`, sealSecret(`0x${derived.xorKey.toString(16).toUpperCase()}`))
+      if (derived.aesVerified && derived.aesKey) {
+        setConfig(`img:${wxid}:aesKey`, sealSecret(derived.aesKey))
+      }
       steps.push({
         id: 'images',
         label: '图片解密密钥',

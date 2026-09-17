@@ -72,11 +72,16 @@ try {
     ['颜总，看了物流，要明天才送货哦', 'reply', '物流查询'],
     ['明天安排一个拖挂车', 'reply', '排车安排'],
     ['垮丝', 'llm', ''],
-    ['这个价格太贵了，能不能便宜点', 'reply', '价格优惠']
+    // 价格类 = 风险 B：拟好回复，但**必须人工确认后才发**（不是 reply）。
+    // 这条断言以前写的是 'reply' —— 它正是那个「B 与 A 同形」的坑被固化进测试的样子。
+    ['这个价格太贵了，能不能便宜点', 'confirm', '价格优惠']
   ]
   for (const [text, action, intent] of cases) {
     const r = hit(text)
-    const got = r.action === 'reply' || r.action === 'handoff' ? r.script.intent : r.action
+    const got =
+      r.action === 'reply' || r.action === 'confirm' || r.action === 'handoff'
+        ? r.script.intent
+        : r.action
     ok(r.action === action && (intent === '' || got === intent), `${text.slice(0, 22)} → ${action}${intent ? ' / ' + intent : ''}`, r.action + (r.script ? ' / ' + r.script.intent : ''))
   }
 
@@ -85,6 +90,18 @@ try {
     const r = hit(text)
     ok(r.action === 'handoff', `${text.slice(0, 16)} → 转人工（不自动回）`, r.action + (r.script ? ' / ' + r.script.intent : ''))
   }
+
+  console.log('\n风险 B 必须人工确认（不能与 A 同形）：')
+  for (const text of ['这个价格太贵了，能不能便宜点', '能给我们什么优惠', '账期能不能再长一点']) {
+    const r = hit(text)
+    ok(
+      r.action === 'confirm',
+      text + ' → 需人工确认（action=confirm，不是 reply）',
+      r.action + (r.script ? ' / ' + r.script.intent : '')
+    )
+  }
+  const aCase = hit('现在孜然粉到货了没')
+  ok(aCase.action === 'reply', 'A 类仍是 reply（可直接发），没有被误判成需确认', aCase.action)
 
   console.log('\n不打扰：')
   ok(hit('好的').action === 'skip', '「好的」= 纯应答，不介入')

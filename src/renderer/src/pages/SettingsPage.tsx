@@ -8,6 +8,7 @@ import WorkbenchApprovalSection from '../components/settings/WorkbenchApprovalSe
 import WorkbenchMemoSection from '../components/settings/WorkbenchMemoSection'
 import { WorkbenchWorkspaceSection } from '../components/settings/WorkbenchWorkspaceSection'
 import WorkbenchReliabilitySection from '../components/settings/WorkbenchReliabilitySection'
+import AiRunPanel from '../components/settings/AiRunPanel'
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
 import ReportJobsSection from '../components/settings/ReportJobsSection'
 import { LogSection } from '../components/settings/LogSection'
@@ -823,6 +824,14 @@ function SettingsPage(): React.JSX.Element {
             desc="本次运行内工作台生成请求的成功率与最近失败原因。"
           >
             <WorkbenchReliabilitySection />
+          </SettingsCard>
+
+          {/* AI 运行与成本(近 N 天,落库;覆盖所有模块) */}
+          <SettingsCard
+            title="AI 运行与成本"
+            desc="每次真实模型调用的成功率、失败原因与 token 用量。与上一张卡不同:这里落库、重启不清零,且包含后台的群问题分析与数字员工值班。"
+          >
+            <AiRunPanel />
           </SettingsCard>
         </div>
       )}

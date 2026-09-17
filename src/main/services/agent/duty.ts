@@ -9,8 +9,9 @@ import {
 import { countRepliesMissingIntent, insertReply } from '../../db/repos/agentReplyRepo'
 import { getTeamUsernamesCached } from '../../db/repos/teamRepo'
 import { isGroupExcluded } from '../feedback/groupScope'
-import { isRuleText, isTeamMsg, msgToText, readGroupMessages } from '../feedback/shared'
+import { isMachineReadable, isTeamMsg, msgToText, readGroupMessages } from '../feedback/shared'
 import { enrichMessages, getSessions } from '../wechat/wxService'
+import { decorateVoiceTranscripts } from '../media/voiceTranscript'
 import { generateSuggestions } from '../ai/suggest'
 import { fmtStamp } from '../../../shared/monitorMetrics'
 import { matchReply } from './matcher'
@@ -153,11 +154,16 @@ export async function runDutyPass(
       out.scanned += fresh.length
       const newest = fresh[fresh.length - 1]
 
+      // 语音转写合流：上面按 enrich=false 读的（省一次开库），这里必须补一次——
+      // 否则 mergeTrigger/nonText/LLM 兜底看到的全是「[语音]」，已转写的语音等于没转。
+      decorateVoiceTranscripts(fresh, wxid)
+
       // 只有「最后一条是客户消息」才考虑介入：同事/我方已经答过就不插话（与议题引擎同一套退让逻辑）
       const inbound = fresh.filter((m) => !m.isSend && !isTeamMsg(m, team))
       const fromTeam = !newest.isSend && isTeamMsg(newest, team)
       const text = mergeTrigger(inbound)
-      const nonText = inbound.length > 0 && inbound.every((m) => !isRuleText(m))
+      // 「看不懂」才转人工：有转写的语音算看得懂（否则一期把语音一律转人工，ASR 白花钱）
+      const nonText = inbound.length > 0 && inbound.every((m) => !isMachineReadable(m))
       // 补昵称：只补要判定的这几条（话术模板里的 {{客户名}} 需要真实称呼）
       const named = enrichMessages(wxid, g.username, [...inbound.slice(-TRIGGER_MAX_MSGS), newest])
       const newestNamed = named[named.length - 1] ?? newest
@@ -205,6 +211,29 @@ export async function runDutyPass(
           triggerTime: newest.createTime,
           triggerText: text.slice(0, 500),
           decision: 'handoff',
+          scriptId: decision.script.id,
+          intent: decision.script.intent,
+          intentSource: 'script',
+          intentConfidence: 1,
+          intentEvidence: '命中话术',
+          replyText: decision.replyText,
+          riskLevel: decision.script.riskLevel,
+          status: 'queued',
+          reason: decision.reason
+        })
+        bumpScriptHit(decision.script.id)
+        out.handoff++
+      } else if (decision.action === 'confirm') {
+        // 风险 B（价格/优惠/账期）：命中话术但**不经人工确认绝不发**。
+        // 落 queued（值班页「需人工接手」），与 C 类同一个待办池，风险级别靠 riskLevel 区分。
+        insertReply({
+          accountWxid: wxid,
+          groupUsername: g.username,
+          groupName: g.displayName,
+          triggerSeq: newest.sortSeq,
+          triggerTime: newest.createTime,
+          triggerText: text.slice(0, 500),
+          decision: 'script',
           scriptId: decision.script.id,
           intent: decision.script.intent,
           intentSource: 'script',
@@ -350,6 +379,8 @@ export function previewOnMessages(
     reply: string
     reason: string
   }> = []
+  // 回放预演与线上判定必须是同一口径：先合流语音转写，再判「读不读得懂」
+  decorateVoiceTranscripts(msgs, wxid)
   for (const m of msgs) {
     const fromTeam = m.isSend || isTeamMsg(m, team)
     const text = msgToText(m)
@@ -358,7 +389,7 @@ export function previewOnMessages(
       群名: groupName,
       日期: fmtStamp(m.createTime).slice(0, 10)
     }
-    const d = matchReply({ text, fromTeam, nonText: !isRuleText(m), vars }, scripts)
+    const d = matchReply({ text, fromTeam, nonText: !isMachineReadable(m), vars }, scripts)
     if (d.action === 'skip') continue
     const it = d.action === 'llm' ? classifyIntentByRules(text) : null
     out.push({

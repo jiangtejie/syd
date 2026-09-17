@@ -4,6 +4,7 @@ import { getMediaCacheDir } from '../paths'
 import { getConfig } from '../../db/repos/config'
 import * as keyRepo from '../../db/repos/keyStore'
 import { createLogger } from '../logging'
+import { openSecret } from '../secrets'
 import {
   decryptDatFile,
   detectImageExtension,
@@ -200,8 +201,9 @@ export async function decryptImage(opts: DecryptImageOptions): Promise<DecryptIm
   }
 
   // 1. 定位 attach 根目录
-  const xorRaw = getConfig(`img:${wxid}:xorKey`)
-  const aesRaw = getConfig(`img:${wxid}:aesKey`)
+  // 图片密钥加封存储（enc1:），读侧统一开封：见 securityPolicy.isSecretConfigKey
+  const xorRaw = openSecret(getConfig(`img:${wxid}:xorKey`))
+  const aesRaw = openSecret(getConfig(`img:${wxid}:aesKey`))
   const dbPath = opts.dbPath?.trim()
 
   let attachRoot: string | null = null
@@ -367,8 +369,8 @@ function findFirstDatMd5(root: string): { md5: string; suffix: string } | null {
 export async function testImageDecrypt(wxid: string, dbPath?: string): Promise<DecryptImageResult> {
   const id = wxid?.trim()
   if (!id) return { ok: false, error: '缺少 wxid' }
-  const xorKey = parseXorKey(getConfig(`img:${id}:xorKey`))
-  const aesKey = parseAesKey(getConfig(`img:${id}:aesKey`))
+  const xorKey = parseXorKey(openSecret(getConfig(`img:${id}:xorKey`)))
+  const aesKey = parseAesKey(openSecret(getConfig(`img:${id}:aesKey`)))
   if (xorKey === null && aesKey === null) {
     return { ok: false, error: '未配置图片解密密钥，请先保存' }
   }

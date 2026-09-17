@@ -182,7 +182,7 @@ async function modelDiagnose(
   comments: BuzzCommentView[],
   rule: ReturnType<typeof ruleScore>
 ): Promise<Record<string, unknown> | null> {
-  const provider = createAiProvider()
+  const provider = createAiProvider('buzz')
   if (!provider) {
     buzzLog.info('ai provider not configured, rule-only diagnosis')
     return null

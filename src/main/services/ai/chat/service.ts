@@ -349,7 +349,7 @@ async function loadHistoryCtx(
   const keep = Math.ceil(rows.length / 2)
   const tail = rows.slice(rows.length - keep)
   const old = rows.slice(0, rows.length - keep)
-  const provider = createAiProvider()
+  const provider = createAiProvider('chat')
   if (!provider) return { rowsTail: tail, summary: null }
   const text = old
     .map((r) => {
@@ -386,7 +386,7 @@ async function runTurn(opts: {
   appendUserRow: boolean
 }): Promise<void> {
   const { wxid, sessionId, userText } = opts
-  const provider = createAiProvider()
+  const provider = createAiProvider('chat')
   if (!provider) {
     const msg = 'AI 通道未配置或未启用:请到 设置 → AI 通道 配置模型后再试。'
     sendEvent(wxid, { type: 'error', chatId: sessionId, text: msg })
@@ -889,7 +889,7 @@ async function runTurnNative(opts: {
   appendUserRow: boolean
 }): Promise<void> {
   const { wxid, sessionId, userText } = opts
-  const provider = createAiProvider()
+  const provider = createAiProvider('chat')
   if (!provider) return
   const key = runKeyOf(wxid, sessionId)
   const handle: RunHandle = {

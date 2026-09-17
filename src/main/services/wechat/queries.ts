@@ -6,6 +6,7 @@ import type Database from 'better-sqlite3-multiple-ciphers'
 import { createLogger } from '../logging'
 import { decorateVoiceTranscripts } from '../media/voiceTranscript'
 import { openWxDbFile } from './wxDb'
+import { judgeMessageTableScan, messageTableHashOf } from './messageTableScan'
 import { findFileCached, locateWeChatDbs } from './dbLocator'
 import {
   getMessageTableColumns,
@@ -414,8 +415,8 @@ export function annotateUnreadLastSender(sessions: SessionSummary[], ctx: WxRead
         .all() as { name: string }[]
       const nameId = loadNameIdMap(db, ctx.wxid)
       for (const t of tables) {
-        const hash = t.name.toLowerCase().match(/^msg_([0-9a-f]{32})$/)
-        if (!hash || !probes.has(hash[1])) continue
+        const hash = messageTableHashOf(t.name)
+        if (!hash || !probes.has(hash)) continue
         const cols = getMessageTableColumns(db, t.name)
         // 无法判定发送人的表（无 sender/real_sender_id/is_send）跳过
         if (!cols.senderColumn && !cols.hasRealSenderId && !cols.hasIsSend) continue
@@ -425,7 +426,7 @@ export function annotateUnreadLastSender(sessions: SessionSummary[], ctx: WxRead
           )
           .get() as Record<string, any> | undefined
         if (!row) continue
-        const probe = probes.get(hash[1])!
+        const probe = probes.get(hash)!
         const cursor = rawMessageCursor(row)
         if (!probe.cursor || cursorNewerThan(cursor, probe.cursor)) {
           probe.cursor = cursor
@@ -741,20 +742,27 @@ export function listMessages(
     const all: MsgWithCursor[] = []
     const fetchCount = limit + 1
     let anyDbHasMore = false
+    // 「一张表都没命中」要能说出来（以前是静默空数组，见 messageTableScan.ts）
+    const scan = { openedDbs: 0, candidateTables: 0, hashedTables: 0, matchedTables: 0 }
 
     for (const file of paths.msgDbFiles) {
       const opened = openWxDbFile(file, ctx.hexKey)
       if (!opened.db) continue
       const db = opened.db
+      scan.openedDbs += 1
       try {
         // 名称表(含 myRowId)为 is_send 判定必需,同步模式同样加载
         const nameId = loadNameIdMap(db, ctx.wxid)
         const tables = db
           .prepare("SELECT name FROM sqlite_master WHERE type='table' AND lower(name) LIKE 'msg_%'")
           .all() as { name: string }[]
+        scan.candidateTables += tables.length
         for (const t of tables) {
-          const hash = t.name.toLowerCase().match(/^msg_([0-9a-f]{32})$/)
-          if (!hash || hash[1] !== targetHash) continue
+          const hash = messageTableHashOf(t.name)
+          if (!hash) continue
+          scan.hashedTables += 1
+          if (hash !== targetHash) continue
+          scan.matchedTables += 1
           const cols = getMessageTableColumns(db, t.name)
           if (!cols.contentColumn && !cols.hasIsSend) continue
 
@@ -796,6 +804,13 @@ export function listMessages(
       } finally {
         db.close()
       }
+    }
+
+    // 表名一张都没命中 = 改版信号，必须显式报错（否则全链路「看起来没人说话」）
+    const verdict = judgeMessageTableScan(scan)
+    if (!verdict.ok) {
+      wxLog.warn(`${verdict.error}（session=${sessionId}）`)
+      return { ok: false, error: verdict.error }
     }
 
     // 跨库合并：按游标倒序；同一条消息可能散在多个历史分片库，按 identity 去重

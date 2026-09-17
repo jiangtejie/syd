@@ -114,7 +114,7 @@ export function storeBrief(storeId: number | null): string {
 }
 
 function modelText(system: string, user: string): Promise<string> {
-  const provider = createAiProvider()
+  const provider = createAiProvider('growth-ai')
   if (!provider) throw new Error('AI 通道未配置: 请到 设置 → AI 助手 配置模型')
   return provider.complete(system, user, { maxTokens: 1600 })
 }

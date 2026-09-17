@@ -238,7 +238,7 @@ export async function analyzeLlmIssues(
     '- 宁可少而准，不要虚构与拆分。'
   ].join('\n')
 
-  const provider = createAiProvider()
+  const provider = createAiProvider('issue-extract')
   if (!provider) return []
   const raw = await provider.complete(system, body, { maxTokens: 1800 })
   const parsed = parseLlmJson(raw)

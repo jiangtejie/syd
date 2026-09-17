@@ -838,7 +838,7 @@ export interface DutyPreviewRow {
   time: number
   sender: string
   text: string
-  action: 'reply' | 'handoff' | 'llm'
+  action: 'reply' | 'confirm' | 'handoff' | 'llm'
   intent: string
   reply: string
   reason: string

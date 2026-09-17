@@ -12,6 +12,12 @@ import type {
   FeedbackIssueType
 } from '../../../shared/types'
 import { fmtHms } from '../../../shared/monitorMetrics'
+// 消息→文本的纯判定收在 msgText.ts（零依赖，自检脚本能直接 import）。本文件会拉进
+// wxService → electron，脚本跑不了 —— 别把这几条判定挪回来。
+import { hasTranscriptText, isMachineReadable, isRuleText, isTextLike, msgToText } from './msgText'
+
+// 对外仍是 shared 的出口（analyzer/duty 等都从这里取），实现留在 msgText.ts
+export { hasTranscriptText, isMachineReadable, isRuleText, isTextLike, msgToText }
 
 export const ISSUE_TYPES: FeedbackIssueType[] = [
   '客诉',
@@ -34,24 +40,6 @@ export function normalizeType(t: string | undefined | null): FeedbackIssueType {
   if (hit) return hit
   const fuzzy = ISSUE_TYPES.find((x) => t?.includes(x))
   return fuzzy ?? '其他'
-}
-
-/** 单条消息转人类可读文本（供 LLM 上下文与规则匹配） */
-export function msgToText(m: ChatMessage): string {
-  switch (m.localType) {
-    case 1:
-      return m.parsedContent || '[文本]'
-    case 3:
-      return '[图片]'
-    case 34:
-      return '[语音]'
-    case 43:
-      return '[视频]'
-    case 47:
-      return '[表情]'
-    default:
-      return m.parsedContent || '[消息]'
-  }
 }
 
 /** 是否团队客服成员（我方同事）消息 */
@@ -92,16 +80,6 @@ export function senderLabel(m: ChatMessage, team?: Set<string>): string {
     return nick === u ? '我方同事' : `我方同事（${nick}）`
   }
   return m.senderNickname || u || '客户'
-}
-
-/** LLM 上下文行消息过滤（真文本 + 带摘要的 appmsg + 图片） */
-export function isTextLike(m: ChatMessage): boolean {
-  return m.localType === 1 || m.localType === 49
-}
-
-/** 规则模式只吃真文本（type 1）；49 型摘要（[链接]/[文件]/[聊天记录]/[转账]）会引入假关键词，不参与匹配 */
-export function isRuleText(m: ChatMessage): boolean {
-  return m.localType === 1
 }
 
 /** 消息身份（时间+本地序号）：同一毫秒的多条消息不会被时间戳去重误合并 */

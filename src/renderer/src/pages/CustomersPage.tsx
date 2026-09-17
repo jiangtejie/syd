@@ -4,7 +4,9 @@ import { avatarColor, formatSessionTime } from '../lib/ui'
 import { useSessionAvatar } from '../lib/sessionAvatar'
 import { deriveCustomers, secondaryLabel, TAG_ORDER, type CustomerProfile } from '../lib/customers'
 import { toast } from '../stores/toast'
+import ConnectGuide from '../components/ConnectGuide'
 import type { DutyGroupSwitch } from '../../../shared/types'
+import type { CustomerStored } from '../../../shared/customerProfile'
 import './customers.css'
 import { useAsyncEffect } from '../lib/useAsyncEffect'
 
@@ -51,12 +53,75 @@ function CustomerAvatar({
 
 function ProfileDrawer({
   customer,
+  wxid,
+  onSaved,
   onClose
 }: {
   customer: CustomerProfile
+  /** 账号（档案按账号作用域存） */
+  wxid: string
+  onSaved: () => void | Promise<void>
   onClose: () => void
 }): React.JSX.Element {
   const gotoSession = useWorkbenchStore((s) => s.gotoSession)
+  // 表单初值来自客户；调用方用 key={wxid} 保证换客户时重挂载（否则会残留上一个客户的草稿）
+  const [source, setSource] = useState(customer.source)
+  const [note, setNote] = useState(customer.note)
+  const [newTag, setNewTag] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const api = window.api?.cs?.customers
+
+  const saveFields = async (): Promise<void> => {
+    if (!api?.setFields || !wxid) return
+    setBusy(true)
+    try {
+      const res = await api.setFields(wxid, customer.wxid, { source, note })
+      if (!res.ok) {
+        toast.error(res.error || '保存失败')
+        return
+      }
+      toast.success('已保存到客户档案')
+      await onSaved()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const addTag = async (): Promise<void> => {
+    const tag = newTag.trim()
+    if (!api?.setTag || !wxid || !tag) return
+    setBusy(true)
+    try {
+      const res = await api.setTag(wxid, customer.wxid, tag)
+      if (!res.ok) {
+        toast.error(res.error || '打标签失败')
+        return
+      }
+      setNewTag('')
+      await onSaved()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '打标签失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeTag = async (tag: string): Promise<void> => {
+    if (!api?.removeTag || !wxid) return
+    try {
+      const res = await api.removeTag(wxid, customer.wxid, tag)
+      if (!res.ok) {
+        toast.error(res.error || '删除标签失败')
+        return
+      }
+      await onSaved()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '删除标签失败')
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -127,6 +192,94 @@ function ProfileDrawer({
           </div>
         </div>
 
+        <div className="cu-section">
+          <div className="cu-section-title">客户档案（持久，重启不丢）</div>
+          <div className="cu-kv">
+            <span>建档时间</span>
+            <span>{customer.firstSeenAt ? formatSessionTime(customer.firstSeenAt) : '未建档'}</span>
+          </div>
+          <div className="cu-kv">
+            <span>来源</span>
+            <input
+              className="ui-input"
+              value={source}
+              disabled={busy}
+              placeholder={'如：抖音探店视频 / 门店扫码 / 老客介绍'}
+              onChange={(e) => setSource(e.target.value)}
+            />
+          </div>
+          <div className="cu-kv">
+            <span>内部备注</span>
+            <textarea
+              className="ui-textarea"
+              rows={2}
+              value={note}
+              disabled={busy}
+              placeholder={'大客户 / 账期客户 / 慎报价…（微信备注里放不下这些）'}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className="ui-btn is-primary"
+            disabled={busy || (source === customer.source && note === customer.note)}
+            onClick={() => void saveFields()}
+          >
+            {busy ? '保存中…' : '保存来源与备注'}
+          </button>
+
+          <div className="cu-section-title" style={{ marginTop: 12 }}>
+            人工标签（{customer.manualTags.length}）
+          </div>
+          <div className="cu-tags">
+            {customer.manualTags.length === 0 && (
+              <span className="cu-hint-inline">还没有人工标签</span>
+            )}
+            {customer.manualTags.map((t) => (
+              <span key={t} className="ui-chip is-sm is-warn">
+                {t}
+                <button
+                  type="button"
+                  title={'删除标签'}
+                  style={{
+                    marginLeft: 6,
+                    background: 'none',
+                    border: 0,
+                    cursor: 'pointer',
+                    color: 'inherit'
+                  }}
+                  onClick={() => void removeTag(t)}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              className="ui-input"
+              value={newTag}
+              disabled={busy}
+              placeholder={'打一个标签（回车添加）'}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void addTag()
+              }}
+            />
+            <button
+              type="button"
+              className="ui-btn"
+              disabled={busy || newTag.trim() === ''}
+              onClick={() => void addTag()}
+            >
+              添加
+            </button>
+          </div>
+          <div className="cu-drawer-hint">
+            来源与标签是「触达目标筛选」和「营销归因」的依据 —— 微信里没有这两个字段，只有这里有。
+          </div>
+        </div>
+
         <button
           type="button"
           className="cu-goto"
@@ -145,6 +298,7 @@ function ProfileDrawer({
 
 function CustomersPage(): React.JSX.Element {
   const sessions = useWorkbenchStore((s) => s.sessions)
+  const source = useWorkbenchStore((s) => s.source)
   const refreshSessions = useWorkbenchStore((s) => s.refreshSessions)
   /** 跳到「值班」页（那里是话术/决策记录，同一个数字员工状态） */
   const gotoPage = useWorkbenchStore((s) => s.setPage)
@@ -233,7 +387,27 @@ function CustomersPage(): React.JSX.Element {
     return unsubscribe
   }, [refreshSessions])
 
-  const customers = useMemo(() => deriveCustomers(sessions, nowMs), [sessions, nowMs])
+  // ── 客户档案（持久层）──
+  // 会话是微信给的实时列表，档案是我们自己攒的（来源/备注/人工标签）。
+  // 先 sync 把微信侧事实并进来（幂等、不碰用户字段），再 list 取回合并。
+  const [storedProfiles, setStoredProfiles] = useState<Map<string, CustomerStored>>(new Map())
+  const reloadProfiles = useCallback(async (): Promise<void> => {
+    const api = window.api?.cs?.customers
+    if (!api || !wxid) return
+    await api.sync(wxid).catch(() => null)
+    const res = await api.list(wxid).catch(() => null)
+    if (res?.ok && res.items) {
+      setStoredProfiles(new Map(res.items.map((i) => [i.username, i])))
+    }
+  }, [wxid])
+
+  // 档案只随「用户改动 / 账号切换」变化，不必跟着每条新消息刷新
+  useAsyncEffect(reloadProfiles, [reloadProfiles])
+
+  const customers = useMemo(
+    () => deriveCustomers(sessions, nowMs, storedProfiles),
+    [sessions, nowMs, storedProfiles]
+  )
 
   /**
    * 抽屉的客户按 id 从**实时列表**取:
@@ -530,11 +704,15 @@ function CustomersPage(): React.JSX.Element {
         ))}
         {filtered.length === 0 && (
           <div className="cu-empty">
-            {hasFilters
-              ? `没有符合条件${
-                  effectiveTag ? `（标签：${effectiveTag}）` : ''
-                }的客户，可点击「清空条件」重新筛选`
-              : '暂无客户数据，请先连接微信'}
+            {hasFilters ? (
+              `没有符合条件${
+                effectiveTag ? `（标签：${effectiveTag}）` : ''
+              }的客户，可点击「清空条件」重新筛选`
+            ) : source === 'empty' ? (
+              <ConnectGuide what="客户列表与他们的档案（来源/备注/标签）" />
+            ) : (
+              '当前账号还没有会话数据'
+            )}
           </div>
         )}
         {totalPages > 1 && (
@@ -597,7 +775,15 @@ function CustomersPage(): React.JSX.Element {
         )}
       </div>
 
-      {selected && <ProfileDrawer customer={selected} onClose={() => setSelectedId(null)} />}
+      {selected && (
+        <ProfileDrawer
+          key={selected.wxid}
+          customer={selected}
+          wxid={wxid ?? ''}
+          onSaved={reloadProfiles}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
     </div>
   )
 }

@@ -10,6 +10,8 @@ import { getGrowthMediaDir } from '../../paths'
 import { safeFileName } from '../../_filename'
 import { getContentDetail } from '../../../db/repos/growthRepo'
 import { listRemixOutputViews } from '../../../db/repos/growthOpsRepo'
+import { listOutputAssets } from '../../../db/repos/growthAiRepo'
+import { complianceBanner, exportGate, planExportImages } from './exportPlan'
 
 export interface ExportPackageResult {
   ok: boolean
@@ -26,10 +28,16 @@ function buildCopyDoc(input: {
   origin: string
   interactions: { likes: number; collects: number; comments: number; shares: number }
   videoUrl: string
+  /** 合规块（AIGC 声明 / 来源 / 被扣下的图 / 需确认的提示）：放在最前面，发布前一定看得到 */
+  banner: string
   outputs: Array<{ variant: string; title: string; copy: string; hints: string[] }>
 }): string {
   const lines: string[] = []
   lines.push('# ' + (input.title || '素材发布包'))
+  if (input.banner) {
+    lines.push('')
+    lines.push(input.banner)
+  }
   lines.push('')
   lines.push('- 来源: ' + input.origin + (input.author ? ' · ' + input.author : ''))
   if (input.link) lines.push('- 原链接: ' + input.link)
@@ -90,6 +98,21 @@ export async function exportPublishPackage(
   const detail = getContentDetail(contentId)
   if (!detail) return { ok: false, error: '素材不存在' }
 
+  const allOutputs = listRemixOutputViews(contentId, 30)
+  const selectedOutputs =
+    outputIds.length > 0
+      ? allOutputs.filter((o) => outputIds.includes(o.id))
+      : allOutputs.slice(0, 6)
+
+  // 合规硬门禁：命中 block 级（广告法绝对化用语 / 普通食品功效宣称）就**不导出**。
+  // 放在弹目录之前：被拦截时不该先让用户挑一遍文件夹再告诉他不行。
+  const gate = exportGate([
+    detail.title,
+    detail.text,
+    ...selectedOutputs.flatMap((o) => [o.title, o.copy])
+  ])
+  if (!gate.ok) return { ok: false, error: gate.error }
+
   let parentDir = (targetDir ?? '').trim()
   if (!parentDir) {
     const picked = await dialog.showOpenDialog({
@@ -100,11 +123,7 @@ export async function exportPublishPackage(
     parentDir = picked.filePaths[0]
   }
 
-  const allOutputs = listRemixOutputViews(contentId, 30)
-  const outputs =
-    outputIds.length > 0
-      ? allOutputs.filter((o) => outputIds.includes(o.id))
-      : allOutputs.slice(0, 6)
+  const outputs = selectedOutputs
 
   const dir = join(
     parentDir,
@@ -116,6 +135,31 @@ export async function exportPublishPackage(
   await mkdir(imgDir, { recursive: true })
 
   const extra = detail.extra as { remoteMedia?: { videoUrl?: string } }
+
+  // 图片取哪一批：**以产出的图为先**（那是为这条文案挑/生成的），产出没有才退回素材图，
+  // 且来源=参考的素材图一张都不打包。规则都在 exportPlan.ts（纯函数，有自检）。
+  const outputImages = outputs.flatMap((o) =>
+    listOutputAssets(o.id).map((a) => ({ relPath: a.relPath, source: a.source, note: a.note }))
+  )
+  const contentImages = detail.assets
+    .filter((a) => (a.kind === 'cover' || a.kind === 'image') && a.relPath)
+    .map((a) => ({ kind: a.kind, relPath: a.relPath }))
+  const plan = planExportImages({
+    contentUsage: detail.usage,
+    contentImages,
+    outputImages
+  })
+
+  const banner = complianceBanner({
+    warnings: gate.warnings,
+    withheldRef: plan.withheldRef,
+    aiCount: plan.files.filter((f) => f.isAi).length,
+    searchCount: plan.files.filter((f) => f.fromSearch).length,
+    origin: detail.origin,
+    authorName: detail.authorName,
+    link: detail.link
+  })
+
   const doc = buildCopyDoc({
     title: detail.title,
     text: detail.text,
@@ -124,6 +168,7 @@ export async function exportPublishPackage(
     origin: detail.origin,
     interactions: detail.interactions,
     videoUrl: extra.remoteMedia?.videoUrl ?? '',
+    banner,
     outputs: outputs.map((o) => ({
       variant: o.variant === 'titles' ? '标题组' : o.variant,
       title: o.variant === 'titles' ? o.title : '',
@@ -136,21 +181,15 @@ export async function exportPublishPackage(
   await writeFile(join(dir, '文案.md'), doc, 'utf8')
   files += 1
 
-  // 图片: 复制本地已下载资产
+  // 图片：按计划复制（文件名由计划决定 —— AI 生成图带「AI生成示意图_」前缀）
   const mediaBase = getGrowthMediaDir()
-  const imgs = detail.assets.filter((a) => (a.kind === 'cover' || a.kind === 'image') && a.relPath)
-  let seq = 1
-  for (const a of imgs) {
-    const src = join(mediaBase, a.relPath)
-    const ext = a.relPath.slice(a.relPath.lastIndexOf('.')) || '.jpg'
-    const name = (seq === 1 ? '封面' : '图' + String(seq)) + ext
+  for (const f of plan.files) {
     try {
-      await copyFile(src, join(imgDir, name))
+      await copyFile(join(mediaBase, f.relPath), join(imgDir, f.name))
       files += 1
     } catch {
       /* 文件缺失跳过 */
     }
-    seq += 1
   }
   // 视频资产(本地上传的视频)也复制
   for (const a of detail.assets.filter((x) => x.kind === 'video' && x.relPath)) {

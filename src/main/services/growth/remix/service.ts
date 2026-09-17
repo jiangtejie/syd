@@ -30,7 +30,7 @@ const AI_SETUP_MSG =
   'AI 通道未就绪: 请到「设置 → AI 模型」配置并启用(与客服回复建议共用同一通道, 无需额外 Key)'
 
 function requireProvider(): NonNullable<ReturnType<typeof createAiProvider>> {
-  const provider = createAiProvider()
+  const provider = createAiProvider('growth-remix')
   if (!provider) throw new AiSetupError(AI_SETUP_MSG)
   return provider
 }

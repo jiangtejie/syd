@@ -14,7 +14,7 @@
 import { getConfig, setConfig } from '../../db/repos/config'
 import { clearSyncRefs } from '../../db/repos/larkSyncRepo'
 import { larkCall } from './client'
-import { mapFieldName, FieldMap } from './baseMapping'
+import { mapFieldName, UID_FIELD, FieldMap } from './baseMapping'
 import { clearAttached, clearMediaRefs } from '../../db/repos/larkMediaRepo'
 import { parseLarkRef } from './url'
 import { fetchFields, invalidateFields } from './fields'
@@ -99,6 +99,8 @@ export interface FieldSpec {
 /** 「议题」表字段：带 ✎ 的在 M2 允许同事改（白名单回写），其余以本地为准 */
 export const ISSUE_FIELDS: FieldSpec[] = [
   { name: '议题ID', type: T_TEXT },
+  // 跨机器稳定 ID（issueUid）：多台桌面端共用一张表时靠它对齐，不用本地行号（见 baseMapping）
+  { name: UID_FIELD, type: T_TEXT },
   { name: '客户群', type: T_TEXT },
   {
     name: '类型',

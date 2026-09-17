@@ -1,5 +1,6 @@
 import { getDb } from './database'
 import { getConfigNumber } from './repos/config'
+import { pruneAiRuns } from './repos/aiRunRepo'
 import { createLogger } from '../services/logging'
 
 const dbLog = createLogger('db')
@@ -26,6 +27,7 @@ export interface PruneResult {
   imAudit: number
   feishuSendLog: number
   sendLog: number
+  aiRun: number
 }
 
 /**
@@ -34,7 +36,7 @@ export interface PruneResult {
  */
 export function pruneAuditTables(): PruneResult {
   const keptDays = Math.max(0, Math.floor(getConfigNumber(RETENTION_DAYS_KEY, DEFAULT_KEEP_DAYS)))
-  const out: PruneResult = { keptDays, imAudit: 0, feishuSendLog: 0, sendLog: 0 }
+  const out: PruneResult = { keptDays, imAudit: 0, feishuSendLog: 0, sendLog: 0, aiRun: 0 }
   if (keptDays === 0) return out
   const cutoff = Date.now() - keptDays * 86_400_000
   const db = getDb()
@@ -47,8 +49,13 @@ export function pruneAuditTables(): PruneResult {
     .prepare('DELETE FROM feishu_send_log WHERE created_at < ?')
     .run(cutoff).changes
   out.sendLog = db.prepare('DELETE FROM send_log WHERE created_at < ?').run(cutoff).changes
+  // AI 调用计量同样只增不减：每次调用一行，跑一年就是几十万行
+  out.aiRun = pruneAiRuns(keptDays)
   return out
 }
+
+// 启动对账的实现在 db/reconcile.ts（独立模块，可离线自检）：见那里的注释。
+export { reconcileInterruptedTasks, type ReconcileResult } from './reconcile'
 
 let timer: NodeJS.Timeout | null = null
 
@@ -65,9 +72,9 @@ export function startDbHousekeeping(): void {
   setTimeout(() => {
     try {
       const r = pruneAuditTables()
-      if (r.imAudit + r.feishuSendLog + r.sendLog > 0) {
+      if (r.imAudit + r.feishuSendLog + r.sendLog + r.aiRun > 0) {
         dbLog.info(
-          `审计表清理(保留 ${r.keptDays} 天): im_audit ${r.imAudit} / feishu ${r.feishuSendLog} / send ${r.sendLog}`
+          `审计表清理(保留 ${r.keptDays} 天): im_audit ${r.imAudit} / feishu ${r.feishuSendLog} / send ${r.sendLog} / ai_run ${r.aiRun}`
         )
       } else {
         dbLog.debug(`审计表无需清理(保留 ${r.keptDays} 天)`)

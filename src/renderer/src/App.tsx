@@ -22,6 +22,7 @@ import TitleBar from './components/TitleBar'
 import ToastHost from './components/ToastHost'
 import ConfirmHost from './components/ConfirmHost'
 import ErrorBoundary from './components/ErrorBoundary'
+import FirstRunWizard from './components/onboarding/FirstRunWizard'
 import { installIssueAlertSound } from './lib/issueAlert'
 import './pages/shell.css'
 
@@ -332,6 +333,8 @@ function App(): React.JSX.Element {
         </div>
         <ToastHost />
         <ConfirmHost />
+        {/* 首启向导：只在确实缺账号/密钥时自己弹出来（判定在 shared/onboarding） */}
+        <FirstRunWizard />
       </div>
     </ErrorBoundary>
   )

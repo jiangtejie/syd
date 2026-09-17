@@ -6,9 +6,16 @@ import { isAckOnly, isTransactionalNotice } from '../feedback/textFilters'
  *
  * 数字员工「该不该回、按哪条话术回」的全部判定都在这里，不碰 IO —— 便于用真实消息回放校准。
  * 判定顺序（先否决后命中，越靠前越便宜）：
- *   L0 不介入：我方/团队已发言、非文本（图片/语音，一期看不懂）、纯应答、事务性通知、内容过短
- *   L1 命中话术：按 priority 升序取第一条命中（关键词 / 正则），风险 C 一律转人工
+ *   L0 不介入：我方/团队已发言、机器读不懂（图片/视频/没转写的语音）、纯应答、事务性通知、内容过短
+ *   L1 命中话术：按 priority 升序取第一条命中（关键词 / 正则）
+ *      - 风险 C（价格红线/退款/投诉）→ handoff：永不自动发
+ *      - 风险 B（价格/优惠/账期等需人看的）→ confirm：**必须人工确认后才发**
+ *      - 风险 A → reply：可自动发
  *   L2 未命中：交给 LLM 兜底（产出仍需过风险闸门）
+ *
+ * 为什么 B 必须是独立 action：以前 B 与 A 返回同一个 'reply'，风险分级只是 reason 里的一句
+ * 文本，判定层不做任何拦截。二期接 live 的人只要按 action==='reply' 发，价格/账期类话术
+ * 就会跟 A 类一起静默发出去 —— 那是直接的钱的损失，不能靠「记得别发」这种约定兜着。
  */
 
 /** L0 不介入的原因（写进 agent_reply.reason，影子复盘时一眼能看出「为什么没回」） */
@@ -27,7 +34,11 @@ export interface MatchInput {
 
 export type MatchResult =
   | { action: 'skip'; skipReason: SkipReason; reason: string }
+  /** 风险 A：可直接发 */
   | { action: 'reply'; script: ReplyScript; replyText: string; reason: string }
+  /** 风险 B：拟好回复但**必须人工确认**后才可发（历史上它与 A 同形，是个会漏钱的坑） */
+  | { action: 'confirm'; script: ReplyScript; replyText: string; reason: string }
+  /** 风险 C：不自动发，只能转人工 */
   | { action: 'handoff'; script: ReplyScript; replyText: string; reason: string }
   | { action: 'llm'; reason: string }
 
@@ -99,11 +110,19 @@ export function matchReply(input: MatchInput, scripts: ReplyScript[]): MatchResu
         reason: `命中高风险话术「${s.title || s.intent}」(${by})：不自动发送，转人工处理`
       }
     }
+    if (s.riskLevel === 'B') {
+      return {
+        action: 'confirm',
+        script: s,
+        replyText,
+        reason: `命中话术「${s.title || s.intent}」(${by})：需人工确认后发送`
+      }
+    }
     return {
       action: 'reply',
       script: s,
       replyText,
-      reason: `命中话术「${s.title || s.intent}」(${by})${s.riskLevel === 'B' ? '：需人工确认后发送' : ''}`
+      reason: `命中话术「${s.title || s.intent}」(${by})`
     }
   }
 

@@ -20,9 +20,20 @@ import icon from '../../resources/icon.png?asset'
 import { getDb, closeDb, getLastMigrateResult } from './db/database'
 import { getGrowthMediaDir, getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
 import { mimeForMediaFile, parseMediaPath, parseRangeHeader } from './services/media/mediaProtocol'
-import { migrateStoredSecrets } from './services/secrets'
+import { migrateStoredSecretPrefixes, migrateStoredSecrets } from './services/secrets'
+import {
+  clearInjectShots,
+  startInjectShotsHousekeeping,
+  stopInjectShotsHousekeeping
+} from './services/wechat/injectShots'
+import { clearPlainDbCache } from './services/wechat/decrypt'
 import { listTables } from './db/schema'
-import { startDbHousekeeping, stopDbHousekeeping } from './db/housekeeping'
+import {
+  reconcileInterruptedTasks,
+  startDbHousekeeping,
+  stopDbHousekeeping
+} from './db/housekeeping'
+import { consumeCrashMarker, installCrashGuard } from './services/crashGuard'
 import { stopBaseSyncScheduler } from './services/lark/baseSyncScheduler'
 import { getConfigBoolean } from './db/repos/config'
 import { registerKeyStoreHandlers } from './ipc/keyStoreHandlers'
@@ -38,6 +49,7 @@ import { registerIssueHandlers } from './ipc/issueHandlers'
 import { registerAgentHandlers } from './ipc/agentHandlers'
 import { registerDutyHandlers } from './ipc/dutyHandlers'
 import { registerTeamHandlers } from './ipc/teamHandlers'
+import { registerCustomerHandlers } from './ipc/customerHandlers'
 import { registerImHandlers, bootImAccounts, stopAllIm } from './ipc/imHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
 import { registerWorkbenchHandlers } from './ipc/workbenchHandlers'
@@ -361,6 +373,11 @@ function buildAppMenu(): void {
   Menu.setApplicationMenu(menu)
 }
 
+// 崩溃兜底尽早注册：启动早期（建库/迁移）崩掉时也要留痕，否则用户只说「软件自己关了」，
+// 开发拿不到堆栈。同时记下进程启动时刻，供下面的「启动对账」判定哪些任务是上一进程遗留的。
+const processStartedAt = Date.now()
+installCrashGuard()
+
 // 单实例锁：客服工作台只允许一个实例
 // 必须在 app ready 之前声明自定义协议特权（bypassCSP 使 <img> 可在 CSP 下加载）
 protocol.registerSchemesAsPrivileged([
@@ -400,6 +417,23 @@ if (!app.requestSingleInstanceLock()) {
       }
     }
 
+    // 启动对账：上一个进程留下的「运行中」任务改判 interrupted。
+    // 断电/杀进程/升级重启后这些行不会被任何东西收尾，界面会一直显示「运行中」，
+    // 运营以为通道还在跑，实际它再也不会自动跑（数字员工停摆最隐蔽）。
+    const rec = reconcileInterruptedTasks(getDb(), processStartedAt)
+    if (rec.imAudit + rec.reportRun + rec.growthCrawl > 0) {
+      appLog.warn(
+        `启动对账：中断任务改判 im_audit ${rec.imAudit} / report_run ${rec.reportRun} / growth_crawl ${rec.growthCrawl}`
+      )
+    }
+    // 上次是异常退出？写一条 error 日志（设置页日志可查），不再只表现为「软件自己关了」
+    const crash = consumeCrashMarker()
+    if (crash) {
+      appLog.error(
+        `检测到上次异常退出（${crash.kind} @ ${new Date(crash.at).toISOString()}）：${crash.message}；详情见 ${crash.logFile}`
+      )
+    }
+
     // 缓存目录规范化：迁移历史 wx-plain → db（幂等，启动时执行一次）
     migrateLegacyCacheLayout()
 
@@ -410,6 +444,10 @@ if (!app.requestSingleInstanceLock()) {
       'growth.image.apiKey',
       'growth.search.apiKey'
     ])
+    // 图片解密密钥（img:<wxid>:xorKey/aesKey）此前是**明文落库**：键名带账号、列不全，
+    // 靠固定名单认不出来。这里按前缀把存量明文一并加封（幂等）。
+    const sealedImg = migrateStoredSecretPrefixes(['img:'])
+    if (sealedImg > 0) appLog.info(`已加封存量图片解密密钥 ${sealedImg} 条`)
 
     // 注册 IPC handlers
     registerKeyStoreHandlers()
@@ -425,6 +463,7 @@ if (!app.requestSingleInstanceLock()) {
     registerAgentHandlers()
     registerDutyHandlers()
     registerTeamHandlers()
+    registerCustomerHandlers()
     registerImHandlers()
     registerExportHandlers()
     registerWorkbenchHandlers()
@@ -443,6 +482,8 @@ if (!app.requestSingleInstanceLock()) {
     // IM 渠道(飞书等):恢复上次启用状态的账号连接
     void bootImAccounts()
 
+    // 注入截图：里面是完整客户会话画面，无保留期会长期常驻磁盘（实测 6 张 4.8MB）
+    startInjectShotsHousekeeping()
     // 渠道接收文件:启动即清一轮 + 每 6h 定时清理(防数据膨胀)
     startFileHousekeeping()
     // 媒体展示缓存 + 语音缓存:同一节奏的容量治理(归档目录不参与,见 media/mediaCache.ts)
@@ -499,5 +540,27 @@ app.on('before-quit', () => {
   stopFileHousekeeping() // 此前漏调:6 小时定时清理器从不清理
   stopMediaHousekeeping()
   stopDbHousekeeping()
+  stopInjectShotsHousekeeping()
   stopSending()
+
+  // 退出时的落盘数据治理。
+  // 注入截图**默认清**：它只是当次排查的中间产物，却包含客户聊天画面（不需要密钥就能看）。
+  // 明文库副本**默认留**：它是解密缓存，清了意味着下次启动把每个消息库重新完整解密一遍；
+  // 对物理安全有要求的用户可在设置里打开 security.clearPlainCacheOnExit。
+  try {
+    if (getConfigBoolean('security.clearInjectShotsOnExit', true)) {
+      const n = clearInjectShots()
+      if (n > 0) appLog.info(`退出清理：注入截图 ${n} 张`)
+    }
+    if (getConfigBoolean('security.clearPlainCacheOnExit', false)) {
+      const r = clearPlainDbCache()
+      if (r.removed > 0) {
+        appLog.info(
+          `退出清理：明文库副本 ${r.removed} 个（${Math.round(r.freedBytes / 1048576)} MB）`
+        )
+      }
+    }
+  } catch (e) {
+    appLog.warn(`退出清理失败（不影响退出）：${e instanceof Error ? e.message : String(e)}`)
+  }
 })

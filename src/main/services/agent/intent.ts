@@ -146,7 +146,7 @@ async function reviewWithLlm(
   text: string,
   labels: string[]
 ): Promise<{ intent: string; confidence: number } | null> {
-  const provider = createAiProvider()
+  const provider = createAiProvider('intent')
   if (!provider) return null
   const system = [
     '你是客服群的意图分类器。只做分类,不回答客户。',

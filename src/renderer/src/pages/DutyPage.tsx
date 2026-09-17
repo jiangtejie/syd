@@ -644,9 +644,11 @@ function DutyPage(): React.JSX.Element {
                       <span className={`dt-badge is-${s.action}`}>
                         {s.action === 'reply'
                           ? '会回'
-                          : s.action === 'handoff'
-                            ? '转人工'
-                            : '需兜底'}
+                          : s.action === 'confirm'
+                            ? '需确认'
+                            : s.action === 'handoff'
+                              ? '转人工'
+                              : '需兜底'}
                       </span>
                       <span className="dt-group">{s.groupName}</span>
                       <span className="dt-time">{fmtTime(s.time)}</span>

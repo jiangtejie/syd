@@ -12,6 +12,7 @@ import {
   getRedEnvelopeStatuses as queryRedEnvelopeStatuses
 } from './queries'
 import { computeOpsStats } from './opsStats'
+import { decorateVoiceTranscripts } from '../media/voiceTranscript'
 import type { ChatMessage, OpsStats, WxConnectInfo, MessageCursor } from '../../../shared/types'
 
 /**
@@ -88,7 +89,14 @@ export function getMessages(
   return listMessages(session, sessionId, limit, before, skipEnrich)
 }
 
-/** 按会话批量补发送人昵称/头像（配合 getMessages(skipEnrich=true) 使用，一次开库补完整批） */
+/**
+ * 按会话批量补发送人昵称/头像（配合 getMessages(skipEnrich=true) 使用，一次开库补完整批）。
+ *
+ * 语音转写合流也在这里做：走批量路径的调用方（议题读取 readGroupMessages、数字员工值班）
+ * 本来就跳过了 queries.listMessages 里那次装饰，不在这里补的话，它们读到的永远是「[语音]」
+ * —— 云 ASR 转写白做，客户用语音提的诉求进不了闭环。界面路径不受影响（已装饰过一次，
+ * 装饰函数对已有转写的消息直接跳过）。
+ */
 export function enrichMessages(
   wxid: string,
   sessionId: string,
@@ -96,7 +104,7 @@ export function enrichMessages(
 ): ChatMessage[] {
   const session = buildWxSession(wxid)
   if (!session || messages.length === 0) return messages
-  return enrichMessagesWithSenders(messages, session, sessionId)
+  return decorateVoiceTranscripts(enrichMessagesWithSenders(messages, session, sessionId), wxid)
 }
 
 /** 增量消息（T5 轮询用） */

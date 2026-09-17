@@ -1,6 +1,8 @@
 import type Database from 'better-sqlite3-multiple-ciphers'
 import { CORE_INDEXES, CORE_TABLES } from './schema/base'
 import { GROWTH_INDEXES, GROWTH_TABLES } from './schema/growth'
+import { AI_INDEXES, AI_TABLES } from './schema/ai'
+import { CUSTOMER_INDEXES, CUSTOMER_TABLES } from './schema/customer'
 import { COLUMN_MIGRATIONS } from './schema/columns'
 import { DATA_MIGRATIONS, SCHEMA_VERSION } from './schema/migrations'
 
@@ -37,7 +39,16 @@ export function migrate(db: Database.Database): MigrateResult {
 
   // 1) 基座：表 + 索引 + 老库补列（幂等，每次启动都跑）
   db.transaction(() => {
-    for (const sql of [...CORE_TABLES, ...GROWTH_TABLES, ...CORE_INDEXES, ...GROWTH_INDEXES]) {
+    for (const sql of [
+      ...CORE_TABLES,
+      ...GROWTH_TABLES,
+      ...AI_TABLES,
+      ...CUSTOMER_TABLES,
+      ...CORE_INDEXES,
+      ...GROWTH_INDEXES,
+      ...AI_INDEXES,
+      ...CUSTOMER_INDEXES
+    ]) {
       db.exec(sql)
     }
     for (const c of COLUMN_MIGRATIONS) {

@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3-multiple-ciphers'
-import { LEGACY_TABLES, RESERVED_TABLES } from './reserved'
+import { LEGACY_TABLES } from './reserved'
 
 /**
  * 一次性数据迁移（按 user_version 门控，只跑一次）。
@@ -22,39 +22,29 @@ export interface DataMigration {
   run: (db: Database.Database) => void
 }
 
-/** 表是否存在 */
-function hasTable(db: Database.Database, name: string): boolean {
-  return !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
-}
-
 /** 数值兜底：非有限数返回 null */
 function num0(v: unknown): number | null {
   const n = Number(v)
   return Number.isFinite(n) ? n : null
 }
 
-/** 表行数（不存在返回 0） */
-function rowCount(db: Database.Database, name: string): number {
-  if (!hasTable(db, name)) return 0
-  const r = db.prepare('SELECT COUNT(*) AS c FROM "' + name + '"').get() as { c: number }
-  return r.c
-}
-
 export const DATA_MIGRATIONS: DataMigration[] = [
   {
     id: 3,
-    name: 'drop-legacy-and-empty-reserved-tables',
+    name: 'drop-legacy-tables',
     /**
-     * 清掉两类「库里有的表 ≠ 代码在用的表」：
-     * - 已下线功能遗留（phrase_book / skill_package / agent_memory / ai_custom_tool / ai_mcp_server）；
-     * - 预留但从未接入、且确认是空的表（customer / session / tier_rule / knowledge_item /
-     *   reply_decision）—— 有数据就不动，避免误删别人手工塞过的东西。DDL 留在 reserved.ts。
+     * 清掉已下线功能留下的表（phrase_book / skill_package / agent_memory / ai_custom_tool /
+     * ai_mcp_server）—— 「库里有的表 ≠ 代码在用的表」会让排查先被误导一轮。
+     *
+     * **收窄过一次（B1）**：这条迁移原本还会把「预留且为空」的业务表一并 DROP
+     * （customer / session / tier_rule / knowledge_item / reply_decision）。那条逻辑本身没错
+     * ——问题在于**每次新装库都会执行一次**，于是「客户表」在任何一台新机器上都会被建出来又删掉，
+     * 客户资产永远是零。现在客户档案已改名为 customer_profile 并由基座 DDL 常驻建表
+     * （见 schema/customer.ts），这里只清真正下线的表。
+     * 已经跑过老版本迁移的库：被删的是空表，没有数据损失。
      */
     run: (db) => {
       for (const t of LEGACY_TABLES) db.exec('DROP TABLE IF EXISTS "' + t + '"')
-      for (const t of Object.keys(RESERVED_TABLES)) {
-        if (hasTable(db, t) && rowCount(db, t) === 0) db.exec('DROP TABLE IF EXISTS "' + t + '"')
-      }
     }
   },
   {

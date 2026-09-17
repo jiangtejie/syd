@@ -9,6 +9,7 @@ import type {
   ReplyCandidate,
   SessionSummary
 } from '../../../shared/types'
+import { resolveInitialPage } from '../../../shared/onboarding'
 import { toast } from './toast'
 
 /**
@@ -28,6 +29,24 @@ export type WorkbenchPage =
 export type MonitorTab = 'issues' | 'ops'
 
 const MONITOR_TAB_KEY = 'cs.monitorTab'
+/** 当前页面也记在 localStorage：重开停在上次那一页；首启默认「对话」（见 shared/onboarding） */
+const PAGE_KEY = 'cs.page'
+
+function readPage(): WorkbenchPage {
+  try {
+    return resolveInitialPage(localStorage.getItem(PAGE_KEY)) as WorkbenchPage
+  } catch {
+    return 'chat'
+  }
+}
+
+function persistPage(page: WorkbenchPage): void {
+  try {
+    localStorage.setItem(PAGE_KEY, page)
+  } catch {
+    /* 隐私模式等场景下写不了，忽略 */
+  }
+}
 
 function readMonitorTab(): MonitorTab {
   try {
@@ -226,8 +245,10 @@ function sameSessions(a: SessionSummary[], b: SessionSummary[]): boolean {
 let sessionsInFlight: { wxid: string; promise: Promise<void> } | null = null
 
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
-  // 启动默认停在左侧导航第一个菜单(App.tsx NAV_ITEMS[0] = AI 工作台)
-  page: 'workbench',
+  // 落地页：记住过就回原来那页；首启默认「对话」——
+  // 以前是「左侧导航第一项」= AI 工作台（对话排第三），客服装完先看到一个空聊天框，
+  // 既没有客户消息也没有下一步指引。判定逻辑在 shared/onboarding.ts（有自检）。
+  page: readPage(),
   monitorTab: readMonitorTab(),
   wxid: null,
   source: 'empty',
@@ -940,6 +961,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   setPage: (page: WorkbenchPage) => {
+    persistPage(page)
     set({ page })
   },
 
@@ -949,7 +971,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   gotoSession: (sessionId: string) => {
-    set({ page: 'chat' })
+    // 走 setPage 而不是直接 set：否则「跳到会话」不落记忆，重开会回到别处
+    get().setPage('chat')
     void get().selectSession(sessionId)
   }
 }))

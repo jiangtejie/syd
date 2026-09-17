@@ -92,14 +92,17 @@ export function registerLarkHandlers(): void {
     }
   })
 
-  /** 认领目标表里已有的行（按「议题ID」匹配本地议题），避免重复插入 */
-  ipcMain.handle('cs:lark:baseClaim', async () => {
+  /**
+   * 认领目标表里已有的行，避免重复插入。
+   * 优先按「议题UID」（跨机器稳定）对齐，认不出才退回「议题ID」—— 行号只在单机内唯一，
+   * 多台桌面端共用一张表时会认错人（详见 baseSync.claimExistingRecords）。
+   */
+  ipcMain.handle('cs:lark:baseClaim', async (_e, wxid = '') => {
     try {
       const appToken = (getConfig('lark.baseToken') ?? '').trim()
       const tableId = (getConfig('lark.baseTableIssues') ?? '').trim()
       if (!appToken || !tableId) return { ok: false as const, error: '请先完成「验证并建表」' }
-      // 认领只依赖本地议题 id(全局唯一),与账号作用域无关
-      const claimed = await claimExistingRecords(appToken, tableId)
+      const claimed = await claimExistingRecords(appToken, tableId, String(wxid ?? ''))
       return { ok: claimed.ok, claimed, status: snapshot() }
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : '认领失败' }

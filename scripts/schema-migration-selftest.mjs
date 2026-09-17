@@ -141,9 +141,21 @@ try {
 
   console.log('\n死表与索引:')
   const tables = listTables(db)
-  for (const t of ['phrase_book', 'skill_package', 'agent_memory', 'ai_custom_tool', 'ai_mcp_server', 'customer', 'session', 'tier_rule', 'knowledge_item', 'reply_decision']) {
+  for (const t of ['phrase_book', 'skill_package', 'agent_memory', 'ai_custom_tool', 'ai_mcp_server']) {
     ok(!tables.includes(t), t + ' 已移除')
   }
+  /**
+   * ★ 业务表**不许**再被迁移删掉。
+   *
+   * 这条迁移原本还会把「预留且为空」的业务表一并 DROP（customer/session/…）。看着无害，
+   * 但它每次新装库都会跑一次 —— 于是「客户表」在任何一台新机器上都被建出来又删掉，
+   * 客户资产永远是零（B1 的根因）。现在只有真正下线的表才清。
+   */
+  for (const t of ['customer', 'session', 'tier_rule', 'knowledge_item', 'reply_decision']) {
+    ok(tables.includes(t), t + ' 不再被迁移删除（老库里仍在）')
+  }
+  ok(tables.includes('customer_profile'), '★ 客户档案表已由基座 DDL 建出')
+  ok(tables.includes('customer_tag'), '★ 客户标签表已由基座 DDL 建出')
   const idx = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL").all().map((r) => r.name)
   for (const ix of ['idx_im_audit_created', 'idx_feishu_send_log_created', 'idx_send_log_created', 'idx_issue_fb_msg_uniq', 'idx_issue_group_state_last']) {
     ok(idx.includes(ix), ix)

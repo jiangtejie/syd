@@ -16,6 +16,8 @@ export interface LarkSyncRef {
   localId: number
   recordId: string
   tableId: string
+  /** Base 那侧的稳定 ID（议题UID）：跨机器对齐用；老映射为空串 */
+  remoteUid: string
   contentHash: string
   remoteStatus: string
   remoteAssignee: string
@@ -28,6 +30,7 @@ interface RefRow {
   local_id: number
   record_id: string
   table_id: string
+  remote_uid: string | null
   content_hash: string
   remote_status: string | null
   remote_assignee: string | null
@@ -41,6 +44,7 @@ function toRef(r: RefRow): LarkSyncRef {
     localId: r.local_id,
     recordId: r.record_id,
     tableId: r.table_id,
+    remoteUid: r.remote_uid ?? '',
     contentHash: r.content_hash,
     remoteStatus: r.remote_status ?? '',
     remoteAssignee: r.remote_assignee ?? '',
@@ -72,16 +76,26 @@ export function saveSyncRef(
   tableId: string,
   recordId: string,
   contentHash: string,
-  remote?: { status: string; assignee: string; note?: string; pushed?: boolean; pulled?: boolean }
+  remote?: {
+    /** 省略即写空串（认领路径历史上就不写协作列，保持原样） */
+    status?: string
+    assignee?: string
+    note?: string
+    /** Base 那侧的稳定 ID（议题UID）；传空串不会清掉已有值 */
+    uid?: string
+    pushed?: boolean
+    pulled?: boolean
+  }
 ): void {
   const now = Date.now()
   getDb()
     .prepare(
       'INSERT INTO lark_sync_map' +
-        ' (kind, local_id, app_token, table_id, record_id, content_hash, remote_status, remote_assignee, remote_note, pushed_at, pulled_at, synced_at)' +
-        ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)' +
+        ' (kind, local_id, app_token, table_id, record_id, remote_uid, content_hash, remote_status, remote_assignee, remote_note, pushed_at, pulled_at, synced_at)' +
+        ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)' +
         ' ON CONFLICT(kind, local_id) DO UPDATE SET app_token = excluded.app_token,' +
         ' table_id = excluded.table_id, record_id = excluded.record_id,' +
+        " remote_uid = COALESCE(NULLIF(excluded.remote_uid, ''), lark_sync_map.remote_uid)," +
         ' content_hash = excluded.content_hash,' +
         ' remote_status = excluded.remote_status, remote_assignee = excluded.remote_assignee,' +
         ' remote_note = excluded.remote_note,' +
@@ -95,6 +109,7 @@ export function saveSyncRef(
       appToken,
       tableId,
       recordId,
+      remote?.uid ?? '',
       contentHash,
       remote?.status ?? '',
       remote?.assignee ?? '',
@@ -103,6 +118,21 @@ export function saveSyncRef(
       remote?.pulled ? now : null,
       now
     )
+}
+
+/**
+ * 按 Base 侧的稳定 ID 找本地映射。
+ *
+ * 这是多机器共表的对齐入口：拉取时先用记录里的 议题UID 反查本地行，查不到才退回本地行号
+ * （老表没有该列、或映射是升级前建立的）。
+ */
+export function findSyncRefByRemoteUid(kind: LarkSyncKind, remoteUid: string): LarkSyncRef | null {
+  const uid = (remoteUid ?? '').trim()
+  if (!uid) return null
+  const r = getDb()
+    .prepare('SELECT * FROM lark_sync_map WHERE kind = ? AND remote_uid = ? LIMIT 1')
+    .get(kind, uid) as RefRow | undefined
+  return r ? toRef(r) : null
 }
 
 /** 只更新协作列的上次已知值（拉取应用后调用：把 Base 现值记为「已知」，避免判定成同事又改了一次） */
@@ -119,6 +149,20 @@ export function saveRemoteCollab(
         ' content_hash = COALESCE(?, content_hash), synced_at = ? WHERE kind = ? AND local_id = ?'
     )
     .run(remote.status, remote.assignee, remote.note, now, contentHash ?? null, now, kind, localId)
+}
+
+/**
+ * 只补一条映射的远端稳定 ID（老映射升级用）。
+ * 刻意做成窄函数：用 saveSyncRef 顺带写会把协作列/内容 hash 一起重写，容易踩到别的逻辑。
+ */
+export function setSyncRefUid(kind: LarkSyncKind, localId: number, remoteUid: string): void {
+  const uid = (remoteUid ?? '').trim()
+  if (!uid) return
+  getDb()
+    .prepare(
+      "UPDATE lark_sync_map SET remote_uid = ? WHERE kind = ? AND local_id = ? AND remote_uid = ''"
+    )
+    .run(uid, kind, localId)
 }
 
 export function dropSyncRef(kind: LarkSyncKind, localId: number): void {

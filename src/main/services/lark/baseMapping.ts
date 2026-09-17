@@ -65,6 +65,21 @@ export function mapFieldName(local: string, map?: FieldMap): string {
   return hit && hit.trim() ? hit.trim() : local
 }
 
+/**
+ * 议题的**跨机器稳定 ID** —— 在 Base 里对齐记录用的真正主键。
+ *
+ * 为什么不能用「议题ID」：那是**本地自增行号**。两台机器各自从 1 开始编号，A 机的 #12 与
+ * B 机的 #12 是完全不同的两个议题，却会写进同一张多维表格 —— 拉回时两条记录都命中同一个
+ * 本地行，同事对 B 议题的处置会被写到 A 的议题上。这是**静默改错数据**，表面看不出异常。
+ * 用 (账号 wxid, 议题 key) 派生：key 由提取锚点决定、跨机器可复现，也不随行号漂移。
+ */
+export function issueUid(wxid: string, key: string): string {
+  return createHash('sha1').update(`${wxid}:${key}`).digest('hex').slice(0, 16)
+}
+
+/** Base 里承载稳定 ID 的列名。老表没这一列时同步自动退化为按「议题ID」匹配（不报错）。 */
+export const UID_FIELD = '议题UID'
+
 /** 议题 → Base 字段（默认脱敏：只有标题/摘要，不推聊天原文；列名按 fieldMap 重写） */
 export function issueToFields(
   i: FeedbackIssue,
@@ -78,6 +93,8 @@ export function issueToFields(
 ): Record<string, unknown> {
   const standard: Record<string, unknown> = {
     议题ID: String(i.id),
+    // 稳定 ID：跨机器对齐用；同事在表里也能把它当「工单号」看
+    [UID_FIELD]: issueUid(i.wxid, i.key),
     客户群: i.groupName || i.groupUsername,
     类型: i.type,
     严重度: i.severity ?? '一般',

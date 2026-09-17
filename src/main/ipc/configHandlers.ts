@@ -7,6 +7,7 @@ import {
   isDefaultCachePath
 } from '../services/paths'
 import { openSecret, sealSecret } from '../services/secrets'
+import { isSecretConfigKey } from '../services/securityPolicy'
 
 /**
  * 全局配置 IPC（设置页用）。
@@ -15,13 +16,17 @@ import { openSecret, sealSecret } from '../services/secrets'
  * ai.apiKey 为敏感值：落库前 safeStorage 加封（enc1:），回读时开封为明文供表单回显。
  */
 export function registerConfigHandlers(): void {
-  /** 敏感配置键(落库前 safeStorage 加封, 回读时开封) */
-  const SECRET_KEYS = ['ai.apiKey', 'growth.image.apiKey', 'growth.search.apiKey', 'lark.appSecret']
+  /**
+   * 敏感配置键(落库前 safeStorage 加封, 回读时开封)。
+   * 除了固定名单，还要认**带账号后缀**的键（img:<wxid>:xorKey/aesKey）—— 它们键名不固定，
+   * 以前只按名单判断，导致图片解密密钥一直是明文落库（见 securityPolicy.isSecretConfigKey）。
+   */
+  const SECRET_KEYS = (key: string): boolean => isSecretConfigKey(key)
 
   ipcMain.handle('cs:config:getAll', () => {
     const all = getAllConfig()
-    for (const key of SECRET_KEYS) {
-      if (all[key]) all[key] = openSecret(all[key])
+    for (const key of Object.keys(all)) {
+      if (SECRET_KEYS(key)) all[key] = openSecret(all[key])
     }
     return all
   })
@@ -30,10 +35,7 @@ export function registerConfigHandlers(): void {
     if (typeof key !== 'string' || key.length === 0 || key.length > 64) {
       return { ok: false, error: '非法配置键' }
     }
-    setConfig(
-      key,
-      SECRET_KEYS.includes(key) ? sealSecret(String(value ?? '')) : String(value ?? '')
-    )
+    setConfig(key, SECRET_KEYS(key) ? sealSecret(String(value ?? '')) : String(value ?? ''))
     // 缓存目录/能力开关等被缓存过的派生值需要失效
     if (key === 'cache.path') invalidateCachePathCache()
     return { ok: true }

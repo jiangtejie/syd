@@ -8,6 +8,8 @@ import type {
   WarmupReport
 } from '../shared/api'
 import type { ImageDegradedReason, ImageKind, ImageTier } from '../shared/imageTier'
+import type { AiRunSummaryView } from '../shared/api'
+import type { CustomerStored } from '../shared/customerProfile'
 import type {
   ChatMsgItem,
   ChatSessionItem,
@@ -134,7 +136,11 @@ const api: PreloadApi = {
         apiKey?: string
         timeoutMs?: number
       }): Promise<{ ok: boolean; models?: string[]; error?: string }> =>
-        ipcRenderer.invoke('cs:ai:models', input)
+        ipcRenderer.invoke('cs:ai:models', input),
+      runSummary: (
+        days?: number
+      ): Promise<{ ok: boolean; summary?: AiRunSummaryView; error?: string }> =>
+        ipcRenderer.invoke('cs:ai:runSummary', days)
     },
     reply: {
       sendText: (args: {
@@ -467,6 +473,40 @@ const api: PreloadApi = {
         ipcRenderer.invoke('cs:team:save', accountWxid, username, label),
       remove: (accountWxid: string, username: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:team:remove', accountWxid, username)
+    },
+    customers: {
+      sync: (
+        accountWxid: string
+      ): Promise<{
+        ok: boolean
+        inserted?: number
+        updated?: number
+        total?: number
+        error?: string
+      }> => ipcRenderer.invoke('cs:customers:sync', accountWxid),
+      list: (
+        accountWxid: string
+      ): Promise<{ ok: boolean; items?: CustomerStored[]; error?: string }> =>
+        ipcRenderer.invoke('cs:customers:list', accountWxid),
+      setTag: (
+        accountWxid: string,
+        username: string,
+        tag: string,
+        kind?: 'manual' | 'derived'
+      ): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:customers:setTag', accountWxid, username, tag, kind),
+      removeTag: (
+        accountWxid: string,
+        username: string,
+        tag: string
+      ): Promise<{ ok: boolean; removed?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:customers:removeTag', accountWxid, username, tag),
+      setFields: (
+        accountWxid: string,
+        username: string,
+        patch: { source?: string; note?: string }
+      ): Promise<{ ok: boolean; changed?: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:customers:setFields', accountWxid, username, patch)
     },
 
     im: {
@@ -1022,6 +1062,21 @@ const api: PreloadApi = {
         skipped?: string[]
         error?: string
       }> => ipcRenderer.invoke('cs:growth:uploadLocal'),
+      recordPublish: (
+        id: number,
+        input: {
+          channel?: string
+          likes?: number | string
+          collects?: number | string
+          comments?: number | string
+          shares?: number | string
+          follows?: number | string
+          leads?: number | string
+          amount?: number | string
+          outputId?: number | null
+        }
+      ): Promise<{ ok: boolean; score?: number; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:recordPublish', id, input),
       exportPackage: (
         id: number,
         outputIds?: number[]

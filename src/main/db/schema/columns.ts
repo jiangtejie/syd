@@ -13,6 +13,12 @@ export interface ColumnMigration {
 
 export const COLUMN_MIGRATIONS: ColumnMigration[] = [
   {
+    table: 'lark_sync_map',
+    column: 'remote_uid',
+    ddl: "TEXT NOT NULL DEFAULT ''",
+    note: 'Base 那侧的稳定 ID（议题UID）：多台机器共用一张表时按它对齐，不再依赖本地自增行号'
+  },
+  {
     table: 'issue_feedback_msg',
     column: 'video_md5',
     ddl: 'TEXT',

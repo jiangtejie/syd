@@ -1,5 +1,5 @@
 import { safeStorage } from 'electron'
-import { getConfig, setConfig } from '../db/repos/config'
+import { getAllConfig, getConfig, setConfig } from '../db/repos/config'
 import { createLogger } from './logging'
 
 const secretsLog = createLogger('app')
@@ -49,4 +49,23 @@ export function migrateStoredSecrets(keys: string[]): void {
     const v = getConfig(key)
     if (v && !isSealed(v)) setConfig(key, sealSecret(v))
   }
+}
+
+/**
+ * 同上，但按**前缀**匹配（键名带账号、事前列不全的那些，如 `img:<wxid>:xorKey`）。
+ * 返回本次实际加封的条数，供启动日志使用。
+ */
+export function migrateStoredSecretPrefixes(prefixes: string[]): number {
+  if (!safeStorage.isEncryptionAvailable()) return 0
+  const list = (prefixes ?? []).filter((p) => !!p)
+  if (list.length === 0) return 0
+  let sealed = 0
+  for (const [key, value] of Object.entries(getAllConfig())) {
+    if (!list.some((p) => key.startsWith(p))) continue
+    if (value && !isSealed(value)) {
+      setConfig(key, sealSecret(value))
+      sealed += 1
+    }
+  }
+  return sealed
 }

@@ -1,6 +1,7 @@
 import type { ImageDegradedReason, ImageKind, ImageTier } from './imageTier'
 import type { MonitorData } from './monitorMetrics'
 import type { DeriveImageKeysResult } from './types'
+import type { CustomerStored } from './customerProfile'
 import type {
   LarkBaseStatus,
   LarkBaseVerify,
@@ -140,6 +141,29 @@ export interface OnboardReport {
   steps: ReadinessStepView[]
 }
 
+/** AI 运行与成本汇总（cs:ai:runSummary 的返回体；主进程 aiRunRepo.aiRunSummary） */
+export interface AiRunSummaryView {
+  days: number
+  total: number
+  ok: number
+  fail: number
+  /** 成功率 0~1（无数据时为 1） */
+  okRate: number
+  tokensIn: number
+  tokensOut: number
+  byModule: Array<{
+    module: string
+    total: number
+    ok: number
+    fail: number
+    tokensIn: number
+    tokensOut: number
+    avgLatencyMs: number
+  }>
+  topErrors: Array<{ kind: string; code: string; n: number }>
+  lastFailures: Array<{ at: number; module: string; errorKind: string; errorCode: string }>
+}
+
 export interface PreloadApi {
   cs: CsApi
 }
@@ -213,6 +237,10 @@ export interface CsApi {
       apiKey?: string
       timeoutMs?: number
     }) => Promise<{ ok: boolean; models?: string[]; error?: string }>
+    /** AI 运行与成本汇总（近 N 天，落库；所有模块的真实调用） */
+    runSummary: (
+      days?: number
+    ) => Promise<{ ok: boolean; summary?: AiRunSummaryView; error?: string }>
   }
   reply: {
     sendText: (args: {
@@ -537,6 +565,40 @@ export interface CsApi {
       label?: string
     ) => Promise<{ ok: boolean; error?: string }>
     remove: (accountWxid: string, username: string) => Promise<{ ok: boolean; error?: string }>
+  }
+
+  /**
+   * 客户档案（持久化的客户资产）。
+   * 与「会话」的区别：会话是微信给的实时列表，档案是我们自己攒的——来源、备注、人工标签都在这。
+   */
+  customers: {
+    /** 从会话列表同步档案（幂等；只写微信侧字段，不碰来源/备注/标签） */
+    sync: (accountWxid: string) => Promise<{
+      ok: boolean
+      inserted?: number
+      updated?: number
+      total?: number
+      error?: string
+    }>
+    list: (
+      accountWxid: string
+    ) => Promise<{ ok: boolean; items?: CustomerStored[]; error?: string }>
+    setTag: (
+      accountWxid: string,
+      username: string,
+      tag: string,
+      kind?: 'manual' | 'derived'
+    ) => Promise<{ ok: boolean; error?: string }>
+    removeTag: (
+      accountWxid: string,
+      username: string,
+      tag: string
+    ) => Promise<{ ok: boolean; removed?: number; error?: string }>
+    setFields: (
+      accountWxid: string,
+      username: string,
+      patch: { source?: string; note?: string }
+    ) => Promise<{ ok: boolean; changed?: boolean; error?: string }>
   }
 
   im: {
@@ -1022,6 +1084,21 @@ export interface CsApi {
     ) => Promise<Result<{ updated?: number }>>
     batchRemove: (ids: number[]) => Promise<Result<{ removed?: number }>>
     uploadLocal: () => Promise<Result<{ added?: number; contentId?: number; skipped?: string[] }>>
+    /** 登记发布与效果回填（渠道/互动/关注/线索/金额）→ 写 growth_metric_snapshot 并重算素材分 */
+    recordPublish: (
+      id: number,
+      input: {
+        channel?: string
+        likes?: number | string
+        collects?: number | string
+        comments?: number | string
+        shares?: number | string
+        follows?: number | string
+        leads?: number | string
+        amount?: number | string
+        outputId?: number | null
+      }
+    ) => Promise<Result<{ score?: number }>>
     exportPackage: (
       id: number,
       outputIds?: number[]
