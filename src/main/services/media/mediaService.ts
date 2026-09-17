@@ -5,6 +5,8 @@ import { getConfig } from '../../db/repos/config'
 import * as keyRepo from '../../db/repos/keyStore'
 import { createLogger } from '../logging'
 import { openSecret } from '../secrets'
+import { pickFfmpegPath } from './ffmpegPath'
+import { app } from 'electron'
 import {
   decryptDatFile,
   detectImageExtension,
@@ -25,6 +27,9 @@ import {
 } from '../../../shared/imageTier'
 
 const mediaLog = createLogger('media')
+
+/** 随包 ffmpeg 的文件名（Windows 上是 .exe；其余平台按同名可执行文件处理） */
+const FFMPEG_BIN = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
 
 /**
  * 微信媒体（图片 .dat）解密服务（M3 图片消费方）。
@@ -145,18 +150,33 @@ function mediaIndex(root: string, refresh = false): Map<string, string> {
 }
 
 /**
- * 解析外部 ffmpeg：app_config(media.ffmpegPath) > 环境变量 WECHAT_CS_FFMPEG > PATH 上的 ffmpeg。
+ * 随包 ffmpeg 的路径（electron-builder extraResources: resources/bin → resourcesPath/bin）。
+ * 与 injector.scriptPath() 同一套打包/开发分支写法。
+ */
+export function bundledFfmpegPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'bin', FFMPEG_BIN)
+    : join(app.getAppPath(), 'resources', 'bin', FFMPEG_BIN)
+}
+
+/**
+ * 解析外部 ffmpeg：app_config(media.ffmpegPath) > 环境变量 WECHAT_CS_FFMPEG > **随包** > PATH。
  * 找不到可用二进制时返回 'ffmpeg'（交给 spawn 报 ENOENT 自然失败）。
+ * 判定逻辑在 media/ffmpegPath.ts（纯函数，有自检）。
  */
 export function resolveFfmpeg(): string {
-  const cfg = getConfig('media.ffmpegPath')?.trim()
-  if (cfg) {
-    if (existsSync(cfg)) return cfg
-    return cfg // 显式配置即使失效也如实尝试，便于用户发现路径填错
-  }
-  const envPath = process.env.WECHAT_CS_FFMPEG?.trim()
-  if (envPath && existsSync(envPath)) return envPath
-  return 'ffmpeg'
+  const configured = getConfig('media.ffmpegPath')?.trim() ?? ''
+  const envPath = process.env.WECHAT_CS_FFMPEG?.trim() ?? ''
+  const bundled = bundledFfmpegPath()
+  return pickFfmpegPath({
+    configured,
+    // 显式配置即使失效也如实尝试（便于用户发现填错），所以这里的存在性只用于日志语义
+    configuredExists: !!configured && existsSync(configured),
+    envPath,
+    envExists: !!envPath && existsSync(envPath),
+    bundled,
+    bundledExists: existsSync(bundled)
+  })
 }
 
 /** 定位 attach 根目录：<wxid>/msg/attach 或 <dbPath>/msg/attach */

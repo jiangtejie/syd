@@ -14,6 +14,10 @@ extraResources:
   # 注入脚本放到 app.asar 旁 resources/ps(运行时代码按 process.resourcesPath/ps 读取)
   - from: resources/ps
     to: ps
+  # 随包 ffmpeg(只用到 hevc 解码 + mjpeg 编码)：目标机不用再手填路径。
+  # 二进制不进版本库(见 .gitignore)，构建前先跑 npm run ffmpeg:prepare 放进来。
+  - from: resources/bin
+    to: bin
 asarUnpack:
   # AI SDK(ESM,主进程 external 加载):从真实路径加载避免 asar 内 ESM 限制
   - node_modules/ai/**
@@ -21,13 +25,33 @@ asarUnpack:
   - node_modules/zod/**
   - node_modules/eventsource-parser/**
   - node_modules/@standard-schema/**
+# Electron 自带 ~50 个语言的 .pak；这个产品只有中文界面，只留中文与英文兜底。
+# 这是纯赚的体积优化：删掉的语言文件永远不会被加载到。
+electronLanguages:
+  - zh-CN
+  - en-US
+
+# maximum = NSIS solid LZMA。安装包 175MB 级别，压到最小对分发更实在（代价是构建慢一些）。
+compression: maximum
+
 win:
   executableName: wechat-cs-desktop
+  # 曾经在这里用 files 把 prebuilds 按平台裁掉（省 ~18MB），实测**把整个原生模块都排除了**
+  # （未匹配的 include 模式会连带影响 node_modules 的收集），打出来的包一读库就崩。
+  # 省 18MB 不值这个风险 —— 需要再裁时请用「打包后处理 + 加载验证」，不要用 files 模式。
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  # 一站式安装（oneClick）对终端用户不友好：闪一下就装完，装到哪、能不能改都不知道。
+  # 改成向导式并允许改安装目录 —— 门店电脑的 C 盘常常很紧张，而这个应用还要在非系统盘写缓存。
+  # 需要静默部署时仍然可以 setup.exe /S（NSIS 两种模式都支持）。
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  # 卸载**不删**用户数据：cs.db 里有客户档案、群问题历史与密钥，
+  # 卸载动作不该把它们一起抹掉（要彻底清除请手动删 %APPDATA%\wechat-cs-desktop 与缓存目录）。
+  deleteAppDataOnUninstall: false
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -47,7 +71,12 @@ linux:
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
+# 原生模块不在这里 rebuild：由 package.json 的 postinstall
+# （electron-builder install-app-deps）提前按 Electron ABI 编好。
+# ⚠️ 因此**必须在装过依赖的机器上打包**，否则会打出 Node ABI 的 .node，目标机一读库就崩
+# —— scripts/prebuild-check.mjs 会在打包前把这种情况拦下来。
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
+
+# 刻意**不配 publish**：本应用目前没有更新服务器，之前这里指向 example.com 占位地址，
+# 会生成一份指向不存在域名的 latest.yml（看着像配了自动更新，实际谁也不认识它）。
+# 等真有更新服务时再加 publish，并同时启用 electron-updater。
