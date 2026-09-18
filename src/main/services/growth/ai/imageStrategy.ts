@@ -70,6 +70,14 @@ export function normalizePlatform(v: unknown): GrowthPlatform {
   return s in PLATFORM_SPECS ? (s as GrowthPlatform) : DEFAULT_PLATFORM
 }
 
+export function normalizeMode(v: unknown): ImageMode {
+  return String(v ?? '')
+    .trim()
+    .toLowerCase() === 'edit'
+    ? 'edit'
+    : 'gen'
+}
+
 export function normalizeRole(v: unknown): ImageRole {
   return String(v ?? '')
     .trim()
@@ -377,6 +385,16 @@ export interface ImageStrategyInput {
   userPrompt?: unknown
   /** 目标平台：xhs | douyin | moments | group */
   platform?: unknown
+  /**
+   * gen = 凭描述生成全新画面；edit = **在参考图上改写**（图生图）。
+   * edit 的 prompt 结构与 gen 完全不同：前者说"画什么"，后者要说"什么保持不变、什么换成我家的"。
+   */
+  mode?: unknown
+  /**
+   * 随请求附上的参考图张数（0 = 纯文本；1 = 只有结构模板；2 = 结构模板 + 本店实拍）。
+   * 多图时 prompt 必须写清「图1 / 图2 各是什么」，否则模型会把两张图混着用。
+   */
+  referenceCount?: unknown
   /** cover（封面）| image（正文图） */
   role?: unknown
   /** 指定模板 id（不指定则按 prompt 关键词 / 角色自动选） */
@@ -407,7 +425,10 @@ export interface ImageStrategyInput {
   materialHint?: unknown
 }
 
+export type ImageMode = 'gen' | 'edit'
+
 export interface ImageStrategy {
+  mode: ImageMode
   templateId: string
   templateLabel: string
   platform: GrowthPlatform
@@ -510,9 +531,32 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
   const style = readBrandStyle(brand?.profile)
   const brandName = asText(brand?.name) || ''
 
+  const mode = normalizeMode(input.mode)
+  const referenceCount = clampInt(input.referenceCount, 0, 8, 0)
+  /** 多图时指向「结构模板」那一张：prompt 里所有"保持/不要带出"都该说图1，而不是笼统的"参考图" */
+  const refTag = referenceCount >= 2 ? '图1' : '参考图'
   const lines: string[] = []
-  lines.push('画面主体：' + subject)
-  if (userPrompt && template.scene) lines.push('场景范式：' + template.scene)
+  if (mode === 'edit') {
+    // 图生图：参考图提供了画面结构，prompt 要说的不是「画什么」，而是
+    // **什么保持不变、什么换成我家的、什么是绝对不要的**（三段固定，别混在一句话里）。
+    if (referenceCount >= 2) {
+      lines.push(
+        '改写任务：随本次请求附上 2 张参考图。【图1】是结构模板，只借它的构图/机位/光线/留白/氛围；' +
+          '【图2】是本店的真实实拍，画面里的菜品与场景**以图2 为准**（图2 里没有的东西不要出现在结果里）。'
+      )
+    } else {
+      lines.push('改写任务：以随本次请求附上的参考图为基础改图，不是凭描述画一张新图。')
+    }
+    lines.push(
+      '【保持】' +
+        refTag +
+        '的构图与机位、镜头与光线、场景氛围、画面留白位置、主体在画面里的占比；只改内容，不要改版式'
+    )
+    if (userPrompt) lines.push('【本次要求】' + userPrompt)
+  } else {
+    lines.push('画面主体：' + subject)
+    if (userPrompt && template.scene) lines.push('场景范式：' + template.scene)
+  }
 
   const storeFacts = joinFacts([
     storeName ? '门店：' + storeName : '',
@@ -520,8 +564,15 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
     facts.packages ? '套餐：' + facts.packages : '',
     facts.note ? '场景线索：' + facts.note : ''
   ])
-  if (storeFacts)
-    lines.push('画面里可以出现的真实元素（只能用这些，不要编造其它菜品）：' + storeFacts)
+  if (storeFacts) {
+    lines.push(
+      (mode === 'edit'
+        ? '【替换为本店真实信息】把' +
+          refTag +
+          '里的菜品/场景/门店元素换成下面这些；只能用这些事实、不要编造其它菜品：'
+        : '画面里可以出现的真实元素（只能用这些，不要编造其它菜品）：') + storeFacts
+    )
+  }
 
   const brandBits = joinFacts([
     brandName && brandName !== storeName ? '品牌：' + brandName : '',
@@ -530,7 +581,7 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
     style.visualStyle ? '视觉风格：' + style.visualStyle : '',
     style.palette.length > 0 ? '主色调：' + style.palette.join('/') : ''
   ])
-  if (brandBits) lines.push('品牌口径：' + brandBits)
+  if (brandBits) lines.push((mode === 'edit' ? '【品牌口径】' : '品牌口径：') + brandBits)
 
   lines.push('平台构图（' + spec.label + ' · ' + spec.ratio + '）：' + spec.framing)
   lines.push(
@@ -539,6 +590,9 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
 
   const negative = joinFacts([
     template.negative,
+    // 图生图最要命的一条：参考图是别人的作品，像素级特征（原文字/水印/logo/人脸）绝不能带出来
+    mode === 'edit' ? '不要保留' + refTag + '里的任何文字、Logo、水印、二维码' : '',
+    mode === 'edit' ? '不要照抄' + refTag + '的菜品摆盘与人物，要换成上面给出的本店信息' : '',
     facts.bannedWords ? '不要出现这些词/' + facts.bannedWords : '',
     UNIVERSAL_NEGATIVE
   ])
@@ -546,6 +600,13 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
   const prompt = lines.join('\n')
   const finalPrompt = composeFinalPrompt(prompt, negative)
 
+  notes.push(
+    mode === 'edit'
+      ? '模式：图生图（' +
+          (referenceCount >= 2 ? '图1 结构模板 + 图2 本店实拍，' : '') +
+          '保持构图，替换为本店信息）'
+      : '模式：文生图'
+  )
   notes.push('模板：' + template.label + '（' + template.id + '）')
   notes.push('平台：' + spec.label + ' · ' + spec.ratio + ' · ' + size)
   notes.push('角色：' + (role === 'cover' ? '封面' : '正文图') + ' · ' + String(count) + ' 张')
@@ -573,6 +634,7 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
     notes.push('模板库：使用自定义模板（' + String(lib.templates.length) + ' 条）')
 
   const out: ImageStrategy = {
+    mode,
     templateId: template.id,
     templateLabel: template.label,
     platform,

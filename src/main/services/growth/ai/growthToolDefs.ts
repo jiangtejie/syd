@@ -47,11 +47,13 @@ import { readBaseAsText } from '../../lark/api'
 import { searchImages, searchWeb } from './searchProvider'
 import {
   generateImages,
+  graySignature,
   ImageSetupError,
   loadImageReference,
   storeImageBuffer,
   type ImageReference
 } from './imageProvider'
+import { looksLikeEcho } from './imageSimilarity'
 import {
   buildImageStrategy,
   formatStrategy,
@@ -372,7 +374,9 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
       confirm: true,
       params: metaOf('growth_gen_image').params,
       description:
-        'AI 生成图片(封面/氛围图/菜品示意图)。提示词由「生图策略」按平台比例 + 门店/品牌事实 + 画面模板拼装(不需要自己写完整 prompt, 只给主体描述即可), 结果作为候选图待用户点选, 必须标注「AI 生成示意图」。',
+        'AI 出图(封面/氛围图/菜品示意图)。两种模式由「生图策略」自动切换: 不给参考图 = 凭描述生成; ' +
+        '给 referenceAssetId = **在参考图上改写**(保持构图机位光线, 把菜品/场景/门店换成档案里的本店信息) —— ' +
+        '做「照这条爆款图出我们店版本」时用后者。提示词由策略层拼装, 你只给主体描述或本次改写要求即可。结果作为候选图待用户点选。',
       run: async (_ctx, argsIn) => {
         const args = argsIn as {
           prompt?: string
@@ -381,6 +385,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           count?: number
           role?: 'cover' | 'image'
           referenceAssetId?: number
+          contentAssetId?: number
           contentId?: number
           taskId?: number
         }
@@ -391,8 +396,32 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         const store = storeId
           ? (listStores().find((s) => s.id === storeId) ?? null)
           : (listStores().find((s) => s.enabled) ?? null)
+        // 参考图先取：模式（生成 / 在参考图上改写）由它决定。
+        // 顺序即语义：第 1 张 = 结构模板（原爆款图，只借构图），第 2 张 = 本店实拍（内容以它为准）。
+        const refs: ImageReference[] = []
+        let refNote = ''
+        if (args.referenceAssetId) {
+          const r = await loadImageReference(args.referenceAssetId)
+          if (r) refs.push(r)
+          else
+            refNote =
+              '（注意：结构参考图 assetId=' +
+              String(args.referenceAssetId) +
+              ' 取不到本地文件，本次按纯文本生成）'
+        }
+        if (args.contentAssetId) {
+          const c = await loadImageReference(args.contentAssetId)
+          if (c) refs.push(c)
+          else
+            refNote =
+              '（注意：内容参考图 assetId=' +
+              String(args.contentAssetId) +
+              ' 取不到本地文件，本次只用结构参考图）'
+        }
         // 策略层：模板选择 + 平台比例 + 门店事实 + 品牌资料包 + 月度额度 → prompt/negative/size/count
         const strategy = buildImageStrategy({
+          mode: refs.length > 0 ? 'edit' : 'gen',
+          referenceCount: refs.length,
           userPrompt: args.prompt ?? '',
           platform: args.platform || cfg.platform,
           role: args.role ?? 'cover',
@@ -409,18 +438,6 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         })
         // 月度额度用尽：在**发起请求前**拦下（接口不会拦，它只会照单生成然后计费）
         if (strategy.blocked) return strategy.blockedReason ?? '本月生图额度已用尽'
-        // 图生图：给了参考图就先试 /images/edits（生成"同构但原创"的本店图）
-        let reference: ImageReference | null = null
-        let refNote = ''
-        if (args.referenceAssetId) {
-          reference = await loadImageReference(args.referenceAssetId)
-          if (!reference) {
-            refNote =
-              '（注意：参考图 assetId=' +
-              String(args.referenceAssetId) +
-              ' 取不到本地文件，本次按纯文本生成）'
-          }
-        }
         try {
           const gen = await generateImages({
             contentId: contentIdOf(args),
@@ -428,11 +445,43 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
             negative: strategy.negative,
             count: strategy.count,
             size: strategy.size,
-            reference
+            references: refs
           })
           const imgs = gen.images
+          // 图生图的隐蔽失败：返回 200 但画面几乎没变（模型没接受改写，或通道把输入原样回传）。
+          // 拿产物与结构参考图比一次灰度签名，疑似就如实说 —— 否则用户会以为"爆改"成功了。
+          let echoNote = ''
+          if (gen.usedReference && refs.length > 0 && imgs.length > 0) {
+            const refSig = graySignature(refs[0].data)
+            let echoCount = 0
+            for (const g of imgs) {
+              try {
+                const buf = await readFile(join(getGrowthMediaDir(), g.relPath))
+                if (looksLikeEcho(refSig, graySignature(buf))) echoCount++
+              } catch {
+                /* 读不到就不比，不因此报错 */
+              }
+            }
+            if (echoCount > 0) {
+              echoNote =
+                '（⚠ ' +
+                String(echoCount) +
+                ' 张结果与结构参考图几乎一致，疑似图生图**没生效**（模型可能直接回传了原图）——' +
+                '建议重试，或把要求写得更具体/换模型）'
+            }
+          }
           if (gen.warning) refNote = '（注意：' + gen.warning + '）'
-          else if (gen.usedReference) refNote = '（已按参考图生成同构画面）'
+          else if (gen.usedReference) {
+            refNote =
+              '（已在 ' +
+              String(gen.referenceCount) +
+              ' 张参考图上改写：保持' +
+              (gen.referenceCount > 1 ? '图1 的构图' : '构图') +
+              '，内容换成' +
+              (gen.referenceCount > 1 ? '图2 的本店实拍 + ' : '') +
+              '门店档案里的真实信息）' +
+              echoNote
+          }
           const explicitTemplate = args.template !== undefined && args.template !== 'auto'
           const outputId = createOutput({
             taskId: taskIdOf(args),
@@ -454,16 +503,24 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
                 role: strategy.role,
                 size: strategy.size,
                 count: strategy.count,
+                mode: strategy.mode,
                 explicitTemplate,
                 referenceAssetId: args.referenceAssetId ?? null,
+                contentAssetId: args.contentAssetId ?? null,
                 usedReference: gen.usedReference,
+                referenceCount: gen.referenceCount,
                 notes: strategy.notes
               }
             },
             status: 'candidate'
           })
           const refTag = gen.usedReference
-            ? ' · 参考图 assetId=' + String(args.referenceAssetId)
+            ? ' · 参考图 ' +
+              String(gen.referenceCount) +
+              ' 张(结构 assetId=' +
+              String(args.referenceAssetId) +
+              (args.contentAssetId ? '，内容 assetId=' + String(args.contentAssetId) : '') +
+              ')'
             : ''
           for (const g of imgs) {
             addOutputAsset({

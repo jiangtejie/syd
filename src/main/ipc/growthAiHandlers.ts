@@ -31,6 +31,7 @@ import {
 } from '../services/growth/ai/growthEngine'
 import { getImageConfig } from '../services/growth/ai/config'
 import { testImageChannel } from '../services/growth/ai/imageProvider'
+import { probeImageChannel } from '../services/growth/ai/imageProbe'
 import { clampInt } from './_util'
 
 function ok<T>(value: T): { ok: true } & T {
@@ -231,6 +232,15 @@ export function registerGrowthAiHandlers(): void {
   // 注: 生图/搜索的**配置读写**不走这里 —— 设置页用通用 cs:config:getAll/set(app_config 真源)。
   // 此前这里另有一套 cs:growthai:configGet/configSet + GrowthAiConfigField 白名单，
   // 但渲染端从无调用者(ProviderPanel 用的是 cs:growth，不是 cs:growthai)，已删除。
+  // 能力探测：中转站的「支持什么」取决于密钥所在分组，只能实测（详见 imageProbe.ts 注释）
+  ipcMain.handle('cs:growthai:probeImage', async (_e, full: unknown) => {
+    try {
+      return ok({ probe: await probeImageChannel(full === true) })
+    } catch (e) {
+      return err(e instanceof Error ? e.message : '探测失败')
+    }
+  })
+
   ipcMain.handle('cs:growthai:testImage', async () => {
     const cfg = getImageConfig()
     if (!cfg.enabled || !cfg.baseUrl || !cfg.apiKey) return err('请先填写并开启生图配置')

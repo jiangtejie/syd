@@ -3,6 +3,7 @@
  * 产出统一落盘到 growth 媒体库并登记 growth_asset(挂在任务素材下), 返回可直接展示的候选。
  */
 
+import { nativeImage } from 'electron'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -10,6 +11,7 @@ import { getGrowthMediaDir } from '../../paths'
 import { getAssetById, insertAsset } from '../../../db/repos/growthRepo'
 import { getImageConfig, type ImageConfig } from './config'
 import { composeFinalPrompt, parseSize } from './imageStrategy'
+import { SIG_SIZE } from './imageSimilarity'
 import { createLogger } from '../../logging'
 
 const log = createLogger('growth-image')
@@ -82,6 +84,8 @@ export interface GenerateResult {
   images: GeneratedImage[]
   /** 是否真的走了参考图（/images/edits）。false = 通道不支持，已回退纯文本 */
   usedReference: boolean
+  /** 实际随请求发出的参考图张数（0 = 纯文本） */
+  referenceCount: number
   /** 回退原因（要如实告诉用户，不能悄悄降级） */
   warning?: string
 }
@@ -89,8 +93,10 @@ export interface GenerateResult {
 /**
  * 生成图片。
  * @param contentId 归属素材(资产表要求 content_id, 生成图挂到任务素材下)
- * @param reference 参考图（可空）。给了就先试 /images/edits（图生图），
+ * @param references 参考图（可空，**可多张**）。给了就先试 /images/edits（图生图），
  *   通道不支持时回退纯文本并在 warning 里说明 —— 静默降级会让用户以为"参考图生效了"。
+ *   多张时的语义约定：**按数组顺序编号**，prompt 里必须写清"图1 是什么、图2 是什么"
+ *   （实测该通道接受 multipart 重复 image 字段；不写清模型会把两张图混在一起）。
  */
 export async function generateImages(input: {
   contentId: number
@@ -99,7 +105,7 @@ export async function generateImages(input: {
   negative?: string
   count?: number
   size?: string
-  reference?: ImageReference | null
+  references?: ImageReference[] | null
   /**
    * 连通性测试：只要"接口能不能出图"这个结论，**不落盘、不建资产**。
    * 此前测试图会挂在"素材仓库第一条素材"名下（既污染真实素材，又得先入库一条素材才能测），
@@ -147,14 +153,17 @@ export async function generateImages(input: {
     }
 
     /** 图生图：multipart POST /images/edits（OpenAI 兼容写法的通例） */
+    const refs = input.references ?? []
     const doEdit = async (): Promise<{ ok: boolean; status: number; text: string }> => {
-      const ref = input.reference as ImageReference
       const form = new FormData()
       form.append('model', cfg.model)
       form.append('prompt', prompt)
       form.append('n', String(n))
       form.append('size', size)
-      form.append('image', new Blob([new Uint8Array(ref.data)], { type: ref.mime }), ref.filename)
+      // 多张参考图 = 重复 image 字段（已在 uuapi 实测通过）
+      for (const ref of refs) {
+        form.append('image', new Blob([new Uint8Array(ref.data)], { type: ref.mime }), ref.filename)
+      }
       const res = await fetch(editUrl, {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + cfg.apiKey },
@@ -167,7 +176,7 @@ export async function generateImages(input: {
     let r: { ok: boolean; status: number; text: string }
     let usedReference = false
     let warning: string | undefined
-    if (input.reference) {
+    if (refs.length > 0) {
       const edit = await doEdit()
       if (edit.ok) {
         r = edit
@@ -246,7 +255,8 @@ export async function generateImages(input: {
       }
     }
     if (out.length === 0) throw new Error('生图结果为空(接口可能未返回 b64_json/url)')
-    if (usedReference) log.info('used reference image (/images/edits)')
+    if (usedReference)
+      log.info('used ' + String(refs.length) + ' reference image(s) (/images/edits)')
     log.info(
       'generated ' +
         String(out.length) +
@@ -256,9 +266,33 @@ export async function generateImages(input: {
         size +
         (input.dryRun ? ' (dryRun)' : '')
     )
-    return { images: out, usedReference, warning }
+    return { images: out, usedReference, referenceCount: usedReference ? refs.length : 0, warning }
   } finally {
     clearTimeout(timer)
+  }
+}
+
+/**
+ * 取一张图的 16×16 灰度签名（用于「产物是不是被原样回传」的比对）。
+ * 解码与缩放交给 Electron 自带能力，不引图像库；失败返回空数组（调用方据此不报警）。
+ */
+export function graySignature(png: Buffer): number[] {
+  try {
+    const img = nativeImage.createFromBuffer(png)
+    if (img.isEmpty()) return []
+    const small = img.resize({ width: SIG_SIZE, height: SIG_SIZE, quality: 'good' })
+    const bmp = small.toBitmap() // BGRA
+    const out: number[] = []
+    for (let i = 0; i < SIG_SIZE * SIG_SIZE; i++) {
+      const b = bmp[i * 4] ?? 0
+      const g = bmp[i * 4 + 1] ?? 0
+      const r = bmp[i * 4 + 2] ?? 0
+      // 亮度加权（人眼对绿最敏感）：只要量级正确即可，不追求色彩准确
+      out.push(0.299 * r + 0.587 * g + 0.114 * b)
+    }
+    return out
+  } catch {
+    return []
   }
 }
 

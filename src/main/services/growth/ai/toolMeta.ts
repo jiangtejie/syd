@@ -118,7 +118,11 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
       count: { type: 'number', desc: '生成张数（受设置里「每次张数」上限约束，最多 4）' },
       referenceAssetId: {
         type: 'number',
-        desc: '参考图 assetId（图生图：按原爆款图/门店实拍图生成同构但原创的画面；通道不支持时会如实回退纯文本）'
+        desc: '结构参考图 assetId（原爆款图/版式模板：只借它的构图与版式。给了就走图生图；通道不支持时会如实回退纯文本）'
+      },
+      contentAssetId: {
+        type: 'number',
+        desc: '内容参考图 assetId（本店实拍图：结果里的菜品与场景以它为准。与 referenceAssetId 一起给 = 图1 结构 + 图2 内容）'
       },
       contentId: { type: 'number', desc: '素材 id（不传用当前任务素材）' },
       taskId: { type: 'number', desc: '任务 id（不传用当前任务）' }

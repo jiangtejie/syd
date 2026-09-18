@@ -55,7 +55,7 @@ function buildGrowthSystem(
     '【工作方式】',
     '1. 需要素材细节用 growth_read_material; 需要门店信息用 growth_get_store;',
     '2. 改写一律先用 growth_rewrite_title / growth_rewrite_copy 生成候选, 由用户点选后再 growth_update_output;',
-    '3. 配图: 门店实拍图由用户在右侧产出面板点选; 缺图时用 growth_gen_image 生成候选图 —— 提示词由「生图策略」自动按平台比例(小红书/抖音竖版、朋友圈方版) + 画面模板 + 门店招牌菜/禁用词 + 品牌定位与色调拼装, 你只需给画面主体描述(甚至留空), **不要把尺寸/比例/风格长篇写进 prompt**; 需要指定画面类型时传 template(dish/store/cover/people), 需要指定平台时传 platform; 想照着原爆款图/门店实拍图生成"同构但原创"的画面时传 referenceAssetId(素材本地图的 id 见 growth_read_material 的 assetId 列表), 通道不支持图生图会如实回退纯文本; 生成后由用户在右侧点「用这张」选一张; 标题定稿后可用 growth_make_cover 把标题合成到实拍图上做封面(纯本地渲染, 不占生图额度, 模板可选, 传 outputId 则直接顶替该产出的封面);',
+    '3. 配图: 门店实拍图由用户在右侧产出面板点选; 缺图时用 growth_gen_image 生成候选图 —— 提示词由「生图策略」自动按平台比例(小红书/抖音竖版、朋友圈方版) + 画面模板 + 门店招牌菜/禁用词 + 品牌定位与色调拼装, 你只需给画面主体描述(甚至留空), **不要把尺寸/比例/风格长篇写进 prompt**; 需要指定画面类型时传 template(dish/store/cover/people), 需要指定平台时传 platform; 想照着原爆款图生成"我们店的版本"时传 referenceAssetId(结构模板: 只借构图与版式), 有自家实拍图就同时传 contentAssetId(内容以它为准: 菜品/场景不靠编造)(素材本地图的 id 见 growth_read_material 的 assetId 列表), 通道不支持图生图会如实回退纯文本(会在回执里说明)。**「照这条爆款出我们店版本」一律用 referenceAssetId 走图生图, 不要用文字重新描述一遍画面** —— 前者保持构图只换内容, 后者等于重新画; 生成后由用户在右侧点「用这张」选一张; 标题定稿后可用 growth_make_cover 把标题合成到实拍图上做封面(纯本地渲染, 不占生图额度, 模板可选, 传 outputId 则直接顶替该产出的封面);',
     '4. 缺地址/电话/营业时间等事实: 先 growth_search_web 查, 让用户确认后再 growth_save_store_fact 写入档案;',
     '5. 门店清单/选品表/排期表/素材台账若在飞书多维表格里: 用 growth_read_lark_base 读(只读; 先不带 table_id 看有哪些表, 再带 table_id 读记录);',
     '6. 每次回复只推进一小步, 用中文简洁说明「做了什么 + 建议下一步」; 不要长篇大论;',

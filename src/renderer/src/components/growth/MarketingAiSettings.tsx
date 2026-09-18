@@ -47,6 +47,29 @@ const DEFAULTS: AiForm = {
   'growth.search.apiKey': ''
 }
 
+/** 能力探测结果（与主进程 imageProbe.ts 的 ProbeResult 对应） */
+interface ProbeItemView {
+  id: string
+  label: string
+  status: 'ok' | 'fail' | 'warn' | 'skip'
+  detail: string
+  billed?: boolean
+}
+interface ProbeView {
+  baseUrl: string
+  model: string
+  imageModels: string[]
+  items: ProbeItemView[]
+  billed: number
+}
+
+const PROBE_ICON: Record<ProbeItemView['status'], string> = {
+  ok: '✓',
+  fail: '✗',
+  warn: '!',
+  skip: '·'
+}
+
 const boolVal = (v: string): boolean => v === '1' || v === 'true'
 const boolStr = (v: boolean): string => (v ? '1' : '0')
 
@@ -55,6 +78,10 @@ export function MarketingAiSettings(): React.JSX.Element {
   const [loaded, setLoaded] = useState(false)
   const [imgTesting, setImgTesting] = useState(false)
   const [saved, setSaved] = useState(false)
+  /** 能力探测：fullProbe=含真实出图（会计费）；结果展示在卡片里，可一键复制回贴 */
+  const [probeFull, setProbeFull] = useState(false)
+  const [probing, setProbing] = useState(false)
+  const [probe, setProbe] = useState<ProbeView | null>(null)
 
   useAsyncEffect(async () => {
     const all = (await configApi?.getAll().catch(() => null)) as Record<string, string> | null
@@ -95,6 +122,44 @@ export function MarketingAiSettings(): React.JSX.Element {
     void configApi.set(key, value)
     flash()
   }
+
+  const runProbe = async (): Promise<void> => {
+    const api = window.api?.cs?.growthai
+    if (!api?.probeImage) return
+    setProbing(true)
+    setProbe(null)
+    try {
+      const res = await api.probeImage(probeFull)
+      if (res.ok && res.probe) setProbe(res.probe as ProbeView)
+      else toast.error(res.error || '探测失败')
+    } finally {
+      setProbing(false)
+    }
+  }
+
+  /** 复制探测结果（全仓同款：navigator.clipboard + toast 反馈） */
+  const copyProbe = async (text: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success('已复制探测结果')
+    } catch {
+      toast.error('复制失败（可手动选中文本复制）')
+    }
+  }
+
+  /** 把探测结果整理成可复制的纯文本（贴给同事/贴回来排查都用它） */
+  const probeText = (p: ProbeView): string =>
+    [
+      '生图通道能力探测',
+      '通道: ' + p.baseUrl,
+      '模型: ' + p.model,
+      '生图调用次数: ' + String(p.billed),
+      p.imageModels.length > 0
+        ? '可用生图模型: ' + p.imageModels.join(', ')
+        : '可用生图模型: (未取到)',
+      '',
+      ...p.items.map((i) => '[' + i.status.toUpperCase() + '] ' + i.label + ' — ' + i.detail)
+    ].join('\n')
 
   const testImage = async (): Promise<void> => {
     const api = window.api?.cs?.growthai
@@ -216,6 +281,57 @@ export function MarketingAiSettings(): React.JSX.Element {
           </button>
           <span className="st-hint">测试图不落盘、不进素材库，也不占每月张数</span>
         </div>
+
+        <div className="st-subtitle">通道能力探测</div>
+        <div className="st-hint">
+          中转站「能用什么」取决于密钥所属分组（用错分组返回 404 而不是鉴权错误），所以只能实测。
+          未勾选时只做不产生生图调用的探测（可用模型列表 + 图生图端点可达性）；勾选后会真实出图， 约
+          4 次调用（会计费），用来确认「按参考图生图 / 多图参考 / 局部重绘」到底通不通。
+        </div>
+        <div className="st-actions">
+          <button
+            type="button"
+            className="ui-btn is-primary"
+            disabled={probing}
+            onClick={() => void runProbe()}
+          >
+            {probing ? '探测中…' : '探测通道能力'}
+          </button>
+          <label className="st-row" style={{ gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={probeFull}
+              onChange={(e) => setProbeFull(e.target.checked)}
+            />
+            <span className="st-hint">包含出图实测（约 4 次调用，会计费）</span>
+          </label>
+        </div>
+        {probe && (
+          <div className="st-probe">
+            <div className="st-probe-head">
+              <span>
+                通道 <b>{probe.baseUrl}</b> · 模型 <b>{probe.model}</b> · 生图调用 {probe.billed} 次
+              </span>
+              <button
+                type="button"
+                className="ui-btn is-sm"
+                onClick={() => void copyProbe(probeText(probe))}
+              >
+                复制结果
+              </button>
+            </div>
+            {probe.items.map((i) => (
+              <div className={'st-probe-row is-' + i.status} key={i.id}>
+                <span className="st-probe-icon">{PROBE_ICON[i.status]}</span>
+                <span className="st-probe-label">{i.label}</span>
+                <span className="st-probe-detail">{i.detail}</span>
+              </div>
+            ))}
+            {probe.imageModels.length > 0 && (
+              <div className="st-hint">可用生图模型：{probe.imageModels.join('、')}</div>
+            )}
+          </div>
+        )}
       </SettingsCard>
 
       <SettingsCard

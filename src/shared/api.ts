@@ -1186,6 +1186,8 @@ export interface CsApi {
       profile: string
     ) => Promise<{ ok: boolean; id?: number; error?: string }>
     testImage: () => Promise<{ ok: boolean; error?: string }>
+    /** 生图通道能力探测（中转站的可用能力取决于密钥分组，只能实测） */
+    probeImage: (full: boolean) => Promise<{ ok: boolean; probe?: unknown; error?: string }>
   }
   growthbuzz: {
     overview: (storeId?: number | null) => Promise<Result<{ overview?: GrowthBuzzOverview }>>

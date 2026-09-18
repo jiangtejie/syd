@@ -1196,7 +1196,10 @@ const api: PreloadApi = {
         ipcRenderer.invoke('cs:growthai:saveBrand', name, profile),
       // 生图/搜索的配置读写不在这里：设置页走通用 cs:config(getAll/set)，app_config 只有一个真源
       testImage: (): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:growthai:testImage')
+        ipcRenderer.invoke('cs:growthai:testImage'),
+      /** 能力探测：full=true 时含真实出图（会计费） */
+      probeImage: (full: boolean): Promise<{ ok: boolean; probe?: unknown; error?: string }> =>
+        ipcRenderer.invoke('cs:growthai:probeImage', full)
     },
     growthbuzz: {
       overview: (
