@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import {
   exportChat,
   exportBusiness,
+  requestExportCancel,
   type ChatExportOptions,
   type ProgressEvent
 } from '../services/export/exportService'
@@ -13,6 +14,7 @@ import {
  * cs:export:chat(wxid, opts) → 聊天记录(会话多选/时间范围/格式)
  * cs:export:business(wxid, folder) → 本地业务数据 JSON 归档(脱敏)
  * cs:export:openFolder(path) → 打开资源管理器
+ * cs:export:cancel() → 取消正在进行的导出（串行，进程内只认当前这一次）
  * 进度推送事件:cs:export:progress
  */
 
@@ -32,6 +34,8 @@ export function registerExportHandlers(): void {
     if (!wxid) return { ok: false as const, error: '未连接微信账号' }
     return exportBusiness(wxid, folder || '', sendProgress)
   })
+
+  ipcMain.handle('cs:export:cancel', () => requestExportCancel())
 
   ipcMain.handle('cs:export:openFolder', async (_e, folder: string) => {
     if (!folder) return { ok: false as const, error: '缺少路径' }

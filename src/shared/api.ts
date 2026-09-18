@@ -649,12 +649,22 @@ export interface CsApi {
       files?: Array<{ name: string; msgCount: number }>
       /** 选了但没有生成文件的会话（该范围内没有消息）；失败时也带上已完成的 files */
       skipped?: Array<{ name: string; reason: string }>
+      /** 用户主动取消（不是错误；已完成的部分照常回传） */
+      cancelled?: boolean
       error?: string
     }>
     business: (
       wxid: string,
       folder: string
-    ) => Promise<{ ok: boolean; folder?: string; name?: string; error?: string }>
+    ) => Promise<{
+      ok: boolean
+      folder?: string
+      name?: string
+      cancelled?: boolean
+      error?: string
+    }>
+    /** 取消正在进行的导出（已完成的部分会照常回传） */
+    cancel: () => Promise<{ ok: boolean; error?: string }>
     openFolder: (folder: string) => Promise<{ ok: boolean; error?: string }>
     writeFile: (
       folder: string,

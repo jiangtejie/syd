@@ -561,13 +561,21 @@ const api: PreloadApi = {
         folder?: string
         files?: Array<{ name: string; msgCount: number }>
         skipped?: Array<{ name: string; reason: string }>
+        cancelled?: boolean
         error?: string
       }> => ipcRenderer.invoke('cs:export:chat', wxid, opts),
       business: (
         wxid: string,
         folder: string
-      ): Promise<{ ok: boolean; folder?: string; name?: string; error?: string }> =>
-        ipcRenderer.invoke('cs:export:business', wxid, folder),
+      ): Promise<{
+        ok: boolean
+        folder?: string
+        name?: string
+        cancelled?: boolean
+        error?: string
+      }> => ipcRenderer.invoke('cs:export:business', wxid, folder),
+      cancel: (): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:export:cancel'),
       openFolder: (folder: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:export:openFolder', folder),
       writeFile: (

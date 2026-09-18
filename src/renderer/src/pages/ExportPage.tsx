@@ -3,6 +3,7 @@ import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
 import type { SessionSummary } from '../../../shared/types'
 import { useAsyncEffect } from '../lib/useAsyncEffect'
+import { virtualWindow } from '../lib/virtualList'
 import './export.css'
 
 /**
@@ -25,6 +26,14 @@ interface ExportProgress {
 const wxApi = window.api?.cs?.wx
 const exportApi = window.api?.cs?.export
 const dialogApi = window.api?.cs?.dialog
+
+/**
+ * 会话列表行高（必须与 .exp-sess-row 的 height 一致）。
+ * 窗口化按它算渲染切片 —— 两处对不上会出现行错位/滚动条长度不对。
+ */
+const ROW_H = 46
+/** 视口上下各多渲染几行，滚动时不闪白 */
+const OVERSCAN = 6
 
 const RANGE_PRESETS = [
   { id: 'all', label: '全部时间' },
@@ -60,6 +69,8 @@ function ExportPage(): React.JSX.Element {
   const [result, setResult] = useState<{
     files: Array<{ name: string; msgCount: number }>
     skipped: Array<{ name: string; reason: string }>
+    /** 用户主动取消：与"失败"分开措辞（取消不是错） */
+    cancelled?: boolean
   } | null>(null)
   /**
    * 两个页签的错误必须分开：以前共用一个 error，
@@ -70,6 +81,11 @@ function ExportPage(): React.JSX.Element {
   const [bizResult, setBizResult] = useState<string | null>(null)
   /** 仅看已选（会话多时用它确认自己到底选了哪些） */
   const [onlySelected, setOnlySelected] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  /** 会话列表窗口化：只渲染视口内的行（列表可能上千行，整表渲染每次勾选都重建全部 DOM） */
+  const listRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewH, setViewH] = useState(0)
   const busyRef = useRef(false)
 
   const loadSessions = useCallback(async (): Promise<void> => {
@@ -131,6 +147,15 @@ function ExportPage(): React.JSX.Element {
     [filtered, showOnlySelected, selected]
   )
 
+  /** 窗口化切片（纯函数计算，见 lib/virtualList.ts；行高必须与 CSS 一致） */
+  const win = virtualWindow({
+    scrollTop,
+    viewportH: viewH,
+    rowH: ROW_H,
+    total: visible.length,
+    overscan: OVERSCAN
+  })
+
   /** 时间范围提示：预设要说清**实际是哪几天**（"近 7 天"到底是哪 7 天，用户并不确定） */
   const rangeHint = useMemo(() => {
     const fmt = (d: Date): string =>
@@ -147,6 +172,33 @@ function ExportPage(): React.JSX.Element {
     start.setDate(start.getDate() - days + 1)
     return `实际范围：${fmt(start)} ~ ${fmt(end)}（含今天）`
   }, [range, startDate, endDate])
+
+  /** 回调 ref：挂载/换页签重挂时量一次视口高度（在回调里 setState 是允许的，effect 体内不行） */
+  const attachList = useCallback((el: HTMLDivElement | null): void => {
+    listRef.current = el
+    if (el) setViewH(el.clientHeight)
+  }, [])
+
+  // 窗口缩放导致列表变高变矮时跟住（只读事件里 setState）
+  useEffect(() => {
+    const el = listRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setViewH(el.clientHeight))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [tab, connected])
+
+  /**
+   * 过滤条件变化时把列表滚回顶部。
+   * 放在事件处理器里而不是 effect 里：这是用户动作的直接结果，而且仓库有
+   * react-hooks/set-state-in-effect 规则（effect 体内同步 setState 会被拦）。
+   * 不重置的话，滚动位置可能落到新列表之外，看起来像"列表空了"。
+   */
+  const resetListScroll = useCallback((): void => {
+    const el = listRef.current
+    if (el) el.scrollTop = 0
+    setScrollTop(0)
+  }, [])
 
   const toggleOne = (username: string): void => {
     setSelected((prev) => {
@@ -244,9 +296,13 @@ function ExportPage(): React.JSX.Element {
       })
       const files = res.files ?? []
       const skipped = res.skipped ?? []
-      // 部分成功也要如实展示：中途失败时主进程会把已写成功的文件一起回传
-      if (files.length > 0 || skipped.length > 0) setResult({ files, skipped })
-      if (res.ok) {
+      // 部分成功 / 取消 都要如实展示：主进程会把已写成功的文件一起回传
+      if (files.length > 0 || skipped.length > 0 || res.cancelled) {
+        setResult({ files, skipped, cancelled: !!res.cancelled })
+      }
+      if (res.cancelled) {
+        toast.success(`已取消导出（已完成 ${files.length} 个文件，保留在导出目录）`)
+      } else if (res.ok) {
         toast.success(`已导出 ${files.length} 个会话`)
       } else {
         setChatError(res.error || '导出失败')
@@ -257,6 +313,7 @@ function ExportPage(): React.JSX.Element {
       busyRef.current = false
       setBusy(false)
       setProgress(null)
+      setCancelling(false)
     }
   }
 
@@ -279,7 +336,9 @@ function ExportPage(): React.JSX.Element {
     setBizError('')
     try {
       const res = await exportApi.business(wxid!, dir)
-      if (res.ok && res.name) {
+      if (res.cancelled) {
+        toast.success('已取消导出（未生成文件）')
+      } else if (res.ok && res.name) {
         setBizResult(res.name)
         toast.success('业务数据已导出')
       } else {
@@ -291,6 +350,17 @@ function ExportPage(): React.JSX.Element {
       busyRef.current = false
       setBusy(false)
       setProgress(null)
+      setCancelling(false)
+    }
+  }
+
+  /** 请求取消：完成的部分照常保留（主进程会把已写成功的文件回传） */
+  const cancelExport = async (): Promise<void> => {
+    setCancelling(true)
+    const res = await exportApi?.cancel().catch(() => null)
+    if (res && !res.ok) {
+      toast.error(res.error || '取消失败')
+      setCancelling(false)
     }
   }
 
@@ -310,8 +380,18 @@ function ExportPage(): React.JSX.Element {
         aria-valuemin={0}
         aria-valuemax={100}
       >
-        <div className="exp-progress-text">
-          正在导出 {progress.name}（{progress.current}/{progress.total}）· {progress.detail}
+        <div className="exp-progress-head">
+          <div className="exp-progress-text">
+            正在导出 {progress.name}（{progress.current}/{progress.total}）· {progress.detail}
+          </div>
+          <button
+            type="button"
+            className="ui-btn exp-btn ghost"
+            disabled={cancelling}
+            onClick={() => void cancelExport()}
+          >
+            {cancelling ? '正在取消…' : '取消导出'}
+          </button>
         </div>
         <div className="exp-bar">
           <div className="exp-bar-in" style={{ width: `${pct}%` }} />
@@ -371,17 +451,30 @@ function ExportPage(): React.JSX.Element {
                     className="ui-input exp-input"
                     placeholder="搜索会话名称 / 微信号…"
                     value={keyword}
-                    onChange={(e) => setKeyword(e.target.value)}
+                    onChange={(e) => {
+                      setKeyword(e.target.value)
+                      resetListScroll()
+                    }}
                   />
                   {keyword && (
-                    <button type="button" className="ui-link" onClick={() => setKeyword('')}>
+                    <button
+                      type="button"
+                      className="ui-link"
+                      onClick={() => {
+                        setKeyword('')
+                        resetListScroll()
+                      }}
+                    >
                       清除
                     </button>
                   )}
                   <select
                     className="ui-input ui-select exp-sel"
                     value={filter}
-                    onChange={(e) => setFilter(e.target.value as SessionFilter)}
+                    onChange={(e) => {
+                      setFilter(e.target.value as SessionFilter)
+                      resetListScroll()
+                    }}
                   >
                     <option value="all">全部</option>
                     <option value="group">群聊</option>
@@ -409,7 +502,10 @@ function ExportPage(): React.JSX.Element {
                       type="checkbox"
                       checked={onlySelected}
                       disabled={selected.size === 0}
-                      onChange={(e) => setOnlySelected(e.target.checked)}
+                      onChange={(e) => {
+                        setOnlySelected(e.target.checked)
+                        resetListScroll()
+                      }}
                     />
                     仅看已选
                   </label>
@@ -425,42 +521,57 @@ function ExportPage(): React.JSX.Element {
                     type="button"
                     className="ui-link"
                     disabled={busy}
-                    onClick={() => void loadSessions()}
+                    onClick={() => {
+                      resetListScroll()
+                      void loadSessions()
+                    }}
                   >
                     刷新
                   </button>
                 </div>
-                <div className="exp-sess-list">
+                <div
+                  className="exp-sess-list"
+                  ref={attachList}
+                  onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+                >
                   {loadingSessions && <div className="exp-empty">加载中…</div>}
                   {!loadingSessions && visible.length === 0 && (
                     <div className="exp-empty">
                       {showOnlySelected ? '还没有选中任何会话' : '没有可导出的会话'}
                     </div>
                   )}
-                  {visible.map((s) => {
-                    const name = s.displayName || s.nickname || s.remark || s.username
-                    return (
-                      <label
-                        key={s.username}
-                        className={`exp-sess-row${selected.has(s.username) ? ' is-on' : ''}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected.has(s.username)}
-                          disabled={busy}
-                          onChange={() => toggleOne(s.username)}
-                        />
-                        <span className="exp-sess-main">
-                          <span className="exp-sess-name">
-                            {s.isGroup && <i className="exp-tag">群</i>}
-                            {s.isOfficialAccount && <i className="exp-tag">公众号</i>}
-                            {name}
-                          </span>
-                          <span className="exp-sess-sub">{s.username}</span>
-                        </span>
-                      </label>
-                    )
-                  })}
+                  {/* 窗口化：只渲染视口内的行（会话可能上千行，整表渲染每次勾选都重建全部 DOM）。
+                      外层撑满总高度保证滚动条长度正确，内层按 padTop 下移。 */}
+                  {visible.length > 0 && (
+                    <div style={{ height: visible.length * ROW_H, position: 'relative' }}>
+                      <div style={{ transform: `translateY(${win.padTop}px)` }}>
+                        {visible.slice(win.start, win.end).map((s) => {
+                          const name = s.displayName || s.nickname || s.remark || s.username
+                          return (
+                            <label
+                              key={s.username}
+                              className={`exp-sess-row${selected.has(s.username) ? ' is-on' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected.has(s.username)}
+                                disabled={busy}
+                                onChange={() => toggleOne(s.username)}
+                              />
+                              <span className="exp-sess-main">
+                                <span className="exp-sess-name">
+                                  {s.isGroup && <i className="exp-tag">群</i>}
+                                  {s.isOfficialAccount && <i className="exp-tag">公众号</i>}
+                                  {name}
+                                </span>
+                                <span className="exp-sess-sub">{s.username}</span>
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -552,8 +663,10 @@ function ExportPage(): React.JSX.Element {
                 {result && (
                   <div className="exp-result">
                     <div className="exp-result-title">
-                      ✓ 导出完成：{result.files.length} 个文件 · 共{' '}
+                      {result.cancelled ? '已取消导出：' : '✓ 导出完成：'}
+                      {result.files.length} 个文件 · 共{' '}
                       {result.files.reduce((n, f) => n + f.msgCount, 0)} 条
+                      {result.cancelled ? '（已完成的部分保留在导出目录）' : ''}
                     </div>
                     {result.files.slice(0, 8).map((f, i) => (
                       <div key={i} className="exp-result-file">

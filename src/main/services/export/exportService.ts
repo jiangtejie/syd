@@ -42,6 +42,24 @@ type ProgressCb = (evt: ProgressEvent) => void
 const MAX_MSGS_PER_SESSION = 500_000
 const PAGE = 500
 
+/**
+ * 取消支持。
+ *
+ * 为什么用模块级标志而不是 AbortSignal：导出是**串行**的（渲染端用 busy 守住，同一时刻只有一个），
+ * 而取消要能打断"读到一半的会话"——信号得从 IPC 穿到 readSessionMessages 的分页循环里，
+ * 每页 500 条就检查一次，用户点了取消最多再等一页。
+ * 代价是进程内只有一个"当前导出"，这与实际用法一致；真要多路并发导出再换成 runId 表。
+ */
+let running = false
+let cancelRequested = false
+
+/** 请求取消正在跑的导出 */
+export function requestExportCancel(): { ok: boolean; error?: string } {
+  if (!running) return { ok: false, error: '当前没有正在进行的导出' }
+  cancelRequested = true
+  return { ok: true }
+}
+
 function fmtLine(m: ChatMessage): string {
   const d = new Date(m.createTime)
   const pad = (n: number): string => String(n).padStart(2, '0')
@@ -60,17 +78,22 @@ function fmtTimeFull(ts: number): string {
   )}:${pad(d.getSeconds())}`
 }
 
-/** 拉取某会话全部消息（时间过滤后），分批回调行；返回条数 */
+/**
+ * 拉取某会话全部消息（时间过滤后），分批回调行；返回条数。
+ * @param shouldStop 返回 true 时立即停止（用户点了取消）——每页检查一次
+ */
 async function readSessionMessages(
   wxid: string,
   sessionId: string,
   startMs: number | undefined,
   endMs: number | undefined,
-  onPage: (msgs: ChatMessage[]) => void
+  onPage: (msgs: ChatMessage[]) => void,
+  shouldStop?: () => boolean
 ): Promise<number> {
   let cursor: Parameters<typeof wxService.getMessages>[3] = undefined
   let total = 0
   for (;;) {
+    if (shouldStop?.()) break
     const res = wxService.getMessages(wxid, sessionId, PAGE, cursor)
     if (!res.ok || !res.messages || res.messages.length === 0) break
     let msgs = res.messages
@@ -105,6 +128,8 @@ export async function exportChat(
   files?: Array<{ name: string; msgCount: number }>
   /** 选了但**没有生成文件**的会话（该范围内没有消息）——必须回传，否则用户只能自己猜 */
   skipped?: Array<{ name: string; reason: string }>
+  /** 用户主动取消（与失败区分：取消不是错误，已完成的部分照样保留） */
+  cancelled?: boolean
   error?: string
 }> {
   // 提到 try 外面：中途失败时要把「已经写成功的」一并回传（见 catch）
@@ -117,6 +142,8 @@ export async function exportChat(
     if (!opts.folder) return { ok: false, error: '未选择导出目录' }
     folder = opts.folder
     if (!existsSync(folder)) mkdirSync(folder, { recursive: true })
+    running = true
+    cancelRequested = false
     const format = opts.format
     const total = opts.targets.length
     const stamp = new Date()
@@ -125,7 +152,12 @@ export async function exportChat(
       stamp.getHours()
     )}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}`
 
+    let cancelled = false
     for (let i = 0; i < opts.targets.length; i++) {
+      if (cancelRequested) {
+        cancelled = true
+        break
+      }
       const t = opts.targets[i]
       onProgress({
         phase: 'session',
@@ -199,9 +231,22 @@ export async function exportChat(
           for (const m of page) {
             if (timeInRange(m, opts.startMs, opts.endMs)) write(m)
           }
-        }
+        },
+        // 每页（500 条）检查一次取消：大会话里点取消最多多等一页，而不是等它读完
+        () => cancelRequested
       )
       void counted
+
+      // 取消恰恰发生在读到一半时：这个会话的内容是**不完整**的。
+      // 宁可不出文件，也不能给一个看起来完整、实际被截断的导出文件。
+      if (cancelRequested) {
+        skipped.push({
+          name: t.displayName || t.username,
+          reason: '导出被取消，未生成（避免留下不完整的文件）'
+        })
+        cancelled = true
+        break
+      }
 
       if (format === 'json') {
         jsonRows.push(']')
@@ -240,6 +285,8 @@ export async function exportChat(
         })
       }
     }
+    // 取消：不是错误——已写完的文件照常回传，界面只需说明"已停止，保留已完成的部分"
+    if (cancelled) return { ok: false, cancelled: true, folder, files, skipped }
     return { ok: true, folder, files, skipped }
   } catch (e) {
     // 中途失败：把已经写成功的文件与已跳过的会话一并回传。
@@ -251,6 +298,9 @@ export async function exportChat(
       files,
       skipped
     }
+  } finally {
+    running = false
+    cancelRequested = false
   }
 }
 
@@ -263,11 +313,13 @@ export async function exportBusiness(
   wxid: string,
   folder: string,
   onProgress: ProgressCb
-): Promise<{ ok: boolean; folder?: string; name?: string; error?: string }> {
+): Promise<{ ok: boolean; folder?: string; name?: string; cancelled?: boolean; error?: string }> {
   try {
     if (!wxid) return { ok: false, error: '未连接微信账号' }
     if (!folder) return { ok: false, error: '未选择导出目录' }
     if (!existsSync(folder)) mkdirSync(folder, { recursive: true })
+    running = true
+    cancelRequested = false
     onProgress({
       phase: 'prepare',
       current: 0,
@@ -316,6 +368,8 @@ export async function exportBusiness(
       agents: listAgents()
     }
 
+    // 汇总（读库）期间用户可能已经点了取消：写盘前再确认一次，别生成一个他不要的文件
+    if (cancelRequested) return { ok: false, cancelled: true }
     const stamp = new Date()
     const pad = (n: number): string => String(n).padStart(2, '0')
     const name = `business_${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(
@@ -333,5 +387,8 @@ export async function exportBusiness(
     return { ok: true, folder, name }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  } finally {
+    running = false
+    cancelRequested = false
   }
 }

@@ -112,6 +112,10 @@
   align-items: center;
   gap: 8px;
   padding: 7px 6px;
+  /* 高度**必须固定**且与 ExportPage 的 ROW_H 一致：列表窗口化按行高算渲染切片，
+     两处对不上会出现行错位 / 滚动条长度不对。 */
+  height: 46px;
+  box-sizing: border-box;
   border-radius: var(--r-sm);
   cursor: pointer;
 }
@@ -221,10 +225,19 @@
   margin-top: 14px;
 }
 
+/* 进度行：左文右「取消导出」（导出几十个会话时用户需要能中途停下） */
+.exp-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
 .exp-progress-text {
   font-size: 12px;
   color: var(--text-2);
-  margin-bottom: 6px;
+  min-width: 0;
 }
 
 .exp-bar {
