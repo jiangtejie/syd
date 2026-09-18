@@ -532,9 +532,17 @@ function WechatKeySection(): React.JSX.Element {
       )}
 
       <div className="st-decrypt-note">
-        提示：微信 4.x（xwechat）数据库为魔改 SQLCipher（每库独立密钥 + 自定义页格式），
-        标准解密驱动无法直开。当前解密层处于预留状态，「测试解密」在未接入自研解密前可能失败，
-        工作台会自动降级为示例数据。取 key 请使用外部工具导出后手动导入。
+        提示：微信 4.x（xwechat）是魔改 SQLCipher（页 4096、尾部 80B 保留区放 IV 与 HMAC-SHA512、
+        AES-256-CBC），标准 SQLCipher 驱动无法直开；本应用自带完整解密层 —— 解密前先用页 1 的 HMAC
+        验证密钥，再逐页校验解密（能抓出微信正在写入导致的撕裂页）、合并 WAL、结构自检后原子落盘。
+        <br />
+        <strong>一个账号只有一把密钥</strong>：每个库文件自带独立的随机 16 字节 salt，派生出的 AES
+        密钥按库各不相同，但口令是同一把 —— 所以这里粘一次即可解密该账号的全部数据库。
+        <br />
+        请填<strong>账号口令</strong>（KDF 之前的 64 位十六进制）。若你拿到的是某个库的
+        <strong>派生密钥</strong>（KDF 之后，内存扫描常按每库一把列出），它只开得动那一个库，
+        导入时会被识别并提示。取密钥请用外部工具导出后手动导入；密钥以系统级 safeStorage
+        保存，主进程持有明文，渲染端只看到状态。
       </div>
     </SettingsCard>
   )

@@ -26,7 +26,8 @@ import {
   PAGE_SIZE,
   SALT_SIZE,
   verifyPage,
-  verifyPage1
+  verifyPage1,
+  verifyPage1Raw
 } from './crypto/sqlcipher'
 import { mergeWalIntoPlainFile, type WalSummary } from './crypto/wal'
 import { shouldRefreshFromWal } from './dbFileWatch'
@@ -114,6 +115,17 @@ export function verifyWxDbKey(filePath: string, hexKey: string): KeyCheckResult 
     if (readInto(fd, page, 0) < PAGE_SIZE)
       return { ok: false, error: '文件不足一页，可能不是微信 4.x 加密库' }
     if (!verifyPage1(page, key)) {
+      // 层级错误比抄错字符常见得多：4.1.11+ 的内存扫描/Config.Cipher 给的是每个库
+      // **已派生好**的 AES key，而这里要的是 KDF 之前的账号口令。两者都是 64 位十六进制，
+      // 所以必须专门识别一次，否则用户只会看到「密钥不正确」并反复重试同一把错层级的密钥。
+      if (verifyPage1Raw(page, key)) {
+        return {
+          ok: false,
+          error:
+            '这是一把「库派生密钥」（KDF 之后），只能解密它对应的那一个库，不是账号口令。' +
+            '请重新导出账号口令（KDF 之前的 64 位十六进制）后再导入。'
+        }
+      }
       return { ok: false, error: '密钥不正确（第一页 HMAC 校验失败）' }
     }
     return { ok: true }

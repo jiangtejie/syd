@@ -78,6 +78,24 @@ export function verifyPage1(page: Buffer, password: Buffer): boolean {
   return verifyPage(page, deriveFileMacKey(password, salt), 1)
 }
 
+/**
+ * 该页是否只有把 key 当作**派生密钥**（跳过 KDF，直接用作风口 AES key）才能通过校验。
+ *
+ * 用途：区分「密钥抄错了」和「密钥层级错了」。微信 4.1.11+ 会把每个库**已派生好**的
+ * AES key 缓存在内存/Config.Cipher 里，所以从内存扫出来的往往是某一库的派生密钥；
+ * 而本应用的模型是「一个账号一把口令 + 各库自己的 salt」，需要的是 KDF **之前**的口令。
+ * 两者都是 64 位十六进制，肉眼无法区分 —— 但用这个函数一试就知道，于是可以给出
+ * 「你粘的是派生密钥」这种可执行的提示，而不是笼统的「密钥不正确」。
+ *
+ * 注意：这里只做**识别**，不做支持。派生密钥只开得动它自己那一个库，无法解密其余库，
+ * 所以它不该被接受为账号密钥。
+ */
+export function verifyPage1Raw(page: Buffer, rawKey: Buffer): boolean {
+  if (page.length < PAGE_SIZE) return false
+  const salt = page.subarray(0, SALT_SIZE)
+  return verifyPage(page, deriveMacKey(rawKey, salt), 1)
+}
+
 /** 解密单页（页 1 会补回 SQLite 标准头；尾部保留区原样保留 0 值） */
 export function decryptPage(page: Buffer, encryptionKey: Buffer, pageNumber: number): Buffer {
   const isPage1 = pageNumber === 1

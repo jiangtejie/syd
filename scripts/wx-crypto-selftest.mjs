@@ -52,7 +52,8 @@ const {
   SALT_SIZE,
   SQLITE_HEADER,
   verifyPage,
-  verifyPage1
+  verifyPage1,
+  verifyPage1Raw
 } = require(sqlcipherBundle)
 
 let failed = 0
@@ -153,6 +154,26 @@ try {
   log(
     page1Plain.subarray(ENC_SIZE).every((b) => b === 0),
     '尾部保留区（IV/HMAC）在明文里归零'
+  )
+
+  // 密钥层级：账号口令（KDF 之前）vs 库派生密钥（KDF 之后）。
+  // 设置页要的是口令，但 4.1.11+ 的内存扫描/Config.Cipher 给的是每个库已派生好的 AES key，
+  // 两者都是 64 位十六进制 —— 必须能识别出后者，才能报「你粘的是派生密钥」而不是「密钥不正确」。
+  const rawKey = Buffer.from('c'.repeat(64), 'hex')
+  const rawSalt = randomBytes(SALT_SIZE)
+  const rawMacKey = pbkdf2Sync(rawKey, Buffer.from(rawSalt.map((b) => b ^ 0x3a)), 2, 32, 'sha512')
+  const rawPlain = Buffer.alloc(PAGE_SIZE)
+  SQLITE_HEADER.copy(rawPlain, 0)
+  rawPlain.writeUInt16BE(PAGE_SIZE, 16)
+  rawPlain.fill(0x55, 20, ENC_SIZE)
+  const rawPage1 = encryptPage(rawPlain, rawKey, rawMacKey, 1)
+  rawPage1.subarray(0, SALT_SIZE).set(rawSalt)
+
+  log(verifyPage1Raw(rawPage1, rawKey), '库派生密钥按「跳过 KDF」语义通过页 1 校验')
+  log(!verifyPage1(rawPage1, rawKey), '同一把派生密钥按口令语义校验失败（层级不可混用）')
+  log(
+    verifyPage1(firstPage, PASSWORD) && !verifyPage1Raw(firstPage, PASSWORD),
+    '账号口令按派生密钥语义校验失败：两种层级可被区分，提示才可信'
   )
 
   console.log('\n[2] WAL：正常提交 + 截断语义')
