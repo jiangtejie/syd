@@ -7,6 +7,7 @@ import { toVoiceMediaUrl } from './mediaProtocol'
 import { voiceTimeCandidates } from './voiceText'
 import { getMediaCacheDir } from '../paths'
 import * as keyRepo from '../../db/repos/keyStore'
+import { resolveKeyForFile } from '../keyStoreService'
 import { createLogger } from '../logging'
 
 const voiceLog = createLogger('media')
@@ -120,7 +121,8 @@ function findVoiceSilk(
 ): Buffer | null {
   const serverId = (opts.serverId ?? '').trim()
   for (const file of findMediaDbs(wxid)) {
-    const opened = openWxDbFile(file, hexKey)
+    // 语音库也要按库取密钥：只导入密钥文件（每库派生密钥）时 hexKey 为空
+    const opened = openWxDbFile(file, resolveKeyForFile(wxid, file) || hexKey)
     const db = opened.db
     if (!db) continue
     try {

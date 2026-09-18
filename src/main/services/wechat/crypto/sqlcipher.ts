@@ -83,17 +83,57 @@ export function verifyPage1(page: Buffer, password: Buffer): boolean {
  *
  * 用途：区分「密钥抄错了」和「密钥层级错了」。微信 4.1.11+ 会把每个库**已派生好**的
  * AES key 缓存在内存/Config.Cipher 里，所以从内存扫出来的往往是某一库的派生密钥；
- * 而本应用的模型是「一个账号一把口令 + 各库自己的 salt」，需要的是 KDF **之前**的口令。
- * 两者都是 64 位十六进制，肉眼无法区分 —— 但用这个函数一试就知道，于是可以给出
- * 「你粘的是派生密钥」这种可执行的提示，而不是笼统的「密钥不正确」。
+ * 两者都是 64 位十六进制，肉眼无法区分 —— 但用这个函数一试就知道。
  *
- * 注意：这里只做**识别**，不做支持。派生密钥只开得动它自己那一个库，无法解密其余库，
- * 所以它不该被接受为账号密钥。
+ * 两种层级的定位不同，不要混为一谈：
+ * - 作为**账号密钥**（设置页单个输入框 → key_store）：只接受口令，派生密钥会被拒并给出
+ *   可执行提示 —— 一把派生密钥只开得动一个库，拿它当账号密钥会让其余库静默失败。
+ * - 作为**每库密钥**（导入密钥文件的 db_key_map 密钥环）：派生密钥是合法且必需的，
+ *   见 `resolveDbFileKeys`。
  */
 export function verifyPage1Raw(page: Buffer, rawKey: Buffer): boolean {
   if (page.length < PAGE_SIZE) return false
   const salt = page.subarray(0, SALT_SIZE)
   return verifyPage(page, deriveMacKey(rawKey, salt), 1)
+}
+
+/** 一把密钥相对于某个库的层级 */
+export type KeyMode = 'passphrase' | 'dbkey'
+
+/** 解密某一个库所需的两把 key */
+export interface DbFileKeys {
+  mode: KeyMode
+  /** AES-256-CBC 的 key */
+  encryptionKey: Buffer
+  /** 页 HMAC 的 key */
+  macKey: Buffer
+}
+
+/**
+ * 解析出**某一个库**该用哪把 AES key 与 MAC key：先按「账号口令」语义试，再按
+ * 「库派生密钥」语义试（跳过 KDF，key 本身就是 AES key）。
+ *
+ * 为什么要两种都支持：账号级口令是首选（一把开全部库），但微信 4.1.11+ 只把
+ * **派生结果**缓存在 Config.Cipher 里，配套工具默认也只能扫出每库一把的派生密钥。
+ * 设置页因此允许直接导入那种密钥文件，本函数负责把两种层级统一成
+ * "encryptionKey + macKey"，让上层的分页解密只认派生结果、不必关心层级来源。
+ *
+ * 注意 MAC key 在两种层级下都要用 salt 再派生一次（salt 异或 0x3a、迭代 2），
+ * 这也是 raw 模式下唯一还用到 salt 的地方 —— AES key 本身与 salt 无关。
+ */
+export function resolveDbFileKeys(keyBytes: Buffer, page1: Buffer): DbFileKeys | null {
+  if (page1.length < PAGE_SIZE) return null
+  const salt = page1.subarray(0, SALT_SIZE)
+  const derived = deriveEncryptionKey(keyBytes, salt)
+  const derivedMac = deriveMacKey(derived, salt)
+  if (verifyPage(page1, derivedMac, 1)) {
+    return { mode: 'passphrase', encryptionKey: derived, macKey: derivedMac }
+  }
+  const rawMac = deriveMacKey(keyBytes, salt)
+  if (verifyPage(page1, rawMac, 1)) {
+    return { mode: 'dbkey', encryptionKey: Buffer.from(keyBytes), macKey: rawMac }
+  }
+  return null
 }
 
 /** 解密单页（页 1 会补回 SQLite 标准头；尾部保留区原样保留 0 值） */

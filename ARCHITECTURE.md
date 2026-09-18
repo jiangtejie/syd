@@ -136,6 +136,22 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 两者都是 64 位十六进制，肉眼无法区分，这也是用户最容易踩的坑。派生密钥**不被接受**为账号密钥（它开不了其余库）；
 取口令本身的唯一时机是钩住微信把密钥交给 SQLCipher 的那一刻（配套工具 `wechat-decrypt-cli` 的 `scan --method hook`）。
 
+**每库派生密钥的导入（密钥环 `db_key_map`，2026-09-18）**：既然工具默认扫出来的就是每库派生密钥，设置页支持**直接导入它的密钥文件**
+（`{ version: 2, passphrase?, keys: { "session/session.db": "<64hex>" } }`，版本 1 与平铺形态也认），
+口令存 `key_store`、`keys` 存 `db_key_map`（新表，按仓库约定直接写在 `schema/base.ts`，无需 user_version 迁移）。
+于是拿不到口令（hook 需要管理员权限）时整套派生密钥同样能跑通 —— 这正是 4.1.11+ 的常态，不该逼用户去找那一把口令。
+
+- 取密钥统一走 `keyStoreService.resolveKeyForFile(wxid, filePath)`：**密钥环命中就用该库的派生密钥，否则回退账号口令**。
+  `WxReaderContext.keyFor(file)` / `WxSession.keyFor(file)` 是它的绑定版本，读库侧一律 `openWxDbFile(file, ctx.keyFor(file))`，
+  调用方不必关心密钥来自哪一层。标签匹配（`wechat/dbKeyLabels.ts`）与配套工具的 `resolveKeyForDb` 同语义：
+  精确 → 路径以 `/<label>` 结尾 → 退化文件名，所以绝对路径也能对上 `session/session.db`。
+- 解密层用 `crypto/sqlcipher.ts` 的 `resolveDbFileKeys(key, page1)` 把两种层级统一成「AES key + MAC key」：
+  先按口令语义（`PBKDF2(口令, 该库 salt, 256000)`）试，再按派生密钥语义（**跳过 KDF，key 即 AES key**）试。
+  注意 raw 模式下 MAC key 仍要用 salt 派生（salt 异或 0x3a、迭代 2），那是 salt 唯一还被用到的地方。
+- 两种层级的**入口**不同，别混：设置页单个输入框只收口令（`verifyWxDbKey`，粘派生密钥会被识别并提示改用文件导入，
+  因为一把派生密钥开不了其余库）；密钥环按库取密钥走 `verifyWxDbFileKey`（两层都接受）。
+- `test:crypto` 覆盖：两种层级的解析与互相拒绝、派生密钥整页解密往返、标签匹配三级语义。
+
 > **自动获取整条链路已按用户决定下线（2026-09-11）**，相关代码与依赖全部移除：内置原生组件（`wechat_key_tool.dll` + koffi + 打包配置）、
 > 外部工具命令、自备组件协议、扫本机文件、第三方工具预设（chatlog/PyWxDump/wx_key/SharpWxDump 检测与参数模板）。
 > 原因是「内置 DLL 在本机取不到 key，而其余来源要么靠猜参数、要么与手动等价」，留着只是维护面。

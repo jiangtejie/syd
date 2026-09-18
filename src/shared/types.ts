@@ -18,6 +18,9 @@ export interface KeyProfile {
   updatedAt: number
 }
 
+/** 当前账号靠哪种密钥在工作（导入密钥文件时两者可能并存） */
+export type KeyLayer = 'passphrase' | 'db-keys' | 'none'
+
 export interface KeyStatusInfo {
   hasKey: boolean
   status: KeyStatus | null
@@ -25,6 +28,24 @@ export interface KeyStatusInfo {
   dbPath: string | null
   /** 最近一次 testKey 是否通过 */
   lastTestOk: boolean | null
+  /** 已导入的每库派生密钥条数（导入密钥文件后才有） */
+  keyRingSize: number
+  /** 账号口令 / 每库派生密钥 / 无 */
+  layer: KeyLayer
+}
+
+/** 导入配套工具 wechat-decrypt-cli 产出的密钥文件的结果 */
+export interface KeyFileImportResult {
+  success: boolean
+  error?: string
+  /** 是否导入了账号口令（KDF 之前的那把，一把开全部库） */
+  importedPassphrase: boolean
+  /** 导入了多少条每库派生密钥 */
+  importedDbKeys: number
+  /** 该账号当前累计的每库密钥条数 */
+  keyRingSize: number
+  /** 被跳过的条目数（标签或密钥格式不合法） */
+  skipped: number
 }
 
 /** 已保存密钥的账号摘要（不含密文），供设置页下拉选择当前账号 */
@@ -34,6 +55,9 @@ export interface KeyAccountInfo {
   source: KeySource | null
   dbPath: string | null
   lastTestOk: boolean | null
+  /** 每库派生密钥条数 */
+  keyRingSize: number
+  layer: KeyLayer
 }
 
 // ── 会话 / 消息（T4 读库层产出）──

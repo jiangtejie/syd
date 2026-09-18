@@ -156,7 +156,7 @@ export async function computeOpsStats(ctx: WxReaderContext, range = 7): Promise<
   if (metaByHash.size > 0) {
     const paths = locateWeChatDbs(ctx.dbPath, ctx.wxid)
     for (const file of paths.msgDbFiles || []) {
-      const opened = openWxDbFile(file, ctx.hexKey)
+      const opened = openWxDbFile(file, ctx.keyFor(file))
       if (!opened.db) continue
       const db = opened.db
       try {

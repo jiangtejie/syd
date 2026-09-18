@@ -3,13 +3,15 @@ import { basename, join } from 'node:path'
 import { getConfig, setConfig } from '../../db/repos/config'
 import {
   getDecryptedKey,
+  hasAnyKey,
+  resolveKeyForFile,
   getKeyStatus,
   importKey,
   isValidKeyHex,
   testKey
 } from '../keyStoreService'
 import { locateWeChatDbs } from './dbLocator'
-import { decryptWxDbFile, getPlainDbPath, verifyWxDbKey } from './decrypt'
+import { decryptWxDbFile, getPlainDbPath, verifyWxDbFileKey, verifyWxDbKey } from './decrypt'
 import { getCachePath } from '../paths'
 import { deriveImageKeys } from '../media/imageKeys'
 import { mediaCachePolicy, mediaCacheStats } from '../media/mediaCache'
@@ -26,6 +28,13 @@ const log = createLogger('crypto-center')
  * 真正需要的是**一眼看清现在能不能用、不能用的那一步卡在哪、以及一键把它跑通** ——
  * 而不是让人在设置页里逐个试。这一层只做编排与状态汇总，具体实现仍各自复用。
  */
+
+/** 体检里给用户看的密钥层级说明 */
+const KEY_LAYER_LABEL: Record<string, string> = {
+  passphrase: '账号口令（一把开全部库）',
+  'db-keys': '每库派生密钥',
+  none: '未获取'
+}
 
 export interface ReadinessStep {
   id: 'account' | 'key' | 'dbs' | 'images' | 'voice' | 'cache'
@@ -187,7 +196,7 @@ export function accountReadiness(wxid: string): AccountReadiness {
           id: 'key',
           label: '数据库密钥',
           status: 'ok',
-          detail: `来源 ${info.source ?? '未知'}，页 1 校验通过`
+          detail: `${KEY_LAYER_LABEL[info.layer]}，来源 ${info.source ?? '未知'}，页 1 校验通过`
         }
       : {
           id: 'key',
@@ -195,7 +204,7 @@ export function accountReadiness(wxid: string): AccountReadiness {
           status: info.hasKey ? 'warn' : 'fail',
           detail: info.hasKey
             ? `状态 ${info.status ?? '未知'}，建议点「测试解密」`
-            : '未导入（在设置里粘贴 64 位十六进制密钥）'
+            : '未导入（粘贴 64 位十六进制账号口令，或点「导入密钥文件」整套导入）'
         }
   )
   const missing = dbs.filter((d) => !d.exists).map((d) => d.name)
@@ -317,15 +326,22 @@ export interface WarmupReport {
 export function warmupAccount(wxid: string, limit = 3): WarmupReport {
   const id = (wxid || '').trim()
   const info = getKeyStatus(id)
-  const key = info.hasKey ? getDecryptedKey(id) : null
   const items: WarmupItem[] = []
-  if (!key) return { ok: false, items: [{ name: '(密钥)', ok: false, ms: 0, error: '未导入密钥' }] }
+  // 只有密钥文件（每库派生密钥）时没有账号口令，但每个库都有自己的钥匙，照样能预热
+  if (!hasAnyKey(id)) {
+    return { ok: false, items: [{ name: '(密钥)', ok: false, ms: 0, error: '未导入密钥' }] }
+  }
   const paths = locateWeChatDbs(info.dbPath ?? '', id)
   const files: string[] = []
   if (paths.sessionDbFile) files.push(paths.sessionDbFile)
   for (const f of paths.msgDbFiles.slice(0, Math.max(1, limit - files.length))) files.push(f)
   for (const file of files.slice(0, limit)) {
     const started = Date.now()
+    const key = resolveKeyForFile(id, file)
+    if (!key) {
+      items.push({ name: basename(file), ok: false, ms: 0, error: '该库没有对应的密钥（密钥环未覆盖）' })
+      continue
+    }
     const out = getPlainDbPath(file, key)
     const r = decryptWxDbFile(file, key, out)
     items.push({
@@ -438,8 +454,21 @@ export async function onboardAccount(opts: {
       } else {
         keyDetail = `已导入的密钥未通过校验：${check.error ?? '未知原因'}；请在设置里重新导入或粘贴新密钥`
       }
+    } else if (hasAnyKey(wxid)) {
+      // 只导入了密钥文件（每库派生密钥）：逐库各取各的钥匙校验，通过即可放行
+      const ringSize = getKeyStatus(wxid).keyRingSize
+      const ringKey = anyDb ? resolveKeyForFile(wxid, anyDb) : null
+      const check = ringKey && anyDb ? verifyWxDbFileKey(anyDb, ringKey) : null
+      if (check?.ok) {
+        keyOk = true
+        keyDetail = `使用已导入的每库派生密钥（${ringSize} 条，页 1 校验通过）`
+      } else {
+        keyDetail =
+          `已导入的 ${ringSize} 条派生密钥里没有 ${anyDb ? basename(anyDb) : '任何库'} 对应的那一把；` +
+          '请在设置里重新「导入密钥文件」，或粘贴账号口令'
+      }
     } else {
-      keyDetail = '未导入密钥：请在上面的输入框粘贴 64 位十六进制密钥后重试（自动获取已停用）'
+      keyDetail = '未导入密钥：请粘贴 64 位十六进制账号口令，或在设置里「导入密钥文件」（自动获取已停用）'
     }
   }
   steps.push({

@@ -23,6 +23,17 @@ export const CORE_TABLES: string[] = [
     updated_at INTEGER
   )`,
 
+  // 每库派生密钥（微信 4.1.11+ 的 Config.Cipher 产物；一个账号仍是"一把口令 + 各库 salt"，
+  // 这里存的是各库 KDF 之后的结果，作为密钥文件导入时账号口令缺失的兜底）
+  `CREATE TABLE IF NOT EXISTS db_key_map (
+    wxid TEXT NOT NULL,
+    label TEXT NOT NULL,
+    key_encrypted TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (wxid, label)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_db_key_map_wxid ON db_key_map(wxid)`,
+
   // 全局配置（门控阈值 / 频控 / 时段窗口 / 自动总开关）
   `CREATE TABLE IF NOT EXISTS app_config (
     key TEXT PRIMARY KEY,

@@ -17,17 +17,17 @@ import { getPlainDbDir } from '../paths'
 import { createLogger } from '../logging'
 import {
   decryptPage,
-  deriveEncryptionKey,
-  deriveFileMacKey,
   ENC_SIZE,
   hasSqliteHeader,
   KEY_HEX_RE,
   normalizeKey,
   PAGE_SIZE,
-  SALT_SIZE,
+  resolveDbFileKeys,
   verifyPage,
   verifyPage1,
-  verifyPage1Raw
+  verifyPage1Raw,
+  type DbFileKeys,
+  type KeyMode
 } from './crypto/sqlcipher'
 import { mergeWalIntoPlainFile, type WalSummary } from './crypto/wal'
 import { shouldRefreshFromWal } from './dbFileWatch'
@@ -123,7 +123,7 @@ export function verifyWxDbKey(filePath: string, hexKey: string): KeyCheckResult 
           ok: false,
           error:
             '这是一把「库派生密钥」（KDF 之后），只能解密它对应的那一个库，不是账号口令。' +
-            '请重新导出账号口令（KDF 之前的 64 位十六进制）后再导入。'
+            '请用「导入密钥文件」把整套派生密钥导进来，或改为提供账号口令（KDF 之前的 64 位十六进制）。'
         }
       }
       return { ok: false, error: '密钥不正确（第一页 HMAC 校验失败）' }
@@ -134,6 +134,52 @@ export function verifyWxDbKey(filePath: string, hexKey: string): KeyCheckResult 
   } finally {
     if (fd !== null) closeSync(fd)
   }
+}
+
+/**
+ * 读出某个库的页 1，解析出**这个库**该用的 AES/MAC key。
+ *
+ * 一次读盘同时完成两件事：fail-fast 校验（密钥不对立刻报，不必解完整库）+ 拿到派生结果。
+ * 两种层级都接受 —— 账号口令（一把开全部）或该库的派生密钥（导入密钥文件后由密钥环提供）。
+ */
+function resolveFileKeys(
+  filePath: string,
+  hexKey: string
+): { ok: true; keys: DbFileKeys } | { ok: false; error: string } {
+  const pathError = assertDbFileExists(filePath)
+  if (pathError) return { ok: false, error: pathError }
+  const key = normalizeKey(hexKey)
+  if (!key) return { ok: false, error: '密钥格式无效（应为 64 位十六进制）' }
+  let fd: number | null = null
+  try {
+    fd = openSync(filePath, 'r')
+    const page = Buffer.alloc(PAGE_SIZE)
+    if (readInto(fd, page, 0) < PAGE_SIZE) {
+      return { ok: false, error: '文件不足一页，可能不是微信 4.x 加密库' }
+    }
+    const keys = resolveDbFileKeys(key, page)
+    if (keys) return { ok: true, keys }
+    return { ok: false, error: '密钥不正确（第一页 HMAC 校验失败）' }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  } finally {
+    if (fd !== null) closeSync(fd)
+  }
+}
+
+/**
+ * 校验「这把密钥能解开这个库」——**账号口令或每库派生密钥任一成立即可**。
+ *
+ * 与 `verifyWxDbKey` 的分工：后者是设置页「单个输入框」的账号密钥校验（只认口令，
+ * 因为一把派生密钥开不了其余库）；本函数供密钥环（导入密钥文件后的 db_key_map）使用，
+ * 那里每库一把派生密钥才是正常形态。
+ */
+export function verifyWxDbFileKey(
+  filePath: string,
+  hexKey: string
+): { ok: boolean; error?: string; mode?: KeyMode } {
+  const resolved = resolveFileKeys(filePath, hexKey)
+  return resolved.ok ? { ok: true, mode: resolved.keys.mode } : { ok: false, error: resolved.error }
 }
 
 /**
@@ -235,31 +281,10 @@ function decryptOnce(
  * 仍不稳定就带着 staleSource 标记返回 —— 副本本身是一致的某一时刻快照，比读坏页安全得多。
  */
 export function decryptWxDbFile(filePath: string, hexKey: string, outPath: string): DecryptResult {
-  const pathError = assertDbFileExists(filePath)
-  if (pathError) return { ok: false, error: pathError }
-  const key = normalizeKey(hexKey)
-  if (!key) return { ok: false, error: '密钥格式无效（应为 64 位十六进制）' }
-
-  // 1) 先校验密钥（只读一页）
-  const check = verifyWxDbKey(filePath, hexKey)
-  if (!check.ok) return { ok: false, error: check.error }
-
-  // 2) 派生 AES / MAC key（salt 取文件首 16 字节）
-  let salt: Buffer
-  try {
-    const fd = openSync(filePath, 'r')
-    try {
-      const head = Buffer.alloc(SALT_SIZE)
-      readInto(fd, head, 0)
-      salt = head
-    } finally {
-      closeSync(fd)
-    }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
-  }
-  const encryptionKey = deriveEncryptionKey(key, salt)
-  const macKey = deriveFileMacKey(key, salt)
+  // 1) 读页 1 → 校验并解析出该库的 AES/MAC key（口令或每库派生密钥都接受）
+  const resolved = resolveFileKeys(filePath, hexKey)
+  if (!resolved.ok) return { ok: false, error: resolved.error }
+  const { encryptionKey, macKey } = resolved.keys
   const verifyPages = getConfigBoolean('wechat.decrypt.verifyPages', true)
 
   const tmpPath = `${outPath}.part`
@@ -570,19 +595,23 @@ function refreshPlainFromWal(filePath: string, plainPath: string, hexKey: string
   if (!isPlainFileUsable(plainPath)) return false
   const key = normalizeKey(hexKey)
   if (!key) return false
-  let salt: Buffer
+  // 增量合并也要按该库自己的层级解析：密钥环给的是派生密钥，套 KDF 会解出垃圾
+  let encryptionKey: Buffer
   try {
     const fd = openSync(filePath, 'r')
     try {
-      salt = Buffer.alloc(SALT_SIZE)
-      readInto(fd, salt, 0)
+      const page = Buffer.alloc(PAGE_SIZE)
+      if (readInto(fd, page, 0) < PAGE_SIZE) return false
+      const keys = resolveDbFileKeys(key, page)
+      if (!keys) return false
+      encryptionKey = keys.encryptionKey
     } finally {
       closeSync(fd)
     }
   } catch {
     return false
   }
-  const wal = mergeWalIntoPlainFile(`${filePath}-wal`, plainPath, deriveEncryptionKey(key, salt))
+  const wal = mergeWalIntoPlainFile(`${filePath}-wal`, plainPath, encryptionKey)
   if (!wal.merged) return false
   const check = quickCheckPlainDb(plainPath)
   if (!check.ok) {

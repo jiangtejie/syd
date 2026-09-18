@@ -113,7 +113,13 @@ function findDbFileByName(dbStoragePath: string, fileName: string): string | nul
 export interface WxReaderContext {
   dbPath: string
   wxid: string
+  /** 账号口令（KDF 之前）；只导入密钥文件时可能为空 —— 取每库密钥请用 keyFor */
   hexKey: string
+  /**
+   * 取**某一个库**该用的密钥：密钥环里有它就用它的派生密钥，否则回退账号口令。
+   * 调用方只需给文件路径，不必关心密钥来自哪一层（见 keyStoreService.resolveKeyForFile）。
+   */
+  keyFor: (filePath: string) => string
 }
 
 /** 会话 id -> 消息表名 hash */
@@ -223,7 +229,7 @@ export function listSessions(ctx: WxReaderContext): {
     if (!paths.dbStoragePath) return { ok: false, error: '未找到微信数据目录' }
     if (!paths.sessionDbFile) return { ok: false, error: '未找到 session.db（会话库）' }
 
-    const opened = openWxDbFile(paths.sessionDbFile, ctx.hexKey)
+    const opened = openWxDbFile(paths.sessionDbFile, ctx.keyFor(paths.sessionDbFile))
     if (!opened.db) return { ok: false, error: opened.error }
     const db = opened.db
     try {
@@ -265,7 +271,7 @@ export function enrichSessionsWithContacts(
     const contactFile = findContactDb(paths.dbStoragePath)
     if (!contactFile) return sessions
 
-    const opened = openWxDbFile(contactFile, ctx.hexKey)
+    const opened = openWxDbFile(contactFile, ctx.keyFor(contactFile))
     if (!opened.db) return sessions
     const db = opened.db
     try {
@@ -328,7 +334,7 @@ export function queryContactDisplayNames(
     if (!paths.dbStoragePath) return out
     const contactFile = findContactDb(paths.dbStoragePath)
     if (!contactFile) return out
-    const opened = openWxDbFile(contactFile, ctx.hexKey)
+    const opened = openWxDbFile(contactFile, ctx.keyFor(contactFile))
     if (!opened.db) return out
     const db = opened.db
     try {
@@ -406,7 +412,7 @@ export function annotateUnreadLastSender(sessions: SessionSummary[], ctx: WxRead
   }
 
   for (const file of paths.msgDbFiles) {
-    const opened = openWxDbFile(file, ctx.hexKey)
+    const opened = openWxDbFile(file, ctx.keyFor(file))
     if (!opened.db) continue
     const db = opened.db
     try {
@@ -746,7 +752,7 @@ export function listMessages(
     const scan = { openedDbs: 0, candidateTables: 0, hashedTables: 0, matchedTables: 0 }
 
     for (const file of paths.msgDbFiles) {
-      const opened = openWxDbFile(file, ctx.hexKey)
+      const opened = openWxDbFile(file, ctx.keyFor(file))
       if (!opened.db) continue
       const db = opened.db
       scan.openedDbs += 1
@@ -876,7 +882,7 @@ export function getRedEnvelopeStatuses(
     const generalFile = findDbFileByName(paths.dbStoragePath, 'general.db')
     if (!generalFile) return { ok: true, statuses: [] }
 
-    const opened = openWxDbFile(generalFile, ctx.hexKey)
+    const opened = openWxDbFile(generalFile, ctx.keyFor(generalFile))
     if (!opened.db) return { ok: true, statuses: [] }
     const db = opened.db
     try {
@@ -945,7 +951,7 @@ function loadGroupNicknames(ctx: WxReaderContext, chatroomId: string): Map<strin
     if (!paths.dbStoragePath) return empty
     const contactFile = findContactDb(paths.dbStoragePath)
     if (!contactFile) return empty
-    const opened = openWxDbFile(contactFile, ctx.hexKey)
+    const opened = openWxDbFile(contactFile, ctx.keyFor(contactFile))
     if (!opened.db) return empty
     const db = opened.db
     try {
@@ -1047,7 +1053,7 @@ export function enrichMessagesWithSenders(
     const contactFile = findContactDb(paths.dbStoragePath)
     if (!contactFile) return messages
 
-    const opened = openWxDbFile(contactFile, ctx.hexKey)
+    const opened = openWxDbFile(contactFile, ctx.keyFor(contactFile))
     if (!opened.db) return messages
     const db = opened.db
     try {
@@ -1149,7 +1155,7 @@ function getHeadImageAvatar(ctx: WxReaderContext, usernames: string[]): string |
     if (!paths.dbStoragePath) return null
     const headFile = findDbFileByName(paths.dbStoragePath, 'head_image.db')
     if (!headFile) return null
-    const opened = openWxDbFile(headFile, ctx.hexKey)
+    const opened = openWxDbFile(headFile, ctx.keyFor(headFile))
     if (!opened.db) return null
     const db = opened.db
     try {
@@ -1207,7 +1213,7 @@ export function getAvatar(
       if (paths.dbStoragePath) {
         const contactFile = findContactDb(paths.dbStoragePath)
         if (contactFile) {
-          const opened = openWxDbFile(contactFile, ctx.hexKey)
+          const opened = openWxDbFile(contactFile, ctx.keyFor(contactFile))
           if (opened.db) {
             const db = opened.db
             try {

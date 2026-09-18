@@ -40,6 +40,15 @@ buildSync({
   format: 'cjs',
   outfile: sqlcipherBundle
 })
+const labelBundle = join(bundleDir, 'dbKeyLabels.cjs')
+buildSync({
+  entryPoints: [join(root, 'src/main/services/wechat/dbKeyLabels.ts')],
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  outfile: labelBundle
+})
+const { matchKeyRingEntry, dbLabelFromPath, normalizeDbLabel } = require(labelBundle)
 const { applyWalToPlainFile, parseWalFrames } = require(walBundle)
 const {
   decryptPage,
@@ -53,7 +62,8 @@ const {
   SQLITE_HEADER,
   verifyPage,
   verifyPage1,
-  verifyPage1Raw
+  verifyPage1Raw,
+  resolveDbFileKeys
 } = require(sqlcipherBundle)
 
 let failed = 0
@@ -175,6 +185,53 @@ try {
     verifyPage1(firstPage, PASSWORD) && !verifyPage1Raw(firstPage, PASSWORD),
     '账号口令按派生密钥语义校验失败：两种层级可被区分，提示才可信'
   )
+
+  // resolveDbFileKeys：把两种层级统一成「AES key + MAC key」，上层解密才不必关心密钥来源
+  const asPassphrase = resolveDbFileKeys(PASSWORD, firstPage)
+  log(!!asPassphrase && asPassphrase.mode === 'passphrase', '口令库解析出 passphrase 层级')
+  log(
+    !!asPassphrase && asPassphrase.encryptionKey.equals(deriveEncryptionKey(PASSWORD, db.salt)),
+    '口令层级的 AES key 等于 PBKDF2(口令, 该库 salt)'
+  )
+  const asDbKey = resolveDbFileKeys(rawKey, rawPage1)
+  log(!!asDbKey && asDbKey.mode === 'dbkey', '派生密钥库解析出 dbkey 层级')
+  log(!!asDbKey && asDbKey.encryptionKey.equals(rawKey), 'dbkey 层级的 AES key 就是密钥本身（跳过 KDF）')
+  log(
+    resolveDbFileKeys(rawKey, firstPage) === null && resolveDbFileKeys(PASSWORD, rawPage1) === null,
+    '层级不匹配时返回 null，不会把失败当成成功'
+  )
+  // 派生密钥整页解密：这正是「导入密钥文件」后每个库走的那条路
+  const rawDecrypted = decryptPage(rawPage1, asDbKey.encryptionKey, 1)
+  log(
+    rawDecrypted.subarray(16, ENC_SIZE).equals(rawPlain.subarray(16, ENC_SIZE)) &&
+      rawDecrypted.subarray(0, 16).equals(SQLITE_HEADER),
+    '派生密钥解密结果与原文一致（页 1 含补回的 SQLite 头）'
+  )
+
+  console.log('\n[1.1] 密钥文件标签匹配（导入 wechat-decrypt-cli 产出的 keys）')
+  const ring = new Map([
+    ['session/session.db', 'a'.repeat(64)],
+    ['message/message_0.db', 'b'.repeat(64)],
+    ['contact.db', 'c'.repeat(64)]
+  ])
+  log(normalizeDbLabel('Message\\Message_0.db') === 'message/message_0.db', '标签归一化：反斜杠与大写')
+  log(
+    normalizeDbLabel('C:\\x\\db_storage\\session\\session.db') === 'x/db_storage/session/session.db',
+    '标签归一化：去掉盘符'
+  )
+  log(
+    matchKeyRingEntry(ring, 'C:\\wx\\db_storage\\session\\session.db') === 'a'.repeat(64),
+    '绝对路径按 /<label> 结尾匹配'
+  )
+  log(matchKeyRingEntry(ring, 'session.db') === 'a'.repeat(64), '裸文件名退化匹配')
+  log(matchKeyRingEntry(ring, 'contact/contact.db') === 'c'.repeat(64), '嵌套路径匹配顶层标签')
+  log(matchKeyRingEntry(ring, 'message/message_fts.db') === null, '没覆盖的库返回 null（回退账号口令）')
+  log(
+    dbLabelFromPath('C:\\wx\\db_storage', 'C:\\wx\\db_storage\\session\\session.db') ===
+      'session/session.db',
+    '把绝对路径写成人可读、可迁移的标签'
+  )
+  log(dbLabelFromPath('C:\\wx\\db_storage', 'D:\\other\\x.db') === null, '不在 db_storage 之下时不产生标签')
 
   console.log('\n[2] WAL：正常提交 + 截断语义')
   const walPath = join(work, 'a.db-wal')

@@ -3,7 +3,7 @@ import { decryptImage, decryptVideo, testImageDecrypt } from '../services/media/
 import type { DecryptImageOptions, DecryptVideoOptions } from '../services/media/mediaService'
 import { resolveEmojiLocal, type ResolveEmojiInput } from '../services/media/emojiService'
 import { getVoiceWav } from '../services/media/voice'
-import { getDecryptedKey } from '../services/keyStoreService'
+import { getDecryptedKey, hasAnyKey } from '../services/keyStoreService'
 import { asrTencentStatus, saveAsrSecretKey, transcribeVoice } from '../services/media/asrTencent'
 
 /** 图片/视频 .dat 解密 IPC（M3）：渲染进程传 wxid + md5 → 返回可访问的 ct-media:// URL */
@@ -39,8 +39,10 @@ export function registerMediaHandlers(): void {
       opts?: { serverId?: string; localId?: number; createTime?: number }
     ) => {
       if (!wxid || typeof wxid !== 'string') return { ok: false as const, error: '缺少账号' }
-      const hexKey = getDecryptedKey(wxid)
-      if (!hexKey) return { ok: false as const, error: '未配置数据库密钥，请先在设置里导入' }
+      const hexKey = getDecryptedKey(wxid) || ''
+      if (!hexKey && !hasAnyKey(wxid)) {
+        return { ok: false as const, error: '未配置数据库密钥，请先在设置里导入' }
+      }
       try {
         return await getVoiceWav({ wxid, hexKey, ...(opts || {}) })
       } catch (err) {

@@ -72,7 +72,10 @@ const api: PreloadApi = {
       list: () => ipcRenderer.invoke('cs:key:list'),
       importKey: (wxid: string, keyHex: string, source: KeySource, dbPath?: string) =>
         ipcRenderer.invoke('cs:key:import', wxid, keyHex, source, dbPath),
-      test: (wxid: string) => ipcRenderer.invoke('cs:key:test', wxid)
+      test: (wxid: string) => ipcRenderer.invoke('cs:key:test', wxid),
+      importKeyFile: (wxid: string, filePath: string, dbPath?: string) =>
+        ipcRenderer.invoke('cs:key:importFile', wxid, filePath, dbPath),
+      clearKeyRing: (wxid: string) => ipcRenderer.invoke('cs:key:clearKeyRing', wxid)
     },
     wx: {
       connect: (wxid: string) => ipcRenderer.invoke('cs:wx:connect', wxid),

@@ -14,4 +14,12 @@ export function registerKeyStoreHandlers(): void {
   )
 
   ipcMain.handle('cs:key:test', (_e, wxid: string) => keyStore.testKey(wxid))
+
+  ipcMain.handle(
+    'cs:key:importFile',
+    (_e, wxid: string, filePath: string, dbPath?: string) =>
+      keyStore.importKeyFile(wxid, filePath, dbPath ?? '')
+  )
+
+  ipcMain.handle('cs:key:clearKeyRing', (_e, wxid: string) => keyStore.clearKeyRing(wxid))
 }

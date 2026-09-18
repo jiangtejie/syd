@@ -41,6 +41,13 @@ const STATUS_TEXT: Record<string, string> = {
   pending: '待验证'
 }
 
+/** 当前账号靠哪一层密钥在工作 */
+const LAYER_TEXT: Record<string, string> = {
+  passphrase: '账号口令（KDF 之前，一把开全部库）',
+  'db-keys': '每库派生密钥（KDF 之后，只开对应的库）',
+  none: '未获取'
+}
+
 const SOURCE_TEXT: Record<string, string> = {
   registry: '注册表直读',
   import: '工具导入',
@@ -131,6 +138,51 @@ function WechatKeySection(): React.JSX.Element {
       } else {
         toast.error(r?.error || '导入失败')
       }
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /**
+   * 导入配套工具 wechat-decrypt-cli 产出的密钥文件。
+   * 口令与每库派生密钥都能吃：4.1.11+ 的内存扫描只能拿到后者（口令要 hook，通常还需管理员权限），
+   * 所以"整套派生密钥"也必须是可用状态，而不是逼用户去找那一把口令。
+   */
+  const doImportKeyFile = async (): Promise<void> => {
+    if (!wxid.trim()) return toast.error('请先填写当前微信账号 wxid')
+    const picked = await dialogApi?.pickFiles({
+      title: '选择密钥文件（wechat-decrypt-cli 产出的 JSON）',
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    const filePath = picked?.ok ? picked.paths?.[0] : ''
+    if (!filePath) return
+    setBusy('import')
+    try {
+      const r = await keyStoreApi?.importKeyFile(wxid.trim(), filePath, dbPath.trim())
+      if (!r?.success) {
+        toast.error(r?.error || '导入失败')
+        return
+      }
+      const parts: string[] = []
+      if (r.importedPassphrase) parts.push('账号口令（一把开全部库）')
+      if (r.importedDbKeys > 0) parts.push(`每库派生密钥 ${r.importedDbKeys} 条`)
+      toast.success(`已导入 ${parts.join(' + ') || '密钥'}`)
+      if (r.skipped > 0) toast.error(`跳过 ${r.skipped} 条格式不合法的条目`)
+      void loadAccounts()
+      void loadStatus(wxid)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const doClearKeyRing = async (): Promise<void> => {
+    if (!wxid.trim()) return
+    setBusy('import')
+    try {
+      const removed = await keyStoreApi?.clearKeyRing(wxid.trim())
+      toast.success(`已清除 ${removed ?? 0} 条每库派生密钥`)
+      void loadAccounts()
+      void loadStatus(wxid)
     } finally {
       setBusy(null)
     }
@@ -352,6 +404,15 @@ function WechatKeySection(): React.JSX.Element {
         <button
           type="button"
           className="ui-btn"
+          disabled={busy !== null}
+          onClick={() => void doImportKeyFile()}
+          title="导入 wechat-decrypt-cli 产出的 JSON：账号口令与每库派生密钥都可；只有派生密钥时同样能解密（按库各取各的密钥）"
+        >
+          {busy === 'import' ? '导入中…' : '导入密钥文件'}
+        </button>
+        <button
+          type="button"
+          className="ui-btn"
           disabled={busy !== null || !keyReady}
           onClick={() => void doTest()}
         >
@@ -512,6 +573,29 @@ function WechatKeySection(): React.JSX.Element {
                   {STATUS_TEXT[status.status ?? 'pending'] ?? status.status}
                 </span>
               </div>
+              <div className="st-kv">
+                <span>密钥层级</span>
+                <span className={status.layer === 'none' ? 'st-bad' : 'st-ok'}>
+                  {LAYER_TEXT[status.layer ?? 'none']}
+                </span>
+              </div>
+              {status.keyRingSize > 0 && (
+                <div className="st-kv">
+                  <span>每库派生密钥</span>
+                  <span className="st-ok">
+                    {status.keyRingSize} 条
+                    <button
+                      type="button"
+                      className="ui-btn"
+                      style={{ marginLeft: 8 }}
+                      disabled={busy !== null}
+                      onClick={() => void doClearKeyRing()}
+                    >
+                      清除
+                    </button>
+                  </span>
+                </div>
+              )}
               <div className="st-kv">
                 <span>密钥来源</span>
                 <span>{SOURCE_TEXT[status.source ?? ''] ?? status.source ?? '—'}</span>

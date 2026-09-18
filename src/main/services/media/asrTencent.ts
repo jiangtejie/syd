@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { safeStorage } from 'electron'
 import { getConfig, getConfigNumber, setConfig } from '../../db/repos/config'
 import { getVoiceCacheDir } from '../paths'
-import { getDecryptedKey } from '../keyStoreService'
+import { getDecryptedKey, hasAnyKey } from '../keyStoreService'
 import { getVoiceSilk } from './voice'
 import { readVoiceTranscript, transcriptNameFor } from './voiceTranscript'
 import {
@@ -142,8 +142,10 @@ export async function transcribeVoice(opts: {
   const status = asrTencentStatus()
   if (!status.available) return { ok: false, error: status.reason }
 
-  const hexKey = getDecryptedKey(wxid)
-  if (!hexKey) return { ok: false, error: '未配置数据库密钥，请先在设置里导入' }
+  const hexKey = getDecryptedKey(wxid) || ''
+  if (!hexKey && !hasAnyKey(wxid)) {
+    return { ok: false, error: '未配置数据库密钥，请先在设置里导入' }
+  }
 
   const silk = getVoiceSilk({
     wxid,

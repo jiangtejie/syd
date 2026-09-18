@@ -22,6 +22,7 @@ import type {
   KeySource,
   KeyAccountInfo,
   KeyStatusInfo,
+  KeyFileImportResult,
   SessionSummary,
   ChatMessage,
   WxConnectInfo,
@@ -179,6 +180,17 @@ export interface CsApi {
       dbPath?: string
     ) => Promise<KeyActionResult>
     test: (wxid: string) => Promise<KeyActionResult>
+    /**
+     * 导入配套工具 wechat-decrypt-cli 产出的密钥文件（口令 + 每库派生密钥）。
+     * 拿不到账号口令时（4.1.11+ 需要 hook），整套派生密钥同样能解密。
+     */
+    importKeyFile: (
+      wxid: string,
+      filePath: string,
+      dbPath?: string
+    ) => Promise<KeyFileImportResult>
+    /** 清空该账号的每库派生密钥 */
+    clearKeyRing: (wxid: string) => Promise<number>
   }
   wx: {
     connect: (wxid: string) => Promise<Result<{ info?: WxConnectInfo }>>

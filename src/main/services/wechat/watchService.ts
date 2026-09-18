@@ -59,8 +59,8 @@ export function startWatch(wxid: string): { ok: boolean; error?: string } {
   const existing = monitors.get(wxid)
   if (existing) return { ok: true }
 
-  const hexKey = keyStore.getDecryptedKey(wxid)
-  if (!hexKey) return { ok: false, error: '未配置密钥，请先导入' }
+  // 只导入密钥文件（每库派生密钥）时没有账号口令，但同样可以读库
+  if (!keyStore.hasAnyKey(wxid)) return { ok: false, error: '未配置密钥，请先导入' }
   const profile = keyStore.getKeyStatus(wxid)
   if (!profile.dbPath) return { ok: false, error: '未配置微信数据根路径' }
 

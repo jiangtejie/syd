@@ -25,18 +25,21 @@ export interface WxSession {
   /** 微信根路径（用户配置） */
   dbPath: string
   wxid: string
+  /** 账号口令（KDF 之前）；只导入了密钥文件时为空字符串 */
   hexKey: string
+  /** 取**某一个库**该用的密钥：密钥环优先，回退账号口令 */
+  keyFor: (filePath: string) => string
 }
 
-/** 从 keyStore 组装读库上下文；无 key 时返回 null */
+/** 从 keyStore 组装读库上下文；账号口令与每库密钥环都为空时返回 null */
 export function buildWxSession(wxid: string): WxSession | null {
-  const hexKey = keyStore.getDecryptedKey(wxid)
-  if (!hexKey) return null
+  if (!keyStore.hasAnyKey(wxid)) return null
   const profile = keyStore.getKeyStatus(wxid)
   return {
     dbPath: profile.dbPath || '',
     wxid,
-    hexKey
+    hexKey: keyStore.getDecryptedKey(wxid) || '',
+    keyFor: (filePath: string) => keyStore.resolveKeyForFile(wxid, filePath) || ''
   }
 }
 
@@ -46,7 +49,7 @@ export function connect(wxid: string): { ok: boolean; info?: WxConnectInfo; erro
   if (!session) return { ok: false, error: '未配置密钥，请先导入' }
   if (!session.dbPath) return { ok: false, error: '未配置微信数据根路径，请先导入时填写' }
 
-  const result = testWxConnection(session.dbPath, session.wxid, session.hexKey)
+  const result = testWxConnection(session.dbPath, session.wxid, session.hexKey, session.keyFor)
   if (result.ok) {
     keyStore.markKeyValid(wxid)
   } else {
