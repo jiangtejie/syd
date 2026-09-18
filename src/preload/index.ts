@@ -560,6 +560,7 @@ const api: PreloadApi = {
         ok: boolean
         folder?: string
         files?: Array<{ name: string; msgCount: number }>
+        skipped?: Array<{ name: string; reason: string }>
         error?: string
       }> => ipcRenderer.invoke('cs:export:chat', wxid, opts),
       business: (

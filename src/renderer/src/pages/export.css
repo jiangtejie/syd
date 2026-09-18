@@ -21,6 +21,29 @@
   text-align: center;
 }
 
+/* 未连接空态：给出口（能直接跳去设置），而不是只说"请先去设置" */
+.exp-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 36px 20px;
+  text-align: center;
+}
+
+.exp-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.exp-empty-desc {
+  font-size: 12.5px;
+  color: var(--text-3);
+  max-width: 420px;
+  line-height: 1.7;
+}
+
 .exp-chat-layout {
   display: grid;
   grid-template-columns: minmax(320px, 5fr) minmax(300px, 4fr);
@@ -52,11 +75,23 @@
 .exp-sess-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 12.5px;
   color: var(--text-2);
   padding: 4px 2px 8px;
   border-bottom: 1px solid var(--border-light);
+}
+
+/* 已选计数：列表头的第二主角（会话多时这是唯一能确认"我选了哪些"的地方） */
+.exp-sess-count {
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+.exp-sess-count b {
+  color: var(--brand);
+  font-size: 13px;
 }
 
 .exp-check {

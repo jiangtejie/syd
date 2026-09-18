@@ -647,6 +647,8 @@ export interface CsApi {
       ok: boolean
       folder?: string
       files?: Array<{ name: string; msgCount: number }>
+      /** 选了但没有生成文件的会话（该范围内没有消息）；失败时也带上已完成的 files */
+      skipped?: Array<{ name: string; reason: string }>
       error?: string
     }>
     business: (

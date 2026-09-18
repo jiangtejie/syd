@@ -37,6 +37,7 @@ const RANGE_PRESETS = [
 function ExportPage(): React.JSX.Element {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const source = useWorkbenchStore((s) => s.source)
+  const setPage = useWorkbenchStore((s) => s.setPage)
   const connected = !!wxid && source === 'wx' && wxid !== 'wxid_demo'
 
   const [tab, setTab] = useState<ExportTab>('chat')
@@ -55,9 +56,20 @@ function ExportPage(): React.JSX.Element {
   // 运行态
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<ExportProgress | null>(null)
-  const [result, setResult] = useState<string[] | null>(null)
-  const [error, setError] = useState('')
+  /** 导出结果：成功文件 + 被跳过的会话（此前只显示文件数，另外那些会话去哪了没人说） */
+  const [result, setResult] = useState<{
+    files: Array<{ name: string; msgCount: number }>
+    skipped: Array<{ name: string; reason: string }>
+  } | null>(null)
+  /**
+   * 两个页签的错误必须分开：以前共用一个 error，
+   * 聊天记录导出失败后切到「业务数据」，会看到那条与业务数据无关的红字。
+   */
+  const [chatError, setChatError] = useState('')
+  const [bizError, setBizError] = useState('')
   const [bizResult, setBizResult] = useState<string | null>(null)
+  /** 仅看已选（会话多时用它确认自己到底选了哪些） */
+  const [onlySelected, setOnlySelected] = useState(false)
   const busyRef = useRef(false)
 
   const loadSessions = useCallback(async (): Promise<void> => {
@@ -112,6 +124,30 @@ function ExportPage(): React.JSX.Element {
     return list
   }, [sessions, filter, keyword])
 
+  /** 列表实际渲染的集合：勾上「仅看已选」后只留已选中的（会话多时用它确认自己选了哪些） */
+  const showOnlySelected = onlySelected && selected.size > 0
+  const visible = useMemo(
+    () => (showOnlySelected ? filtered.filter((s) => selected.has(s.username)) : filtered),
+    [filtered, showOnlySelected, selected]
+  )
+
+  /** 时间范围提示：预设要说清**实际是哪几天**（"近 7 天"到底是哪 7 天，用户并不确定） */
+  const rangeHint = useMemo(() => {
+    const fmt = (d: Date): string =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    if (range === 'all') return '导出该会话的全部消息（不限时间）'
+    if (range === 'custom') {
+      const from = startDate || '最早'
+      const to = endDate || '最新'
+      return `实际范围：${from} ~ ${to}（留空的一端表示不限）`
+    }
+    const days = Number(range)
+    const end = new Date()
+    const start = new Date()
+    start.setDate(start.getDate() - days + 1)
+    return `实际范围：${fmt(start)} ~ ${fmt(end)}（含今天）`
+  }, [range, startDate, endDate])
+
   const toggleOne = (username: string): void => {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -130,9 +166,24 @@ function ExportPage(): React.JSX.Element {
     })
   }
 
+  // 记住上次导出目录：每次进页面都重选一次目录是纯浪费（配置走通用 cs:config）
+  useAsyncEffect(async () => {
+    const all = (await window.api?.cs?.config?.getAll().catch(() => null)) as Record<
+      string,
+      string
+    > | null
+    const saved = (all?.['export.folder'] ?? '').trim()
+    if (saved) setFolder(saved)
+  }, [])
+
+  const applyFolder = (dir: string): void => {
+    setFolder(dir)
+    void window.api?.cs?.config?.set('export.folder', dir)
+  }
+
   const pickFolder = async (): Promise<void> => {
-    const r = await dialogApi?.pickDirectory('选择导出目录')
-    if (r?.ok && r.path) setFolder(r.path)
+    const r = await dialogApi?.pickDirectory('选择导出目录', folder || undefined)
+    if (r?.ok && r.path) applyFolder(r.path)
   }
 
   const resolveRangeMs = (): { startMs?: number; endMs?: number } => {
@@ -156,19 +207,27 @@ function ExportPage(): React.JSX.Element {
   }
 
   const startChatExport = async (): Promise<void> => {
-    if (!connected || !exportApi || !folder) {
-      toast.error(folder ? '未连接微信账号' : '请先选择导出目录')
+    if (!connected || !exportApi) {
+      toast.error('未连接微信账号')
       return
     }
     if (selected.size === 0) {
       toast.error('请至少选择一个会话')
       return
     }
+    // 目录规则与「业务数据」统一：没选就现在弹窗选，而不是把人堵在按钮上
+    let dir = folder
+    if (!dir) {
+      const r = await dialogApi?.pickDirectory('选择导出目录')
+      if (!r?.ok || !r.path) return
+      dir = r.path
+      applyFolder(dir)
+    }
     if (busyRef.current) return
     busyRef.current = true
     setBusy(true)
     setResult(null)
-    setError('')
+    setChatError('')
     try {
       const nameOf = new Map(sessions.map((s) => [s.username, s.displayName || s.username]))
       const targets = Array.from(selected).map((u) => ({
@@ -179,18 +238,21 @@ function ExportPage(): React.JSX.Element {
       const res = await exportApi.chat(wxid!, {
         targets,
         format,
-        folder,
+        folder: dir,
         startMs: rangeMs.startMs,
         endMs: rangeMs.endMs
       })
-      if (res.ok && res.files) {
-        setResult(res.files.map((f) => `${f.name}（${f.msgCount} 条）`))
-        toast.success(`已导出 ${res.files.length} 个会话`)
+      const files = res.files ?? []
+      const skipped = res.skipped ?? []
+      // 部分成功也要如实展示：中途失败时主进程会把已写成功的文件一起回传
+      if (files.length > 0 || skipped.length > 0) setResult({ files, skipped })
+      if (res.ok) {
+        toast.success(`已导出 ${files.length} 个会话`)
       } else {
-        setError(res.error || '导出失败')
+        setChatError(res.error || '导出失败')
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : '导出失败')
+      setChatError(e instanceof Error ? e.message : '导出失败')
     } finally {
       busyRef.current = false
       setBusy(false)
@@ -208,23 +270,23 @@ function ExportPage(): React.JSX.Element {
       const r = await dialogApi?.pickDirectory('选择导出目录')
       if (!r?.ok || !r.path) return
       dir = r.path
-      setFolder(dir)
+      applyFolder(dir)
     }
     if (busyRef.current) return
     busyRef.current = true
     setBusy(true)
     setBizResult(null)
-    setError('')
+    setBizError('')
     try {
       const res = await exportApi.business(wxid!, dir)
       if (res.ok && res.name) {
         setBizResult(res.name)
         toast.success('业务数据已导出')
       } else {
-        setError(res.error || '导出失败')
+        setBizError(res.error || '导出失败')
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : '导出失败')
+      setBizError(e instanceof Error ? e.message : '导出失败')
     } finally {
       busyRef.current = false
       setBusy(false)
@@ -236,6 +298,28 @@ function ExportPage(): React.JSX.Element {
     if (folder) await exportApi?.openFolder(folder)
   }
 
+  /** 进度条（两个页签同一套；带 aria，读屏能知道进度） */
+  const renderProgress = (): React.JSX.Element | null => {
+    if (!progress) return null
+    const pct = Math.round((progress.current / Math.max(1, progress.total)) * 100)
+    return (
+      <div
+        className="exp-progress"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div className="exp-progress-text">
+          正在导出 {progress.name}（{progress.current}/{progress.total}）· {progress.detail}
+        </div>
+        <div className="exp-bar">
+          <div className="exp-bar-in" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="page-scroll exp-page">
       <h2 className="page-title">数据导出</h2>
@@ -244,8 +328,14 @@ function ExportPage(): React.JSX.Element {
       </div>
 
       {!connected && (
-        <div className="page-card exp-empty">
-          尚未连接微信:请先到 设置 → 微信数据与密钥 导入密钥并连接账号后,再导出数据。
+        <div className="page-card exp-empty-state">
+          <div className="exp-empty-title">尚未连接微信</div>
+          <div className="exp-empty-desc">
+            导出的是本机微信库里的真实消息，需要先导入密钥并连接账号。
+          </div>
+          <button type="button" className="ui-btn is-primary" onClick={() => setPage('settings')}>
+            去设置微信数据与密钥
+          </button>
         </div>
       )}
 
@@ -264,6 +354,7 @@ function ExportPage(): React.JSX.Element {
                 role="tab"
                 aria-selected={tab === id}
                 className={`ui-tab exp-tab${tab === id ? ' is-active' : ''}`}
+                disabled={busy}
                 onClick={() => setTab(id)}
               >
                 {label}
@@ -278,10 +369,15 @@ function ExportPage(): React.JSX.Element {
                 <div className="exp-toolbar">
                   <input
                     className="ui-input exp-input"
-                    placeholder="搜索会话名称…"
+                    placeholder="搜索会话名称 / 微信号…"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
                   />
+                  {keyword && (
+                    <button type="button" className="ui-link" onClick={() => setKeyword('')}>
+                      清除
+                    </button>
+                  )}
                   <select
                     className="ui-input ui-select exp-sel"
                     value={filter}
@@ -300,14 +396,27 @@ function ExportPage(): React.JSX.Element {
                       checked={
                         filtered.length > 0 && filtered.every((s) => selected.has(s.username))
                       }
+                      disabled={busy}
                       onChange={toggleAll}
                     />
                     全选（{filtered.length}）
                   </label>
+                  <span className="exp-sess-count">
+                    已选 <b>{selected.size}</b>
+                  </span>
+                  <label className="exp-check">
+                    <input
+                      type="checkbox"
+                      checked={onlySelected}
+                      disabled={selected.size === 0}
+                      onChange={(e) => setOnlySelected(e.target.checked)}
+                    />
+                    仅看已选
+                  </label>
                   <button
                     type="button"
                     className="ui-link"
-                    disabled={busy}
+                    disabled={busy || selected.size === 0}
                     onClick={() => setSelected(new Set())}
                   >
                     清空
@@ -323,10 +432,12 @@ function ExportPage(): React.JSX.Element {
                 </div>
                 <div className="exp-sess-list">
                   {loadingSessions && <div className="exp-empty">加载中…</div>}
-                  {!loadingSessions && filtered.length === 0 && (
-                    <div className="exp-empty">没有可导出的会话</div>
+                  {!loadingSessions && visible.length === 0 && (
+                    <div className="exp-empty">
+                      {showOnlySelected ? '还没有选中任何会话' : '没有可导出的会话'}
+                    </div>
                   )}
-                  {filtered.map((s) => {
+                  {visible.map((s) => {
                     const name = s.displayName || s.nickname || s.remark || s.username
                     return (
                       <label
@@ -336,6 +447,7 @@ function ExportPage(): React.JSX.Element {
                         <input
                           type="checkbox"
                           checked={selected.has(s.username)}
+                          disabled={busy}
                           onChange={() => toggleOne(s.username)}
                         />
                         <span className="exp-sess-main">
@@ -361,6 +473,7 @@ function ExportPage(): React.JSX.Element {
                       key={r.id}
                       type="button"
                       className={`ui-pill exp-pill${range === r.id ? ' is-on' : ''}`}
+                      disabled={busy}
                       onClick={() => setRange(r.id)}
                     >
                       {r.label}
@@ -384,6 +497,7 @@ function ExportPage(): React.JSX.Element {
                     />
                   </div>
                 )}
+                <div className="exp-hint">{rangeHint}</div>
 
                 <div className="exp-section-title">格式</div>
                 <div className="exp-pill-row">
@@ -398,6 +512,7 @@ function ExportPage(): React.JSX.Element {
                       key={id}
                       type="button"
                       className={`ui-pill exp-pill${format === id ? ' is-on' : ''}`}
+                      disabled={busy}
                       onClick={() => setFormat(id)}
                     >
                       {label}
@@ -411,10 +526,11 @@ function ExportPage(): React.JSX.Element {
 
                 <div className="exp-section-title">导出位置</div>
                 <div className="exp-folder-row">
-                  <span className="exp-folder">{folder || '未选择'}</span>
+                  <span className="exp-folder">{folder || '未选择(导出时弹窗选择)'}</span>
                   <button
                     type="button"
                     className="ui-btn exp-btn ghost"
+                    disabled={busy}
                     onClick={() => void pickFolder()}
                   >
                     选择目录
@@ -424,42 +540,47 @@ function ExportPage(): React.JSX.Element {
                 <button
                   type="button"
                   className="ui-btn is-primary exp-btn exp-go"
-                  disabled={busy || selected.size === 0 || !folder}
+                  disabled={busy || selected.size === 0}
                   onClick={() => void startChatExport()}
                 >
                   {busy ? '导出中…' : `导出 ${selected.size} 个会话`}
                 </button>
-                {progress && (
-                  <div className="exp-progress">
-                    <div className="exp-progress-text">
-                      正在导出 {progress.name}（{progress.current}/{progress.total}）·{' '}
-                      {progress.detail}
-                    </div>
-                    <div className="exp-bar">
-                      <div
-                        className="exp-bar-in"
-                        style={{
-                          width: `${(progress.current / Math.max(1, progress.total)) * 100}%`
-                        }}
-                      />
-                    </div>
-                  </div>
+                {!busy && selected.size === 0 && (
+                  <div className="exp-hint">还需：在左侧至少选择一个会话</div>
                 )}
-                {result && result.length > 0 && (
+                {renderProgress()}
+                {result && (
                   <div className="exp-result">
-                    <div className="exp-result-title">✓ 导出完成({result.length} 个文件):</div>
-                    {result.slice(0, 8).map((f, i) => (
+                    <div className="exp-result-title">
+                      ✓ 导出完成：{result.files.length} 个文件 · 共{' '}
+                      {result.files.reduce((n, f) => n + f.msgCount, 0)} 条
+                    </div>
+                    {result.files.slice(0, 8).map((f, i) => (
                       <div key={i} className="exp-result-file">
-                        {f}
+                        {f.name}（{f.msgCount} 条）
                       </div>
                     ))}
-                    {result.length > 8 && <div>… 等 {result.length} 个</div>}
-                    <button type="button" className="ui-link" onClick={() => void openFolder()}>
+                    {result.files.length > 8 && <div>… 等 {result.files.length} 个</div>}
+                    {result.skipped.length > 0 && (
+                      <div className="exp-hint">
+                        {result.skipped.length} 个会话{result.skipped[0]?.reason}，未生成文件:
+                        {result.skipped
+                          .slice(0, 5)
+                          .map((s) => s.name)
+                          .join('、')}
+                        {result.skipped.length > 5 ? ' 等' : ''}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="ui-btn is-primary exp-btn"
+                      onClick={() => void openFolder()}
+                    >
                       打开导出目录
                     </button>
                   </div>
                 )}
-                {error && <div className="exp-error">{error}</div>}
+                {chatError && <div className="exp-error">{chatError}</div>}
               </div>
             </div>
           )}
@@ -481,6 +602,7 @@ function ExportPage(): React.JSX.Element {
                 <button
                   type="button"
                   className="ui-btn exp-btn ghost"
+                  disabled={busy}
                   onClick={() => void pickFolder()}
                 >
                   选择目录
@@ -494,22 +616,20 @@ function ExportPage(): React.JSX.Element {
               >
                 {busy ? '导出中…' : '导出业务数据'}
               </button>
-              {progress && (
-                <div className="exp-progress">
-                  <div className="exp-progress-text">
-                    正在导出 {progress.name} · {progress.detail}
-                  </div>
-                </div>
-              )}
+              {renderProgress()}
               {bizResult && (
                 <div className="exp-result">
                   <div className="exp-result-title">✓ 已生成 {bizResult}</div>
-                  <button type="button" className="ui-link" onClick={() => void openFolder()}>
+                  <button
+                    type="button"
+                    className="ui-btn is-primary exp-btn"
+                    onClick={() => void openFolder()}
+                  >
                     打开导出目录
                   </button>
                 </div>
               )}
-              {error && <div className="exp-error">{error}</div>}
+              {bizError && <div className="exp-error">{bizError}</div>}
             </div>
           )}
         </>

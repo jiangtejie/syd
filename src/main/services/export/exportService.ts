@@ -103,16 +103,21 @@ export async function exportChat(
   ok: boolean
   folder?: string
   files?: Array<{ name: string; msgCount: number }>
+  /** 选了但**没有生成文件**的会话（该范围内没有消息）——必须回传，否则用户只能自己猜 */
+  skipped?: Array<{ name: string; reason: string }>
   error?: string
 }> {
+  // 提到 try 外面：中途失败时要把「已经写成功的」一并回传（见 catch）
+  const files: Array<{ name: string; msgCount: number }> = []
+  const skipped: Array<{ name: string; reason: string }> = []
+  let folder = ''
   try {
     if (!wxid) return { ok: false, error: '未连接微信账号' }
     if (!opts.targets?.length) return { ok: false, error: '未选择会话' }
     if (!opts.folder) return { ok: false, error: '未选择导出目录' }
-    const folder = opts.folder
+    folder = opts.folder
     if (!existsSync(folder)) mkdirSync(folder, { recursive: true })
     const format = opts.format
-    const files: Array<{ name: string; msgCount: number }> = []
     const total = opts.targets.length
     const stamp = new Date()
     const pad = (n: number): string => String(n).padStart(2, '0')
@@ -205,9 +210,18 @@ export async function exportChat(
           `<div style="color:#999;margin-top:16px">共 ${count} 条 · 导出于 ${fmtTimeFull(Date.now())}</div></body>`
         )
       }
-      if (count > 0 || format !== 'txt') {
-        // 空会话也保留空文件?txt 空文件无意义;跳过空会话
-        if (count === 0) continue
+      if (count === 0) {
+        // 空会话不生成文件（txt 空文件无意义；json/html 空壳也没用），但必须**记下来**：
+        // 选了 10 个只拿到 7 个文件时，界面要能说清另外 3 个去哪了
+        skipped.push({ name: t.displayName || t.username, reason: '所选时间范围内没有消息' })
+        onProgress({
+          phase: 'session',
+          current: i + 1,
+          total,
+          name: t.displayName,
+          detail: '跳过（该范围内没有消息）'
+        })
+      } else {
         const ws = createWriteStream(filePath, { encoding: 'utf-8' })
         await new Promise<void>((resolve, reject) => {
           ws.on('error', reject)
@@ -217,18 +231,26 @@ export async function exportChat(
           ws.end()
         })
         files.push({ name: fileName, msgCount: count })
+        onProgress({
+          phase: 'session',
+          current: i + 1,
+          total,
+          name: t.displayName,
+          detail: `完成 ${count} 条`
+        })
       }
-      onProgress({
-        phase: 'session',
-        current: i + 1,
-        total,
-        name: t.displayName,
-        detail: `完成 ${count} 条`
-      })
     }
-    return { ok: true, folder, files }
+    return { ok: true, folder, files, skipped }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    // 中途失败：把已经写成功的文件与已跳过的会话一并回传。
+    // 原来只回一句 error —— 用户既不知道哪些真导出了，重试时也不知道该重选哪些。
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+      folder,
+      files,
+      skipped
+    }
   }
 }
 
