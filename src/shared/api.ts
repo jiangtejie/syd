@@ -1143,10 +1143,12 @@ export interface CsApi {
     ) => Promise<{ ok: boolean; error?: string }>
     stop: (id: number) => Promise<{ ok: boolean }>
     running: (id: number) => Promise<{ ok: boolean; running?: boolean }>
+    /** pick = 只采用 assetId 那一张（一次生图 N 张落在同一产出块里） */
     resolveCandidate: (
       taskId: number,
       outputId: number,
-      action: 'select' | 'archive' | 'delete'
+      action: 'select' | 'archive' | 'delete' | 'pick',
+      assetId?: number
     ) => Promise<{ ok: boolean; error?: string }>
     revertOutput: (outputId: number) => Promise<{ ok: boolean; error?: string }>
     listStores: () => Promise<Result<{ stores?: unknown[] }>>
@@ -1159,8 +1161,6 @@ export interface CsApi {
       name: string,
       profile: string
     ) => Promise<{ ok: boolean; id?: number; error?: string }>
-    configGet: () => Promise<Result<{ image?: unknown; search?: unknown }>>
-    configSet: (field: string, value: string) => Promise<{ ok: boolean; error?: string }>
     testImage: () => Promise<{ ok: boolean; error?: string }>
   }
   growthbuzz: {

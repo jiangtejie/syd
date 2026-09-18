@@ -1161,9 +1161,10 @@ const api: PreloadApi = {
       resolveCandidate: (
         taskId: number,
         outputId: number,
-        action: 'select' | 'archive' | 'delete'
+        action: 'select' | 'archive' | 'delete' | 'pick',
+        assetId?: number
       ): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:growthai:resolveCandidate', taskId, outputId, action),
+        ipcRenderer.invoke('cs:growthai:resolveCandidate', taskId, outputId, action, assetId),
       revertOutput: (outputId: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:growthai:revertOutput', outputId),
       listStores: (): Promise<{ ok: boolean; stores?: unknown[]; error?: string }> =>
@@ -1181,10 +1182,7 @@ const api: PreloadApi = {
         profile: string
       ): Promise<{ ok: boolean; id?: number; error?: string }> =>
         ipcRenderer.invoke('cs:growthai:saveBrand', name, profile),
-      configGet: (): Promise<{ ok: boolean; image?: unknown; search?: unknown; error?: string }> =>
-        ipcRenderer.invoke('cs:growthai:configGet'),
-      configSet: (field: string, value: string): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:growthai:configSet', field, value),
+      // 生图/搜索的配置读写不在这里：设置页走通用 cs:config(getAll/set)，app_config 只有一个真源
       testImage: (): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:growthai:testImage')
     },

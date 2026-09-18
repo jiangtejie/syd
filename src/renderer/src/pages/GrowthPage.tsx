@@ -8,6 +8,8 @@ import { StatsBar } from '../components/growth/StatsBar'
 import { ProviderPanel } from '../components/growth/ProviderPanel'
 import { SourcesPanel } from '../components/growth/SourcesPanel'
 import { WarehousePanel } from '../components/growth/WarehousePanel'
+import { MarketingAiSettings } from '../components/growth/MarketingAiSettings'
+import { useWorkbenchStore, type GrowthTab } from '../stores/workbench'
 import type { GrowthStats } from '../../../shared/growth'
 import './growth.css'
 import './growth/forms.css'
@@ -17,7 +19,7 @@ import './growth/buzz.css'
 import './growth/polish.css'
 
 /**
- * 营销增长页: 采集源 / 素材仓库 / 数据服务。
+ * 营销增长页: 素材仓库 / AI 工作台 / 舆情 / 采集源 / 设置(采集服务商 · 门店品牌 · AI 生图与搜索)。
  * 对齐仓库页面规范(page-scroll/page-title/page-card), 无 mock 数据;
  * 空态给引导步骤, 失败给错误条 + 重试, 长任务经 cs:growth:progress 推送。
  *
@@ -25,19 +27,20 @@ import './growth/polish.css'
  * 面板实现见 components/growth/{common,StatsBar,ProviderPanel,SourcesPanel,WarehousePanel,MediaGallery}.tsx。
  */
 
-type GrowthTab = 'provider' | 'sources' | 'warehouse' | 'ai' | 'buzz'
-
 const TAB_DESC: Record<GrowthTab, string> = {
   buzz: '门店舆情监控: 跟踪抖音/小红书上的门店相关内容, 结合正文与评论区高赞做情绪评级与根因诊断',
   ai: '任务式爆改工作台: 左边素材任务列表, 右边与 AI 对话逐项改标题/正文/配图, 右侧产出面板点选采用',
   sources: '订阅同城/同行的爆款内容源, 由第三方数据服务定时拉取入库',
   warehouse:
     '本地爆款素材仓库: 粘贴链接/口令入库、检索与筛选、批量改用途/状态/删除、批量导出发布包; AI 拆解与爆改在「AI 工作台」进行(详情里可一键跳过去)',
-  provider: '第三方数据服务商与自动采集总开关(适配器 Phase 1 接入)'
+  provider:
+    '营销域的全部设置: 采集数据服务商与自动采集总开关、门店与品牌档案(AI 的事实来源)、AI 生图通道与生图策略、联网搜索'
 }
 
 export default function GrowthPage(): React.JSX.Element {
-  const [tab, setTab] = useState<GrowthTab>('warehouse')
+  // 页签放全局 store：设置页要能跳过来直接落在「设置」屏（同「监控」的 monitorTab 口径）
+  const tab = useWorkbenchStore((s) => s.growthTab)
+  const setTab = useWorkbenchStore((s) => s.setGrowthTab)
   const [stats, setStats] = useState<GrowthStats | null>(null)
   /** 从素材仓库跳转 AI 工作台时携带的任务 id */
   const [aiFocusTask, setAiFocusTask] = useState<number | null>(null)
@@ -57,28 +60,32 @@ export default function GrowthPage(): React.JSX.Element {
    * 素材仓库 → AI 工作台：**先找已有任务，没有再建**（一个素材一个任务）。
    * 直接调 createTask 会在重复点击时堆出一串同名任务，所以这里以 contentId 去重。
    */
-  const openWorkbenchForContent = useCallback(async (contentId: number): Promise<void> => {
-    const ai = window.api?.cs?.growthai
-    if (!ai) {
-      toast.error('AI 工作台不可用(请重启应用以加载最新主进程)')
-      return
-    }
-    const list = await ai.listTasks()
-    const tasks = (list.ok ? (list.tasks ?? []) : []) as Array<{ id: number; contentId: number }>
-    const existing = tasks.find((t) => t.contentId === contentId)
-    if (existing) {
-      setAiFocusTask(existing.id)
+  const openWorkbenchForContent = useCallback(
+    async (contentId: number): Promise<void> => {
+      const ai = window.api?.cs?.growthai
+      if (!ai) {
+        toast.error('AI 工作台不可用(请重启应用以加载最新主进程)')
+        return
+      }
+      const list = await ai.listTasks()
+      const tasks = (list.ok ? (list.tasks ?? []) : []) as Array<{ id: number; contentId: number }>
+      const existing = tasks.find((t) => t.contentId === contentId)
+      if (existing) {
+        setAiFocusTask(existing.id)
+        setTab('ai')
+        return
+      }
+      const res = await ai.createTask({ contentId })
+      if (!res.ok || !res.taskId) {
+        toast.error(res.error ?? '创建爆改任务失败')
+        return
+      }
+      setAiFocusTask(res.taskId)
       setTab('ai')
-      return
-    }
-    const res = await ai.createTask({ contentId })
-    if (!res.ok || !res.taskId) {
-      toast.error(res.error ?? '创建爆改任务失败')
-      return
-    }
-    setAiFocusTask(res.taskId)
-    setTab('ai')
-  }, [])
+      // setTab 来自 store（引用稳定），依赖里列上以免 eslint 报 missing dependency
+    },
+    [setTab]
+  )
 
   useEffect(() => {
     if (!growthApi?.onProgress) return
@@ -133,7 +140,7 @@ export default function GrowthPage(): React.JSX.Element {
                   自动采集运行中
                 </span>
               ) : (
-                <span className={'gth-hero-chip warn'} title={'到「数据服务」开启总开关'}>
+                <span className={'gth-hero-chip warn'} title={'到「设置」开启总开关'}>
                   <span className={'dot'} />
                   自动采集未开启
                 </span>
@@ -169,14 +176,14 @@ export default function GrowthPage(): React.JSX.Element {
                     ? '舆情'
                     : k === 'sources'
                       ? '采集源'
-                      : '数据服务'}
+                      : '设置'}
             </button>
           ))}
-          <span className={'gth-seg-hint'}>AI 工作台 = 任务式爆改(对话驱动)</span>
+          <span className={'gth-seg-hint'}>设置 = 采集服务商 / 门店与品牌 / AI 生图与联网搜索</span>
         </div>
       </div>
       {/* 四个统计卡(仓库素材/采集订阅/媒体文件/数据服务商)说的是"采集管线健康度"，
-          只在管线相关的三屏显示(数据服务/采集源/素材仓库)。
+          只在管线相关的三屏显示(设置/采集源/素材仓库)。
           「AI 工作台」是对话改稿、「舆情」有自己的情绪统计行(gth-buzz-stats)，都不需要这四个卡；
           AI 工作台省下的高度还给对话区(见 growth-ai.css 的 .gai-page)。 */}
       {tab === 'provider' || tab === 'sources' || tab === 'warehouse' ? (
@@ -186,6 +193,8 @@ export default function GrowthPage(): React.JSX.Element {
         <>
           <ProviderPanel onChanged={loadStats} />
           <StoresCard />
+          {/* 营销 AI 的通道与策略：和门店/品牌档案同屏 —— 它们共同决定"内容怎么生成" */}
+          <MarketingAiSettings />
         </>
       ) : null}
       {tab === 'sources' ? <SourcesPanel onChanged={loadStats} /> : null}

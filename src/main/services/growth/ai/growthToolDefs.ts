@@ -20,11 +20,24 @@ import { GROWTH_TOOL_META, type GrowthToolMeta } from './toolMeta'
 import { clipValue } from '../../../util/text'
 import { createAiProvider } from '../../ai/provider'
 import { describeModelError } from '../../ai/modelErrors'
-import { getContentDetail, insertAsset } from '../../../db/repos/growthRepo'
+import {
+  countGeneratedSince,
+  getAssetById,
+  getContentDetail,
+  insertAsset
+} from '../../../db/repos/growthRepo'
+import type { GrowthAsset } from '../../../../shared/growth'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { getGrowthMediaDir } from '../../paths'
+import { buildCoverHtml } from '../cover/templates'
+import { renderHtmlToPng } from '../cover/renderer'
 import {
   addOutputAsset,
   createOutput,
+  getBrandProfile,
   listStores,
+  removeOutputAssetsByRole,
   saveStore,
   setOutputStatus,
   updateOutputFields
@@ -32,7 +45,21 @@ import {
 import { downloadMediaAssets } from '../collector/media/assetStore'
 import { readBaseAsText } from '../../lark/api'
 import { searchImages, searchWeb } from './searchProvider'
-import { generateImages, ImageSetupError } from './imageProvider'
+import {
+  generateImages,
+  ImageSetupError,
+  loadImageReference,
+  storeImageBuffer,
+  type ImageReference
+} from './imageProvider'
+import {
+  buildImageStrategy,
+  formatStrategy,
+  normalizePlatform,
+  parseSize,
+  PLATFORM_SPECS
+} from './imageStrategy'
+import { getImageConfig } from './config'
 import { exportPublishPackage } from '../publisher/exporter'
 import { recordPublish } from '../remix/service'
 import { checkComplianceBatch } from '../remix/compliance'
@@ -42,6 +69,24 @@ export interface GrowthToolCtx {
   taskId: number
   contentId: number
   storeId: number | null
+}
+
+/** 把本地资产读成 data URI（封面底图必须内联，离屏页面不读本地路径） */
+async function assetToDataUri(asset: GrowthAsset): Promise<string> {
+  if (!asset.relPath) return ''
+  try {
+    const buf = await readFile(join(getGrowthMediaDir(), asset.relPath))
+    if (buf.length === 0) return ''
+    return 'data:' + (asset.mime || 'image/png') + ';base64,' + buf.toString('base64')
+  } catch {
+    return ''
+  }
+}
+
+/** 本月起点的毫秒时间戳（月度生图额度按自然月算） */
+function monthStartTs(): number {
+  const d = new Date()
+  return new Date(d.getFullYear(), d.getMonth(), 1).getTime()
 }
 
 const STYLE_HINT: Record<string, string> = {
@@ -67,14 +112,63 @@ export function itemBrief(contentId: number): string {
       ' 评' +
       String(d.interactions.comments)
   )
+  // 带上 assetId：图生图的参考图、封面底图都要显式指定 assetId，
+  // 不把 id 给模型，它就只能瞎猜（以前这里只有张数）
+  const localImgs = d.assets.filter((a) => a.kind === 'cover' || a.kind === 'image')
   lines.push(
     '本地图片: ' +
-      String(d.assets.filter((a) => a.kind === 'cover' || a.kind === 'image').length) +
-      ' 张'
+      String(localImgs.length) +
+      ' 张' +
+      (localImgs.length > 0
+        ? '(assetId: ' +
+          localImgs
+            .slice(0, 4)
+            .map((a) => String(a.id))
+            .join('/') +
+          ')'
+        : '')
   )
   if (d.decomp?.structure) lines.push('拆解卡: ' + clipValue(d.decomp.structure, 700))
   else lines.push('拆解卡: 尚未生成')
   return lines.join('\n')
+}
+
+/**
+ * 品牌资料包（growth_brand_profile）摘要。
+ *
+ * 为什么要有它：这张表此前**只被 UI 读写**，AI 侧一次都没读过 —— 用户在「品牌资料包」
+ * 里认真填的定位与语气，对模型完全不存在。品牌口径要进文案、也要进生图提示词。
+ */
+export function brandBrief(): string {
+  const b = getBrandProfile()
+  if (!b) return '尚未配置品牌资料包: 可到 营销 → 数据服务 → 门店与品牌 填写定位与语气'
+  const name = (b.name ?? '').trim()
+  const raw = (b.profile ?? '').trim()
+  if (!raw) return name ? '品牌: ' + name : '品牌资料包为空'
+  let text = raw
+  try {
+    const obj = JSON.parse(raw) as Record<string, unknown>
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      const parts: string[] = []
+      const put = (k: string, label: string): void => {
+        const v = obj[k]
+        if (v === undefined || v === null || v === '') return
+        const s = Array.isArray(v) ? v.map((x) => String(x)).join('、') : String(v)
+        if (s.trim()) parts.push(label + ': ' + s.trim())
+      }
+      put('positioning', '定位')
+      put('position', '定位')
+      put('tone', '语气')
+      put('visualStyle', '视觉风格')
+      put('palette', '主色调')
+      put('sellingPoints', '卖点')
+      put('avoidWords', '避免用词')
+      if (parts.length > 0) text = parts.join('; ')
+    }
+  } catch {
+    /* 纯文本资料包：原样用 */
+  }
+  return (name ? '品牌: ' + name + '\n' : '') + clipValue(text, 600)
 }
 
 export function storeBrief(storeId: number | null): string {
@@ -195,10 +289,10 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
       needsWx: false,
       params: metaOf('growth_get_store').params,
       description:
-        '读取当前门店/品牌档案(城市/地址/电话/营业时间/招牌菜/套餐/语气等事实)。缺失字段必须追问用户, 严禁编造。',
+        '读取当前门店档案与品牌资料包(城市/地址/电话/营业时间/招牌菜/套餐/语气/品牌定位与视觉风格)。缺失字段必须追问用户, 严禁编造。',
       run: async (_ctx, argsIn) => {
         const args = argsIn as { storeId?: number }
-        return storeBrief(args.storeId ?? storeIdOf(args))
+        return storeBrief(args.storeId ?? storeIdOf(args)) + '\n【品牌资料包】\n' + brandBrief()
       }
     },
     {
@@ -278,23 +372,68 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
       confirm: true,
       params: metaOf('growth_gen_image').params,
       description:
-        'AI 生成图片(封面/氛围图/菜品示意图), 结果作为候选图待用户点选, 必须标注「AI 生成示意图」。',
+        'AI 生成图片(封面/氛围图/菜品示意图)。提示词由「生图策略」按平台比例 + 门店/品牌事实 + 画面模板拼装(不需要自己写完整 prompt, 只给主体描述即可), 结果作为候选图待用户点选, 必须标注「AI 生成示意图」。',
       run: async (_ctx, argsIn) => {
         const args = argsIn as {
-          prompt: string
+          prompt?: string
+          template?: string
+          platform?: string
           count?: number
           role?: 'cover' | 'image'
+          referenceAssetId?: number
           contentId?: number
           taskId?: number
         }
         const miss = needContentGuard(args)
         if (miss) return miss
+        const cfg = getImageConfig()
+        const storeId = storeIdOf(args)
+        const store = storeId
+          ? (listStores().find((s) => s.id === storeId) ?? null)
+          : (listStores().find((s) => s.enabled) ?? null)
+        // 策略层：模板选择 + 平台比例 + 门店事实 + 品牌资料包 + 月度额度 → prompt/negative/size/count
+        const strategy = buildImageStrategy({
+          userPrompt: args.prompt ?? '',
+          platform: args.platform || cfg.platform,
+          role: args.role ?? 'cover',
+          templateId: args.template,
+          count: args.count,
+          maxCount: cfg.count,
+          monthlyLimit: cfg.monthlyLimit,
+          usedThisMonth: countGeneratedSince(monthStartTs()),
+          templateLibraryRaw: cfg.templates,
+          size: cfg.size,
+          store,
+          brand: getBrandProfile(),
+          materialHint: itemBrief(contentIdOf(args))
+        })
+        // 月度额度用尽：在**发起请求前**拦下（接口不会拦，它只会照单生成然后计费）
+        if (strategy.blocked) return strategy.blockedReason ?? '本月生图额度已用尽'
+        // 图生图：给了参考图就先试 /images/edits（生成"同构但原创"的本店图）
+        let reference: ImageReference | null = null
+        let refNote = ''
+        if (args.referenceAssetId) {
+          reference = await loadImageReference(args.referenceAssetId)
+          if (!reference) {
+            refNote =
+              '（注意：参考图 assetId=' +
+              String(args.referenceAssetId) +
+              ' 取不到本地文件，本次按纯文本生成）'
+          }
+        }
         try {
-          const imgs = await generateImages({
+          const gen = await generateImages({
             contentId: contentIdOf(args),
-            prompt: args.prompt,
-            count: args.count
+            prompt: strategy.prompt,
+            negative: strategy.negative,
+            count: strategy.count,
+            size: strategy.size,
+            reference
           })
+          const imgs = gen.images
+          if (gen.warning) refNote = '（注意：' + gen.warning + '）'
+          else if (gen.usedReference) refNote = '（已按参考图生成同构画面）'
+          const explicitTemplate = args.template !== undefined && args.template !== 'auto'
           const outputId = createOutput({
             taskId: taskIdOf(args),
             contentId: contentIdOf(args),
@@ -302,29 +441,200 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
             title: '',
             copy: '',
             complianceHints: [],
-            meta: { prompt: args.prompt, source: 'gen' },
+            meta: {
+              prompt: strategy.finalPrompt,
+              source: 'gen',
+              // 落库「为什么这么生成」：换人接手/复盘时不用再猜这张图是按什么策略来的
+              strategy: {
+                templateId: strategy.templateId,
+                templateLabel: strategy.templateLabel,
+                platform: strategy.platform,
+                platformLabel: strategy.platformLabel,
+                ratio: strategy.ratio,
+                role: strategy.role,
+                size: strategy.size,
+                count: strategy.count,
+                explicitTemplate,
+                referenceAssetId: args.referenceAssetId ?? null,
+                usedReference: gen.usedReference,
+                notes: strategy.notes
+              }
+            },
             status: 'candidate'
           })
+          const refTag = gen.usedReference
+            ? ' · 参考图 assetId=' + String(args.referenceAssetId)
+            : ''
           for (const g of imgs) {
             addOutputAsset({
               outputId,
               assetId: g.assetId,
-              role: args.role ?? 'image',
+              role: strategy.role,
               source: 'gen',
-              prompt: args.prompt,
-              note: g.note
+              prompt: strategy.finalPrompt,
+              note: g.note + ' · ' + formatStrategy(strategy) + refTag
             })
           }
+          const warn = strategy.warning ? '（注意：' + strategy.warning + '）' : ''
+          // 实际张数少于计划 = 被月度额度压过，要如实说明（否则用户只看到"少给了"）
+          const shortNote =
+            imgs.length < strategy.count
+              ? '（本月额度不足，按 ' + String(imgs.length) + ' 张生成）'
+              : ''
           return (
             '已生成 ' +
             String(imgs.length) +
             ' 张候选图(outputId=' +
             String(outputId) +
-            ', 已标注示意图)。请在右侧图片卡点选。'
+            ')。策略: ' +
+            formatStrategy(strategy) +
+            shortNote +
+            refNote +
+            '；已标注示意图。请在右侧图片卡点「用这张」(只采用选中的那一张)。' +
+            warn
           )
         } catch (e) {
           if (e instanceof ImageSetupError) return e.message
           return '生图失败: ' + (e instanceof Error ? e.message : String(e))
+        }
+      }
+    },
+    {
+      name: 'growth_make_cover',
+      kind: 'builtin',
+      needsWx: false,
+      confirm: true,
+      params: metaOf('growth_make_cover').params,
+      description:
+        '把标题合成到实拍图上做封面（大字排版 + 折行 + 缩字号，模板可选）。纯本地渲染：不调用生图接口、不占每月张数。底图默认取素材里第一张本地图。',
+      run: async (_ctx, argsIn) => {
+        const args = argsIn as {
+          title?: string
+          subtitle?: string
+          badge?: string
+          template?: string
+          platform?: string
+          assetId?: number
+          outputId?: number
+          contentId?: number
+          taskId?: number
+        }
+        const miss = needContentGuard(args)
+        if (miss) return miss
+        const title = (args.title ?? '').trim()
+        if (!title) return '请给出封面标题（通常直接用采纳的那条标题）。'
+        const contentId = contentIdOf(args)
+        const cfg = getImageConfig()
+        const platform = normalizePlatform(args.platform || cfg.platform)
+        const spec = PLATFORM_SPECS[platform]
+        // 与生图同一套尺寸口径：设置里显式填了尺寸就听它的，否则按平台
+        const sizeStr = cfg.size && parseSize(cfg.size) ? cfg.size : spec.size
+        const wh = parseSize(sizeStr) ?? { width: 1024, height: 1024 }
+
+        // 底图：显式 assetId 优先，否则用素材里第一张本地图
+        let asset: GrowthAsset | null = null
+        if (args.assetId) {
+          asset = getAssetById(args.assetId)
+          if (!asset) return '底图 assetId=' + String(args.assetId) + ' 不存在。'
+        } else {
+          const detail = getContentDetail(contentId)
+          asset =
+            detail?.assets.find((a) => (a.kind === 'cover' || a.kind === 'image') && !!a.relPath) ??
+            null
+        }
+        let imageDataUri = ''
+        if (asset) {
+          const dataUri = await assetToDataUri(asset)
+          if (!dataUri) return '底图读取失败(本地文件缺失)，换一张门店实拍图再试。'
+          imageDataUri = dataUri
+        }
+
+        try {
+          const doc = buildCoverHtml({
+            templateId: args.template,
+            title,
+            subtitle: args.subtitle ?? '',
+            badge: args.badge ?? '',
+            imageDataUri,
+            width: wh.width,
+            height: wh.height
+          })
+          const png = await renderHtmlToPng(doc.html, { width: wh.width, height: wh.height })
+          const stored = await storeImageBuffer(
+            png,
+            'image/png',
+            contentId,
+            doc.lines.join('\n'),
+            sizeStr,
+            'cover:composite'
+          )
+          const noteParts = [
+            '封面合成',
+            doc.templateLabel,
+            spec.label + ' ' + String(wh.width) + 'x' + String(wh.height),
+            doc.usedImage ? '实拍底图' : '纯文字'
+          ]
+          const note = noteParts.join(' · ')
+          if (args.outputId) {
+            removeOutputAssetsByRole(args.outputId, 'cover')
+            addOutputAsset({
+              outputId: args.outputId,
+              assetId: stored.assetId,
+              role: 'cover',
+              source: 'cover',
+              prompt: doc.lines.join(' / '),
+              note
+            })
+            return (
+              '已生成封面并设为产出 #' +
+              String(args.outputId) +
+              ' 的封面(' +
+              note +
+              '；底图 assetId=' +
+              String(asset?.id ?? 0) +
+              ')。'
+            )
+          }
+          const outputId = createOutput({
+            taskId: taskIdOf(args),
+            contentId,
+            variant: 'chat:cover',
+            title: '',
+            copy: '',
+            complianceHints: [],
+            meta: {
+              source: 'cover',
+              prompt: doc.lines.join(' / '),
+              strategy: {
+                templateId: doc.templateId,
+                templateLabel: doc.templateLabel,
+                platform,
+                platformLabel: spec.label,
+                size: sizeStr,
+                lines: doc.lines,
+                usedImage: doc.usedImage,
+                notes: [note]
+              }
+            },
+            status: 'candidate'
+          })
+          addOutputAsset({
+            outputId,
+            assetId: stored.assetId,
+            role: 'cover',
+            source: 'cover',
+            prompt: doc.lines.join(' / '),
+            note
+          })
+          return (
+            '已生成封面候选(outputId=' +
+            String(outputId) +
+            '，' +
+            note +
+            ')。请在右侧图片卡点「用这张」采用。'
+          )
+        } catch (e) {
+          return '封面生成失败: ' + (e instanceof Error ? e.message : String(e))
         }
       }
     },
@@ -486,7 +796,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
       confirm: true,
       params: metaOf('growth_replace_image').params,
       description:
-        '替换产出图集: 用门店素材(assetId)、候选生成图(assetId)或联网图片(remoteUrl, 需确认版权)。',
+        '替换产出图集(按 role 顶替, 旧图会被移除而不是叠加): 用门店素材(assetId)、候选生成图(assetId)或联网图片(remoteUrl, 需确认版权)。',
       run: async (_ctx, argsIn) => {
         const args = argsIn as {
           outputId: number
@@ -497,16 +807,24 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         }
         const miss = needContentGuard(args)
         if (miss) return miss
+        const role = args.role === 'cover' ? 'cover' : 'image'
         if (args.assetId) {
+          const dropped = removeOutputAssetsByRole(args.outputId, role)
           addOutputAsset({
             outputId: args.outputId,
             assetId: args.assetId,
-            role: args.role ?? 'image',
+            role,
             source: 'store',
             prompt: '',
             note: ''
           })
-          return '已替换为本地素材(assetId=' + String(args.assetId) + ')。'
+          return (
+            '已替换为本地素材(assetId=' +
+            String(args.assetId) +
+            '，位置: ' +
+            (role === 'cover' ? '封面' : '正文图') +
+            (dropped > 0 ? '，已顶掉原有 ' + String(dropped) + ' 张)' : ')')
+          )
         }
         if (args.remoteUrl) {
           const dl = await downloadMediaAssets([args.remoteUrl], 'web', 1)
@@ -519,10 +837,11 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
             relPath: dl.ok[0].relPath,
             sourceMark: 'search:web'
           })
+          removeOutputAssetsByRole(args.outputId, role)
           addOutputAsset({
             outputId: args.outputId,
             assetId,
-            role: args.role ?? 'image',
+            role,
             source: 'search',
             prompt: '',
             note: '来源: 联网检索(请确认版权后再发布)'

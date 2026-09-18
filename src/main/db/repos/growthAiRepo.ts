@@ -385,6 +385,39 @@ export function addOutputAsset(input: {
   return Number(res.lastInsertRowid)
 }
 
+/**
+ * 删掉某产出下**指定 role** 的图（换封面/换配图用）。
+ *
+ * 为什么需要：`growth_replace_image` 名叫「替换」，此前实现只是 addOutputAsset —— 换一次多一张，
+ * 换三次之后导出包里躺着三张封面（导出按顺序命名 封面/图2/图3，用户根本不知道哪张是最终封面）。
+ * 替换就该是真的替换：先按 role 清掉旧图，再落新图。
+ */
+export function removeOutputAssetsByRole(outputId: number, role: string): number {
+  const res = getDb()
+    .prepare('DELETE FROM growth_output_asset WHERE output_id = ? AND role = ?')
+    .run(outputId, role)
+  return Number(res.changes ?? 0)
+}
+
+/**
+ * 只保留选中的那一张图（候选图「用这张」）。
+ * 一次生图会出 N 张图落在同一个产出块里，采用时只该留下用户点的那张；
+ * 否则点一张 = 整块 N 张一起进产出（导出包里就多出 N-1 张废图）。
+ */
+export function keepOnlyOutputAsset(outputId: number, assetId: number): number {
+  const db = getDb()
+  const hit = db
+    .prepare('SELECT COUNT(*) AS n FROM growth_output_asset WHERE output_id = ? AND asset_id = ?')
+    .get(outputId, assetId) as { n: number } | undefined
+  if (!Number(hit?.n ?? 0)) return -1
+  const res = db
+    .prepare(
+      'DELETE FROM growth_output_asset WHERE output_id = ? AND (asset_id IS NULL OR asset_id <> ?)'
+    )
+    .run(outputId, assetId)
+  return Number(res.changes ?? 0)
+}
+
 export function listOutputsByTask(taskId: number, status?: string): GrowthOutputView[] {
   const sql =
     'SELECT * FROM growth_remix_output WHERE task_id = ?' +

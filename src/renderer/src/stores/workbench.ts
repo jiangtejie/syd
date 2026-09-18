@@ -28,7 +28,11 @@ export type WorkbenchPage =
 /** 「监控」下的两个页签（原「问题监控」与「运营看板」两页合并为一个导航项） */
 export type MonitorTab = 'issues' | 'ops'
 
+/** 「营销」下的页签（放这里而不是页面内 useState：设置页要能跳过去并直接落在某一屏） */
+export type GrowthTab = 'provider' | 'sources' | 'warehouse' | 'ai' | 'buzz'
+
 const MONITOR_TAB_KEY = 'cs.monitorTab'
+const GROWTH_TAB_KEY = 'cs.growthTab'
 /** 当前页面也记在 localStorage：重开停在上次那一页；首启默认「对话」（见 shared/onboarding） */
 const PAGE_KEY = 'cs.page'
 
@@ -64,11 +68,30 @@ function persistMonitorTab(tab: MonitorTab): void {
   }
 }
 
+function readGrowthTab(): GrowthTab {
+  try {
+    const v = localStorage.getItem(GROWTH_TAB_KEY)
+    return v === 'provider' || v === 'sources' || v === 'ai' || v === 'buzz' ? v : 'warehouse'
+  } catch {
+    return 'warehouse'
+  }
+}
+
+function persistGrowthTab(tab: GrowthTab): void {
+  try {
+    localStorage.setItem(GROWTH_TAB_KEY, tab)
+  } catch {
+    /* 隐私模式等场景下写不了，忽略 */
+  }
+}
+
 interface WorkbenchState {
   /** 当前页面 */
   page: WorkbenchPage
   /** 监控页当前页签（问题监控 / 运营看板）；记忆在 localStorage，重开停在原页签 */
   monitorTab: MonitorTab
+  /** 营销页当前页签；记忆在 localStorage（设置页跳过来时用它定位到「设置」屏） */
+  growthTab: GrowthTab
   /** 当前微信账号 wxid */
   wxid: string | null
   /** 数据来源（mock=示例数据 / wx=真实微信库） */
@@ -180,6 +203,7 @@ interface WorkbenchState {
   /** 页面导航 */
   setPage: (page: WorkbenchPage) => void
   setMonitorTab: (tab: MonitorTab) => void
+  setGrowthTab: (tab: GrowthTab) => void
   /** 从客户页/看板跳转到指定会话（切到对话页并选中） */
   gotoSession: (sessionId: string) => void
 }
@@ -250,6 +274,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   // 既没有客户消息也没有下一步指引。判定逻辑在 shared/onboarding.ts（有自检）。
   page: readPage(),
   monitorTab: readMonitorTab(),
+  growthTab: readGrowthTab(),
   wxid: null,
   source: 'empty',
   sessions: [],
@@ -968,6 +993,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   setMonitorTab: (tab: MonitorTab) => {
     persistMonitorTab(tab)
     set({ monitorTab: tab })
+  },
+
+  setGrowthTab: (tab: GrowthTab) => {
+    persistGrowthTab(tab)
+    set({ growthTab: tab })
   },
 
   gotoSession: (sessionId: string) => {

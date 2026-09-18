@@ -9,6 +9,7 @@ import WorkbenchMemoSection from '../components/settings/WorkbenchMemoSection'
 import { WorkbenchWorkspaceSection } from '../components/settings/WorkbenchWorkspaceSection'
 import WorkbenchReliabilitySection from '../components/settings/WorkbenchReliabilitySection'
 import AiRunPanel from '../components/settings/AiRunPanel'
+import { FeishuNotifySection } from '../components/settings/FeishuNotifySection'
 import WorkbenchSkillsSection from '../components/settings/WorkbenchSkillsSection'
 import ReportJobsSection from '../components/settings/ReportJobsSection'
 import { LogSection } from '../components/settings/LogSection'
@@ -24,6 +25,7 @@ import {
 import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
+import { useWorkbenchStore } from '../stores/workbench'
 import { setIssueAlertPref } from '../lib/issueAlert'
 import './settings.css'
 
@@ -39,21 +41,13 @@ interface FormState {
   'ai.apiKey': string
   'ai.model': string
   'ai.agent': string
+  'ai.maxOutputTokens': string
   'send.dailyLimit': string
   'send.humanizeDelay': string
   'send.sessionBurstWindowSec': string
   'send.dupMaxSessions': string
   'inject.enabled': string
   'notify.enabled': string
-  'growth.image.enabled': string
-  'growth.image.baseUrl': string
-  'growth.image.apiKey': string
-  'growth.image.model': string
-  'growth.image.size': string
-  'growth.image.count': string
-  'growth.search.enabled': string
-  'growth.search.provider': string
-  'growth.search.apiKey': string
   'lark.appId': string
   'lark.appSecret': string
   'lark.defaultUrl': string
@@ -121,21 +115,14 @@ const DEFAULTS: FormState = {
   'ai.apiKey': '',
   'ai.model': '',
   'ai.agent': '1',
+  // 0 = 未配置（按各调用点的默认值 + 思考型模型自动抬升）
+  'ai.maxOutputTokens': '0',
   'send.dailyLimit': '200',
   'send.humanizeDelay': '1',
   'send.sessionBurstWindowSec': '90',
   'send.dupMaxSessions': '20',
   'inject.enabled': '1',
   'notify.enabled': '1',
-  'growth.image.enabled': '0',
-  'growth.image.baseUrl': '',
-  'growth.image.apiKey': '',
-  'growth.image.model': 'gptimage2',
-  'growth.image.size': '1024x1024',
-  'growth.image.count': '2',
-  'growth.search.enabled': '0',
-  'growth.search.provider': 'bocha',
-  'growth.search.apiKey': '',
   'lark.appId': '',
   'lark.appSecret': '',
   'lark.defaultUrl': ''
@@ -201,6 +188,8 @@ const SETTINGS_TAB_KEYS: readonly SettingsTab[] = [
 const SETTINGS_TAB_KEY = 'cs.settingsTab'
 
 function SettingsPage(): React.JSX.Element {
+  const setPage = useWorkbenchStore((s) => s.setPage)
+  const setGrowthTab = useWorkbenchStore((s) => s.setGrowthTab)
   const [tab, setTab] = useState<SettingsTab>(() => {
     const saved = localStorage.getItem(SETTINGS_TAB_KEY)
     return (SETTINGS_TAB_KEYS as readonly string[]).includes(saved as string)
@@ -212,7 +201,6 @@ function SettingsPage(): React.JSX.Element {
   const [savedTip, setSavedTip] = useState('')
   const [sendStatus, setSendStatus] = useState<SendStatusInfo | null>(null)
   const [aiTesting, setAiTesting] = useState(false)
-  const [imgTesting, setImgTesting] = useState(false)
   /** 飞书凭证状态：只保留「配没配 / 复用谁」这类人话信息，App ID 之类的标识不再往界面上带 */
   const [larkStatus, setLarkStatus] = useState<{
     configured: boolean
@@ -226,6 +214,8 @@ function SettingsPage(): React.JSX.Element {
   const [larkTestRes, setLarkTestRes] = useState<{ ok: boolean; text: string } | null>(null)
   /** 飞书凭证状态刷新计数(保存配置后 +1 重新读取) */
   const [larkReload, setLarkReload] = useState(0)
+  /** AI 运行与成本的范围：'run'=本次运行(内存态) / 数字=近 N 天(落库) */
+  const [aiCostScope, setAiCostScope] = useState<'run' | 1 | 7 | 30>(7)
   useEffect(() => {
     let alive = true
     void window.api?.cs?.lark
@@ -415,18 +405,6 @@ function SettingsPage(): React.JSX.Element {
     }
   }
 
-  const testImage = async (): Promise<void> => {
-    const api = window.api?.cs?.growthai
-    if (!api?.testImage) return
-    setImgTesting(true)
-    try {
-      const res = await api.testImage()
-      if (res.ok) toast.success('生图通道连通, 测试图已生成')
-      else toast.error(res.error || '生图测试失败')
-    } finally {
-      setImgTesting(false)
-    }
-  }
   const patch = (key: keyof FormState, value: string): void => {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
@@ -478,14 +456,49 @@ function SettingsPage(): React.JSX.Element {
     go()
   }
 
-  const save = async (keys: Array<keyof FormState>): Promise<void> => {
-    if (!configApi) return
-    if (!loaded) return // 配置尚未回读完成，避免用表单默认值覆盖已保存配置
-    for (const k of keys) {
-      await configApi.set(k, form[k])
-    }
+  /** 保存反馈：统一在标题下方闪一下，替代每个卡片各自的「保存」按钮 */
+  const flashSaved = (): void => {
     setSavedTip('已保存')
-    setTimeout(() => setSavedTip(''), 2000)
+    window.setTimeout(() => setSavedTip(''), 1500)
+  }
+
+  /**
+   * 开关 / 下拉：一次操作就是一次完整决定 → **立即落库**。
+   * （此前同一张卡里开关要"保存"才生效、旁边开关却即时生效，用户无法预判。）
+   */
+  const setNow = (key: keyof FormState, value: string): void => {
+    patch(key, value)
+    if (!configApi || !loaded) return
+    void configApi.set(key, value)
+    flashSaved()
+  }
+
+  /**
+   * 输入框：**失焦 / 回车落库**。
+   * 不用 onChange 直写：半截输入（https://api.）不该被当成配置存进去。
+   */
+  const saveField = (key: keyof FormState, value: string): void => {
+    patch(key, value)
+    if (!configApi || !loaded) return
+    void configApi.set(key, value)
+    flashSaved()
+  }
+
+  /** 营销 AI（生图/搜索）已搬到营销页，这里只留一个入口，不再重复一份配置 */
+  const goMarketingAi = (): void => {
+    setGrowthTab('provider')
+    setPage('growth')
+  }
+
+  /** 飞书凭证：失焦即存，同时刷新顶部状态胶囊（连接状态取决于两个字段，存完就重算） */
+  const saveLarkField = (
+    key: 'lark.appId' | 'lark.appSecret' | 'lark.defaultUrl',
+    value: string
+  ): void => {
+    patch(key, value)
+    if (!configApi || !loaded) return
+    void configApi.set(key, value).then(() => setLarkReload((n) => n + 1))
+    flashSaved()
   }
 
   const resetCircuit = async (): Promise<void> => {
@@ -496,17 +509,15 @@ function SettingsPage(): React.JSX.Element {
 
   /** 选择通道预设：仅自动填充官方接口地址（模型名不预置，留空待「获取模型」或手动填写） */
   const pickAiProvider = (id: string): void => {
-    patch('ai.provider', id)
     // 通道切换后清空上次拉取的模型列表与当前模型名，避免串入上一通道的值
     setAiModels([])
     setAiModelsMsg(null)
-    patch('ai.model', '')
     // 自定义通道无预置地址 → 直接进入自由输入；其它通道用下拉选择
     setModelFree(id === 'custom')
     const preset = AI_PRESETS.find((p) => p.id === id)
-    if (preset) {
-      patch('ai.baseUrl', preset.baseUrl)
-    }
+    setNow('ai.provider', id)
+    setNow('ai.model', '')
+    setNow('ai.baseUrl', preset ? preset.baseUrl : '')
   }
 
   /** 用当前表单值（无需先保存）拉取该通道可用模型并列入下拉 */
@@ -572,7 +583,8 @@ function SettingsPage(): React.JSX.Element {
     <div className="page-scroll">
       <h2 className="page-title">设置</h2>
       <div className="page-subtitle">
-        配置保存后立即生效 {savedTip && <span className="st-saved">{savedTip}</span>}
+        开关与下拉即时生效，输入框失焦即存{' '}
+        {savedTip && <span className="st-saved">{savedTip}</span>}
         {!loaded && '（加载中…）'}
       </div>
 
@@ -581,13 +593,13 @@ function SettingsPage(): React.JSX.Element {
         {(
           [
             ['wechat', '微信数据'],
+            // 「AI 助手」= 模型通道与它能看到的东西（飞书文档/Base）；「AI 工作台」= 工作台自己的行为
+            // （人设/备忘/工作区/审批/技能）。此前两者混在一个 tab 里，11 张卡单列长滚动。
             ['ai', 'AI 助手'],
+            ['workbench', 'AI 工作台'],
             ['send', '发送与频控'],
-            ['other', '偏好与数据'],
             ['im', 'IM 渠道'],
-            // tab key 仍叫 workbench（改名会让已记住 tab 的用户被重置回默认），但这一屏现在只有
-            // 「业务技能(SKILL.md)」一张卡，所以对外名称用「技能」——以前叫 "AI"，和「AI 助手」撞名又看不出内容。
-            ['workbench', '技能'],
+            ['other', '偏好与数据'],
             ['report', '定时任务'],
             ['logs', '日志']
           ] as Array<[SettingsTab, string]>
@@ -607,13 +619,47 @@ function SettingsPage(): React.JSX.Element {
 
       {tab === 'im' && (
         <div className="st-tab-panel">
-          <ImSection />
+          <ImSection onOpenNotifications={() => switchTab('other')} />
         </div>
       )}
 
       {tab === 'workbench' && (
         <div className="st-tab-panel">
-          <WorkbenchSkillsSection />
+          {/* AI 工作台自己的行为：人设 / 备忘 / 工作区 / 审批 / 技能（技能此前单独占一个 tab，只有一张卡） */}
+          <SettingsCard
+            title="智能体(统一人设)"
+            desc="全应用统一使用同一条人设:智能分析(群问题/工作台)与智能回复(回复建议/IM 通道)都按此人设组织口径与话术,修改后即时生效。"
+          >
+            <AgentSettingsSection />
+          </SettingsCard>
+
+          <SettingsCard
+            title="运营备忘"
+            desc="跨会话动态事实:工作台分析、回复建议与 IM 自动回复每轮都会携带。"
+          >
+            <WorkbenchMemoSection />
+          </SettingsCard>
+
+          <SettingsCard
+            title="默认工作区"
+            desc="飞书机器人 / 微信 ClawBot 这类没有工作台界面的会话,用它作为文件工具的根目录;工作台会话单独绑定的目录优先。"
+          >
+            <WorkbenchWorkspaceSection />
+          </SettingsCard>
+
+          <SettingsCard
+            title="工具审批策略"
+            desc="写操作(代发消息、改问题状态、写文件等)的审批偏好:人工审批 / 完全访问;命中「始终允许」名单的工具不再询问。"
+          >
+            <WorkbenchApprovalSection />
+          </SettingsCard>
+
+          <SettingsCard
+            title="业务技能(SKILL.md)"
+            desc="把可复用的口径写成技能文件，AI 按技能回答；启用上限与注入预算成正比。"
+          >
+            <WorkbenchSkillsSection />
+          </SettingsCard>
         </div>
       )}
 
@@ -638,16 +684,25 @@ function SettingsPage(): React.JSX.Element {
 
       {tab === 'ai' && (
         <div className="st-tab-panel">
+          {/* 指路：营销 AI 的通道与策略不在这里重复一份，去营销页和门店档案放一起配 */}
+          <div className="st-actions">
+            <span className="st-hint">
+              营销相关的 AI（AI 生图 / 联网搜索）已移到「营销 → 设置」，与门店/品牌档案同屏。
+            </span>
+            <button type="button" className="ui-btn is-sm" onClick={goMarketingAi}>
+              去设置
+            </button>
+          </div>
           {/* AI 通道(独占一行) */}
           <SettingsCard
             title="AI 通道配置(OpenAI 兼容)"
-            desc="选择通道会自动填入官方接口地址(火山方舟需在控制台创建推理接入点后填写 ep-xxx);模型名可点「获取模型」拉取或手动填写。建议先「测试连接」通过后再保存。"
+            desc="选择通道会自动填入官方接口地址(火山方舟需在控制台创建推理接入点后填写 ep-xxx);模型名可点「获取模型」拉取或手动填写。改动即时保存,建议先「测试连接」验证。思考型模型(DeepSeek Reasoner/Qwen 思考/GLM-Z 等)会把思考算进输出预算,预算不足时会出现「思考完了却没有正文」,可在此调高或改用非思考模型。"
           >
             <SwitchRow
               label="启用 AI 调用"
               desc="关闭后回复建议不产出候选、群问题提取走本地规则降级。"
               checked={boolVal(form['ai.enabled'])}
-              onChange={(v) => patch('ai.enabled', boolStr(v))}
+              onChange={(v) => setNow('ai.enabled', boolStr(v))}
             />
             <FieldRow label="通道">
               <select
@@ -667,6 +722,10 @@ function SettingsPage(): React.JSX.Element {
                 className="st-input"
                 value={form['ai.baseUrl']}
                 onChange={(e) => patch('ai.baseUrl', e.target.value)}
+                onBlur={(e) => saveField('ai.baseUrl', e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveField('ai.baseUrl', e.currentTarget.value)
+                }}
                 placeholder="https://api.openai.com/v1"
               />
             </FieldRow>
@@ -676,6 +735,10 @@ function SettingsPage(): React.JSX.Element {
                 type="password"
                 value={form['ai.apiKey']}
                 onChange={(e) => patch('ai.apiKey', e.target.value)}
+                onBlur={(e) => saveField('ai.apiKey', e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveField('ai.apiKey', e.currentTarget.value)
+                }}
                 placeholder="sk-..."
               />
             </FieldRow>
@@ -686,6 +749,10 @@ function SettingsPage(): React.JSX.Element {
                     className="st-input"
                     value={form['ai.model']}
                     onChange={(e) => patch('ai.model', e.target.value)}
+                    onBlur={(e) => saveField('ai.model', e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveField('ai.model', e.currentTarget.value)
+                    }}
                     placeholder={
                       form['ai.provider'] === 'custom' ? '输入任意 OpenAI 兼容模型名' : '模型名'
                     }
@@ -698,7 +765,7 @@ function SettingsPage(): React.JSX.Element {
                       if (e.target.value === '__manual__') {
                         setModelFree(true)
                       } else {
-                        patch('ai.model', e.target.value)
+                        setNow('ai.model', e.target.value)
                       }
                     }}
                   >
@@ -753,29 +820,30 @@ function SettingsPage(): React.JSX.Element {
               >
                 {aiTesting ? '测试中…' : '测试连接'}
               </button>
-              <button
-                type="button"
-                className="ui-btn is-primary"
-                disabled={!loaded}
-                onClick={() =>
-                  void save([
-                    'ai.enabled',
-                    'ai.provider',
-                    'ai.baseUrl',
-                    'ai.apiKey',
-                    'ai.model',
-                    'ai.agent'
-                  ])
-                }
-              >
-                保存 AI 配置
-              </button>
+              {!loaded && <span className="st-hint">配置加载中…</span>}
             </div>
+            <FieldRow
+              label="输出预算(tokens)"
+              hint="单次回复最多生成多少 token。思考型模型的思考过程也算在里面，太小会出现「想完了但一个字没写」；0 = 自动（按模型类型给，思考型自动抬到 8192 并在失败后放大重试）"
+            >
+              <input
+                className="st-input"
+                type="number"
+                min={0}
+                max={200000}
+                value={form['ai.maxOutputTokens'] ?? '0'}
+                onChange={(e) => patch('ai.maxOutputTokens', e.target.value)}
+                onBlur={(e) => saveField('ai.maxOutputTokens', e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveField('ai.maxOutputTokens', e.currentTarget.value)
+                }}
+              />
+            </FieldRow>
             <SwitchRow
               label="业务上下文增强"
               desc="生成建议时自动带上本群待处理问题与团队客服背景;模型必要时可调用只读工具(查历史问题/团队名单)再作答。关闭则仅用聊天记录。"
               checked={boolVal(form['ai.agent'])}
-              onChange={(v) => patch('ai.agent', boolStr(v))}
+              onChange={(v) => setNow('ai.agent', boolStr(v))}
             />
             <div className="st-ai-test">
               {aiTestRes &&
@@ -786,148 +854,29 @@ function SettingsPage(): React.JSX.Element {
                 ))}
             </div>
           </SettingsCard>
-          {/* 智能体(统一人设) */}
-          <SettingsCard
-            title="智能体(统一人设)"
-            desc="全应用统一使用同一条人设:智能分析(群问题/工作台)与智能回复(回复建议/IM 通道)都按此人设组织口径与话术,修改后即时生效。"
-          >
-            <AgentSettingsSection />
-          </SettingsCard>
 
-          {/* 运营备忘(跨会话动态事实) */}
-          <SettingsCard
-            title="运营备忘"
-            desc="跨会话动态事实:工作台分析、回复建议与 IM 自动回复每轮都会携带。"
-          >
-            <WorkbenchMemoSection />
-          </SettingsCard>
-
-          {/* 默认工作区(飞书/IM 渠道文件工具的根目录) */}
-          <SettingsCard
-            title="默认工作区"
-            desc="飞书机器人 / 微信 ClawBot 这类没有工作台界面的会话,用它作为文件工具的根目录;工作台会话单独绑定的目录优先。"
-          >
-            <WorkbenchWorkspaceSection />
-          </SettingsCard>
-
-          {/* 工具审批策略(工作台写/外部工具预留) */}
-          <SettingsCard
-            title="工具审批策略"
-            desc="写操作(代发消息、改问题状态、写文件等)的审批偏好:人工审批 / 完全访问;命中「始终允许」名单的工具不再询问。"
-          >
-            <WorkbenchApprovalSection />
-          </SettingsCard>
-
-          {/* AI 通道可靠性(本次运行) */}
-          <SettingsCard
-            title="AI 通道可靠性"
-            desc="本次运行内工作台生成请求的成功率与最近失败原因。"
-          >
-            <WorkbenchReliabilitySection />
-          </SettingsCard>
-
-          {/* AI 运行与成本(近 N 天,落库;覆盖所有模块) */}
+          {/* AI 运行与成本(一张卡两种范围,替代此前"可靠性"+"成本"两张语义重叠的卡) */}
           <SettingsCard
             title="AI 运行与成本"
-            desc="每次真实模型调用的成功率、失败原因与 token 用量。与上一张卡不同:这里落库、重启不清零,且包含后台的群问题分析与数字员工值班。"
+            desc="每次真实模型调用的成功率、失败原因与 token 用量。「本次运行」是内存态、重启清零、只覆盖工作台;按天数则是落库记录,覆盖所有模块(含后台群问题分析与数字员工值班)。"
           >
-            <AiRunPanel />
-          </SettingsCard>
-        </div>
-      )}
-
-      {tab === 'ai' && (
-        <div className="st-tab-panel">
-          <SettingsCard
-            title="生图模型(营销 AI 工作台)"
-            desc="用于营销工作台里 AI 生图(封面/氛围图/菜品示意图)。支持 OpenAI 兼容的 /images/generations;中转站请填其 Base URL 与模型名(如 gptimage2)。生成图会强制标注「AI 生成示意图」。"
-          >
-            <SwitchRow
-              label="启用 AI 生图"
-              desc="关闭后营销工作台里的生图工具会提示去设置开启。"
-              checked={boolVal(form['growth.image.enabled'])}
-              onChange={(v) => patch('growth.image.enabled', boolStr(v))}
-            />
-            <FieldRow label="接口地址(Base URL)">
-              <input
-                className="st-input"
-                value={form['growth.image.baseUrl'] ?? ''}
-                onChange={(e) => patch('growth.image.baseUrl', e.target.value)}
-                placeholder="https://中转站域名/v1"
-              />
-            </FieldRow>
-            <FieldRow label="API Key">
-              <input
-                className="st-input"
-                type="password"
-                value={form['growth.image.apiKey'] ?? ''}
-                onChange={(e) => patch('growth.image.apiKey', e.target.value)}
-                placeholder="中转站密钥(本地加密存储)"
-              />
-            </FieldRow>
-            <FieldRow label="模型名">
-              <input
-                className="st-input"
-                value={form['growth.image.model'] ?? ''}
-                onChange={(e) => patch('growth.image.model', e.target.value)}
-                placeholder="gptimage2"
-              />
-            </FieldRow>
-            <FieldRow label="尺寸">
-              <input
-                className="st-input"
-                value={form['growth.image.size'] ?? ''}
-                onChange={(e) => patch('growth.image.size', e.target.value)}
-                placeholder="1024x1024"
-              />
-            </FieldRow>
-            <FieldRow label="每次张数">
-              <input
-                className="st-input"
-                type="number"
-                min={1}
-                max={4}
-                value={form['growth.image.count'] ?? '2'}
-                onChange={(e) => patch('growth.image.count', e.target.value)}
-              />
-            </FieldRow>
-            <FieldRow label="连通性测试">
-              <button type="button" className="ui-btn is-primary" onClick={() => void testImage()}>
-                {imgTesting ? '测试中…' : '测试生图(会生成 1 张测试图)'}
-              </button>
-            </FieldRow>
-          </SettingsCard>
-
-          <SettingsCard
-            title="联网搜索(营销 AI 工作台)"
-            desc="营销工作台里 AI 查地址/电话/口碑/菜品参考时使用。结果仅供参考, 地址电话需人工确认后才写入档案。"
-          >
-            <SwitchRow
-              label="启用联网搜索"
-              desc="关闭后搜索工具会提示去设置开启。"
-              checked={boolVal(form['growth.search.enabled'])}
-              onChange={(v) => patch('growth.search.enabled', boolStr(v))}
-            />
-            <FieldRow label="供应商">
-              <select
-                className="st-input"
-                value={form['growth.search.provider'] ?? 'bocha'}
-                onChange={(e) => patch('growth.search.provider', e.target.value)}
-              >
-                <option value="bocha">博查(国内直连)</option>
-                <option value="tavily">Tavily</option>
-                <option value="serper">Serper</option>
-              </select>
-            </FieldRow>
-            <FieldRow label="API Key">
-              <input
-                className="st-input"
-                type="password"
-                value={form['growth.search.apiKey'] ?? ''}
-                onChange={(e) => patch('growth.search.apiKey', e.target.value)}
-                placeholder="搜索服务密钥(本地加密存储)"
-              />
-            </FieldRow>
+            <div className="st-actions">
+              {(['run', 1, 7, 30] as const).map((s) => (
+                <button
+                  key={String(s)}
+                  type="button"
+                  className={'ui-btn is-sm' + (aiCostScope === s ? ' is-primary' : '')}
+                  onClick={() => setAiCostScope(s)}
+                >
+                  {s === 'run' ? '本次运行' : String(s) + ' 天'}
+                </button>
+              ))}
+            </div>
+            {aiCostScope === 'run' ? (
+              <WorkbenchReliabilitySection />
+            ) : (
+              <AiRunPanel days={aiCostScope} />
+            )}
           </SettingsCard>
 
           <SettingsCard
@@ -981,6 +930,10 @@ function SettingsPage(): React.JSX.Element {
                     className="st-input"
                     value={form['lark.appId'] ?? ''}
                     onChange={(e) => patch('lark.appId', e.target.value)}
+                    onBlur={(e) => saveLarkField('lark.appId', e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveLarkField('lark.appId', e.currentTarget.value)
+                    }}
                     placeholder="cli_…（留空则复用 IM 渠道的飞书账号）"
                   />
                 </FieldRow>
@@ -990,6 +943,10 @@ function SettingsPage(): React.JSX.Element {
                     type="password"
                     value={form['lark.appSecret'] ?? ''}
                     onChange={(e) => patch('lark.appSecret', e.target.value)}
+                    onBlur={(e) => saveLarkField('lark.appSecret', e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveLarkField('lark.appSecret', e.currentTarget.value)
+                    }}
                     placeholder="应用密钥（本地加密存储）"
                   />
                 </FieldRow>
@@ -998,22 +955,24 @@ function SettingsPage(): React.JSX.Element {
                     className="st-input"
                     value={form['lark.defaultUrl'] ?? ''}
                     onChange={(e) => patch('lark.defaultUrl', e.target.value)}
+                    onBlur={(e) => saveLarkField('lark.defaultUrl', e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveLarkField('lark.defaultUrl', e.currentTarget.value)
+                    }}
                     placeholder="https://xxx.feishu.cn/base/xxxxx（默认链接，可留空）"
                   />
                 </FieldRow>
                 <div className="sf-actions-split">
+                  <span className="st-hint">填完点「完成」即可，改动已随失焦保存</span>
                   <button
                     type="button"
                     className="ui-btn is-primary"
-                    disabled={!loaded}
                     onClick={() => {
-                      void save(['lark.appId', 'lark.appSecret', 'lark.defaultUrl']).then(() => {
-                        setLarkReload((n) => n + 1)
-                        setLarkReconfig(false)
-                      })
+                      setLarkReload((n) => n + 1)
+                      setLarkReconfig(false)
                     }}
                   >
-                    保存飞书配置
+                    完成
                   </button>
                   {larkReconfig && (
                     <button
@@ -1064,6 +1023,10 @@ function SettingsPage(): React.JSX.Element {
                   max={2000}
                   value={form['send.dailyLimit']}
                   onChange={(e) => patch('send.dailyLimit', e.target.value)}
+                  onBlur={(e) => saveField('send.dailyLimit', e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveField('send.dailyLimit', e.currentTarget.value)
+                  }}
                 />
               </FieldRow>
               <FieldRow label="同会话连发窗口(秒)">
@@ -1074,6 +1037,11 @@ function SettingsPage(): React.JSX.Element {
                   max={3600}
                   value={form['send.sessionBurstWindowSec']}
                   onChange={(e) => patch('send.sessionBurstWindowSec', e.target.value)}
+                  onBlur={(e) => saveField('send.sessionBurstWindowSec', e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter')
+                      saveField('send.sessionBurstWindowSec', e.currentTarget.value)
+                  }}
                 />
                 <div className="st-hint">
                   同一会话在这个窗口内最多连发 3 条,超出即拦截。机器连发是风控特征,而正常客服
@@ -1088,6 +1056,10 @@ function SettingsPage(): React.JSX.Element {
                   max={500}
                   value={form['send.dupMaxSessions']}
                   onChange={(e) => patch('send.dupMaxSessions', e.target.value)}
+                  onBlur={(e) => saveField('send.dupMaxSessions', e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveField('send.dupMaxSessions', e.currentTarget.value)
+                  }}
                 />
                 <div className="st-hint">
                   同一条文案在 24 小时内发往多少会话后开始拦截。同文案群发是微信风控的首要触发点； 0
@@ -1098,13 +1070,13 @@ function SettingsPage(): React.JSX.Element {
                 label="拟人化延迟(发送间隔随机化)"
                 desc="在节流区间内随机延迟后再发出,降低批量发送的机械感。"
                 checked={boolVal(form['send.humanizeDelay'])}
-                onChange={(v) => patch('send.humanizeDelay', boolStr(v))}
+                onChange={(v) => setNow('send.humanizeDelay', boolStr(v))}
               />
               <SwitchRow
                 label="启用注入发送"
                 desc="关闭后所有发送请求会被拒绝(仅记录审计)。"
                 checked={boolVal(form['inject.enabled'])}
-                onChange={(v) => patch('inject.enabled', boolStr(v))}
+                onChange={(v) => setNow('inject.enabled', boolStr(v))}
               />
               <SwitchRow
                 label="智能体发送消息"
@@ -1126,23 +1098,6 @@ function SettingsPage(): React.JSX.Element {
                   toast.success(v ? '已开启逐次审批' : '已关闭逐次审批(代发不再询问)')
                 }}
               />
-              <div className="st-actions">
-                <button
-                  type="button"
-                  className="ui-btn is-primary"
-                  onClick={() =>
-                    void save([
-                      'send.dailyLimit',
-                      'send.humanizeDelay',
-                      'send.sessionBurstWindowSec',
-                      'send.dupMaxSessions',
-                      'inject.enabled'
-                    ])
-                  }
-                >
-                  保存发送配置
-                </button>
-              </div>
             </SettingsCard>
 
             {/* 熔断状态 */}
@@ -1185,6 +1140,36 @@ function SettingsPage(): React.JSX.Element {
 
       {tab === 'other' && (
         <div className="st-tab-panel">
+          {/* 通知与提醒：此前散在「通用」「问题监控口径」「IM 渠道」三处，
+              "为什么没提醒"要翻三个 tab 才能拼出全貌，现收成一张卡。 */}
+          <SettingsCard
+            title="通知与提醒"
+            desc="哪些事要提醒、从哪个通道提醒。触发阈值仍在下方「问题监控口径」里配;飞书推送需要先在「IM 渠道」接一个飞书机器人。"
+          >
+            <div className="st-subtitle">桌面通知(本机弹窗/提示音)</div>
+            <SwitchRow
+              label="新消息系统通知"
+              desc="后台消息到达时弹出系统通知(窗口未聚焦时)。"
+              checked={boolVal(form['notify.enabled'])}
+              onChange={(v) => setNow('notify.enabled', boolStr(v))}
+            />
+            <IssueSoundRow />
+            <SwitchRow
+              label="盯办升级提醒"
+              desc="未指派超时(紧急>1h/其余>4h)、已指派长期未闭环与跟进超时的问题,后台每分钟巡检、窗口未聚焦时桌面提醒;同一问题的重复提醒间隔递增(45min → 90min → 3h → 6h)。"
+              checked={escalateIssue}
+              onChange={(v) => {
+                setEscalateIssue(v)
+                void configApi?.set('issue.escalate.enabled', v ? '1' : '0')
+                toast.success(
+                  v ? '已开启:未指派超时/跟进超时自动提醒' : '已关闭盯办提醒(监控页仍可见)'
+                )
+              }}
+            />
+            <div className="st-subtitle">飞书推送(推到群/同事单聊)</div>
+            <FeishuNotifySection />
+          </SettingsCard>
+
           <div className="st-grid">
             {/* 数据缓存目录 */}
             <SettingsCard
@@ -1228,30 +1213,20 @@ function SettingsPage(): React.JSX.Element {
               </div>
             </SettingsCard>
 
-            {/* 通用（通知 / 开机自启） */}
-            <SettingsCard title="通用">
-              <SwitchRow
-                label="新消息系统通知"
-                desc="后台消息到达时弹出系统通知(窗口未聚焦时)。"
-                checked={boolVal(form['notify.enabled'])}
-                onChange={(v) => {
-                  patch('notify.enabled', boolStr(v))
-                  void configApi?.set('notify.enabled', boolStr(v))
-                }}
-              />
+            {/* 启动行为（系统通知 / 提示音已移到「通知与提醒」） */}
+            <SettingsCard title="启动" desc="应用自身的启动与驻留行为。">
               <SwitchRow
                 label="开机自动启动"
                 desc="打包安装后生效(开发模式下指向 Electron 本体);关闭窗口会最小化到系统托盘,可在托盘菜单中退出。"
                 checked={autoLaunch}
                 onChange={(v) => void toggleAutoLaunch(v)}
               />
-              <IssueSoundRow />
             </SettingsCard>
 
             {/* 问题监控口径 */}
             <SettingsCard
               title="问题监控口径"
-              desc="应用于监控中心 KPI、群问题面板的逾期徽标与排序提示;数值失焦或回车保存,立即生效。"
+              desc="应用于监控中心 KPI、群问题面板的逾期徽标与排序提示;数值失焦或回车保存,立即生效。这些阈值也决定「通知与提醒」里盯办提醒的触发时机。"
             >
               <SwitchRow
                 label="后台自动增量分析"
@@ -1273,18 +1248,6 @@ function SettingsPage(): React.JSX.Element {
                   setAutoMergeIssue(v)
                   void configApi?.set('issue.autoMergeDuplicates', v ? '1' : '0')
                   toast.success(v ? '已开启自动合并重复议题' : '已关闭自动合并(仍可手动合并)')
-                }}
-              />
-              <SwitchRow
-                label="盯办升级提醒"
-                desc="未指派超时(紧急>1h/其余>4h)、已指派长期未闭环与跟进超时的问题,后台每分钟巡检、窗口未聚焦时桌面提醒;同一问题的重复提醒间隔递增(45min → 90min → 3h → 6h)。"
-                checked={escalateIssue}
-                onChange={(v) => {
-                  setEscalateIssue(v)
-                  void configApi?.set('issue.escalate.enabled', v ? '1' : '0')
-                  toast.success(
-                    v ? '已开启:未指派超时/跟进超时自动提醒' : '已关闭盯办提醒(监控页仍可见)'
-                  )
                 }}
               />
               <FieldRow label="积压超时阈值" hint="小时:问题首现超过该时长未闭环即标为「积压超时」">

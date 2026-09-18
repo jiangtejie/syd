@@ -29,14 +29,8 @@ import {
   sendGrowthMessage,
   stopGrowthChat
 } from '../services/growth/ai/growthEngine'
-import {
-  getImageConfig,
-  getSearchConfig,
-  setGrowthAiConfigField,
-  type GrowthAiConfigField
-} from '../services/growth/ai/config'
+import { getImageConfig } from '../services/growth/ai/config'
 import { testImageChannel } from '../services/growth/ai/imageProvider'
-import { queryContents } from '../services/growth/warehouse/service'
 import { clampInt } from './_util'
 
 function ok<T>(value: T): { ok: true } & T {
@@ -166,12 +160,15 @@ export function registerGrowthAiHandlers(): void {
   // ── 候选 / 产出 ──
   ipcMain.handle(
     'cs:growthai:resolveCandidate',
-    (_e, id: unknown, outputId: unknown, action: unknown) => {
+    (_e, id: unknown, outputId: unknown, action: unknown, assetId: unknown) => {
       const taskId = clampInt(id, 0, 1, Number.MAX_SAFE_INTEGER)
       const oid = clampInt(outputId, 0, 1, Number.MAX_SAFE_INTEGER)
-      const act = action === 'archive' || action === 'delete' ? action : 'select'
+      const act =
+        action === 'archive' || action === 'delete' || action === 'pick' ? action : 'select'
       if (!taskId || !oid) return err('参数不合法')
-      const res = resolveCandidate(taskId, oid, act)
+      // pick：只采用用户点的那一张（assetId 来自候选卡上的图）
+      const aid = action === 'pick' ? clampInt(assetId, 0, 1, Number.MAX_SAFE_INTEGER) : 0
+      const res = resolveCandidate(taskId, oid, act, aid || undefined)
       return res.ok ? ok({}) : err(res.error ?? '操作失败')
     }
   )
@@ -230,49 +227,15 @@ export function registerGrowthAiHandlers(): void {
     return ok({ id })
   })
 
-  // ── 生图 / 搜索配置 ──
-  ipcMain.handle('cs:growthai:configGet', () => {
-    const img = getImageConfig()
-    const sea = getSearchConfig()
-    return ok({
-      image: {
-        enabled: img.enabled,
-        baseUrl: img.baseUrl,
-        apiKey: img.apiKey,
-        model: img.model,
-        size: img.size,
-        count: img.count,
-        monthlyBudget: img.monthlyBudget
-      },
-      search: { enabled: sea.enabled, provider: sea.provider, apiKey: sea.apiKey }
-    })
-  })
-
-  ipcMain.handle('cs:growthai:configSet', (_e, field: unknown, value: unknown) => {
-    const allowed: GrowthAiConfigField[] = [
-      'imageEnabled',
-      'imageBaseUrl',
-      'imageApiKey',
-      'imageModel',
-      'imageSize',
-      'imageCount',
-      'imageBudget',
-      'searchEnabled',
-      'searchProvider',
-      'searchApiKey'
-    ]
-    const f = String(field ?? '') as GrowthAiConfigField
-    if (!allowed.includes(f)) return err('非法配置项')
-    setGrowthAiConfigField(f, typeof value === 'string' ? value : String(value ?? ''))
-    return ok({})
-  })
-
+  // ── 生图通道连通性 ──
+  // 注: 生图/搜索的**配置读写**不走这里 —— 设置页用通用 cs:config:getAll/set(app_config 真源)。
+  // 此前这里另有一套 cs:growthai:configGet/configSet + GrowthAiConfigField 白名单，
+  // 但渲染端从无调用者(ProviderPanel 用的是 cs:growth，不是 cs:growthai)，已删除。
   ipcMain.handle('cs:growthai:testImage', async () => {
     const cfg = getImageConfig()
     if (!cfg.enabled || !cfg.baseUrl || !cfg.apiKey) return err('请先填写并开启生图配置')
-    const first = queryContents({ limit: 1, offset: 0 }).items[0]
-    if (!first) return err('请先在素材仓库入库一条素材, 再测试生图(生成图会挂到该素材下)')
-    const res = await testImageChannel(first.id)
+    // 不再要求"素材仓库里有素材"：测试图不落盘、不占月度张数，纯粹验通道
+    const res = await testImageChannel()
     return res.ok ? ok({}) : err(res.error ?? '生图测试失败')
   })
 }

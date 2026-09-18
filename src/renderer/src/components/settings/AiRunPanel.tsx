@@ -36,8 +36,13 @@ const MODULE_LABEL: Record<string, string> = {
   'growth-remix': '爆改'
 }
 
-function AiRunPanel(): React.JSX.Element {
-  const [days, setDays] = useState(7)
+/**
+ * @param days 受控范围（设置页的「AI 运行与成本」卡用它切换 本次运行/1/7/30 天）。
+ *   不传则保留自己的天数按钮，供独立使用。
+ */
+function AiRunPanel({ days: daysProp }: { days?: number } = {}): React.JSX.Element {
+  const [daysState, setDaysState] = useState(7)
+  const days = daysProp ?? daysState
   const [sum, setSum] = useState<AiRunSummaryView | null>(null)
   const [tip, setTip] = useState('')
 
@@ -79,16 +84,17 @@ function AiRunPanel(): React.JSX.Element {
             <button type="button" className="ui-btn is-sm" onClick={() => void reload(days)}>
               刷新
             </button>
-            {[1, 7, 30].map((d) => (
-              <button
-                key={d}
-                type="button"
-                className={`ui-btn is-sm${d === days ? ' is-primary' : ''}`}
-                onClick={() => setDays(d)}
-              >
-                {d} 天
-              </button>
-            ))}
+            {daysProp === undefined &&
+              [1, 7, 30].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  className={`ui-btn is-sm${d === days ? ' is-primary' : ''}`}
+                  onClick={() => setDaysState(d)}
+                >
+                  {d} 天
+                </button>
+              ))}
           </div>
 
           {sum.total === 0 && (

@@ -15,6 +15,7 @@ import { buildWorkbenchSystem } from './context'
 import { buildWorkbenchToolSet, type WbEvidenceRow } from './tools'
 import { emitWorkbenchEvent } from './events'
 import { describeModelError } from '../modelErrors'
+import { budgetExhaustedMessage, looksBudgetExhausted, planOutputBudget } from '../outputBudget'
 import { createLogger } from '../../logging'
 
 const wbLog = createLogger('wb')
@@ -36,6 +37,13 @@ const COMPRESS_THRESHOLD_CHARS = 36_000
 const REASON_CAP = 6000
 /** 工具调用参数/结果推送到渲染端的上限(渲染端可折叠查看,截断防刷屏) */
 const TOOL_IO_CAP = 4000
+/**
+ * 主循环的输出预算默认值。
+ * 思考型模型的思考过程也算在这个预算里（见 services/ai/outputBudget.ts）：
+ * 预算不够时它会把整个额度用在思考上，一个字正文都不写 —— 所以预算不是"随便定个数"，
+ * 而要按模型类型规划 + 失败后自动放大。
+ */
+const DEFAULT_OUTPUT_TOKENS = 2400
 
 /** 工具参数/结果 → 可推送文本(≤TOOL_IO_CAP,带截断标记) */
 function clipToolIO(v: unknown): { text: string; truncated: boolean } {
@@ -391,15 +399,18 @@ export async function sendWorkbenchMessage(
     let reasonEndedAt = 0
     let usageIn = 0
     let usageOut = 0
+    /** 接口自报的思考 tokens 与结束原因：判断"预算是否被思考吃光"要看它们 */
+    let usageReasoning = 0
+    let finishReason = ''
 
     /** 单次流式请求(读/重试均走这里;失败/中止抛错由外层判断) */
-    const runStream = async (): Promise<void> => {
+    const runStream = async (maxTokens: number): Promise<void> => {
       const result = streamText({
         model,
         system,
         messages,
         tools: toolSet,
-        maxOutputTokens: 2400,
+        maxOutputTokens: maxTokens,
         temperature: cfg.temperature,
         abortSignal: signal,
         stopWhen: stepCountIs(10)
@@ -459,21 +470,69 @@ export async function sendWorkbenchMessage(
         } else if (part.type === 'finish') {
           usageIn = part.totalUsage?.inputTokens ?? 0
           usageOut = part.totalUsage?.outputTokens ?? 0
+          usageReasoning = part.totalUsage?.outputTokenDetails?.reasoningTokens ?? 0
+          finishReason = String(part.finishReason ?? '')
         }
       }
     }
+
+    // 预算规划：设置里显式配了听用户的；没配时用默认值，思考型模型第一轮就抬到下限
+    const budget = planOutputBudget({
+      configured: getConfig('ai.maxOutputTokens'),
+      fallback: DEFAULT_OUTPUT_TOKENS,
+      model: cfg.model
+    })
+    let usedBudget = budget.maxTokens
 
     // 瞬时失败自动重试:仅当首轮「零产出」(无正文/推理/工具)时,退避 700ms 重试一次;
     // 已有部分产出或已执行工具不重试,避免重复副作用与重复审批
     for (let attempt = 0; ; attempt++) {
       try {
-        await runStream()
+        await runStream(usedBudget)
         break
       } catch (e) {
         const aborted = signal.aborted || (e instanceof Error && e.name === 'AbortError')
         if (aborted) throw e
         if (attempt > 0 || content !== '' || reasoning !== '' || turnLog.length > 0) throw e
         await new Promise((r) => setTimeout(r, 700))
+      }
+    }
+
+    // 预算被思考吃光：整轮放大预算重试一次。
+    // 只在「没有正文 + 没有跑过工具」时重试：跑过工具再重试会重复副作用与重复审批。
+    if (
+      !signal.aborted &&
+      turnLog.every((e) => e.kind !== 'tool') &&
+      looksBudgetExhausted({
+        hasText: content.trim() !== '',
+        reasoningChars: reasoning.length,
+        reasoningTokens: usageReasoning,
+        finishReason
+      })
+    ) {
+      const bigger = planOutputBudget({
+        configured: getConfig('ai.maxOutputTokens'),
+        fallback: DEFAULT_OUTPUT_TOKENS,
+        model: cfg.model,
+        attempt: 1
+      })
+      wbLog.warn(
+        `[会话${sessionId}] 输出预算被思考吃光(输出 ${usageOut} tokens / 思考 ${usageReasoning}),放大到 ${bigger.maxTokens} 重试`
+      )
+      emitWorkbenchEvent(sessionId, {
+        type: 'status',
+        text: `思考过长已耗尽输出预算，放大到 ${bigger.maxTokens} 重试…`
+      })
+      try {
+        await runStream(bigger.maxTokens)
+        usedBudget = bigger.maxTokens
+      } catch (e) {
+        const aborted = signal.aborted || (e instanceof Error && e.name === 'AbortError')
+        if (aborted) throw e
+        // 放大后仍然失败：保留下面的诊断（至少能说清是预算问题）
+        wbLog.warn(
+          `[会话${sessionId}] 放大预算后仍失败: ${e instanceof Error ? e.message : String(e)}`
+        )
       }
     }
 
@@ -487,7 +546,21 @@ export async function sendWorkbenchMessage(
     }
     const trimmed = cleanModelText(content).trim()
     if (!trimmed) {
-      const err = '模型未返回内容(预算或通道问题),可重试。'
+      // 说清到底是"预算被思考吃光"还是"通道/结构异常"：前者用户能自己解决（调预算/换模型）
+      const exhausted = looksBudgetExhausted({
+        hasText: false,
+        reasoningChars: reasoning.length,
+        reasoningTokens: usageReasoning,
+        finishReason
+      })
+      const err = exhausted
+        ? budgetExhaustedMessage({
+            maxTokens: usedBudget,
+            outputTokens: usageOut,
+            reasoningTokens: usageReasoning,
+            reasoningChars: reasoning.length
+          })
+        : '模型未返回内容(通道或响应结构异常),可重试。'
       appendChatMessage(sessionId, 'assistant', 'error', err)
       emitWorkbenchEvent(sessionId, { type: 'error', text: err })
       return { ok: true }

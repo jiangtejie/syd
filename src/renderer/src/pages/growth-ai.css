@@ -356,6 +356,18 @@
   gap: 6px;
   margin-top: 6px;
 }
+/* 生图策略回显: 模板/平台/比例/张数, 让用户看得出这张图是按什么生成的 */
+.gai-out-strategy {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-3);
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+.gai-img-role {
+  font-size: 11px;
+  color: var(--text-3);
+}
 .gai-out-img {
   width: 84px;
   height: 84px;

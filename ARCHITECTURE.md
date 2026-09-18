@@ -250,6 +250,13 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 统一 `complete(system, user, opts)`，配置 `ai.enabled/baseUrl/apiKey/model/temperature`（API Key 落库前 safeStorage 加封）。
 未配置或调用失败时，各功能按自己的降级策略处理（建议 → 空并对 UI 报错；群问题提取 → 规则兜底；工作台 → 报错提示）。
 
+**输出预算策略（`ai/outputBudget.ts`，纯函数 + 自检 `scripts/ai-budget-selftest.mjs`）**：
+思考型模型（DeepSeek Reasoner、Qwen 思考模式、GLM-Z、o 系列…）的**思考过程也算进 `maxOutputTokens`**。调用点原本各自写死一个数（工作台 2400、营销 3000、JSON 路径 600），思考一长就把预算吃光、一个字正文都不写，报出来还是「模型未返回内容(预算或通道问题)」——用户既不知道原因也不知道改什么。现在收敛成一条规则：
+- `planOutputBudget`：设置里的 `ai.maxOutputTokens`（>0）优先；否则用调用点默认值，**模型名看着像思考型就抬到 8192 下限**（避免必然白跑一次）；上一轮预算用完后按 **4 倍递增**，硬上限 32768。
+- **两个流式引擎（`workbench/engine.ts`、`growth/ai/growthEngine.ts`）在「没有正文 + 没有跑过工具」时自动放大预算整轮重试一次**，并在事件流里明说「思考过长已耗尽输出预算，放大到 N 重试…」。跑过工具就不重试 —— 重试会重复副作用与重复审批。
+- 仍然失败时给出**带真实数字**的诊断（本次输出 M tokens、其中思考 K tokens、预算上限 N）与下一步（去设置调高预算 / 换非思考模型），而不是一句「返回为空」。
+- 「思考吃光预算」与「通道/结构异常」必须分开：只有**有思考或接口明说 `finish_reason=length`** 才判定为预算问题（`looksBudgetExhausted`）；后者放大预算也没用。
+
 ### 6.2 回复建议（`ai/suggest.ts` + `agentLoop.ts` + `agentTools.ts`）
 
 本地背景（本群待办、历史问题、团队名单）零成本注入 → 模型可调用**只读工具**（读群问题/搜历史/查团队）→ 输出 1~3 条候选。发送始终是人工闸门。
@@ -441,6 +448,29 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 ## 9. 营销增长模块（`growth/*`）
 
 采集（抖音/小红书，vendor 脚本 + 解析器 + 本地导入）→ 仓库（去重/评分/标签）→ 舆情（`buzz`：门店相关评论/提及与诊断）→ 二创（`remix`：prompt + 合规检查）→ 发布/导出（`publisher/exporter`）→ AI 工作台（任务化生成/图片通道/搜索通道）。
+
+**生图策略层（`growth/ai/imageStrategy.ts`，纯函数 + 自检 `scripts/growth-image-strategy-selftest.mjs`）**：
+`imageProvider` 只是「通道」（把 prompt 发给 `/images/generations`），策略必须单独一层，否则同一家店两次生图可以毫无共同点。策略输入（平台 / 角色 / 模板 / 门店档案 / 品牌资料包 / 素材线索）→ 输出 prompt、negative、size、count 与给人看的 `notes`：
+
+- **平台比例**：小红书与抖音给竖版 1024x1536、朋友圈与客户群给方版 1024x1024。此前只有一个全局尺寸且默认 1024x1024，竖版封面一律被生成成方图（设置里显式填了尺寸仍以填的为准，留空 = 按平台）。
+- **画面模板**：内置 菜品特写/门店环境/封面氛围/人物场景 四个模板（`growth.image.templates` 可覆盖同 id 的字段或追加新模板）；不指定时按 prompt 关键词与角色自动选。
+- **事实与调性**：门店招牌菜/套餐/禁用词、品牌资料包（定位/语气/主视觉色调）都拼进 prompt，禁用词进负向词。品牌资料包（`growth_brand_profile`）此前只被 UI 读写、AI 侧从未读过——现在同时进入 `buildGrowthSystem`、`growth_get_store` 与生图策略。
+- **负向词**：接口不保证都支持 `negative_prompt`，统一以「【避免出现】…」拼进 prompt 文本（`composeFinalPrompt`），并固定带上「不要文字/水印/logo/可辨认人脸」。
+- **张数与成本**：单次张数受设置里「每次张数」约束、硬上限 4；另有**每月张数上限**（`growth.image.monthlyLimit`，按自然月统计 `growth_asset.source_mark='gen:image'` 的行数，0 = 不限）——额度用尽时策略层在**发起请求前**就把 `blocked` 置位，调用方不得生成，并给出「到哪里调额度」的原话。张数被单次上限或月度额度压过时，都会在策略说明里如实写出（不静默少给、不静默失败）。
+
+**配置入口在营销页**（`营销 → 设置`）：采集服务商 / 门店与品牌档案 / AI 生图 / 联网搜索同屏 —— 它们共同决定「这条内容是怎么生成的」，此前生图在 设置→AI 助手、门店品牌在营销页，排查「生成的图和门店对不上」要跨两个页面。设置页的「AI 助手」只留一行指路（可点击跳转，`stores/workbench.ts` 的 `growthTab` + `setPage`，与「监控」的 `monitorTab` 同口径）。
+
+配置读写只有一条路径：`cs:config:getAll/set`（app_config 真源）。此前 `cs:growthai:configGet/configSet` + `GrowthAiConfigField` 白名单是同一配置的第二条写路径，但渲染端从无调用者（ProviderPanel 走的是 `cs:growth`），已删除。
+
+**封面模板引擎（`growth/cover/`）**：小红书图文的封面价值大半在「实拍图 + 大字标题」的排版上，而此前只能把裸图当封面（刚爆改出来的标题落不到图上）。实现路子是**不引任何图像库**：
+- `cover/templates.ts`（纯函数 + 自检 `scripts/growth-cover-selftest.mjs`）产出一份**自包含 HTML**（底图走 `data:` URI、无外链）；
+- `cover/renderer.ts` 用 **Electron 离屏窗口**（`offscreen: true` + `capturePage`）把 HTML 截成 PNG —— 排版直接用 CSS、中文字体用系统字体，`sharp`/`canvas` 那类原生依赖一律不需要跟着 Electron 重编译。
+- 字号一律按**画布宽度的百分比换算成 px**，绝不用 `vw`：`vw` 跟视口走，离屏窗口尺寸一旦不是正好等于画布（边框/缩放/预览环境），整张封面的字就会放大到溢出画面（实测 480px 画布 + 1256px 视口时一行标题渲染成 1013px 高）。折行按**每个模板自己的标题框宽度**算（`titleWidthPct`），否则行会超出框宽被 CSS 二次折行。
+- 封面合成是**本地渲染**，不调生图接口，因此不计入月度张数（资产 `source_mark='cover:composite'`）。
+
+**图生图（参考图）**：`growth_gen_image` 支持 `referenceAssetId`，先试 `/images/edits`（multipart）生成「同构但原创」的画面；通道不支持时**回退纯文本并在回执里说明**（`isEditUnsupported` 只把 404/405/501 与"端点不支持"判为不支持，限流/参数错误照实抛出，避免用户误以为"参考图不生效"）。素材本地图的 assetId 会随 `growth_read_material` 一起给出，否则模型只能瞎猜。
+
+配套的两处收敛：**候选图按张采用**（`resolveCandidate` 的 `pick` 动作，一次生图 N 张落在同一产出块里，点「用这张」只保留选中的那张，此前是整块一起采用）与**换图按 role 真替换**（`removeOutputAssetsByRole`，此前 `growth_replace_image` 只 append，换三次就攒出三张封面）。
 
 ---
 

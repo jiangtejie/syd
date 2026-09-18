@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { toast } from '../../stores/toast'
 
 /**
  * 工具审批策略卡(AI 助手 → 智能体 下方)。
@@ -30,6 +29,7 @@ function WorkbenchApprovalSection(): React.JSX.Element {
   const [allowText, setAllowText] = useState('')
   const [denyText, setDenyText] = useState('')
   const [saving, setSaving] = useState(false)
+  const [savedTip, setSavedTip] = useState(false)
   const [errorTip, setErrorTip] = useState('')
 
   useEffect(() => {
@@ -55,21 +55,30 @@ function WorkbenchApprovalSection(): React.JSX.Element {
       .finally(() => setLoading(false))
   }, [])
 
-  const save = async (): Promise<void> => {
+  /**
+   * 落库（可带覆盖值：下拉 onChange 时 state 还没更新，必须把新值显式传进来）。
+   * 语义与设置页一致：下拉即时生效、文本域失焦即存，不需要「保存」按钮。
+   */
+  const save = async (override?: {
+    mode?: WbMode
+    allowText?: string
+    denyText?: string
+  }): Promise<void> => {
     const api = window.api?.cs?.wb
     if (!api) return
     setSaving(true)
     setErrorTip('')
     try {
       const res = await api.setApprovalPrefs({
-        mode,
-        allow: parseNames(allowText),
-        deny: parseNames(denyText)
+        mode: override?.mode ?? mode,
+        allow: parseNames(override?.allowText ?? allowText),
+        deny: parseNames(override?.denyText ?? denyText)
       })
       if (!res.ok) {
         setErrorTip(res.error || '保存失败')
       } else {
-        toast.success('审批策略已保存,即时生效')
+        setSavedTip(true)
+        window.setTimeout(() => setSavedTip(false), 1500)
       }
     } catch (e) {
       setErrorTip(e instanceof Error ? e.message : '保存失败')
@@ -89,7 +98,11 @@ function WorkbenchApprovalSection(): React.JSX.Element {
         <select
           className="st-input"
           value={mode}
-          onChange={(e) => setMode(e.target.value as WbMode)}
+          onChange={(e) => {
+            const v = e.target.value as WbMode
+            setMode(v)
+            void save({ mode: v })
+          }}
         >
           {(Object.keys(MODE_LABELS) as WbMode[]).map((k) => (
             <option key={k} value={k}>
@@ -105,6 +118,7 @@ function WorkbenchApprovalSection(): React.JSX.Element {
           rows={3}
           value={allowText}
           onChange={(e) => setAllowText(e.target.value)}
+          onBlur={(e) => void save({ allowText: e.target.value })}
           placeholder={'每行一个工具名。命中名单的工具执行前不再询问。\n例如: query_issues'}
         />
       </label>
@@ -115,18 +129,14 @@ function WorkbenchApprovalSection(): React.JSX.Element {
           rows={3}
           value={denyText}
           onChange={(e) => setDenyText(e.target.value)}
+          onBlur={(e) => void save({ denyText: e.target.value })}
           placeholder="每行一个工具名。命中名单的工具一律不执行(拒绝优先于默认允许)。"
         />
       </label>
       <div className="st-row ag-actions">
-        <button
-          type="button"
-          className="ui-btn is-primary"
-          disabled={saving}
-          onClick={() => void save()}
-        >
-          {saving ? '保存中…' : '保存审批策略'}
-        </button>
+        <span className="st-hint">下拉即时生效，文本域失焦即存</span>
+        {saving && <span className="st-hint">保存中…</span>}
+        {savedTip && <span className="st-saved">已保存</span>}
         {errorTip && <span className="st-bad">{errorTip}</span>}
       </div>
       <div className="ag-scope">

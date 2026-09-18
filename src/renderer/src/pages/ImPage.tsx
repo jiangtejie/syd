@@ -6,7 +6,6 @@ import type {
   KeyAccountInfo
 } from '../../../shared/types'
 import { SettingsCard, SwitchRow } from '../components/settings/ui'
-import { FeishuNotifySection } from '../components/settings/FeishuNotifySection'
 import { FeishuTaskPanel } from '../components/settings/FeishuTaskPanel'
 import { FeishuAuditPanel } from '../components/settings/FeishuAuditPanel'
 import { ContactPicker } from '../components/settings/ContactPicker'
@@ -43,7 +42,16 @@ function parsePermText(text: string): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-export function ImSection(): React.JSX.Element {
+/**
+ * @param onOpenNotifications 跳到「偏好与数据 → 通知与提醒」。提醒推送配置已从这一屏收走
+ *   （原来它和「桌面通知」「盯办提醒」分属三个 tab，排查"为什么没提醒"要翻三处），
+ *   这里只留一个入口，IM 渠道屏专注在"接哪个机器人"。
+ */
+export function ImSection({
+  onOpenNotifications
+}: {
+  onOpenNotifications?: () => void
+} = {}): React.JSX.Element {
   const [accounts, setAccounts] = useState<ImChannelAccount[] | null>(null)
   const [open, setOpen] = useState(false)
   const [wxAccounts, setWxAccounts] = useState<KeyAccountInfo[]>([])
@@ -334,6 +342,16 @@ export function ImSection(): React.JSX.Element {
           或点「扫码绑定」用微信扫授权二维码自动建号(免去手动获取 token)。 机器人经腾讯 iLink
           官方通道收发文字消息,媒体(图片/文件)仅提示不解析,回复需本应用保持运行。
         </p>
+        <p>
+          提醒推送(新问题 / 盯办提醒 / 日报)不在此屏配置,已收到「偏好与数据 → 通知与提醒」:
+          {onOpenNotifications ? (
+            <button type="button" className="ui-btn is-sm" onClick={onOpenNotifications}>
+              去设置通知与提醒
+            </button>
+          ) : (
+            '见 偏好与数据 → 通知与提醒'
+          )}
+        </p>
       </SettingsCard>
 
       <SettingsCard title="已接入账号(IM 渠道)">
@@ -409,13 +427,6 @@ export function ImSection(): React.JSX.Element {
         desc="谁在飞书下了什么指令、是否被接收策略拒绝、执行成功还是失败(含被拦下的消息)。"
       >
         <FeishuAuditPanel />
-      </SettingsCard>
-
-      <SettingsCard
-        title="飞书通知(告警推送)"
-        desc="用机器人把「新问题 / 盯办提醒」推送到飞书群或同事单聊。只读业务数据、只推必要信息;发送记录可在下方查看。"
-      >
-        <FeishuNotifySection />
       </SettingsCard>
 
       {open && (

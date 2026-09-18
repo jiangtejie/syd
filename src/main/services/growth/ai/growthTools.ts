@@ -20,7 +20,7 @@ export interface GrowthToolCtx {
   storeId: number | null
 }
 
-export { itemBrief, storeBrief } from './growthToolDefs'
+export { itemBrief, storeBrief, brandBrief } from './growthToolDefs'
 
 export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
   const defs = growthToolDefs({

@@ -93,15 +93,67 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
   },
   {
     name: 'growth_gen_image',
-    oneLine: 'AI 生成候选图(封面/氛围图/菜品示意)，需标注「AI 生成示意图」',
-    when: '需要配图但门店没有可用素材时',
+    oneLine:
+      'AI 生成候选图(按平台比例 + 门店/品牌模板拼装提示词，可选参考图做图生图，需标注「AI 生成示意图」)',
+    when: '需要配图但门店没有可用素材时；或用户说「生一张封面/氛围图」「照这张爆款图生我们店的版本」时',
     confirm: true,
     needsContent: true,
     needsTask: true,
     params: {
-      prompt: { type: 'string', required: true, desc: '画面描述（风格/光线/场景/主体）' },
-      count: { type: 'number', desc: '生成张数（默认 2）' },
+      prompt: {
+        type: 'string',
+        desc: '画面描述（可空：留空则按模板骨架 + 门店/品牌事实自动拼装）'
+      },
+      template: {
+        type: 'enum',
+        enum: ['auto', 'dish', 'store', 'cover', 'people'],
+        desc: '画面模板：菜品特写/门店环境/封面氛围/人物场景（默认 auto：按描述关键词与用途自动选）'
+      },
+      platform: {
+        type: 'enum',
+        enum: ['xhs', 'douyin', 'moments', 'group'],
+        desc: '目标平台（决定出图比例与构图；不传用设置里的默认平台）'
+      },
       role: { type: 'enum', enum: ['cover', 'image'], desc: '用途：封面 / 正文图' },
+      count: { type: 'number', desc: '生成张数（受设置里「每次张数」上限约束，最多 4）' },
+      referenceAssetId: {
+        type: 'number',
+        desc: '参考图 assetId（图生图：按原爆款图/门店实拍图生成同构但原创的画面；通道不支持时会如实回退纯文本）'
+      },
+      contentId: { type: 'number', desc: '素材 id（不传用当前任务素材）' },
+      taskId: { type: 'number', desc: '任务 id（不传用当前任务）' }
+    }
+  },
+  {
+    name: 'growth_make_cover',
+    oneLine: '把爆改标题合成到实拍图上做封面(大字排版，模板可选，本地渲染不耗生图额度)',
+    when: '标题定了、要一张能直接发的小红书/抖音封面时；或用户说「做个封面」「标题压到图上」时',
+    confirm: true,
+    needsContent: true,
+    needsTask: true,
+    params: {
+      title: {
+        type: 'string',
+        required: true,
+        desc: '封面大字标题（通常直接用采纳的那条标题；过长会自动折行并缩小字号）'
+      },
+      subtitle: { type: 'string', desc: '副标题一行，如卖点/人均（可空）' },
+      badge: { type: 'string', desc: '角标短词，如「新店」「人均80」（可空）' },
+      template: {
+        type: 'enum',
+        enum: ['bold-bottom', 'top-band', 'corner-card', 'plain-center'],
+        desc: '封面模板：大字压底 / 顶部色块 / 角标卡片 / 纯文字居中（默认大字压底）'
+      },
+      platform: {
+        type: 'enum',
+        enum: ['xhs', 'douyin', 'moments', 'group'],
+        desc: '封面比例按平台取（不传用设置里的默认平台）'
+      },
+      assetId: { type: 'number', desc: '底图 assetId（不传用素材里第一张本地图）' },
+      outputId: {
+        type: 'number',
+        desc: '把封面挂到这个产出的封面位（不传则新建一个封面候选）'
+      },
       contentId: { type: 'number', desc: '素材 id（不传用当前任务素材）' },
       taskId: { type: 'number', desc: '任务 id（不传用当前任务）' }
     }
@@ -153,8 +205,8 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
   },
   {
     name: 'growth_replace_image',
-    oneLine: '替换产出图集(门店素材/生成候选图/联网图，联网图需确认版权)',
-    when: '用户要求换封面或换某张配图时',
+    oneLine: '替换产出图集(按 role 顶替：门店素材/生成候选图/联网图，联网图需确认版权)',
+    when: '用户要求换封面或换某张配图时（同名位置的旧图会被顶掉，不会越换越多）',
     confirm: true,
     needsContent: true,
     params: {

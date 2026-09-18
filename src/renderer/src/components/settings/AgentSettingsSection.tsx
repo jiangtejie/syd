@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AiAgent, AiAgentInput, AiStyle } from '../../../../shared/types'
-import { toast } from '../../stores/toast'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { avatarColor } from '../../lib/ui'
 import { setAgentFormDirty } from './agentDirty'
@@ -43,6 +42,7 @@ function AgentSettingsSection(): React.JSX.Element {
   const [style, setStyle] = useState<AiStyle>('warm')
   const [prompt, setPrompt] = useState('')
   const [saving, setSaving] = useState(false)
+  const [savedTip, setSavedTip] = useState(false)
   const [errorTip, setErrorTip] = useState('')
   // 最近一次落库的表单快照（脏检查基准）
   const [snapshot, setSnapshot] = useState('')
@@ -92,21 +92,32 @@ function AgentSettingsSection(): React.JSX.Element {
     }
   }, [dirty])
 
-  const save = async (): Promise<void> => {
+  /**
+   * 落库。语义与设置页一致：下拉即时生效、输入框/文本域失焦即存，不再需要「保存人设」按钮。
+   * 为什么必须支持 override：onChange 里 state 还没更新，只能把新值显式传进来。
+   * 「有未保存修改」提示与切换板块的拦截保留 —— 正在输入时切走仍应先确认。
+   */
+  const save = async (override?: {
+    name?: string
+    description?: string
+    style?: AiStyle
+    prompt?: string
+  }): Promise<void> => {
     if (!agentApi || !person?.id) {
       setErrorTip('未找到当前生效人设，请刷新后重试')
       return
     }
-    if (!name.trim()) {
-      setErrorTip('请填写人设名称')
+    const nextName = (override?.name ?? name).trim()
+    if (!nextName) {
+      setErrorTip('人设名称不能为空')
       return
     }
     const input: AiAgentInput = {
       id: person.id,
-      name: name.trim(),
-      description: description.trim(),
-      style,
-      prompt: prompt.trim()
+      name: nextName,
+      description: (override?.description ?? description).trim(),
+      style: override?.style ?? style,
+      prompt: (override?.prompt ?? prompt).trim()
     }
     setSaving(true)
     setErrorTip('')
@@ -115,9 +126,10 @@ function AgentSettingsSection(): React.JSX.Element {
       if (!res.ok) {
         setErrorTip(res.error || '保存失败')
       } else if (res.agent) {
-        toast.success('人设已保存，所有 AI 能力即时生效')
         fillPerson(res.agent)
         syncWorkbenchAgents()
+        setSavedTip(true)
+        window.setTimeout(() => setSavedTip(false), 1500)
       } else {
         setErrorTip('保存失败')
       }
@@ -156,6 +168,7 @@ function AgentSettingsSection(): React.JSX.Element {
             className="st-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onBlur={(e) => void save({ name: e.target.value })}
             placeholder="人设名称，如：微信私域智能客服"
           />
         </label>
@@ -165,6 +178,7 @@ function AgentSettingsSection(): React.JSX.Element {
             className="st-input"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            onBlur={(e) => void save({ description: e.target.value })}
             placeholder="如：熟悉产品线与活动，语气亲和不油腻，能解答订单与售后"
           />
         </label>
@@ -173,7 +187,11 @@ function AgentSettingsSection(): React.JSX.Element {
           <select
             className="st-input"
             value={style}
-            onChange={(e) => setStyle(e.target.value as AiStyle)}
+            onChange={(e) => {
+              const v = e.target.value as AiStyle
+              setStyle(v)
+              void save({ style: v })
+            }}
           >
             {STYLE_KEYS.map((k) => (
               <option key={k} value={k}>
@@ -189,20 +207,16 @@ function AgentSettingsSection(): React.JSX.Element {
             rows={4}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
+            onBlur={(e) => void save({ prompt: e.target.value })}
             placeholder={
               '留空时由「名称 + 一句话人设 + 话术风格」自动组装。可写：品牌口径、禁忌词、转人工条件、回复句式偏好等，例如：\n1. 报价必须按最新价目表，不承诺优惠未生效；\n2. 涉及退款/投诉一律引导转人工。'
             }
           />
         </label>
         <div className="st-row ag-actions">
-          <button
-            type="button"
-            className="ui-btn is-primary"
-            disabled={saving || !dirty}
-            onClick={() => void save()}
-          >
-            {saving ? '保存中…' : '保存人设'}
-          </button>
+          <span className="st-hint">下拉即时生效，输入框失焦即存</span>
+          {saving && <span className="st-hint">保存中…</span>}
+          {savedTip && <span className="st-saved">已保存</span>}
           {errorTip && <span className="st-bad">{errorTip}</span>}
         </div>
         <div className="ag-scope">

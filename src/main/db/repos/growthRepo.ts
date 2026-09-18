@@ -337,6 +337,29 @@ export function insertAsset(input: {
   return Number(res.lastInsertRowid)
 }
 
+/** 按 id 取单个资产（图生图的参考图、封面的底图都要先拿到它的 rel_path） */
+export function getAssetById(id: number): GrowthAsset | null {
+  const row = getDb().prepare('SELECT * FROM growth_asset WHERE id = ?').get(id) as
+    | AssetRow
+    | undefined
+  return row ? rowToAsset(row) : null
+}
+
+/**
+ * 统计某个时间点之后生成的 AI 图张数（月额度用）。
+ *
+ * 以 `growth_asset.source_mark='gen:image'` 为准：生成图落盘时就是这个标记，
+ * 不必另建计数表 —— 计数表一旦与真实落盘脱节，额度就是假的。
+ */
+export function countGeneratedSince(ts: number): number {
+  const row = getDb()
+    .prepare(
+      "SELECT COUNT(*) AS n FROM growth_asset WHERE source_mark = 'gen:image' AND created_at >= ?"
+    )
+    .get(ts) as { n: number } | undefined
+  return Number(row?.n ?? 0)
+}
+
 export function setDecomp(
   contentId: number,
   decomp: {

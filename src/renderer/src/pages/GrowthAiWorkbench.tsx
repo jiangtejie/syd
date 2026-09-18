@@ -58,6 +58,8 @@ interface OutputView {
   status: string
   createdAt: number
   assets: OutputAssetView[]
+  /** 生图产出带 meta.strategy：按哪个模板/平台/比例生成的（让「策略」在界面上看得见） */
+  meta?: Record<string, unknown>
 }
 
 interface StoreView {
@@ -208,8 +210,26 @@ const VARIANT_LABEL: Record<string, string> = {
   'chat:copy1': '正文候选 A',
   'chat:copy2': '正文候选 B',
   'chat:copy3': '正文候选 C',
-  'chat:image': '生成图候选'
+  'chat:image': '生成图候选',
+  'chat:cover': '封面候选'
 }
+
+/**
+ * 生图策略回显。此前策略只活在模型的脑子里（prompt 由模型临场写），
+ * 用户看不出这张图是按什么模板/平台/比例生成的，也就无从纠正。
+ */
+const StrategyNote = memo(function StrategyNote({
+  o
+}: {
+  o: OutputView
+}): React.JSX.Element | null {
+  const st = (o.meta?.strategy ?? null) as { notes?: unknown } | null
+  const notes = Array.isArray(st?.notes)
+    ? (st?.notes as unknown[]).filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+    : []
+  if (notes.length === 0) return null
+  return <div className="gai-out-strategy">{notes.join(' · ')}</div>
+})
 
 /** 时间一律精确到时分秒(共享实现) */
 const fmtTime = (ts: number | null): string => fmtStamp(ts)
@@ -606,15 +626,18 @@ export default function GrowthAiWorkbench({
 
   const resolveCandidate = async (
     outputId: number,
-    action: 'select' | 'archive' | 'delete'
+    action: 'select' | 'archive' | 'delete' | 'pick',
+    assetId?: number
   ): Promise<void> => {
     if (!growthaiApi || !activeId) return
-    const res = await growthaiApi.resolveCandidate(activeId, outputId, action)
+    const res = await growthaiApi.resolveCandidate(activeId, outputId, action, assetId)
     if (!res.ok) {
       toast.error(res.error || '操作失败')
       return
     }
     if (action === 'select') toast.success('已采用, 见右侧产出')
+    // pick: 一次生图 N 张落在同一产出块里, 只采用点的那一张(其余由主进程删掉)
+    if (action === 'pick') toast.success('已采用这张图, 见右侧产出')
     await loadBundle(activeId)
     void loadTasks()
   }
@@ -883,6 +906,7 @@ export default function GrowthAiWorkbench({
                   回退
                 </button>
               </div>
+              <StrategyNote o={o} />
               {o.title
                 ? o.title
                     .split('\n')
@@ -914,15 +938,21 @@ export default function GrowthAiWorkbench({
               {o.assets.length > 0 ? (
                 <div className="gai-out-imgs">
                   {o.assets.map((a) => (
-                    <img
-                      key={a.id}
-                      className="gai-out-img"
-                      src={a.relPath ? 'ct-growth://media/' + a.relPath : ''}
-                      alt={a.role}
-                      loading={'lazy'}
-                      decoding={'async'}
-                      title={a.note || a.source}
-                    />
+                    <div className="gai-img-pick" key={a.id}>
+                      <img
+                        className="gai-out-img"
+                        src={a.relPath ? 'ct-growth://media/' + a.relPath : ''}
+                        alt={a.role}
+                        loading={'lazy'}
+                        decoding={'async'}
+                        title={a.note || a.prompt || a.source}
+                      />
+                      {o.variant === 'chat:image' || o.variant === 'chat:cover' ? (
+                        <span className="gai-img-role">
+                          {a.role === 'cover' ? '封面' : '正文图'}
+                        </span>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               ) : null}
@@ -948,6 +978,7 @@ export default function GrowthAiWorkbench({
           candidates.map((c) => (
             <div className="gai-out-card is-candidate" key={c.id}>
               <div className="gai-out-variant">{VARIANT_LABEL[c.variant] ?? c.variant}</div>
+              <StrategyNote o={c} />
               {c.title
                 ? c.title
                     .split('\n')
@@ -1001,7 +1032,7 @@ export default function GrowthAiWorkbench({
                       <button
                         className="ui-btn is-primary gth-btn sm"
                         type="button"
-                        onClick={() => void resolveCandidate(c.id, 'select')}
+                        onClick={() => void resolveCandidate(c.id, 'pick', a.assetId ?? undefined)}
                       >
                         用这张
                       </button>

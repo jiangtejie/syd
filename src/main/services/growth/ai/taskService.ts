@@ -7,6 +7,7 @@ import {
   bindTaskSession,
   createTask,
   getTask,
+  keepOnlyOutputAsset,
   listOutputsByTask,
   listStores,
   removeOutput,
@@ -118,17 +119,37 @@ export function getTaskBundle(taskId: number): TaskBundle | null {
   }
 }
 
-/** 候选点选: select=采用 / archive=弃用 / delete=删除 */
+/**
+ * 候选点选: select=采用 / archive=弃用 / delete=删除 / pick=只采用指定的那一张图。
+ *
+ * 为什么要 pick：一次生图会把 N 张图落在**同一个产出块**里，而「采用」是块级状态 ——
+ * 用户点其中一张，整块 N 张一起进产出（导出包里就多出 N-1 张他根本没选的图）。
+ * pick 先把块里其它图删掉，再采用，语义才和界面上的「用这张」一致。
+ */
 export function resolveCandidate(
   taskId: number,
   outputId: number,
-  action: 'select' | 'archive' | 'delete'
+  action: 'select' | 'archive' | 'delete' | 'pick',
+  assetId?: number
 ): { ok: boolean; error?: string } {
   const all = listOutputsByTask(taskId)
   const hit = all.find((o) => o.id === outputId)
   if (!hit) return { ok: false, error: '候选不存在' }
   if (action === 'delete') removeOutput(outputId)
-  else setOutputStatus(outputId, action === 'select' ? 'selected' : 'archived')
+  else if (action === 'pick') {
+    if (!assetId) return { ok: false, error: '缺少要采用的图片 id' }
+    const dropped = keepOnlyOutputAsset(outputId, assetId)
+    if (dropped < 0) return { ok: false, error: '这张图不属于该候选（可能已被替换）' }
+    setOutputStatus(outputId, 'selected')
+    log.info(
+      'candidate picked output=' +
+        String(outputId) +
+        ' asset=' +
+        String(assetId) +
+        ' dropped=' +
+        String(dropped)
+    )
+  } else setOutputStatus(outputId, action === 'select' ? 'selected' : 'archived')
   return { ok: true }
 }
 

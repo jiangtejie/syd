@@ -1,4 +1,8 @@
 import type { ReactNode } from 'react'
+// 基元的样式(st-row / st-input / st-subtitle / sf-card …)全在 settings.css 里。
+// 从这里引入而不是只让设置页引入：这些基元已经被非设置页使用（营销页的门店与品牌、AI 生图卡），
+// 而设置页是懒加载路由 —— 只让设置页引，会导致"没打开过设置页就直接进营销页"时表单完全没有样式。
+import '../../pages/settings.css'
 
 /**
  * 设置页 UI 基元:卡片(标题/说明)与开关。

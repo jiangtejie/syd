@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { toast } from '../../stores/toast'
 
 /**
  * 跨会话「运营备忘」编辑卡(AI 助手 → 工具审批策略 上方)。
@@ -10,7 +9,10 @@ import { toast } from '../../stores/toast'
 function WorkbenchMemoSection(): React.JSX.Element {
   const [loading, setLoading] = useState(true)
   const [notes, setNotes] = useState('')
+  /** 最近一次落库的内容：失焦时没改就不重复写一遍 */
+  const [savedValue, setSavedValue] = useState('')
   const [saving, setSaving] = useState(false)
+  const [savedTip, setSavedTip] = useState(false)
   const [errorTip, setErrorTip] = useState('')
 
   useEffect(() => {
@@ -24,24 +26,31 @@ function WorkbenchMemoSection(): React.JSX.Element {
     void api
       .getMemoNotes()
       .then((res) => {
-        if (res.ok) setNotes(res.notes ?? '')
-        else setErrorTip(res.error || '读取备忘失败')
+        if (res.ok) {
+          setNotes(res.notes ?? '')
+          setSavedValue(res.notes ?? '')
+        } else setErrorTip(res.error || '读取备忘失败')
       })
       .catch(() => setErrorTip('读取备忘失败'))
       .finally(() => setLoading(false))
   }, [])
 
-  const save = async (): Promise<void> => {
+  /** 失焦即存（与设置页同一套语义：输入框失焦落库，不需要「保存」按钮） */
+  const save = async (value?: string): Promise<void> => {
     const api = window.api?.cs?.wb
     if (!api) return
+    const next = value ?? notes
+    if (next === savedValue) return
     setSaving(true)
     setErrorTip('')
     try {
-      const res = await api.setMemoNotes(notes)
+      const res = await api.setMemoNotes(next)
       if (!res.ok) {
         setErrorTip(res.error || '保存失败')
       } else {
-        toast.success('运营备忘已保存,新的一轮生成开始生效')
+        setSavedValue(next)
+        setSavedTip(true)
+        window.setTimeout(() => setSavedTip(false), 1500)
       }
     } catch (e) {
       setErrorTip(e instanceof Error ? e.message : '保存失败')
@@ -63,20 +72,16 @@ function WorkbenchMemoSection(): React.JSX.Element {
           rows={5}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          onBlur={(e) => void save(e.target.value)}
           placeholder={
             '每行一条跨会话事实,例如:\n客户王女士:按老订单规则走特批流程(截至月底)\n7 月 1 日起报价按 2026-Q3 价目表执行\n物流售后转人工条件:仅出现“破损/丢件”关键词时'
           }
         />
       </label>
       <div className="st-row ag-actions">
-        <button
-          type="button"
-          className="ui-btn is-primary"
-          disabled={saving}
-          onClick={() => void save()}
-        >
-          {saving ? '保存中…' : '保存备忘'}
-        </button>
+        <span className="st-hint">失焦即存，新的一轮生成开始生效</span>
+        {saving && <span className="st-hint">保存中…</span>}
+        {savedTip && <span className="st-saved">已保存</span>}
         {errorTip && <span className="st-bad">{errorTip}</span>}
       </div>
       <div className="ag-scope">

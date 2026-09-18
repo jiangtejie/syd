@@ -13,6 +13,7 @@ import {
   retryAfterOf,
   retryAfterSecOf
 } from './retryPolicy'
+import { budgetExhaustedMessage, planOutputBudget } from './outputBudget'
 import { createLogger } from '../logging'
 
 const providerLog = createLogger('ai-provider')
@@ -250,9 +251,16 @@ class OpenAiCompatProvider implements AiProvider {
       { role: 'system', content: system },
       { role: 'user', content: user }
     ]
-    // 思考型模型（DeepSeek Reasoner/R1 等）的 reasoning 可能占用输出预算；
-    // 预算截断（finish_reason=length 且正文为空）时自动放大重试，上限 8192
-    let maxTokens = opts?.maxTokens ?? 600
+    // 思考型模型的 reasoning 会占用输出预算：预算统一走 services/ai/outputBudget.ts
+    // （设置里的 ai.maxOutputTokens > 模块默认；思考型模型第一轮就抬到下限），
+    // 截断且正文为空时按 4 倍放大重试一档。
+    const planBase = (): number =>
+      planOutputBudget({
+        configured: getConfig('ai.maxOutputTokens'),
+        fallback: opts?.maxTokens ?? 600,
+        model
+      }).maxTokens
+    let maxTokens = planBase()
 
     // 整段（请求 + 解析 + 放大重试）都在闸门内：重试是**整次调用**重来，
     // 不会出现「重试了但只重试了半截」的状态。
@@ -308,18 +316,30 @@ class OpenAiCompatProvider implements AiProvider {
         const msg = data.choices?.[0]?.message
         const reasoning = msg?.reasoning_content
         const finishedByLength = data.choices?.[0]?.finish_reason === 'length'
-        if (finishedByLength && round === 0 && maxTokens < 8192) {
-          maxTokens = Math.min(maxTokens * 4, 8192)
-          res = await post(false) // 思考型模型通常不接受 temperature，放大预算后不带该参数
-          if (!res.ok) {
-            throw aiHttpError(res.status, await res.text(), retryAfterSecOf(res.headers))
+        if (finishedByLength && round === 0) {
+          const bigger = planOutputBudget({
+            configured: getConfig('ai.maxOutputTokens'),
+            fallback: opts?.maxTokens ?? 600,
+            model,
+            attempt: 1
+          }).maxTokens
+          if (bigger > maxTokens) {
+            maxTokens = bigger
+            res = await post(false) // 思考型模型通常不接受 temperature，放大预算后不带该参数
+            if (!res.ok) {
+              throw aiHttpError(res.status, await res.text(), retryAfterSecOf(res.headers))
+            }
+            continue
           }
-          continue
         }
-        // 放大重试仍空 → 给出可诊断信息（思考型模型预算仍不足，或响应结构异常）
+        // 放大重试仍空 → 给出可诊断信息（带真实数字与下一步），而不是一句"返回为空"
         throw new Error(
           reasoning || finishedByLength
-            ? '模型思考过长耗尽输出预算、未生成正文（可重试或改用非思考模型）'
+            ? budgetExhaustedMessage({
+                maxTokens,
+                outputTokens: meter.tokensOut ?? 0,
+                reasoningChars: (reasoning ?? '').length
+              })
             : 'LLM 返回为空（响应结构异常或无内容）'
         )
       }

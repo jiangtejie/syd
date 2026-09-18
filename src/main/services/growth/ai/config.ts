@@ -1,19 +1,33 @@
 /**
- * 营销 AI 工作台配置: 生图模型(gptimage2 中转站) / 联网搜索 provider。
+ * 营销 AI 工作台配置读取: 生图通道(中转站 /images/generations) / 联网搜索 provider。
  * 敏感 Key 走 safeStorage 加封(与 ai.apiKey 同机制)。
+ *
+ * 写入侧说明: **只读这里，写走通用配置 cs:config:set**(设置页表单即 app_config 真源)。
+ * 历史上这里另有一套 setGrowthAiConfigField + GrowthAiConfigField 白名单，
+ * 但渲染端从无调用者，属于同一配置的第二条写路径，已随 P0 清理删除。
  */
 
-import { getConfig, getConfigBoolean, setConfig } from '../../../db/repos/config'
-import { openSecret, sealSecret } from '../../secrets'
+import { getConfig, getConfigBoolean } from '../../../db/repos/config'
+import { openSecret } from '../../secrets'
 
 export interface ImageConfig {
   enabled: boolean
   baseUrl: string
   apiKey: string
   model: string
+  /** 显式尺寸覆盖；留空 = 由生图策略按平台决定（见 ai/imageStrategy.ts） */
   size: string
   count: number
-  monthlyBudget: number
+  /** 默认目标平台：xhs | douyin | moments | group（策略据此选比例与构图） */
+  platform: string
+  /** 自定义提示词模板库（JSON；留空 = 内置模板） */
+  templates: string
+  /**
+   * 每月生图张数上限（0 = 不限）。
+   * 为什么按「张数」而不是金额：接口按张计费但没有单价信息，能算准的只有张数。
+   * 超限时由生图策略层拦截并如实报错，不静默失败（见 ai/imageStrategy.ts）。
+   */
+  monthlyLimit: number
 }
 
 export interface SearchConfig {
@@ -28,9 +42,14 @@ export function getImageConfig(): ImageConfig {
     baseUrl: (getConfig('growth.image.baseUrl') ?? '').trim(),
     apiKey: openSecret(getConfig('growth.image.apiKey')),
     model: (getConfig('growth.image.model') ?? 'gptimage2').trim() || 'gptimage2',
-    size: (getConfig('growth.image.size') ?? '1024x1024').trim(),
+    // 尺寸默认留空：以前默认 1024x1024 方图，小红书/抖音的竖版封面全被生成成方图。
+    // 现在由 imageStrategy 按平台给（要固定尺寸的用户在设置里填，填了就一律以它为准）。
+    size: (getConfig('growth.image.size') ?? '').trim(),
     count: Math.min(Math.max(Number(getConfig('growth.image.count') ?? 2) || 2, 1), 4),
-    monthlyBudget: Math.max(Number(getConfig('growth.image.monthlyBudget') ?? 0) || 0, 0)
+    platform: (getConfig('growth.image.platform') ?? '').trim(),
+    templates: getConfig('growth.image.templates') ?? '',
+    // 键名沿用 growth.image.monthlyLimit；旧的 monthlyBudget 是纯空壳（无 UI、无消费点），直接改名收口
+    monthlyLimit: Math.max(Math.floor(Number(getConfig('growth.image.monthlyLimit')) || 0), 0)
   }
 }
 
@@ -39,53 +58,5 @@ export function getSearchConfig(): SearchConfig {
     enabled: getConfigBoolean('growth.search.enabled', false),
     provider: (getConfig('growth.search.provider') ?? 'bocha').trim(),
     apiKey: openSecret(getConfig('growth.search.apiKey'))
-  }
-}
-
-export type GrowthAiConfigField =
-  | 'imageEnabled'
-  | 'imageBaseUrl'
-  | 'imageApiKey'
-  | 'imageModel'
-  | 'imageSize'
-  | 'imageCount'
-  | 'imageBudget'
-  | 'searchEnabled'
-  | 'searchProvider'
-  | 'searchApiKey'
-
-export function setGrowthAiConfigField(field: GrowthAiConfigField, value: string): void {
-  const v = value ?? ''
-  switch (field) {
-    case 'imageEnabled':
-      setConfig('growth.image.enabled', v === '1' || v === 'true' ? '1' : '0')
-      return
-    case 'imageBaseUrl':
-      setConfig('growth.image.baseUrl', v.trim().slice(0, 300))
-      return
-    case 'imageApiKey':
-      setConfig('growth.image.apiKey', sealSecret(v.trim()))
-      return
-    case 'imageModel':
-      setConfig('growth.image.model', v.trim().slice(0, 100) || 'gptimage2')
-      return
-    case 'imageSize':
-      setConfig('growth.image.size', v.trim().slice(0, 32) || '1024x1024')
-      return
-    case 'imageCount':
-      setConfig('growth.image.count', String(Math.min(Math.max(Number(v) || 2, 1), 4)))
-      return
-    case 'imageBudget':
-      setConfig('growth.image.monthlyBudget', String(Math.max(Number(v) || 0, 0)))
-      return
-    case 'searchEnabled':
-      setConfig('growth.search.enabled', v === '1' || v === 'true' ? '1' : '0')
-      return
-    case 'searchProvider':
-      setConfig('growth.search.provider', v.trim().slice(0, 32) || 'bocha')
-      return
-    case 'searchApiKey':
-      setConfig('growth.search.apiKey', sealSecret(v.trim()))
-      return
   }
 }

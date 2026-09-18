@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { toast } from '../../stores/toast'
 
 /**
  * 默认工作区(设置 → AI 助手)。
@@ -13,6 +12,7 @@ const dialogApi = window.api?.cs?.dialog
 export function WorkbenchWorkspaceSection(): React.JSX.Element {
   const [dir, setDir] = useState('')
   const [saved, setSaved] = useState('')
+  const [savedTip, setSavedTip] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -34,15 +34,24 @@ export function WorkbenchWorkspaceSection(): React.JSX.Element {
     }
   }, [])
 
+  /** 选完目录立即落库（不需要再点「保存」） */
   const pick = async (): Promise<void> => {
     const r = await dialogApi?.pickDirectory('选择默认工作区目录', dir || undefined)
-    if (r?.ok && r.path) setDir(r.path)
+    if (r?.ok && r.path) {
+      setDir(r.path)
+      await save(r.path)
+    }
   }
 
-  const save = async (): Promise<void> => {
-    await configApi?.set('wb.defaultWorkspace', dir.trim())
-    setSaved(dir.trim())
-    toast.success(dir.trim() ? '默认工作区已保存' : '已清空默认工作区')
+  /** 失焦即存（与设置页同一套语义） */
+  const save = async (value?: string): Promise<void> => {
+    const next = (value ?? dir).trim()
+    if (next === saved) return
+    await configApi?.set('wb.defaultWorkspace', next)
+    setSaved(next)
+    setDir(next)
+    setSavedTip(true)
+    window.setTimeout(() => setSavedTip(false), 1500)
   }
 
   if (loading) return <div className="st-hint">加载中…</div>
@@ -55,18 +64,16 @@ export function WorkbenchWorkspaceSection(): React.JSX.Element {
           value={dir}
           placeholder="目录绝对路径,如 D:\\work\\助理工作区"
           onChange={(e) => setDir(e.target.value)}
+          onBlur={(e) => void save(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void save(e.currentTarget.value)
+          }}
         />
         <button type="button" className="ui-btn" onClick={() => void pick()}>
           选择目录
         </button>
-        <button
-          type="button"
-          className="ui-btn is-primary"
-          disabled={dir.trim() === saved}
-          onClick={() => void save()}
-        >
-          保存
-        </button>
+        <span className="st-hint">失焦即存</span>
+        {savedTip && <span className="st-saved">已保存</span>}
       </div>
       <div className="st-hint">
         用于**没有工作台界面**的会话(飞书机器人 / 微信 ClawBot):AI 在这里读写文件、处理
