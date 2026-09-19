@@ -123,8 +123,12 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
   },
   {
     name: 'growth_make_cover',
-    oneLine: '把爆改标题合成到实拍图上做封面(大字排版，模板可选，本地渲染不耗生图额度)',
-    when: '标题定了、要一张能直接发的小红书/抖音封面时；或用户说「做个封面」「标题压到图上」时',
+    oneLine:
+      '本地排版做封面/清单图(大字压底等模板，或白底清单榜单，不耗生图额度、文字逐字准确不会被裁)',
+    when:
+      '标题定了、要一张能直接发的小红书/抖音封面时；或用户说「做个封面」「标题压到图上」时；' +
+      '参考图是白底清单/备忘录截图这类纯文字排版图时（用 template=list + items）；' +
+      '生图出来的画面文字被裁/写错时（growth_gen_image(noText=true) + 这里的 title/subtitle/badge 重压一遍）',
     confirm: true,
     needsContent: true,
     needsTask: true,

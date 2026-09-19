@@ -623,6 +623,10 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           referenceCount: refs.length,
           // 结构参考的视觉拆解：edit 里是「保持清单」，gen 里是「照这个构图语言新画一张」
           referenceVisual,
+          // 注意：有 referenceAssetId 时 mode 恒为 'edit'，所以这一行目前恒 false ——
+          // 「照结构重新生成」（不附参考图、零原图像素）这条路留着给"只想要构图语言"的场景，
+          // 现在没有调用方（策略层那个分支有自己的自检）。真要启用就加一个 noReference 参数，
+          // 让模型能显式选择"只借结构不借像素"。
           structureFromVisual: mode === 'gen' && !!structureAssetId,
           // 要写的文字（逐字进提示词）与「只要画面不要文字」
           textLines,
