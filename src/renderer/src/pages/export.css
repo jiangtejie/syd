@@ -54,6 +54,7 @@
   align-items: start;
 }
 
+
 .exp-sessions {
   padding: var(--sp-3);
 }
@@ -280,4 +281,17 @@
 .exp-result-title {
   font-weight: 600;
   margin-bottom: 6px;
+}
+
+/* ── 窄窗口（≤1080，含 1366 屏左右分屏）──
+ * 两栏并排会让会话列表与设置各只剩 300px 出头，改成上下单栏；
+ * 设置栏不再 sticky（页面本来就短，跟着滚更自然）。
+ * 追加在文件末尾：同优先级下只有写在后面才压得住上面的 .exp-opts{position:sticky}。 */
+@media (max-width: 1080px) {
+  .exp-chat-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .exp-opts {
+    position: static;
+  }
 }
