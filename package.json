@@ -31,6 +31,7 @@
     "test:growth-image": "node scripts/growth-image-strategy-selftest.mjs",
     "test:growth-analyze": "node scripts/growth-analyze-prompt-selftest.mjs",
     "test:growth-cover": "node scripts/growth-cover-selftest.mjs",
+    "test:cover-size": "electron scripts/cover-render-size-selftest.mjs",
     "test:virtual-list": "node scripts/virtual-list-selftest.mjs",
     "test:image-similarity": "node scripts/image-similarity-selftest.mjs",
     "test:ai-retry": "node scripts/ai-retry-selftest.mjs",

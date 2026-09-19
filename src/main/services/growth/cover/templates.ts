@@ -40,20 +40,23 @@ export const COVER_TEMPLATES: CoverTemplate[] = [
     label: '清单榜单',
     when: '参考图是白底清单/备忘录截图（纯文字排版、没有实拍画面）时：逐条列出店名或推荐',
     titleWidthPct: 90,
+    // 版式走**文档流**（flex 列）而不是绝对定位：标题行数、条目数、署名都不固定，
+    // 绝对定位在"标题两行 vs 三行"时会互相压（首版样例实测：角标压住标题末字、列表被顶出画布）
     css: [
-      '.cover-stage{background:#fff}',
+      '.cover-stage{background:#fff;padding:5% 5.5% 4%;box-sizing:border-box;' +
+        'display:flex;flex-direction:column}',
+      '.cover-bg{display:none}',
       '.cover-scrim{display:none}',
-      '.cover-title{left:5%;right:5%;top:4%;color:#111;text-align:left;font-weight:800}',
-      '.cover-sub{left:5%;right:5%;top:calc(4% + 9.5em);color:#666;font-weight:500}',
-      '.cover-badge{right:5%;top:4%;background:#e03131;color:#fff}',
-      '.cover-list{position:absolute;left:5%;right:5%;top:22%;bottom:9%;margin:0;padding:0;list-style:none;' +
+      '.cover-badge{position:static;align-self:flex-end;background:#e03131;color:#fff;margin-bottom:3.5%}',
+      '.cover-title{position:static;color:#111;text-align:left;font-weight:800}',
+      '.cover-sub{position:static;color:#666;font-weight:500;margin-top:3%}',
+      '.cover-list{position:static;flex:1 1 auto;min-height:0;margin:5% 0 0;padding:0;list-style:none;' +
         'counter-reset:cover-item;overflow:hidden}',
-      '.cover-list li{position:relative;padding:0 0 0 8.5%;margin:0 0 1.6%;font-size:3.4vw;line-height:1.42;' +
+      '.cover-list li{position:relative;padding:0 0 0 9%;margin:0 0 2.2%;line-height:1.4;' +
         'color:#222;font-weight:500}',
       '.cover-list li::before{counter-increment:cover-item;content:counter(cover-item);position:absolute;' +
-        'left:0;top:.1em;width:6%;text-align:right;color:#e03131;font-weight:800;font-size:3.4vw}',
-      '.cover-foot{position:absolute;left:5%;right:5%;bottom:3.5%;color:#999;font-size:2.8vw;' +
-        'border-top:1px solid #eee;padding-top:1.6%}'
+        'left:0;top:0;width:6.5%;text-align:right;color:#e03131;font-weight:800}',
+      '.cover-foot{position:static;margin-top:auto;padding-top:2%;color:#999;border-top:1px solid #eee}'
     ].join('\n')
   },
   {
@@ -265,12 +268,9 @@ export function buildCoverHtml(input: CoverInput): CoverDoc {
       'px}',
     // 清单条目字号：按条数自适应（模板 CSS 里写的是 vw，这里用 px 覆盖掉）
     '.cover-list li, .cover-list li::before{font-size:' + String(px(itemFontVw)) + 'px}',
-    '.cover-foot{font-size:' + String(px(2.8)) + 'px}',
-    '.cover-list{top:' +
-      String(px(items.length > 14 ? 20 : 22)) +
-      '%;bottom:' +
-      String(px(9)) +
-      '%}'
+    '.cover-foot{font-size:' + String(px(2.6)) + 'px}'
+    // 注意：不要再给 .cover-list 写 top/bottom —— 它是 flex 流里的自适应块（见模板 CSS），
+    // 首版这里误把百分比当 px 算（px(22)% = 225%），列表整块被顶出画布（样例渲染时抓到）
   ].join('\n')
   const titleHtml = lines.length
     ? '<div class="cover-title" style="font-size:' +
