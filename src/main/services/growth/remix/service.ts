@@ -14,6 +14,8 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { nativeImage } from 'electron'
 import { createAiProvider } from '../../ai/provider'
+import { getConfig } from '../../../db/repos/config'
+import { planOutputBudget } from '../../ai/outputBudget'
 import { getContentDetail } from '../../../db/repos/growthRepo'
 import { getGrowthMediaDir } from '../../paths'
 import { describeModelError } from '../../ai/modelErrors'
@@ -42,25 +44,61 @@ function llmFail(e: unknown): never {
   throw new Error(e instanceof Error ? e.message : String(e))
 }
 
-/** 一次 JSON 生成(输出失败给可读错误)。images 传 data URI 时按多模态发出（拆画面必须看得见图） */
+/**
+ * 一次 JSON 生成(输出失败给可读错误)。images 传 data URI 时按多模态发出（拆画面必须看得见图）。
+ *
+ * **输出被截断时自动抬预算重来一次**：实测（2026-09-19 日志）带图拆解连挂三次，
+ * 每次都是 `model JSON unparsable, raw head: {` —— 模型在写一半时被 maxOutputTokens 掐断。
+ * 原因不是"通道不支持图片"，而是**思考也算进输出预算**：configured 模型名（如 deepseek-v4-flash）
+ * 不在 looksLikeReasoningModel 的名单里，planOutputBudget 就按 1600 给，思考吃光后 JSON 只剩半个括号。
+ * 与其猜模型名，不如按结果补救：解析失败 → attempt+1（预算 ×4）重来一次。
+ */
 async function generateJson(
   system: string,
   user: string,
   images?: string[]
 ): Promise<Record<string, unknown>> {
   const provider = requireProvider()
-  let raw = ''
-  try {
-    raw = await provider.complete(system, user, { maxTokens: 1600, images })
-  } catch (e) {
-    llmFail(e)
+  const model = getConfig('ai.model')
+  const configured = getConfig('ai.maxOutputTokens')
+  // 带图的答案更长（画面字段逐项写），起步就给宽一点
+  const fallback = images && images.length > 0 ? 2400 : 1600
+  let lastRaw = ''
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const budget = planOutputBudget({ configured, fallback, model, attempt })
+    let raw = ''
+    try {
+      raw = await provider.complete(system, user, { maxTokens: budget.maxTokens, images })
+    } catch (e) {
+      llmFail(e)
+    }
+    const parsed = parseModelJson(raw)
+    if (parsed) {
+      if (attempt > 0) {
+        remixLog.info(
+          'JSON parse recovered on attempt ' +
+            String(attempt) +
+            ' (maxTokens=' +
+            String(budget.maxTokens) +
+            ')'
+        )
+      }
+      return parsed
+    }
+    lastRaw = raw
+    remixLog.warn(
+      'model JSON unparsable (attempt=' +
+        String(attempt) +
+        ' maxTokens=' +
+        String(budget.maxTokens) +
+        ' chars=' +
+        String(raw.length) +
+        '), raw head: ' +
+        raw.slice(0, 400)
+    )
   }
-  const parsed = parseModelJson(raw)
-  if (!parsed) {
-    remixLog.warn('model JSON unparsable, raw head: ' + raw.slice(0, 200))
-    throw new Error('AI 返回内容格式异常, 请重试一次')
-  }
-  return parsed
+  remixLog.warn('JSON still unparsable after escalation, tail: ' + lastRaw.slice(-200))
+  throw new Error('AI 返回内容格式异常, 请重试一次')
 }
 
 /**
