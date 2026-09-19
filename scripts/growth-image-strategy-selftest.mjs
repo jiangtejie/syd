@@ -43,6 +43,14 @@ try {
     format: 'cjs',
     outfile: join(work, 'imageSources.cjs')
   })
+  // 删图准入规则（纯函数）：至少保留一张 / 产出引用拦下
+  buildSync({
+    entryPoints: [join(root, 'src/main/services/growth/warehouse/assetPolicy.ts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outfile: join(work, 'assetPolicy.cjs')
+  })
   const S = require(bundle)
   const {
     PLATFORM_SPECS,
@@ -530,6 +538,41 @@ try {
   ok(
     src.NO_SELF_IMAGE_HINT.includes('上传') || src.NO_SELF_IMAGE_HINT.includes('生成'),
     '缺自家图时给的是可行动指引'
+  )
+
+  /**
+   * 删除素材图片的准入规则（详情面板的「删除这张」）。
+   * 这两条护栏都不该靠在界面上小心：规则错了不会报错，只会悄悄把不该删的删了。
+   */
+  console.log('删图准入规则：')
+  const policy = require(join(work, 'assetPolicy.cjs'))
+  ok(
+    policy.checkAssetRemoval({ kind: 'image', remainingImages: 1, outputRefs: 0 }) === null,
+    '还有别的图 → 允许删（两张删到剩一张）'
+  )
+  ok(
+    /至少要保留一张/.test(
+      String(policy.checkAssetRemoval({ kind: 'image', remainingImages: 0, outputRefs: 0 }))
+    ),
+    '★ 最后一张图删不掉（列表与详情的封面都靠它）'
+  )
+  ok(
+    /至少要保留一张/.test(
+      String(policy.checkAssetRemoval({ kind: 'cover', remainingImages: 0, outputRefs: 0 }))
+    ),
+    'cover 与 image 同样受保护'
+  )
+  ok(
+    /产出/.test(String(policy.checkAssetRemoval({ kind: 'image', remainingImages: 5, outputRefs: 2 }))),
+    '★ 挂在产出上的图先拒绝（先去产出面板换掉，否则裂图）'
+  )
+  ok(
+    /产出/.test(String(policy.checkAssetRemoval({ kind: 'image', remainingImages: 0, outputRefs: 1 }))),
+    '两条护栏同时命中时，先说产出（那是更该先处理的一件事）'
+  )
+  ok(
+    policy.checkAssetRemoval({ kind: 'video', remainingImages: 0, outputRefs: 0 }) === null,
+    '视频不受「保留一张图」约束（那条规则说的是展示图）'
   )
 
   console.log('纯函数约束：')

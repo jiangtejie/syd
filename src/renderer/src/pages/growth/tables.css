@@ -445,8 +445,15 @@
 .gth-gallery-thumb.is-active {
   border-color: var(--brand);
 }
-.gth-gallery-copy {
+.gth-gallery-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-top: 8px;
+}
+/* 删除是次要但危险的动作：靠右放，和「复制当前图」拉开一点距离，别手滑 */
+.gth-gallery-ops .ui-btn.is-danger {
+  margin-left: auto;
 }
 
 /* ── 窄窗口（≤1200）──

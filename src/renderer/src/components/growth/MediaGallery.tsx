@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from '../../stores/toast'
+import { confirmAsk } from '../../stores/confirmDialog'
 import { growthApi } from './meta'
 import type { GrowthAsset } from '../../../../shared/growth'
 import { isSelfOwned, sourceLabel } from '../../../../shared/imageSource'
@@ -127,13 +128,16 @@ export interface MediaGalleryProps {
   remoteImageUrls: string[]
   /** 远程视频直链(平台视频素材, 本地不保存视频文件) */
   remoteVideoUrl: string
+  /** 删除某张图后通知父级重拉详情（列表封面/张数都要跟着变） */
+  onChanged?: () => void
 }
 
 /** 图文画廊: 大图 + 左右翻页 + 缩略图 + 复制当前图(ct-growth:// 本地媒体) */
 export function MediaGallery({
   assets,
   remoteImageUrls,
-  remoteVideoUrl
+  remoteVideoUrl,
+  onChanged
 }: MediaGalleryProps): React.JSX.Element {
   const imgs = assets.filter((a) => (a.kind === 'cover' || a.kind === 'image') && !!a.relPath)
   const [idx, setIdx] = useState(0)
@@ -153,6 +157,29 @@ export function MediaGallery({
   }
 
   const localVideo = assets.find((a) => a.kind === 'video' && a.relPath) ?? null
+
+  /** 删掉当前这张（误下载的、误生成的、同行的参考图都可以删）：至少保留一张，且挂在产出上的删不掉 */
+  const removeCurrent = async (): Promise<void> => {
+    if (!growthApi?.removeAsset || !cur) return
+    const ok = await confirmAsk({
+      title: '删除这张图？',
+      message:
+        '仅从这条素材里移除（本地文件按内容去重，可能仍被其它素材共用，所以不删文件）。' +
+        (count <= 1 ? '这是最后一张图，删不掉。' : ''),
+      confirmText: '删除',
+      danger: true
+    })
+    if (!ok) return
+    const res = await growthApi.removeAsset(cur.id)
+    if (!res.ok) {
+      toast.error(res.error || '删除失败')
+      return
+    }
+    toast.success('已删除这张图')
+    setFailed(false)
+    setIdx(0)
+    onChanged?.()
+  }
 
   /**
    * 这张图是谁的：素材库里混着「同行的爆款原图」与「本店自己的图」，而界面此前只写「N 张」——
@@ -276,14 +303,25 @@ export function MediaGallery({
           ))}
         </div>
       ) : null}
-      <button
-        className="ui-btn gth-btn sm gth-gallery-copy"
-        type="button"
-        disabled={!cur}
-        onClick={() => void copyCurrent()}
-      >
-        复制当前图到剪贴板
-      </button>
+      <div className="gth-gallery-ops">
+        <button
+          className="ui-btn is-danger gth-btn sm"
+          type="button"
+          disabled={!cur || count <= 1}
+          title={count <= 1 ? '至少要保留一张图' : '从这条素材里删掉当前这张'}
+          onClick={() => void removeCurrent()}
+        >
+          删除这张
+        </button>
+        <button
+          className="ui-btn gth-btn sm gth-gallery-copy"
+          type="button"
+          disabled={!cur}
+          onClick={() => void copyCurrent()}
+        >
+          复制当前图到剪贴板
+        </button>
+      </div>
       {zoom ? (
         <Lightbox
           items={imgs.map((a) => ({ relPath: a.relPath, note: srcLabel(a) }))}

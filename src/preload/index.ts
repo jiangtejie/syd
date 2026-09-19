@@ -1057,6 +1057,9 @@ const api: PreloadApi = {
         id: number
       ): Promise<{ ok: boolean; added?: number; failed?: number; error?: string }> =>
         ipcRenderer.invoke('cs:growth:redownloadMedia', id),
+      /** 删除素材里的一张本地图（主进程侧护栏：挂在产出上的不能删、至少保留一张） */
+      removeAsset: (id: number): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('cs:growth:removeAsset', id),
       overview: (): Promise<{ ok: boolean; overview?: GrowthOverview; error?: string }> =>
         ipcRenderer.invoke('cs:growth:overview')
     },

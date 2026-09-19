@@ -432,6 +432,35 @@ export function batchDeleteContents(ids: number[]): number {
   return ok
 }
 
+/**
+ * 删除单张本地图（按资产 id）。
+ *
+ * **只删库里的行，不删磁盘文件**：图片按 sha256 去重落盘，同一个文件可能被多条资产/多个素材共用
+ * （重新下载、同一张参考图进两条素材都会命中同一份），删文件会连带把别人的图弄裂。
+ * 文件留在缓存目录里最多占点空间，随「清理缓存」一起走。
+ */
+export function removeAssetById(assetId: number): void {
+  getDb().prepare('DELETE FROM growth_asset WHERE id = ?').run(assetId)
+}
+
+/** 这张图是否被某个产出引用（产出面板里挂着的图不能直接删，否则产出会裂图） */
+export function countAssetOutputRefs(assetId: number): number {
+  const row = getDb()
+    .prepare('SELECT COUNT(*) AS n FROM growth_output_asset WHERE asset_id = ?')
+    .get(assetId) as { n: number } | undefined
+  return Number(row?.n ?? 0)
+}
+
+/** 该素材还剩几张能展示的图（cover / image，且本地文件路径非空）——「至少保留一张」的判据 */
+export function countDisplayImages(contentId: number): number {
+  const row = getDb()
+    .prepare(
+      "SELECT COUNT(*) AS n FROM growth_asset WHERE content_id = ? AND kind IN ('cover','image') AND rel_path <> ''"
+    )
+    .get(contentId) as { n: number } | undefined
+  return Number(row?.n ?? 0)
+}
+
 /** 删除某素材的资产行(可按类型), 用于重新下载前清理 */
 export function deleteAssetRows(contentId: number, kinds?: string[]): number {
   if (!kinds || kinds.length === 0) {

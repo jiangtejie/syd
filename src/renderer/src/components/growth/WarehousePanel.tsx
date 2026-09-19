@@ -774,6 +774,8 @@ export function WarehousePanel({
               assets={detail.assets ?? []}
               remoteImageUrls={remoteImageUrlsOf(detail)}
               remoteVideoUrl={remoteVideoUrlOf(detail)}
+              // 删图后重拉详情：张数、封面、画廊顺序都要跟着变（列表行的封面也来自这里）
+              onChanged={() => void refreshDetail(detail.id)}
             />
           </div>
           <div className={'page-card gth-card gth-kv-card'}>

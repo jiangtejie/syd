@@ -1100,6 +1100,8 @@ export interface CsApi {
       ids: number[]
     ) => Promise<Result<{ dir?: string; exported?: number; files?: number; failed?: string[] }>>
     redownloadMedia: (id: number) => Promise<Result<{ added?: number; failed?: number }>>
+    /** 删除素材里的一张本地图（至少保留一张；挂在产出上的会被拒绝） */
+    removeAsset: (id: number) => Promise<{ ok: boolean; error?: string }>
     overview: () => Promise<Result<{ overview?: GrowthOverview }>>
   }
 

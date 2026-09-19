@@ -6,7 +6,13 @@ import {
   patchContent
 } from '../services/growth/warehouse/service'
 import { growthStats } from '../db/repos/growthOpsRepo'
-import { deleteContent } from '../db/repos/growthRepo'
+import {
+  countAssetOutputRefs,
+  countDisplayImages,
+  deleteContent,
+  getAssetById,
+  removeAssetById
+} from '../db/repos/growthRepo'
 import { importLocalMaterials } from '../services/growth/collector/localImport'
 import { exportPublishPackage } from '../services/growth/publisher/exporter'
 import { redownloadMissingMedia } from '../services/growth/collector/media/redownload'
@@ -17,6 +23,7 @@ import { existsSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { getGrowthMediaDir } from '../services/paths'
 import { clampInt } from './_util'
+import { checkAssetRemoval } from '../services/growth/warehouse/assetPolicy'
 
 /**
  * 营销增长(growth)IPC: cs:growth:*。
@@ -214,6 +221,33 @@ export function registerGrowthHandlers(): void {
         : err(res.error ?? '重新下载失败')
     } catch (e) {
       return err(e instanceof Error ? e.message : '重新下载失败')
+    }
+  })
+
+  /**
+   * 删除素材里的一张本地图（详情面板的「删除这张」）。
+   *
+   * 两条护栏都在主进程：① 挂在产出上的图不能删（否则产出面板裂图）；② 至少保留一张展示图 ——
+   * 素材详情/列表封面都靠它，删空了界面就成了空壳。
+   */
+  ipcMain.handle('cs:growth:removeAsset', (_e, id: unknown) => {
+    const aid = clampInt(id, 0, 1, Number.MAX_SAFE_INTEGER)
+    if (!aid) return err('非法图片 ID')
+    try {
+      const asset = getAssetById(aid)
+      if (!asset) return err('这张图已经不在了（可能已被删除或重新下载覆盖）')
+      const total = countDisplayImages(asset.contentId)
+      // 规则与文案都在 assetPolicy（纯函数，有自检）：界面上不重复实现一遍
+      const reason = checkAssetRemoval({
+        kind: asset.kind,
+        remainingImages: total - 1,
+        outputRefs: countAssetOutputRefs(aid)
+      })
+      if (reason) return err(reason)
+      removeAssetById(aid)
+      return ok({})
+    } catch (e) {
+      return err(e instanceof Error ? e.message : '删除失败')
     }
   })
 
