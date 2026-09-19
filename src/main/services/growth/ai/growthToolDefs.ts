@@ -431,14 +431,17 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           ? (listStores().find((s) => s.id === storeId) ?? null)
           : (listStores().find((s) => s.enabled) ?? null)
         /**
-         * 模式怎么定：**有没有本店自己的图**说了算，而不是"有没有参考图"。
+         * 模式怎么定：**有参考图就走图生图改写**（保持原图的画面与版式，只换内容/文字）。
          *
-         * 改写（图生图 /images/edits）= 在参考图**像素**上改，所以它要求参考图里就有我们店的东西：
-         * 结构模板（同行爆款图，只借构图）+ 本店实拍（内容以它为准）两张齐了才是产品设计里的用法。
-         * 只有同行的图、没有本店任何图时，改写只能把同行的菜品/摆盘/背景一起搬出来 ——
-         * 本店"长什么样"根本没有依据，出来的自然是别人的图（实测任务 5 的观感就是"图片不对劲"）。
-         * 这种情形按「模仿生成」走：不带任何参考图像素，用结构参考图的视觉拆解把构图语言写进提示词，
-         * 画一张全新画面（版权干净，内容按门店档案，标注为示意图）。
+         * 这条口径是 2026-09-19 拿真实爆款图在用户通道（uuapi + gpt-image-2.5）上实测出来的，
+         * 结论与"想当然"相反，记录在此以免再被改回去：
+         *  - 参考图是**照片类**（如 2×2 美食拼贴 + 中间文案带）→ 版式、构图、文字位置**都保住了**，
+         *    中文逐字准确（"国庆来重庆，观音桥这家老重庆牛油锅别错过"全对）；
+         *  - 参考图是**纯文字排版图**（白底清单）→ 模型会自由发挥重画成美食海报（没有"画面"可保）；
+         *  - 新文案比原文案长时**会被裁切**（标题左端被切）→ 提示词必须要求"必要时缩字号/折行，不得裁切"。
+         * 所以：带参考图的改写是"高仿"的主力路径，不再一刀切地"零像素"。
+         * 之前的顾虑（画面是别人的、版权）改成**如实告知**而不是拒绝：回执里点名"画面来自同行原图"，
+         * 由用户决定是否对外发布。
          */
         const assetOwn = (id: number | undefined): boolean => {
           if (!id) return false
@@ -464,37 +467,32 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           }
           contentAssetId = args.contentAssetId
         }
-        const hasSelfContent = !!contentAssetId
-        // 顺带兜一个常见退化：模型把同行原图当内容图传，又同时传了 referenceAssetId（同一张）
-        const mode: 'gen' | 'edit' = hasSelfContent ? 'edit' : 'gen'
-
-        if (mode === 'edit') {
-          // 顺序即语义：第 1 张 = 结构模板（只借构图），第 2 张 = 本店实拍（内容以它为准）
-          if (structureAssetId) {
-            const r = await loadImageReference(structureAssetId)
-            if (r) refs.push(r)
-            else
-              refNote =
-                '（注意：结构参考图 assetId=' +
-                String(structureAssetId) +
-                ' 取不到本地文件，本次只用本店实拍图）'
-          }
-          const c = contentAssetId ? await loadImageReference(contentAssetId) : null
-          if (c) refs.push(c)
-          else
+        // 有参考图 = 图生图改写（保持原图画面与版式）；没有才退回纯文本生成
+        const mode: 'gen' | 'edit' = structureAssetId ? 'edit' : 'gen'
+        if (mode === 'edit' && structureAssetId) {
+          // 顺序即语义：第 1 张 = 原图（保持构图/版式/文字位置），第 2 张 = 本店实拍（内容以它为准）
+          const r = await loadImageReference(structureAssetId)
+          if (r) refs.push(r)
+          else {
+            // 取不到参考图文件时退回纯文本，并如实说明
             refNote =
-              '（注意：本店实拍图 assetId=' +
-              String(contentAssetId) +
+              '（注意：参考图 assetId=' +
+              String(structureAssetId) +
               ' 取不到本地文件，本次按纯文本生成）'
-        } else if (structureAssetId) {
-          refNote =
-            '（本次为「照结构重新生成」：素材里没有本店实拍图，所以**没有把同行原图的像素**交给生图通道；' +
-            '画面里的菜品/场景按门店档案来，成品是示意图。要「保持构图换内容」，先让用户上传一张本店实拍图。' +
-            (args.contentAssetId ? '（你传的 contentAssetId 不是本店图，已忽略）' : '') +
-            '）'
-        }
-        if (mode === 'gen' && args.referenceAssetId && !structureAssetId) {
-          refNote = '（结构参考图缺失，本次按纯文本生成）'
+          }
+          if (contentAssetId) {
+            const c = await loadImageReference(contentAssetId)
+            if (c) refs.push(c)
+            else refNote += '（本店实拍图取不到本地文件，本次只用原图）'
+          }
+          // 画面来自同行原图这件事必须说出来（版权由用户判断），而不是替他决定"不许用"
+          const refAsset = getAssetById(structureAssetId)
+          if (refAsset && !isSelfOwned(refAsset.sourceMark)) {
+            refNote +=
+              '（本次为**高仿改写**：画面与版式沿用' +
+              sourceLabel(refAsset.sourceMark) +
+              '，只替换内容与文字；对外发布前请自行确认素材版权）'
+          }
         }
         // 结构参考图的视觉拆解：只在该图确实属于当前素材时采用 —— 把 A 素材的构图事实
         // 套到 B 素材的参考图上，会让「保持」写的是另一张图，比不给更糟。
@@ -513,6 +511,23 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
             : '（注意：这条素材**没有视觉拆解**，构图只能按平台与模板的通用口径来；' +
               '想更贴近爆款结构，先在素材仓库对它重新拆解一次。）'
         }
+        /**
+         * 高仿改写要按**原图的长宽比**出图：实测拿 1284×1712 的原图 + 平台默认 1024×1536，
+         * 版式会被压变形（原图 3:4、平台 2:3）。设置里显式填了 size 就听用户的（策略层会用它）。
+         */
+        const refSize =
+          refs[0]?.width && refs[0]?.height ? { w: refs[0].width, h: refs[0].height } : null
+        const derivedSize =
+          mode === 'edit' && refSize && !cfg.size
+            ? (() => {
+                const long = Math.max(refSize.w, refSize.h)
+                const scale = Math.min(1, 1536 / long)
+                // 取 16 的整数倍：多数生图接口对尺寸有对齐要求
+                const round16 = (n: number): number =>
+                  Math.max(256, Math.round((n * scale) / 16) * 16)
+                return String(round16(refSize.w)) + 'x' + String(round16(refSize.h))
+              })()
+            : undefined
         // 策略层：模板选择 + 平台比例 + 门店事实 + 品牌资料包 + 月度额度 → prompt/negative/size/count
         const strategy = buildImageStrategy({
           mode,
@@ -529,7 +544,8 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           monthlyLimit: cfg.monthlyLimit,
           usedThisMonth: countGeneratedSince(monthStartTs()),
           templateLibraryRaw: cfg.templates,
-          size: cfg.size,
+          // 显式设置的尺寸 > 原图长宽比 > 平台默认（策略层按这个优先级用）
+          size: cfg.size || derivedSize || '',
           store,
           brand: getBrandProfile(),
           materialHint: itemBrief(contentIdOf(args))

@@ -686,6 +686,13 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
           : '构图与机位、镜头与光线、场景氛围、画面留白位置、主体在画面里的占比；只改内容，不要改版式')
     )
     if (userPrompt) lines.push('【本次要求】' + userPrompt)
+    // 下面两条是 2026-09-19 拿真实爆款图在用户通道上实测出来的：
+    // ① 新文案比原文案长时会被裁（标题左端被切）→ 必须明确"不得裁切/必要时缩字号折行"；
+    // ② 文字必须逐字照抄用户给的文案（模型有改写/漏字的倾向）。
+    lines.push(
+      '【文字要求】画面里的文字**逐字照抄**【本次要求】里给出的文案，不要改写、不要漏字、不要多加字；' +
+        '文字必须完整可见：放不下就自动缩小字号或折行，**不得被画布边缘裁切**、不得压出画面。'
+    )
   } else {
     lines.push('画面主体：' + subject)
     if (userPrompt && template.scene) lines.push('场景范式：' + template.scene)

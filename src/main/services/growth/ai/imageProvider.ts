@@ -78,6 +78,9 @@ export interface ImageReference {
   data: Buffer
   mime: string
   filename: string
+  /** 原图像素尺寸（能读到就给）：高仿改写要按原图长宽比出图，否则版式会被压变形 */
+  width?: number
+  height?: number
 }
 
 export interface GenerateResult {
@@ -316,10 +319,27 @@ export async function loadImageReference(assetId: number): Promise<ImageReferenc
   if (!asset || !asset.relPath) return null
   try {
     const data = await readFile(join(getGrowthMediaDir(), asset.relPath))
+    // 尺寸：库里的 width/height 常见是 0（导入时没解析），所以就地用 nativeImage 读一次
+    let width = asset.width || 0
+    let height = asset.height || 0
+    if (!width || !height) {
+      try {
+        const img = nativeImage.createFromBuffer(data)
+        if (!img.isEmpty()) {
+          const size = img.getSize()
+          width = size.width
+          height = size.height
+        }
+      } catch {
+        /* 读不到就算了：调用方按平台比例兜底 */
+      }
+    }
     return {
       data,
       mime: asset.mime || 'image/png',
-      filename: basename(asset.relPath) || 'reference.png'
+      filename: basename(asset.relPath) || 'reference.png',
+      width: width || undefined,
+      height: height || undefined
     }
   } catch {
     return null
