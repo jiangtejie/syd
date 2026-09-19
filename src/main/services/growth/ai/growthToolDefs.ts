@@ -66,6 +66,7 @@ import {
 import { getImageConfig } from './config'
 import { exportPublishPackage } from '../publisher/exporter'
 import { checkComplianceBatch } from '../remix/compliance'
+import { isSelfOwned, NO_SELF_IMAGE_HINT, sourceLabel } from './imageSources'
 
 export interface GrowthToolCtx {
   sessionId: number
@@ -115,22 +116,28 @@ export function itemBrief(contentId: number): string {
       ' 评' +
       String(d.interactions.comments)
   )
-  // 带上 assetId：图生图的参考图、封面底图都要显式指定 assetId，
-  // 不把 id 给模型，它就只能瞎猜（以前这里只有张数）
+  // 带上 assetId **和来源**：图生图的参考图、封面底图都要显式指定 assetId（不给 id 模型只能瞎猜），
+  // 而"这张图是谁的"决定了它能不能当底图/内容依据 —— 只给 id 不给来源，模型就会拿同行原图当自家图用
+  // （实测：任务 5 把 douyin:ref 当封面底图，把我们的标题压在了同行的图上）。
   const localImgs = d.assets.filter((a) => a.kind === 'cover' || a.kind === 'image')
-  lines.push(
-    '本地图片: ' +
-      String(localImgs.length) +
-      ' 张' +
-      (localImgs.length > 0
-        ? '(assetId: ' +
-          localImgs
-            .slice(0, 4)
-            .map((a) => String(a.id))
-            .join('/') +
-          ')'
-        : '')
-  )
+  if (localImgs.length === 0) {
+    lines.push('本地图片: 0 张（' + NO_SELF_IMAGE_HINT + '）')
+  } else {
+    lines.push(
+      '本地图片: ' + String(localImgs.length) + ' 张（每条都标了来源，用途限制写在括号里）'
+    )
+    for (const a of localImgs.slice(0, 5)) {
+      lines.push(
+        '  - assetId ' + String(a.id) + ' · ' + sourceLabel(a.sourceMark) + ' · 路径 ' + a.relPath
+      )
+    }
+    const selfCount = localImgs.filter((a) => isSelfOwned(a.sourceMark)).length
+    lines.push(
+      selfCount > 0
+        ? '本店可用图（实拍/生成/合成）: ' + String(selfCount) + ' 张'
+        : '本店可用图: 0 张 —— ' + NO_SELF_IMAGE_HINT
+    )
+  }
   if (d.decomp?.structure) lines.push('拆解卡: ' + clipValue(d.decomp.structure, 700))
   else lines.push('拆解卡: 尚未生成')
   // 视觉拆解单独给一行：图生图的「保持」清单直接取自它，模型看得见这些事实，
@@ -423,27 +430,71 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         const store = storeId
           ? (listStores().find((s) => s.id === storeId) ?? null)
           : (listStores().find((s) => s.enabled) ?? null)
-        // 参考图先取：模式（生成 / 在参考图上改写）由它决定。
-        // 顺序即语义：第 1 张 = 结构模板（原爆款图，只借构图），第 2 张 = 本店实拍（内容以它为准）。
+        /**
+         * 模式怎么定：**有没有本店自己的图**说了算，而不是"有没有参考图"。
+         *
+         * 改写（图生图 /images/edits）= 在参考图**像素**上改，所以它要求参考图里就有我们店的东西：
+         * 结构模板（同行爆款图，只借构图）+ 本店实拍（内容以它为准）两张齐了才是产品设计里的用法。
+         * 只有同行的图、没有本店任何图时，改写只能把同行的菜品/摆盘/背景一起搬出来 ——
+         * 本店"长什么样"根本没有依据，出来的自然是别人的图（实测任务 5 的观感就是"图片不对劲"）。
+         * 这种情形按「模仿生成」走：不带任何参考图像素，用结构参考图的视觉拆解把构图语言写进提示词，
+         * 画一张全新画面（版权干净，内容按门店档案，标注为示意图）。
+         */
+        const assetOwn = (id: number | undefined): boolean => {
+          if (!id) return false
+          const one = getAssetById(id)
+          return !!one && isSelfOwned(one.sourceMark)
+        }
+        // 结构参考：同行爆款图（只借构图，可以用；内容参考必须是自家图）
         const refs: ImageReference[] = []
         let refNote = ''
+        let structureAssetId: number | undefined
         if (args.referenceAssetId) {
-          const r = await loadImageReference(args.referenceAssetId)
-          if (r) refs.push(r)
-          else
-            refNote =
-              '（注意：结构参考图 assetId=' +
-              String(args.referenceAssetId) +
-              ' 取不到本地文件，本次按纯文本生成）'
+          structureAssetId = args.referenceAssetId
         }
+        let contentAssetId: number | undefined
         if (args.contentAssetId) {
-          const c = await loadImageReference(args.contentAssetId)
+          if (!assetOwn(args.contentAssetId)) {
+            return (
+              '内容参考图 assetId=' +
+              String(args.contentAssetId) +
+              ' 不是本店的图（是同行原图或舆情抓图）：它只能当**结构参考**（referenceAssetId），' +
+              '不能当"本店的菜长什么样"的依据。请改用 referenceAssetId，或先让用户上传一张本店实拍图。'
+            )
+          }
+          contentAssetId = args.contentAssetId
+        }
+        const hasSelfContent = !!contentAssetId
+        // 顺带兜一个常见退化：模型把同行原图当内容图传，又同时传了 referenceAssetId（同一张）
+        const mode: 'gen' | 'edit' = hasSelfContent ? 'edit' : 'gen'
+
+        if (mode === 'edit') {
+          // 顺序即语义：第 1 张 = 结构模板（只借构图），第 2 张 = 本店实拍（内容以它为准）
+          if (structureAssetId) {
+            const r = await loadImageReference(structureAssetId)
+            if (r) refs.push(r)
+            else
+              refNote =
+                '（注意：结构参考图 assetId=' +
+                String(structureAssetId) +
+                ' 取不到本地文件，本次只用本店实拍图）'
+          }
+          const c = contentAssetId ? await loadImageReference(contentAssetId) : null
           if (c) refs.push(c)
           else
             refNote =
-              '（注意：内容参考图 assetId=' +
-              String(args.contentAssetId) +
-              ' 取不到本地文件，本次只用结构参考图）'
+              '（注意：本店实拍图 assetId=' +
+              String(contentAssetId) +
+              ' 取不到本地文件，本次按纯文本生成）'
+        } else if (structureAssetId) {
+          refNote =
+            '（本次为「照结构重新生成」：素材里没有本店实拍图，所以**没有把同行原图的像素**交给生图通道；' +
+            '画面里的菜品/场景按门店档案来，成品是示意图。要「保持构图换内容」，先让用户上传一张本店实拍图。' +
+            (args.contentAssetId ? '（你传的 contentAssetId 不是本店图，已忽略）' : '') +
+            '）'
+        }
+        if (mode === 'gen' && args.referenceAssetId && !structureAssetId) {
+          refNote = '（结构参考图缺失，本次按纯文本生成）'
         }
         // 结构参考图的视觉拆解：只在该图确实属于当前素材时采用 —— 把 A 素材的构图事实
         // 套到 B 素材的参考图上，会让「保持」写的是另一张图，比不给更糟。
@@ -453,11 +504,22 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           !!args.referenceAssetId &&
           detail.assets.some((a) => a.id === args.referenceAssetId)
         const referenceVisual = refIsOwnAsset ? detail?.decomp?.visual : null
+        const structureVisualReady = hasVisualFacts(readVisualFacts(referenceVisual))
+        // 如实说明"结构从哪来"：没有视觉拆解时不能声称构图语言已经写进提示词，
+        // 否则回执听起来像"照爆款结构生成"，实际是通用构图 —— 用户会以为是模型没画好。
+        if (mode === 'gen' && structureAssetId) {
+          refNote += structureVisualReady
+            ? '结构语言来自这条爆款的视觉拆解（构图/机位/光线/留白逐项写进了提示词）。'
+            : '（注意：这条素材**没有视觉拆解**，构图只能按平台与模板的通用口径来；' +
+              '想更贴近爆款结构，先在素材仓库对它重新拆解一次。）'
+        }
         // 策略层：模板选择 + 平台比例 + 门店事实 + 品牌资料包 + 月度额度 → prompt/negative/size/count
         const strategy = buildImageStrategy({
-          mode: refs.length > 0 ? 'edit' : 'gen',
+          mode,
           referenceCount: refs.length,
+          // 结构参考的视觉拆解：edit 里是「保持清单」，gen 里是「照这个构图语言新画一张」
           referenceVisual,
+          structureFromVisual: mode === 'gen' && !!structureAssetId,
           userPrompt: args.prompt ?? '',
           platform: args.platform || cfg.platform,
           role: args.role ?? 'cover',
@@ -639,16 +701,37 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         const sizeStr = cfg.size && parseSize(cfg.size) ? cfg.size : spec.size
         const wh = parseSize(sizeStr) ?? { width: 1024, height: 1024 }
 
-        // 底图：显式 assetId 优先，否则用素材里第一张本地图
+        /**
+         * 底图：只能是**本店自己的图**（实拍/导入、AI 生成、此前的合成产物）。
+         *
+         * 这条是红线，不是洁癖：素材的第一张本地图常常是**同行爆款原图**（source_mark=<平台>:ref），
+         * 此前默认取"素材里第一张本地图"，于是把我们的标题压在了别人的作品上
+         * （实测任务 5：assetId 15 = douyin:ref，产出 1024×1392 的合成封面，既侵权又不像本店）。
+         */
         let asset: GrowthAsset | null = null
         if (args.assetId) {
           asset = getAssetById(args.assetId)
           if (!asset) return '底图 assetId=' + String(args.assetId) + ' 不存在。'
+          if (!isSelfOwned(asset.sourceMark)) {
+            return (
+              '底图 assetId=' +
+              String(args.assetId) +
+              ' 是' +
+              sourceLabel(asset.sourceMark) +
+              '，不能当封面底图（那是把标题压在别人的作品上）。' +
+              NO_SELF_IMAGE_HINT
+            )
+          }
         } else {
           const detail = getContentDetail(contentId)
           asset =
-            detail?.assets.find((a) => (a.kind === 'cover' || a.kind === 'image') && !!a.relPath) ??
-            null
+            detail?.assets.find(
+              (a) =>
+                (a.kind === 'cover' || a.kind === 'image') &&
+                !!a.relPath &&
+                isSelfOwned(a.sourceMark)
+            ) ?? null
+          if (!asset) return '这条素材里没有本店自己的图，无法做封面合成。' + NO_SELF_IMAGE_HINT
         }
         let imageDataUri = ''
         if (asset) {

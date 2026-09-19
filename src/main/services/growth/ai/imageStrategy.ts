@@ -517,9 +517,18 @@ export interface ImageStrategyInput {
   materialHint?: unknown
   /**
    * 结构参考图的**视觉拆解**（growth_decomp.visual_json 原文）。
-   * 只在 edit 模式用得上：它把「保持构图机位光线」从一句套话变成具体清单。
+   * edit 模式下它是「保持清单」（把"保持构图机位光线"从套话变成具体条目）；
+   * gen 模式下（配合 structureFromVisual）它是「照这个构图语言新画一张」的骨架。
    */
   referenceVisual?: unknown
+  /**
+   * gen 模式下是否把上面那份视觉拆解当作**结构骨架**用。
+   *
+   * 场景：素材只有同行的爆款图、没有本店实拍图。这时走图生图会在别人的像素上改，
+   * 结果必然带着同行的菜品/摆盘（实测"图片不对劲"就是这么来的）；改为
+   * 「照结构重新生成」—— 不附参考图，只把构图/机位/光线/留白写进提示词，画全新画面。
+   */
+  structureFromVisual?: unknown
 }
 
 export type ImageMode = 'gen' | 'edit'
@@ -632,8 +641,12 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
 
   const mode = normalizeMode(input.mode)
   const visual = readVisualFacts(input.referenceVisual)
-  /** 视觉拆解只在图生图里说话；没有它（旧卡/没拆过）就退回通用口径 */
-  const visualOn = mode === 'edit' && hasVisualFacts(visual)
+  /** 有视觉拆解（旧卡/没拆过时为空） */
+  const hasVisual = hasVisualFacts(visual)
+  /** 图生图：视觉拆解是「保持清单」 */
+  const visualOn = mode === 'edit' && hasVisual
+  /** 照结构重新生成：视觉拆解是「构图骨架」（不附参考图，画面全新） */
+  const structureOn = mode === 'gen' && hasVisual && input.structureFromVisual === true
   const referenceCount = clampInt(input.referenceCount, 0, 8, 0)
   /** 多图时指向「结构模板」那一张：prompt 里所有"保持/不要带出"都该说图1，而不是笼统的"参考图" */
   const refTag = referenceCount >= 2 ? '图1' : '参考图'
@@ -676,6 +689,23 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
   } else {
     lines.push('画面主体：' + subject)
     if (userPrompt && template.scene) lines.push('场景范式：' + template.scene)
+    // 照爆款的结构画一张全新的（不附参考图）：把构图语言逐项写出来，
+    // 否则「模仿」只剩一句空话，出来的还是通用构图
+    if (structureOn) {
+      const bones = joinFacts([
+        visual.composition ? '构图：' + visual.composition : '',
+        visual.camera ? '机位与视角：' + visual.camera : '',
+        visual.lighting ? '光线：' + visual.lighting : '',
+        visual.colorTone ? '色调：' + visual.colorTone : '',
+        visual.layout ? '版式与留白：' + visual.layout : '',
+        visual.subjectRatio ? '主体占比与位置：' + visual.subjectRatio : '',
+        visual.elements.length > 0 ? '可用道具/桌面/背景元素：' + visual.elements.join('/') : ''
+      ])
+      lines.push(
+        '画面结构（照这条爆款的结构来，但画面是全新拍摄/全新画面）：' +
+          (bones || '参考同类爆款的常见构图，主体居中、留白在下方用于放标题')
+      )
+    }
   }
 
   const storeFacts = joinFacts([
@@ -710,6 +740,8 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
 
   const negative = joinFacts([
     template.negative,
+    // 照结构生成时也要点名：结构来自别人的作品，但画面里不能出现那张图上的任何东西
+    structureOn ? '不要出现参考图上的任何文字、Logo、水印、二维码，也不要复制其菜品摆盘与人物' : '',
     // 图生图最要命的一条：参考图是别人的作品，像素级特征（原文字/水印/logo/人脸）绝不能带出来
     mode === 'edit' ? '不要保留' + refTag + '里的任何文字、Logo、水印、二维码' : '',
     // 把参考图上原有的文字点名写出来：只说"不要文字"时，模型常把原字照抄进新图（尤其大字贴纸）
@@ -733,7 +765,9 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
       ? '模式：图生图（' +
           (referenceCount >= 2 ? '图1 结构模板 + 图2 本店实拍，' : '') +
           '保持构图，替换为本店信息）'
-      : '模式：文生图'
+      : structureOn
+        ? '模式：文生图（照爆款结构重新生成：不使用原图像素，画面全新）'
+        : '模式：文生图'
   )
   if (visualOn) {
     notes.push(
@@ -743,6 +777,8 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
     )
   } else if (mode === 'edit') {
     notes.push('提示：这条素材没有视觉拆解，「保持」用的是通用口径（构图/机位/光线不具体）')
+  } else if (structureOn) {
+    notes.push('结构来自爆款的视觉拆解；本次未附参考图')
   }
   notes.push('模板：' + template.label + '（' + template.id + '）')
   notes.push('平台：' + spec.label + ' · ' + spec.ratio + ' · ' + size)

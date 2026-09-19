@@ -35,6 +35,14 @@ try {
     format: 'cjs',
     outfile: bundle
   })
+  // 图片来源判定（纯函数，无依赖）：与策略层一样独立打包断言
+  buildSync({
+    entryPoints: [join(root, 'src/main/services/growth/ai/imageSources.ts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outfile: join(work, 'imageSources.cjs')
+  })
   const S = require(bundle)
   const {
     PLATFORM_SPECS,
@@ -267,7 +275,12 @@ try {
     userPrompt: '把画面里的菜品换成本店的鲜切黄牛肉',
     platform: 'xhs',
     role: 'cover',
-    store: { name: '萍姐火锅', brandName: '萍姐火锅', city: '成都', profile: '{"signatureDishes":"鲜切黄牛肉"}' },
+    store: {
+      name: '萍姐火锅',
+      brandName: '萍姐火锅',
+      city: '成都',
+      profile: '{"signatureDishes":"鲜切黄牛肉"}'
+    },
     brand: { name: '萍姐火锅', profile: '{"positioning":"社区鲜货火锅","palette":["暖红"]}' }
   })
   ok(e1.mode === 'edit', '回执带 edit 模式')
@@ -286,11 +299,17 @@ try {
     e1.negative.includes('不要照抄参考图的菜品摆盘'),
     'edit 明确禁止照抄原图，要求换成本店信息（否则「爆改」变「搬运」）'
   )
-  ok(e1.prompt.includes('【保持】') && e1.prompt.indexOf('【保持】') < e1.prompt.indexOf('【替换'), '先保持后替换（顺序即契约）')
+  ok(
+    e1.prompt.includes('【保持】') && e1.prompt.indexOf('【保持】') < e1.prompt.indexOf('【替换'),
+    '先保持后替换（顺序即契约）'
+  )
   ok(buildImageStrategy({ mode: 'gen', userPrompt: '招牌菜' }).mode === 'gen', '不传 mode 默认 gen')
   ok(buildImageStrategy({ mode: '乱填' }).mode === 'gen', '未知 mode 回落到 gen（不静默变成改写）')
   ok(buildImageStrategy({ mode: 'edit' }).prompt.includes('参考图'), 'edit 即使没有用户描述也成立')
-  ok(e1.notes.some((n) => n.includes('图生图')), '策略说明里标明这是图生图')
+  ok(
+    e1.notes.some((n) => n.includes('图生图')),
+    '策略说明里标明这是图生图'
+  )
 
   console.log('两张参考图（图1 结构模板 + 图2 本店实拍）：')
   const e2 = buildImageStrategy({
@@ -300,7 +319,10 @@ try {
     platform: 'xhs',
     store: { name: '萍姐火锅', brandName: '萍姐火锅', profile: '{"signatureDishes":"鲜切黄牛肉"}' }
   })
-  ok(e2.prompt.includes('【图1】') && e2.prompt.includes('【图2】'), 'prompt 里把两张图各自是什么写清楚')
+  ok(
+    e2.prompt.includes('【图1】') && e2.prompt.includes('【图2】'),
+    'prompt 里把两张图各自是什么写清楚'
+  )
   ok(e2.prompt.includes('以图2 为准'), '内容以本店实拍图为准（不是以模板图为准）')
   ok(e2.prompt.includes('【保持】图1'), '「保持」指向结构模板那张（图1）')
   ok(e2.negative.includes('不要保留图1'), '负向词也指向图1，而不是笼统的「参考图」')
@@ -329,7 +351,8 @@ try {
   )
   ok(vf.elements.length === 3 && vf.textInImage === '人均68', '元素清单与图上原文都读出来')
   ok(
-    readVisualFacts({ composition: '三分法', tone: '冷调', objects: ['玻璃杯'] }).colorTone === '冷调',
+    readVisualFacts({ composition: '三分法', tone: '冷调', objects: ['玻璃杯'] }).colorTone ===
+      '冷调',
     '容忍模型换键名（tone / objects）'
   )
   ok(
@@ -337,7 +360,10 @@ try {
       readVisualFacts({ textInImage: '无' }).textInImage === '',
     '「空 / 无」不算事实（否则会写出「不要带出原文：空」）'
   )
-  ok(!hasVisualFacts(readVisualFacts(null)) && !hasVisualFacts(readVisualFacts('')), '没有拆解 → 不算有视觉事实')
+  ok(
+    !hasVisualFacts(readVisualFacts(null)) && !hasVisualFacts(readVisualFacts('')),
+    '没有拆解 → 不算有视觉事实'
+  )
   ok(!hasVisualFacts({ composition: '', elements: [] }), '字段全空 → 不算有视觉事实')
   ok(readVisualFacts('{坏').composition === '', '坏 JSON 不抛错，退回空')
 
@@ -359,7 +385,10 @@ try {
       e3.prompt.includes('主体占比与位置：主体占画面 60%'),
     '留白与主体占比也进「保持」'
   )
-  ok(e3.prompt.includes('画面元素（道具/桌面/背景，不含菜品）：白瓷碗/木桌/干冰雾气'), '道具沿用参考图（菜品仍以本店事实为准）')
+  ok(
+    e3.prompt.includes('画面元素（道具/桌面/背景，不含菜品）：白瓷碗/木桌/干冰雾气'),
+    '道具沿用参考图（菜品仍以本店事实为准）'
+  )
   ok(e3.prompt.includes('只改内容，不要改版式'), '具体清单之后仍保留「不改版式」这条总纲')
   ok(
     e3.negative.includes('人均68') && e3.negative.includes('不要带出'),
@@ -372,7 +401,8 @@ try {
   const e4 = buildImageStrategy({ mode: 'edit', referenceCount: 1 })
   ok(e4.visualLocked === false, '没有视觉拆解 → 不谎报锁定')
   ok(
-    e4.prompt.includes('构图与机位、镜头与光线、场景氛围') && e4.notes.some((n) => n.includes('通用口径')),
+    e4.prompt.includes('构图与机位、镜头与光线、场景氛围') &&
+      e4.notes.some((n) => n.includes('通用口径')),
     '退回通用口径，并如实说明（旧卡/没拆过）'
   )
   ok(
@@ -380,20 +410,79 @@ try {
     '文生图不吃视觉拆解（没有参考图可保持）'
   )
 
+  /**
+   * 照结构重新生成（gen + structureFromVisual）—— 只有同行爆款图、没有本店实拍时的正确做法。
+   * 实测教训：素材只有一张 douyin:ref，走图生图会在别人的像素上改，出来的仍是同行的菜品/摆盘
+   * （用户的原话是「图片不对劲」）。改成不附参考图、只把构图语言写进提示词，画全新画面。
+   */
+  console.log('照结构重新生成（gen + 结构骨架）：')
+  const g1 = buildImageStrategy({
+    mode: 'gen',
+    referenceCount: 0,
+    referenceVisual: visualJson,
+    structureFromVisual: true,
+    userPrompt: '本店招牌麻辣鸡爪和精品牛肚'
+  })
+  ok(g1.mode === 'gen', '模式仍是文生图（不附参考图 → 不携带原图像素）')
+  ok(
+    g1.prompt.includes('画面结构（照这条爆款的结构来') &&
+      g1.prompt.includes('构图：居中对称') &&
+      g1.prompt.includes('机位与视角：90 度俯拍') &&
+      g1.prompt.includes('版式与留白：上方三分之一留白压标题'),
+    '构图语言逐项写进提示词（否则「模仿」只剩一句空话）'
+  )
+  ok(
+    !g1.prompt.includes('【保持】') && !g1.prompt.includes('不要改版式'),
+    '不出现「保持参考图」的字样（没有参考图可保持）'
+  )
+  ok(
+    g1.negative.includes('不要出现参考图上的任何文字') &&
+      g1.negative.includes('不要复制其菜品摆盘与人物'),
+    '负向词点名：结构来自别人的作品，画面里不能出现那张图的任何东西'
+  )
+  ok(
+    g1.notes.some((n) => n.includes('照爆款结构重新生成')) &&
+      g1.notes.some((n) => n.includes('未附参考图')),
+    '策略说明如实记录「不使用原图像素」'
+  )
+  const g2 = buildImageStrategy({ mode: 'gen', referenceVisual: visualJson })
+  ok(
+    !g2.prompt.includes('画面结构（照这条爆款'),
+    '没有 structureFromVisual 就不擅自套结构（默认行为不变）'
+  )
+
   console.log('月度额度（唯一一道花钱的闸门，必须在发起请求前收敛）：')
   const q1 = buildImageStrategy({ count: 3, maxCount: 4, monthlyLimit: 100, usedThisMonth: 10 })
-  ok(q1.count === 3 && q1.blocked === false && q1.remaining === 90, '有余额 → 按请求张数生成', 'count=' + q1.count + ' remaining=' + String(q1.remaining))
+  ok(
+    q1.count === 3 && q1.blocked === false && q1.remaining === 90,
+    '有余额 → 按请求张数生成',
+    'count=' + q1.count + ' remaining=' + String(q1.remaining)
+  )
   const q2 = buildImageStrategy({ count: 4, maxCount: 4, monthlyLimit: 100, usedThisMonth: 98 })
-  ok(q2.count === 2 && q2.remaining === 2, '余额不足 → 只生成剩余张数（绝不超额度）', 'count=' + q2.count)
-  ok(q2.notes.some((n) => n.includes('剩余的 2 张')), '被额度压张数要说出来（不静默少给）')
+  ok(
+    q2.count === 2 && q2.remaining === 2,
+    '余额不足 → 只生成剩余张数（绝不超额度）',
+    'count=' + q2.count
+  )
+  ok(
+    q2.notes.some((n) => n.includes('剩余的 2 张')),
+    '被额度压张数要说出来（不静默少给）'
+  )
   const q3 = buildImageStrategy({ count: 2, monthlyLimit: 100, usedThisMonth: 100 })
-  ok(q3.blocked === true && q3.count === 0, '额度用尽 → 拦截且 count=0（调用方不得发起生成）', 'count=' + q3.count)
+  ok(
+    q3.blocked === true && q3.count === 0,
+    '额度用尽 → 拦截且 count=0（调用方不得发起生成）',
+    'count=' + q3.count
+  )
   ok(
     typeof q3.blockedReason === 'string' && q3.blockedReason.includes('每月张数上限'),
     '拦截原因要指出去哪里调额度',
     String(q3.blockedReason).slice(0, 40)
   )
-  ok(q3.notes.some((n) => n.includes('已拦截')), '拦截要在策略说明里留痕')
+  ok(
+    q3.notes.some((n) => n.includes('已拦截')),
+    '拦截要在策略说明里留痕'
+  )
   const q4 = buildImageStrategy({ count: 2, monthlyLimit: 0, usedThisMonth: 999 })
   ok(q4.blocked === false && q4.count === 2 && q4.remaining === null, '上限为 0 → 不限，不误拦')
   const q5 = buildImageStrategy({ count: 2, monthlyLimit: 100 })
@@ -415,6 +504,32 @@ try {
   ok(
     UNIVERSAL_NEGATIVE.includes('文字') && UNIVERSAL_NEGATIVE.includes('logo'),
     '通用负向词覆盖文字/水印/logo'
+  )
+
+  console.log('图片来源判定（决定能不能当底图/内容依据）：')
+  const src = require(join(work, 'imageSources.cjs'))
+  ok(src.isSelfOwned('self:local') === true, '本店导入图 → 可用作底图')
+  ok(src.isSelfOwned('gen:image') === true, 'AI 生成图 → 可用作底图（对外需注明非实拍）')
+  ok(src.isSelfOwned('cover:composite') === true, '此前的合成产物 → 可用作底图')
+  ok(src.isSelfOwned('douyin:ref') === false, '★ 同行原图（douyin:ref）不能当底图/内容依据')
+  ok(
+    src.isSelfOwned('xhs:buzz') === false && src.isSelfOwned('search:web') === false,
+    '舆情抓图/联网搜图同样不能'
+  )
+  ok(
+    src.isSelfOwned('') === false && src.isSelfOwned(undefined) === false,
+    '来源未知 → 保守按外部处理'
+  )
+  ok(
+    src.sourceLabel('douyin:ref').includes('他人作品') &&
+      src.sourceLabel('douyin:ref').includes('结构参考'),
+    '给模型的说明里写明用途限制',
+    src.sourceLabel('douyin:ref')
+  )
+  ok(src.sourceLabel('self:local').includes('本店实拍'), '自家图也标明可用途')
+  ok(
+    src.NO_SELF_IMAGE_HINT.includes('上传') || src.NO_SELF_IMAGE_HINT.includes('生成'),
+    '缺自家图时给的是可行动指引'
   )
 
   console.log('纯函数约束：')
