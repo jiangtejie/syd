@@ -51,6 +51,14 @@ try {
     format: 'cjs',
     outfile: join(work, 'assetPolicy.cjs')
   })
+  // 文字校对 + 「该不该交给扩散模型」的分流判据（纯函数）
+  buildSync({
+    entryPoints: [join(root, 'src/main/services/growth/ai/imageText.ts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outfile: join(work, 'imageText.cjs')
+  })
   const S = require(bundle)
   const {
     PLATFORM_SPECS,
@@ -514,6 +522,33 @@ try {
     '通用负向词覆盖文字/水印/logo'
   )
 
+  console.log('要写的文字 / 只要画面（noText）：')
+  const t1 = buildImageStrategy({
+    mode: 'edit',
+    referenceCount: 1,
+    textLines: ['国庆来重庆，观音桥这家老重庆牛油锅别错过', '甜品免费 · 人均98', '观音桥'],
+    userPrompt: '照原图高仿'
+  })
+  ok(
+    t1.prompt.includes('【要写的文字】') &&
+      t1.prompt.includes('1. 国庆来重庆') &&
+      t1.prompt.includes('3. 观音桥'),
+    '★ 文字逐行进提示词（含序号，模型据此逐字照抄）'
+  )
+  ok(
+    t1.prompt.includes('逐字照抄') && t1.prompt.includes('不得被画布边缘裁切'),
+    '仍然带「逐字照抄 + 不得裁切」两条硬约束'
+  )
+  const t2 = buildImageStrategy({ mode: 'gen', noText: true })
+  ok(
+    /不要出现任何文字/.test(t2.prompt) && t2.negative.includes('任何文字'),
+    '★ noText：提示词与负向词都要求画面无文字（留给本地压字）'
+  )
+  ok(
+    !buildImageStrategy({ mode: 'gen' }).prompt.includes('不要出现任何文字'),
+    '默认仍允许文字（不误伤普通生图）'
+  )
+
   console.log('图片来源判定（决定能不能当底图/内容依据）：')
   const src = require(join(work, 'imageSources.cjs'))
   ok(src.isSelfOwned('self:local') === true, '本店导入图 → 可用作底图')
@@ -544,6 +579,66 @@ try {
    * 删除素材图片的准入规则（详情面板的「删除这张」）。
    * 这两条护栏都不该靠在界面上小心：规则错了不会报错，只会悄悄把不该删的删了。
    */
+  /**
+   * 生图产物的文字校对 + 纯文字参考图的分流判据。
+   * 两条都是实测逼出来的：新文案比原文案长会被裁（提示词压不住）；
+   * 白底清单类参考图交给扩散模型会被整张重画。
+   */
+  console.log('文字校对（回读产物逐行比对）：')
+  const it = require(join(work, 'imageText.cjs'))
+  const v1 = it.verifyTextLines(
+    ['国庆来重庆，观音桥这家老重庆牛油锅别错过', '甜品免费 · 人均98', '观音桥'],
+    '国庆来重庆，观音桥这家老重庆牛油锅别错过\n甜品免费·人均 98\n观音桥'
+  )
+  ok(
+    v1.allFound && v1.matched === 3,
+    '标点/空格/全角差异不算不一致（3/3 命中）',
+    JSON.stringify(v1.matched)
+  )
+  const v2 = it.verifyTextLines(
+    ['国庆来重庆，观音桥这家老重庆牛油锅别错过', '甜品免费 · 人均98'],
+    '观音桥这家老重庆牛油锅别错过 甜品免费·人均98'
+  )
+  ok(
+    !v2.allFound && v2.missing === undefined && v2.lines.filter((l) => !l.found).length === 1,
+    '★ 标题被裁掉左半 → 能报出具体哪一行没命中',
+    JSON.stringify(v2.lines.map((l) => l.found))
+  )
+  ok(it.verifyTextLines([], '随便什么').total === 0, '没给文案就不校对（total=0，不会误报通过）')
+  ok(
+    it.normalizeForCompare('ＡＢ　１２３') === it.normalizeForCompare('ab 123'),
+    '归一化：全角字母数字与空白折叠'
+  )
+  ok(it.buildReadBackPrompt().includes('{ "lines"'), '回读提示词要求纯 JSON 输出（便于解析）')
+
+  console.log('纯文字排版图的分流判据（不该交给扩散模型）：')
+  const textOnly = it.judgeTextOnlyVisual({
+    composition: '手机屏幕竖屏截图, 全屏单栏纵向排版, 无实拍主体, 内容自上而下满排',
+    camera: '无摄影机位, 为手机备忘录界面直接截屏',
+    colorTone: '白底黑字为主',
+    subjectRatio: '文字内容占整屏 90% 以上',
+    elements: ['手机备忘录顶部导航栏']
+  })
+  ok(
+    textOnly.textOnly,
+    '★ 备忘录截图 → 判为纯文字排版（实测这类图会被整张重画）',
+    textOnly.reasons.join(' / ')
+  )
+  const photo = it.judgeTextOnlyVisual({
+    composition: '居中对称, 主体略偏下',
+    camera: '90 度俯拍',
+    lighting: '自然侧逆光',
+    subjectRatio: '主体占画面 60%',
+    elements: ['白瓷碗', '木桌']
+  })
+  ok(!photo.textOnly, '普通美食实拍 → 不误判（继续走图生图）', String(photo.reasons.length))
+  ok(!it.judgeTextOnlyVisual(null).textOnly, '没有视觉拆解 → 不判断（保守放行给生图）')
+  const oneSignal = it.judgeTextOnlyVisual({
+    layout: '顶部一行导航栏',
+    subjectRatio: '主体占画面 60%'
+  })
+  ok(!oneSignal.textOnly, '只命中一条信号 → 不判（避免把"白底菜品图"误伤）')
+
   console.log('删图准入规则：')
   const policy = require(join(work, 'assetPolicy.cjs'))
   ok(
@@ -563,11 +658,15 @@ try {
     'cover 与 image 同样受保护'
   )
   ok(
-    /产出/.test(String(policy.checkAssetRemoval({ kind: 'image', remainingImages: 5, outputRefs: 2 }))),
+    /产出/.test(
+      String(policy.checkAssetRemoval({ kind: 'image', remainingImages: 5, outputRefs: 2 }))
+    ),
     '★ 挂在产出上的图先拒绝（先去产出面板换掉，否则裂图）'
   )
   ok(
-    /产出/.test(String(policy.checkAssetRemoval({ kind: 'image', remainingImages: 0, outputRefs: 1 }))),
+    /产出/.test(
+      String(policy.checkAssetRemoval({ kind: 'image', remainingImages: 0, outputRefs: 1 }))
+    ),
     '两条护栏同时命中时，先说产出（那是更该先处理的一件事）'
   )
   ok(

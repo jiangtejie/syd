@@ -522,6 +522,16 @@ export interface ImageStrategyInput {
    */
   referenceVisual?: unknown
   /**
+   * 要在图上出现的文字（一行一条）。给了就逐字写进提示词 —— 实测只写一句"换成我们店的文案"，
+   * 模型会自己编字；写全（含主标题/副标题/角标的角色）它才逐字照抄。
+   */
+  textLines?: unknown
+  /**
+   * 只要画面、不要文字：画面里不出现任何文字/贴纸，并按版式留出标题位置。
+   * 用于「AI 出画面 + growth_make_cover 本地压字」这条路（文字由本地渲染保证不被裁）。
+   */
+  noText?: unknown
+  /**
    * gen 模式下是否把上面那份视觉拆解当作**结构骨架**用。
    *
    * 场景：素材只有同行的爆款图、没有本店实拍图。这时走图生图会在别人的像素上改，
@@ -640,6 +650,12 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
   const brandName = asText(brand?.name) || ''
 
   const mode = normalizeMode(input.mode)
+  /** 要写的文字（去掉空行、限 6 条）：逐字进提示词，出图后也用它做回读比对 */
+  const textLines = (Array.isArray(input.textLines) ? input.textLines : [])
+    .map((x) => String(x ?? '').trim())
+    .filter((x) => x !== '')
+    .slice(0, 6)
+  const noText = input.noText === true
   const visual = readVisualFacts(input.referenceVisual)
   /** 有视觉拆解（旧卡/没拆过时为空） */
   const hasVisual = hasVisualFacts(visual)
@@ -686,13 +702,6 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
           : '构图与机位、镜头与光线、场景氛围、画面留白位置、主体在画面里的占比；只改内容，不要改版式')
     )
     if (userPrompt) lines.push('【本次要求】' + userPrompt)
-    // 下面两条是 2026-09-19 拿真实爆款图在用户通道上实测出来的：
-    // ① 新文案比原文案长时会被裁（标题左端被切）→ 必须明确"不得裁切/必要时缩字号折行"；
-    // ② 文字必须逐字照抄用户给的文案（模型有改写/漏字的倾向）。
-    lines.push(
-      '【文字要求】画面里的文字**逐字照抄**【本次要求】里给出的文案，不要改写、不要漏字、不要多加字；' +
-        '文字必须完整可见：放不下就自动缩小字号或折行，**不得被画布边缘裁切**、不得压出画面。'
-    )
   } else {
     lines.push('画面主体：' + subject)
     if (userPrompt && template.scene) lines.push('场景范式：' + template.scene)
@@ -714,6 +723,30 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
       )
     }
   }
+
+  /**
+   * 要写的文字 / 文字要求：**两种模式都适用** —— 实测（2026-09-19，用户通道）：
+   * ① 新文案比原文案长时会被裁（标题左端被切）→ 必须写明"不得裁切/放不下就缩字号折行"；
+   * ② 只给一句"换成我们店的文案"，模型会自己编字；逐行给全它才逐字照抄。
+   * noText 则是给"AI 出画面 + 本地压字"那条路用的：画面干净、留白给标题。
+   */
+  if (textLines.length > 0) {
+    lines.push(
+      '【要写的文字】以下每一行都必须出现在画面里，**逐字照抄**（不要改写、不要漏字、不要自己加字；' +
+        '哪一行是主标题、哪一行是副标题/角标，按给出的顺序与角色来）：\n' +
+        textLines.map((t, i) => String(i + 1) + '. ' + t).join('\n')
+    )
+  }
+  lines.push(
+    noText
+      ? '【文字要求】这一版**不要出现任何文字**（包括标题、贴纸、水印、logo、二维码）：文字会由本地排版另做，' +
+          '你只需要画出干净的画面，并在标题将要出现的位置留出干净的留白。'
+      : '【文字要求】画面里的文字**逐字照抄**给出的文案，不要改写、不要漏字、不要多加字；' +
+          '文字必须完整可见：放不下就自动缩小字号或折行，**不得被画布边缘裁切**、不得压出画面。' +
+          (textLines.length === 0
+            ? '（本次没有给定文案：请只沿用参考图上已有文字的位置与风格，不要新增文字。）'
+            : '')
+  )
 
   const storeFacts = joinFacts([
     storeName ? '门店：' + storeName : '',
@@ -747,6 +780,7 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
 
   const negative = joinFacts([
     template.negative,
+    noText ? '任何文字、字幕、贴纸、水印、logo、二维码' : '',
     // 照结构生成时也要点名：结构来自别人的作品，但画面里不能出现那张图上的任何东西
     structureOn ? '不要出现参考图上的任何文字、Logo、水印、二维码，也不要复制其菜品摆盘与人物' : '',
     // 图生图最要命的一条：参考图是别人的作品，像素级特征（原文字/水印/logo/人脸）绝不能带出来

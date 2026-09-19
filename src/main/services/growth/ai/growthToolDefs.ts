@@ -29,6 +29,7 @@ import {
 import type { GrowthAsset } from '../../../../shared/growth'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { nativeImage } from 'electron'
 import { getGrowthMediaDir } from '../../paths'
 import { buildCoverHtml } from '../cover/templates'
 import { renderHtmlToPng } from '../cover/renderer'
@@ -67,6 +68,7 @@ import { getImageConfig } from './config'
 import { exportPublishPackage } from '../publisher/exporter'
 import { checkComplianceBatch } from '../remix/compliance'
 import { isSelfOwned, NO_SELF_IMAGE_HINT, sourceLabel } from '../../../../shared/imageSource'
+import { buildReadBackPrompt, judgeTextOnlyVisual, verifyTextLines } from './imageText'
 
 export interface GrowthToolCtx {
   sessionId: number
@@ -240,6 +242,67 @@ function modelText(system: string, user: string, signal?: AbortSignal): Promise<
   const provider = createAiProvider('growth-ai')
   if (!provider) throw new Error('AI 通道未配置: 请到 设置 → AI 助手 配置模型')
   return provider.complete(system, user, { maxTokens: 1600, signal })
+}
+
+/**
+ * 回读校对：把产物图交给多模态模型逐字读出来，与"我要写的文字"逐行比对。
+ *
+ * 返回一句能直接拼进回执的结论（校对失败也如实说，绝不假装"校对通过"）。
+ */
+async function verifyImagesText(shots: string[], textLines: string[]): Promise<string> {
+  const provider = createAiProvider('growth-ai')
+  if (!provider) return '（文字校对未做：AI 通道未配置）'
+  const results: Array<{ ok: boolean; matched: number; total: number; missing: string[] }> = []
+  for (const shot of shots) {
+    try {
+      const raw = await provider.complete('你是 OCR 校对员，只输出 JSON。', buildReadBackPrompt(), {
+        maxTokens: 1200,
+        images: [shot]
+      })
+      const parsed = parseJson(raw)
+      const readBack = Array.isArray(parsed?.['lines'])
+        ? (parsed?.['lines'] as unknown[])
+            .filter((x): x is string => typeof x === 'string')
+            .join('\n')
+        : raw
+      const v = verifyTextLines(textLines, readBack)
+      results.push({
+        ok: v.allFound,
+        matched: v.matched,
+        total: v.total,
+        missing: v.lines.filter((l) => !l.found).map((l) => l.expected)
+      })
+    } catch (e) {
+      return (
+        '（文字校对未完成：' + (e instanceof Error ? e.message.slice(0, 60) : '读图失败') + '）'
+      )
+    }
+  }
+  if (results.length === 0) return ''
+  const pass = results.filter((r) => r.ok).length
+  if (pass === results.length) {
+    return '（✓ 文字校对：' + String(results.length) + ' 张产物的文字与要求逐行一致）'
+  }
+  const missing = [...new Set(results.flatMap((r) => r.missing))].slice(0, 4)
+  return (
+    '（⚠ 文字校对：' +
+    String(results.length - pass) +
+    '/' +
+    String(results.length) +
+    ' 张没写全，缺：' +
+    missing.map((m) => '「' + m + '」').join('') +
+    '。多半是文案太长被裁或被改写。两条路：① 把缺的那行**缩短**后重试；' +
+    '② 改走本地压字 —— growth_gen_image(noText=true) 出干净画面，再 growth_make_cover(title=…, subtitle=…, badge=…) ' +
+    '把文字压上去（本地渲染，保证完整不被裁）。）'
+  )
+}
+
+/** 门店名（清单版式底部署名用）：取当前门店，没有就留空 */
+function storeNameOf(args: Record<string, unknown>): string {
+  const id = Number(args.storeId ?? 0)
+  const list = listStores()
+  const one = id ? list.find((s) => s.id === id) : (list.find((s) => s.enabled) ?? list[0])
+  return one?.name ? one.name : ''
 }
 
 /** 用户点了停止：工具立刻收手（不落库、不建产出），并给模型一个明确结论 */
@@ -418,6 +481,8 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           role?: 'cover' | 'image'
           referenceAssetId?: number
           contentAssetId?: number
+          textLines?: string[]
+          noText?: boolean
           contentId?: number
           taskId?: number
         }
@@ -426,6 +491,12 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         const stopped = cancelled(ctx.signal)
         if (stopped) return stopped
         const cfg = getImageConfig()
+        /** 要写的文字：逐字进提示词，出图后也用它做回读比对（不给自己编字的机会） */
+        const textLines = (Array.isArray(args.textLines) ? args.textLines : [])
+          .map((x) => String(x ?? '').trim())
+          .filter((x) => x !== '')
+          .slice(0, 6)
+        const noText = args.noText === true
         const storeId = storeIdOf(args)
         const store = storeId
           ? (listStores().find((s) => s.id === storeId) ?? null)
@@ -503,6 +574,24 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           detail.assets.some((a) => a.id === args.referenceAssetId)
         const referenceVisual = refIsOwnAsset ? detail?.decomp?.visual : null
         const structureVisualReady = hasVisualFacts(readVisualFacts(referenceVisual))
+        /**
+         * 分流：参考图是「纯文字排版图」（备忘录截图 / 白底清单 / 表格）时**不交给扩散模型**。
+         * 实测：这类图没有"画面"可保，图生图会把整张重画成美食海报 —— 既不像原图又白花额度；
+         * 而它的价值恰恰是"格式一样、只换文字"，那就该本地排版（逐字准确）。
+         */
+        if (mode === 'edit' && structureVisualReady) {
+          const verdict = judgeTextOnlyVisual(readVisualFacts(referenceVisual))
+          if (verdict.textOnly) {
+            return (
+              '这条参考图是**纯文字排版图**，不适合交给生图模型：它没有实拍画面可保持，实测会被整张重画成别的画面。\n' +
+              '判断依据：' +
+              verdict.reasons.join('；') +
+              '\n请改用本地排版（逐字准确、格式一致、不耗生图额度）：growth_make_cover(' +
+              "template='list', title=..., items=[逐条内容], subtitle=..., badge=...)。" +
+              '若确实要照片版，请另给一张**本店实拍图**（contentAssetId）再走生图。'
+            )
+          }
+        }
         // 如实说明"结构从哪来"：没有视觉拆解时不能声称构图语言已经写进提示词，
         // 否则回执听起来像"照爆款结构生成"，实际是通用构图 —— 用户会以为是模型没画好。
         if (mode === 'gen' && structureAssetId) {
@@ -535,6 +624,9 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           // 结构参考的视觉拆解：edit 里是「保持清单」，gen 里是「照这个构图语言新画一张」
           referenceVisual,
           structureFromVisual: mode === 'gen' && !!structureAssetId,
+          // 要写的文字（逐字进提示词）与「只要画面不要文字」
+          textLines,
+          noText,
           userPrompt: args.prompt ?? '',
           platform: args.platform || cfg.platform,
           role: args.role ?? 'cover',
@@ -586,6 +678,34 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
                 '建议重试，或把要求写得更具体/换模型）'
             }
           }
+          /**
+           * 出图后**回读校对**：把产物再喂给多模态模型逐字读一遍，与 textLines 比对。
+           *
+           * 为什么必须有：实测新文案比原文案长时会被裁（标题左端被切），而这件事提示词压不住。
+           * 校对只对给了 textLines 的调用做（有明确的比对目标），最多读 2 张，失败不阻塞出图。
+           */
+          let verifyNote = ''
+          if (textLines.length > 0 && imgs.length > 0) {
+            const shots: string[] = []
+            for (const g of imgs.slice(0, 2)) {
+              try {
+                const buf = await readFile(join(getGrowthMediaDir(), g.relPath))
+                const img = nativeImage.createFromBuffer(buf)
+                if (img.isEmpty()) continue
+                const { width, height } = img.getSize()
+                const scaled =
+                  width > 1024
+                    ? img.resize({ width: 1024, height: Math.round((height * 1024) / width) })
+                    : img
+                shots.push('data:image/jpeg;base64,' + scaled.toJPEG(80).toString('base64'))
+              } catch {
+                /* 读不到就不校对这一张 */
+              }
+            }
+            if (shots.length > 0) {
+              verifyNote = await verifyImagesText(shots, textLines)
+            }
+          }
           if (gen.warning) refNote = '（注意：' + gen.warning + '）'
           else if (gen.usedReference) {
             refNote =
@@ -629,6 +749,9 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
                 contentAssetId: args.contentAssetId ?? null,
                 usedReference: gen.usedReference,
                 referenceCount: gen.referenceCount,
+                // 当时要求写的文字与句数：复盘/校对争议时不用再翻会话
+                textLines,
+                noText,
                 notes: strategy.notes
               }
             },
@@ -667,7 +790,13 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
             formatStrategy(strategy) +
             shortNote +
             refNote +
+            verifyNote +
             '；已标注示意图。请在右侧图片卡点「用这张」(只采用选中的那一张)。' +
+            (textLines.length > 0
+              ? '\n要求写入的文字：' + textLines.map((t) => '「' + t + '」').join('') + verifyNote
+              : noText
+                ? '\n本次按「只要画面」出图（画面里不应有文字）：接下来用 growth_make_cover 把文字压上去。'
+                : '') +
             warn
           )
         } catch (e) {
@@ -694,6 +823,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           badge?: string
           template?: string
           platform?: string
+          items?: string[]
           assetId?: number
           outputId?: number
           contentId?: number
@@ -705,6 +835,18 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         if (stopped) return stopped
         const title = (args.title ?? '').trim()
         if (!title) return '请给出封面标题（通常直接用采纳的那条标题）。'
+        /**
+         * 清单条目：template='list' 时用。清单/榜单类参考图（白底、备忘录截图）不该交给生图模型，
+         * 它们的本质就是文字排版 —— 本地逐条渲染，字号按条数自适应，序号自动生成。
+         */
+        const items = (Array.isArray(args.items) ? args.items : [])
+          .map((x) => String(x ?? '').trim())
+          .filter((x) => x !== '')
+          .slice(0, 20)
+        const wantList =
+          String(args.template ?? '')
+            .trim()
+            .toLowerCase() === 'list'
         if (args.outputId !== undefined) {
           const badOut = outputGuard(args, args.outputId)
           if (badOut) return badOut
@@ -725,6 +867,9 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
          * （实测任务 5：assetId 15 = douyin:ref，产出 1024×1392 的合成封面，既侵权又不像本店）。
          */
         let asset: GrowthAsset | null = null
+        if (wantList && items.length === 0) {
+          return '清单版式（template=list）需要 items：每行一条店名/推荐，最多 20 条。'
+        }
         if (args.assetId) {
           asset = getAssetById(args.assetId)
           if (!asset) return '底图 assetId=' + String(args.assetId) + ' 不存在。'
@@ -738,7 +883,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
               NO_SELF_IMAGE_HINT
             )
           }
-        } else {
+        } else if (!wantList) {
           const detail = getContentDetail(contentId)
           asset =
             detail?.assets.find(
@@ -749,6 +894,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
             ) ?? null
           if (!asset) return '这条素材里没有本店自己的图，无法做封面合成。' + NO_SELF_IMAGE_HINT
         }
+        // list 版式是白底排版，本来就不需要底图（也不该拿同行原图当底图）
         let imageDataUri = ''
         if (asset) {
           const dataUri = await assetToDataUri(asset)
@@ -762,6 +908,9 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
             title,
             subtitle: args.subtitle ?? '',
             badge: args.badge ?? '',
+            // 清单版式：逐条本地渲染（序号自动生成，字号按条数自适应）
+            items,
+            footNote: storeNameOf(args) || '',
             imageDataUri,
             width: wh.width,
             height: wh.height

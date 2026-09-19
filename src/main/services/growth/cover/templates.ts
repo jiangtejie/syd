@@ -28,6 +28,35 @@ export interface CoverTemplate {
 
 export const COVER_TEMPLATES: CoverTemplate[] = [
   {
+    /**
+     * 清单/榜单版式：白底 + 大标题 + 逐条列表 + 底部品牌行。
+     *
+     * 场景（实测得出）：参考图是「备忘录截图 / 白底清单」这类**纯文字排版图**时，
+     * 图生图只会把它重画成别的东西（模型没有"画面"可保，只剩文字，而文字它要重画），
+     * 而这种图的价值恰恰是「格式一样、只换文字」——那就该本地排。
+     * 条目数不设死，字号按条数自适应（见 .cover-list）。
+     */
+    id: 'list',
+    label: '清单榜单',
+    when: '参考图是白底清单/备忘录截图（纯文字排版、没有实拍画面）时：逐条列出店名或推荐',
+    titleWidthPct: 90,
+    css: [
+      '.cover-stage{background:#fff}',
+      '.cover-scrim{display:none}',
+      '.cover-title{left:5%;right:5%;top:4%;color:#111;text-align:left;font-weight:800}',
+      '.cover-sub{left:5%;right:5%;top:calc(4% + 9.5em);color:#666;font-weight:500}',
+      '.cover-badge{right:5%;top:4%;background:#e03131;color:#fff}',
+      '.cover-list{position:absolute;left:5%;right:5%;top:22%;bottom:9%;margin:0;padding:0;list-style:none;' +
+        'counter-reset:cover-item;overflow:hidden}',
+      '.cover-list li{position:relative;padding:0 0 0 8.5%;margin:0 0 1.6%;font-size:3.4vw;line-height:1.42;' +
+        'color:#222;font-weight:500}',
+      '.cover-list li::before{counter-increment:cover-item;content:counter(cover-item);position:absolute;' +
+        'left:0;top:.1em;width:6%;text-align:right;color:#e03131;font-weight:800;font-size:3.4vw}',
+      '.cover-foot{position:absolute;left:5%;right:5%;bottom:3.5%;color:#999;font-size:2.8vw;' +
+        'border-top:1px solid #eee;padding-top:1.6%}'
+    ].join('\n')
+  },
+  {
     id: 'bold-bottom',
     label: '大字压底',
     when: '最通用的小红书封面：底图铺满，标题大字压在底部渐变上',
@@ -153,6 +182,14 @@ export interface CoverInput {
   subtitle?: string
   /** 角标短词，如「新店」「人均 80」 */
   badge?: string
+  /**
+   * 清单条目（「清单/榜单」版式用）：一行一条，逐条本地渲染。
+   * 为什么需要：参考图本身是「白底清单/备忘录截图」时，扩散生图只会把它重画成别的画面
+   * （实测），而这种版式的本质就是**文字排版**——交给本地渲染才逐字准确、格式一致。
+   */
+  items?: string[]
+  /** 清单版式底部的署名行（如品牌名/门店名），可空 */
+  footNote?: string
   /** 底图 data URI（没有则渲染纯文字封面） */
   imageDataUri?: string
   width: number
@@ -167,6 +204,8 @@ export interface CoverDoc {
   lines: string[]
   fontSizeVw: number
   usedImage: boolean
+  /** 清单版式实际排出的条目（回执/落库能看到排了几条） */
+  itemLines: string[]
 }
 
 const BASE_CSS = [
@@ -205,6 +244,16 @@ export function buildCoverHtml(input: CoverInput): CoverDoc {
    * 一行标题渲染成 1013px 高。px 只跟画布走，任何环境都稳。
    */
   const px = (pct: number): number => Math.max(1, Math.round((width * pct) / 100))
+  /**
+   * 清单条目：一行一条，逐条渲染（第 1..N 条的序号由 CSS counter 出，不用手写数字 ——
+   * 手写数字在"少一条"时会与列表错位）。条目字号按条数自适应：
+   * 12 条塞满 3:4 画面时用小字，3 条时放大，避免"字太大溢出 / 字太小看不清"。
+   */
+  const items = (Array.isArray(input.items) ? input.items : [])
+    .map((x) => String(x ?? '').trim())
+    .filter((x) => x !== '')
+    .slice(0, 20)
+  const itemFontVw = items.length > 14 ? 2.7 : items.length > 9 ? 3.1 : items.length > 6 ? 3.4 : 3.9
   const sizeCss = [
     '.cover-sub{font-size:' + String(px(2.9)) + 'px}',
     '.cover-badge{font-size:' +
@@ -213,13 +262,32 @@ export function buildCoverHtml(input: CoverInput): CoverDoc {
       String(px(1.1)) +
       'px ' +
       String(px(1.8)) +
-      'px}'
+      'px}',
+    // 清单条目字号：按条数自适应（模板 CSS 里写的是 vw，这里用 px 覆盖掉）
+    '.cover-list li, .cover-list li::before{font-size:' + String(px(itemFontVw)) + 'px}',
+    '.cover-foot{font-size:' + String(px(2.8)) + 'px}',
+    '.cover-list{top:' +
+      String(px(items.length > 14 ? 20 : 22)) +
+      '%;bottom:' +
+      String(px(9)) +
+      '%}'
   ].join('\n')
   const titleHtml = lines.length
     ? '<div class="cover-title" style="font-size:' +
       String(px(fontSizeVw)) +
       'px">' +
       lines.map((l) => '<span>' + escapeHtml(l) + '</span>').join('') +
+      '</div>'
+    : ''
+
+  const listHtml = items.length
+    ? '<ol class="cover-list">' +
+      items.map((it) => '<li>' + escapeHtml(it) + '</li>').join('') +
+      '</ol>'
+    : ''
+  const footHtml = items.length
+    ? '<div class="cover-foot">' +
+      escapeHtml(String(input.footNote ?? '').trim() || '整理 · 供参考') +
       '</div>'
     : ''
 
@@ -238,8 +306,18 @@ export function buildCoverHtml(input: CoverInput): CoverDoc {
     badge ? '<div class="cover-badge">' + escapeHtml(badge) + '</div>' : '',
     titleHtml,
     subtitle ? '<div class="cover-sub">' + escapeHtml(subtitle) + '</div>' : '',
+    listHtml,
+    footHtml,
     '</div></body></html>'
   ].join('')
 
-  return { html, templateId: tpl.id, templateLabel: tpl.label, lines, fontSizeVw, usedImage }
+  return {
+    html,
+    templateId: tpl.id,
+    templateLabel: tpl.label,
+    lines,
+    fontSizeVw,
+    usedImage,
+    itemLines: items
+  }
 }

@@ -104,6 +104,19 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
         type: 'number',
         desc: '内容参考图 assetId（本店实拍图：结果里的菜品与场景以它为准。与 referenceAssetId 一起给 = 图1 结构 + 图2 内容）'
       },
+      textLines: {
+        type: 'string_array',
+        desc:
+          '要在图上出现的文字，一行一条（主标题/副标题/角标各一条，最多 6 条）。' +
+          '给这段就等于"照着我的文案写"，工具会在出图后回读产物逐行比对并把结果写进回执；' +
+          '不给的话模型会自己编字（实测）。'
+      },
+      noText: {
+        type: 'boolean',
+        desc:
+          'true = 只要画面不要文字（画面里不出现任何文字/贴纸，并按版式留出标题位置）。' +
+          '配合 growth_make_cover 做"AI 出画面 + 本地压字"，文字由本地渲染保证完整不被裁。'
+      },
       contentId: { type: 'number', desc: '素材 id（不传用当前任务素材）' },
       taskId: { type: 'number', desc: '任务 id（不传用当前任务）' }
     }
@@ -125,8 +138,16 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
       badge: { type: 'string', desc: '角标短词，如「新店」「人均80」（可空）' },
       template: {
         type: 'enum',
-        enum: ['bold-bottom', 'top-band', 'corner-card', 'plain-center'],
-        desc: '封面模板：大字压底 / 顶部色块 / 角标卡片 / 纯文字居中（默认大字压底）'
+        enum: ['bold-bottom', 'top-band', 'corner-card', 'plain-center', 'list'],
+        desc:
+          '封面模板：大字压底 / 顶部色块 / 角标卡片 / 纯文字居中 / 清单榜单（默认大字压底）。' +
+          'list = 白底清单版式，配合 items 用；参考图是"白底清单/备忘录截图"这类纯文字排版图时走它'
+      },
+      items: {
+        type: 'string_array',
+        desc:
+          '清单条目（template=list 时用）：一行一条的店名/推荐，最多 20 条，序号由本地排版自动生成。' +
+          '清单类参考图的正确做法是本地排版（逐字准确、格式一致），不是丢给生图模型重画。'
       },
       platform: {
         type: 'enum',
