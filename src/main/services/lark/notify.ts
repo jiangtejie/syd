@@ -12,6 +12,7 @@ import { listIssuesByGroup } from '../../db/repos/issueRepo'
 import { buildGroupIssuesText } from './issueDigest'
 import { openIdOf } from './personMap'
 import { atTag } from '../im/mention'
+import { APP_NAME } from '../../../shared/appInfo'
 
 /**
  * 飞书告警推送(机器人身份,只读业务数据不外发细节的克制口径)。
@@ -205,7 +206,7 @@ export async function sendFeishuTestMessage(): Promise<{
   if (cfg.targets.length === 0) return { ok: false, error: '请先添加至少一个接收目标(群或个人)' }
   const now = new Date()
   const text = [
-    '【测试消息】微信客服工作台 → 飞书通知',
+    '【测试消息】' + APP_NAME + ' → 飞书通知',
     `时间: ${fmtStamp(now.getTime())}`,
     `目标: ${cfg.targets.map((t) => `${t.name}(${t.kind === 'chat' ? '群' : '个人'})`).join('、')}`
   ].join('\n')
@@ -249,7 +250,7 @@ export async function notifyIssueAlert(input: {
     return `${n + 1}. ${sev}${i.type} ${i.title}(群:${i.groupName || '-'}) 首现 ${fmtStamp(i.occurAt)}${who}${why}`
   })
   if (input.issues.length > 10) lines.push(`…等共 ${input.issues.length} 条`)
-  const text = [head, ...lines, '', '打开微信客服工作台查看详情'].join('\n')
+  const text = [head, ...lines, '', '打开「' + APP_NAME + '」查看详情'].join('\n')
 
   // 幂等键按「事件+时间片+问题集合」派生:同一批问题的重复触发仍由飞书侧去重(不重复轰炸),
   // 但跨时间片的再次提醒必须发得出去——纯按问题 id 派生时,45 分钟后的再次提醒会带着同一个 uuid,

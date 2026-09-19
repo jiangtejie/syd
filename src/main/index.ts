@@ -36,6 +36,7 @@ import {
 import { consumeCrashMarker, installCrashGuard } from './services/crashGuard'
 import { stopBaseSyncScheduler } from './services/lark/baseSyncScheduler'
 import { getConfigBoolean } from './db/repos/config'
+import { APP_NAME } from '../shared/appInfo'
 import { registerKeyStoreHandlers } from './ipc/keyStoreHandlers'
 import { registerWechatHandlers } from './ipc/wechatHandlers'
 import { registerAiHandlers } from './ipc/aiHandlers'
@@ -86,8 +87,7 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 let lastNotifyAt = 0
-
-const APP_NAME = '微信私域智能客服'
+// 产品名见 shared/appInfo.ts（改名只需改那一处）
 
 function focusMainWindow(): void {
   if (!mainWindow) return

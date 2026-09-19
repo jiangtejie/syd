@@ -13,6 +13,7 @@ import { collectLocalFacts } from './agentTools'
 import { memoSystemBlock } from './memo'
 import { describeModelError } from './modelErrors'
 import { createLogger } from '../logging'
+import { APP_NAME } from '../../../shared/appInfo'
 
 const aiLog = createLogger('ai')
 
@@ -67,7 +68,7 @@ function buildSystemForAgent(agent: AiAgent): string {
     .join('\n')
 }
 
-const SYSTEM_PROMPT = `你是一名微信私域智能客服，正在协助真人客服为个人微信好友撰写回复。\n${OUTPUT_PROTOCOL}`
+const SYSTEM_PROMPT = `你是「${APP_NAME}」，正在协助真人客服为个人微信好友撰写回复。\n${OUTPUT_PROTOCOL}`
 
 function parseCandidates(raw: string): ReplyCandidate[] | null {
   const trimmed = raw.trim()

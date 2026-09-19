@@ -24,6 +24,7 @@ import ConfirmHost from './components/ConfirmHost'
 import ErrorBoundary from './components/ErrorBoundary'
 import FirstRunWizard from './components/onboarding/FirstRunWizard'
 import { installIssueAlertSound } from './lib/issueAlert'
+import { APP_NAME } from '../../shared/appInfo'
 import './pages/shell.css'
 
 /**
@@ -219,8 +220,7 @@ function App(): React.JSX.Element {
 
   // 任务栏/窗口标题带未读数
   useEffect(() => {
-    document.title =
-      unread > 0 ? `（${unread > 99 ? '99+' : unread} 条未读）微信私域智能客服` : '微信私域智能客服'
+    document.title = unread > 0 ? `（${unread > 99 ? '99+' : unread} 条未读）${APP_NAME}` : APP_NAME
   }, [unread])
 
   // 菜单导航（Ctrl+, 打开设置等）

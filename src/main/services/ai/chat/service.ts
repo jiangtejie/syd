@@ -34,6 +34,7 @@ import {
   MOUNT_TEXT_BUDGET
 } from '../cap/mounts'
 import { metaToolDefs, runMetaTool } from '../cap/meta'
+import { APP_NAME } from '../../../../shared/appInfo'
 import type { AiChatEvent, AiStyle, ChatMsgItem, ChatTurn } from '../../../../shared/types'
 
 /**
@@ -51,14 +52,18 @@ const CONTEXT_CHAR_BUDGET = 48_000
 /** 单条消息最长保留字符(超长截断并加尾注) */
 const MAX_MSG_CHARS = 6000
 const SYSTEM_FALLBACK =
-  '你是「微信私域智能客服」桌面助手。回答要简洁、结构清晰、用中文;基于事实,不确定时明确说明。'
+  '你是「' +
+  APP_NAME +
+  '」, 一位桌面端 AI 助理。回答要简洁、结构清晰、用中文;基于事实,不确定时明确说明。'
 
 /** 无微信账号的外部渠道(IM 等)system 补充说明 */
 const IM_CHANNEL_NOTE =
   '\n\n# 渠道说明(外部 IM 会话,未绑定业务账号)\n' +
   '当前对话来自外部 IM 渠道(如飞书机器人),未绑定微信业务账号:客户/群问题/监控/消息/统计等业务工具不可用,' +
   '调用会被拒绝并返回占位提示,不要反复尝试,也不要编造数据。\n' +
-  '对方问到业务数据时:第一句话简短说明「本机器人未开通业务数据查询(需在客服软件中为机器人绑定微信业务账号)」,' +
+  '对方问到业务数据时:第一句话简短说明「本机器人未开通业务数据查询(需在「' +
+  APP_NAME +
+  '」中为机器人绑定微信业务账号)」,' +
   '然后自然转回仍可帮忙的通用问题;不要引导对方「切换到客服工作台」(对方在 IM 渠道内无法切换);\n' +
   '若本会话之前已经解释过这一限制,之后再被问到只需一句简短提醒,不要重复整段说明。'
 
@@ -69,7 +74,9 @@ function imChannelNote(wxid: string): string {
 /** 无微信账号时微信业务工具返回占位结果,避免“空数据误导”或反复调用 */
 const IM_NO_WX_TOOL_TEXT =
   '[不可用]本机器人未绑定微信业务账号,无法查询微信业务数据(客户会话/群问题/监控/最近消息)。' +
-  '回复一句简短说明即可(绑定方式:客服软件 → IM 渠道 → 编辑账号 → 绑定微信业务账号)。不要再次调用该工具。'
+  '回复一句简短说明即可(绑定方式:「' +
+  APP_NAME +
+  '」 → IM 渠道 → 编辑账号 → 绑定微信业务账号)。不要再次调用该工具。'
 
 function executeToolDef(
   def: ToolDef,

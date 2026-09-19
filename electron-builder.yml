@@ -1,5 +1,9 @@
 appId: com.wechatcs.desktop
-productName: 微信私域智能客服
+# 显示名（安装目录/快捷方式/卸载项/程序名都用它）。改名前想清楚两件事：
+#   ① 只改这里改名无害 —— appId 与 win.executableName 保持不变，升级安装认的还是同一个应用；
+#   ② 显示名的真源在 src/shared/appInfo.ts（窗口标题/托盘/通知等运行时文案从那里取），
+#      两处要一起改，否则会出现"安装包叫 A、窗口标题叫 B"。
+productName: 私域运营助手
 directories:
   buildResources: build
 files:

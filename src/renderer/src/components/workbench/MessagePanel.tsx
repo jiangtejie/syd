@@ -6,6 +6,7 @@ import AttachmentViewer, { BubbleImage, type Attachment } from './AttachmentView
 import MessageContextMenu, { type ContextMenuState } from './MessageContextMenu'
 import { SkeletonLines, EmptyHint } from './placeholders'
 import { toast } from '../../stores/toast'
+import { APP_NAME } from '../../../../shared/appInfo'
 
 const dialogApi = window.api?.cs?.dialog
 
@@ -1095,7 +1096,7 @@ function MessagePanel(): React.JSX.Element {
   if (!activeSession) {
     return (
       <div className="wb-chat-empty">
-        <div className="wb-chat-empty-title">微信私域智能客服</div>
+        <div className="wb-chat-empty-title">{APP_NAME}</div>
         <div className="wb-chat-empty-sub">从左侧选择一个会话开始</div>
       </div>
     )

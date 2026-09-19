@@ -9,6 +9,7 @@ import {
   listImAuditByChat
 } from '../../db/repos/imAuditRepo'
 import { clipForChannel } from './mdToPlain'
+import { APP_NAME } from '../../../shared/appInfo'
 
 /**
  * 飞书会话内的斜杠指令:/help(能力清单)、/tasks、/task <id>、/cancel。
@@ -97,7 +98,7 @@ async function replyCapabilityHelp(deps: FeishuCommandDeps, req: FeishuCommandRe
       .join('\n')
   }
   const text = [
-    '我是本机「微信客服工作台」的助手。直接用一句话描述任务即可,例如:',
+    '我是本机「' + APP_NAME + '」的助手。直接用一句话描述任务即可,例如:',
     '· 查一下今天还有哪些待跟进的问题',
     '· 某个群最近有哪些客诉',
     '· 读一下这个飞书表格 <粘贴 /base/ 链接>',

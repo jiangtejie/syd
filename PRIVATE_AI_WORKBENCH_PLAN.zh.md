@@ -1,7 +1,7 @@
-# 私域 AI 工作台 —— 微信私域智能客服 × 餐饮营销增长模块 产品与技术落地方案
+# 私域 AI 工作台 —— 私域运营助手 × 餐饮营销增长模块 产品与技术落地方案
 
 > 版本：v1.1（餐饮行业定版 · 待评审进入 Phase 0）
-> 产品基线：本仓库 wechat-cs-desktop（微信私域智能客服 v1.0，Electron 39 + electron-vite + React 19 + HeroUI/Tailwind + zustand，主进程分域服务 + IPC + preload + cs.db SQLCipher）。
+> 产品基线：本仓库 wechat-cs-desktop（私域运营助手 v1.0，Electron 39 + electron-vite + React 19 + HeroUI/Tailwind + zustand，主进程分域服务 + IPC + preload + cs.db SQLCipher）。
 > 已确认决策：① 目标行业 = **餐饮（本地生活）**；② 接受**第三方数据服务订阅费**；③ 客服与全部业务代码**就在本仓库**，营销模块**直接加入本仓库**（不以独立仓库/插件市场形式）。
 
 ---

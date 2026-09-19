@@ -2,6 +2,7 @@ import { getDefaultAgent } from '../../../db/repos/agentRepo'
 import { buildToolMenuText } from './tools'
 import { skillsCatalogText, skillsInjectionText } from './skills'
 import { memoSystemBlock } from '../memo'
+import { APP_NAME } from '../../../../shared/appInfo'
 
 /**
  * 工作台 system 组装:
@@ -10,7 +11,7 @@ import { memoSystemBlock } from '../memo'
  */
 
 const RULES = [
-  '你是「工作台助手」:在微信私域客服软件里帮助运营者查询业务数据、分析问题、整理口径。',
+  '你是「工作台助手」:在「' + APP_NAME + '」软件里帮助运营者查询业务数据、分析问题、整理口径。',
   '回答要基于事实、简洁、用中文;不确定时明确说明,不编造。',
   '所有查询都是只读的,不会修改任何业务数据;账号上下文由系统注入,不要询问用户 wxid。',
   '引用溯源:多行工具结果会被系统逐行加 [编号](本回合内跨工具依次累加,仅本轮有效)。回答引用具体行(客户原话、数字、时间、单条结论)时,在该句末尾标注对应编号,如「…运费问题需今日跟进[3]」或「…共两条:运费[1]、到货[2]」;编号必须真实对应你实际看到的行,不得编造、不得张冠李戴;同一句至多标注 5 个编号,无编号来源的行直接转述即可。'

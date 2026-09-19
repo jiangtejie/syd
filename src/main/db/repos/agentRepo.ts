@@ -1,10 +1,11 @@
 import { getDb } from '../database'
 import type { AiAgent, AiAgentInput, AiStyle } from '../../../shared/types'
 import { getConfig, setConfig } from './config'
+import { APP_NAME } from '../../../shared/appInfo'
 
 /**
  * ai_agent（智能体/客服人设）持久化。
- * - 至少保留一个智能体；首次使用自动播种内置默认「微信私域智能客服」；
+ * - 至少保留一个智能体；首次使用自动播种内置默认「私域运营助手」（老库里的旧名由迁移 6 改掉）；
  * - 默认智能体 id 存 app_config（key: agent.defaultId）。
  */
 
@@ -45,7 +46,7 @@ function seedBuiltinIfEmpty(): void {
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
-    '微信私域智能客服',
+    APP_NAME,
     '你是一位专业、耐心的企业私域客服，熟悉产品与活动，能站在客户角度给出准确回复。',
     'warm',
     '',

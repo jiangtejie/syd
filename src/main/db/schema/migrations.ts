@@ -203,6 +203,28 @@ export const DATA_MIGRATIONS: DataMigration[] = [
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_fb_msg_uniq ON issue_feedback_msg(issue_id, seq)'
       )
     }
+  },
+  {
+    id: 6,
+    name: 'rename-default-agent',
+    /**
+     * 产品改名：内置默认智能体「微信私域智能客服」→「私域运营助手」。
+     *
+     * 为什么用迁移而不是只改播种值：播种只在**空库**发生，老库里那一行永远是旧名 ——
+     * 用户会在「AI 助手 → 智能体」里看到两个名字并存（新装的机器叫新名，自己的机器叫旧名）。
+     *
+     * 只改**名字与旧默认值逐字相同**的那一行，且限定 id='builtin-default'（播种时写死的 id）：
+     * 用户自己改过名字的人设一律不动 —— 改名的本意是统一产品口径，不是替用户决定他的人设叫什么。
+     * 这里的名字写字面量（不引 shared/appInfo.ts）：历史条目要定格当时的事实，不能被未来的改名影响。
+     */
+    run: (db) => {
+      db.prepare('UPDATE ai_agent SET name = ?, updated_at = ? WHERE id = ? AND name = ?').run(
+        '私域运营助手',
+        Date.now(),
+        'builtin-default',
+        '微信私域智能客服'
+      )
+    }
   }
 ]
 

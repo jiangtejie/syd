@@ -1,4 +1,5 @@
 import { useWorkbenchStore } from '../stores/workbench'
+import { APP_NAME } from '../../../shared/appInfo'
 
 /**
  * 自定义标题栏（36px）。
@@ -24,7 +25,7 @@ function TitleBar(): React.JSX.Element {
 
   return (
     <div className="app-titlebar">
-      <span className="app-titlebar-name">微信私域智能客服</span>
+      <span className="app-titlebar-name">{APP_NAME}</span>
       <span className="app-titlebar-page">{PAGE_NAMES[page] ?? ''}</span>
       {unread > 0 && <span className="app-titlebar-badge">{unread > 99 ? '99+' : unread}</span>}
     </div>

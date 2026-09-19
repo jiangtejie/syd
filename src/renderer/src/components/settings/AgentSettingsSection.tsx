@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AiAgent, AiAgentInput, AiStyle } from '../../../../shared/types'
+import { APP_NAME } from '../../../../shared/appInfo'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { avatarColor } from '../../lib/ui'
 import { setAgentFormDirty } from './agentDirty'
@@ -169,7 +170,7 @@ function AgentSettingsSection(): React.JSX.Element {
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={(e) => void save({ name: e.target.value })}
-            placeholder="人设名称，如：微信私域智能客服"
+            placeholder={'人设名称，如：' + APP_NAME}
           />
         </label>
         <label className="st-row">

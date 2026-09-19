@@ -3,7 +3,7 @@
  *
  * 为什么需要：migrate() 里最危险的是「一次性数据迁移」——它只在别人机器上跑一次，
  * 跑坏了就是数据丢失且没法重来。这里用**合成老库**（legacy 键 + 死表 + user_version=2）
- * 把三条迁移与幂等性都断言一遍，改动 schema 后先跑它再提交。
+ * 把四条迁移与幂等性都断言一遍，改动 schema 后先跑它再提交。
  *
  * 做法：schema.ts 是 TS 且相对导入没带扩展名，node 的 type-stripping 不能直接吃，
  * 所以先用 esbuild 打成 CJS（顺带证明主进程侧的代码可独立打包），再在临时库里执行。
@@ -108,6 +108,21 @@ try {
     local_type INTEGER,
     FOREIGN KEY (issue_id) REFERENCES issue_feedback(id) ON DELETE CASCADE
   )`)
+  // 老库里的智能体：内置默认（播种时 id 写死 builtin-default）+ 一个用户自建的人设。
+  // 迁移 6（产品改名）只许动前者，后者即便是同名也不许碰。
+  db.exec(`CREATE TABLE ai_agent (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    style TEXT DEFAULT 'warm',
+    prompt TEXT DEFAULT '',
+    created_at INTEGER,
+    updated_at INTEGER
+  )`)
+  const putAgent = db.prepare('INSERT INTO ai_agent (id, name, created_at, updated_at) VALUES (?, ?, 1, 1)')
+  putAgent.run('builtin-default', '微信私域智能客服')
+  putAgent.run('mine', '微信私域智能客服')
+
   db.exec(`INSERT INTO issue_feedback (id, key, wxid, group_username, status) VALUES (1, 'k1', 'wxid_a', '111@chatroom', 'open')`)
   // 故意留 2 条重复证据：迁移要去重并建唯一索引
   const putMsg = db.prepare('INSERT INTO issue_feedback_msg (id, issue_id, seq) VALUES (?, ?, ?)')
@@ -119,13 +134,22 @@ try {
   console.log('迁移结果:', JSON.stringify(res))
 
   console.log('\n一次性迁移:')
-  ok(res.applied.length === 3, '三条数据迁移都跑了（未被老版本号 2 跳过）', res.applied.join(', '))
+  ok(res.applied.length === 4, '四条数据迁移都跑了（未被老版本号 2 跳过）', res.applied.join(', '))
   ok(
     res.columnsAdded.includes('issue_feedback.assignee') && res.columnsAdded.includes('issue_feedback_msg.is_team'),
     '老库缺列被补齐',
     res.columnsAdded.length + ' 列'
   )
-  ok(res.from === 2 && res.to === 3 + 2, '版本号从 2 对齐到最新', res.from + ' → ' + res.to)
+  ok(res.from === 2 && res.to === 6, '版本号从 2 对齐到最新', res.from + ' → ' + res.to)
+
+  console.log('\n产品改名（迁移 6）：')
+  const agentName = (id) => db.prepare('SELECT name FROM ai_agent WHERE id = ?').get(id)?.name
+  ok(agentName('builtin-default') === '私域运营助手', '内置默认智能体改成新名', agentName('builtin-default'))
+  ok(
+    agentName('mine') === '微信私域智能客服',
+    '★ 只按 id 认内置默认：用户自建的人设即便同名也不动',
+    agentName('mine')
+  )
 
   console.log('\n状态搬迁:')
   const wm = db

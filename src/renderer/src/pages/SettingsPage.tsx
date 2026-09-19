@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SendStatusInfo } from '../../../shared/types'
+import { APP_NAME } from '../../../shared/appInfo'
 import WechatKeySection from '../components/settings/WechatKeySection'
 import CryptoCenterSection from '../components/settings/CryptoCenterSection'
 import AgentSettingsSection from '../components/settings/AgentSettingsSection'
@@ -1359,7 +1360,9 @@ function SettingsPage(): React.JSX.Element {
                 </button>
                 <span className="st-hint">仅清空缓存目录，不影响密钥、配置与审计数据</span>
               </div>
-              <div className="st-version">微信私域智能客服 v{version || '—'}</div>
+              <div className="st-version">
+                {APP_NAME} v{version || '—'}
+              </div>
             </SettingsCard>
           </div>
         </div>
