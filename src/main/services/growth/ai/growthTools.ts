@@ -2,6 +2,9 @@ import { tool, zodSchema, type ToolSet } from 'ai'
 import { zodFromParams } from '../../ai/toolSchema'
 import { requestToolApproval } from '../../ai/workbench/approval'
 import { growthToolDefs } from './growthToolDefs'
+import { createLogger } from '../../logging'
+
+const log = createLogger('growth-ai')
 
 /**
  * 营销域工具 → AI SDK tool() 的适配层（营销页的 AI 工作台用）。
@@ -48,7 +51,25 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
           const result = await def.run({ wxid: '', sessionId: String(ctx.sessionId) }, input)
           return result ?? '(无返回)'
         } catch (e) {
-          return '工具执行失败:' + (e instanceof Error ? e.message : String(e))
+          const msg = e instanceof Error ? e.message : String(e)
+          // 必须落日志：工具异常此前只作为字符串回给模型，日志里一行都没有 ——
+          // 出问题时唯一的记录是模型自己的复述（实测被它讲成「后端任务没落库」）。
+          log.warn(
+            'tool ' +
+              def.name +
+              ' failed (task=' +
+              String(ctx.taskId) +
+              '): ' +
+              msg +
+              ' args=' +
+              JSON.stringify(input).slice(0, 300)
+          )
+          // 约束类错误（老库形状没跟上代码演进）给一句能自救的话，别让模型对着
+          // "NOT NULL constraint failed: xxx.yyy" 自己编流程
+          const hint = /NOT NULL constraint failed|no such column|has no column named/i.test(msg)
+            ? '（本地数据表结构与当前版本不一致：请重启应用以完成数据库迁移，然后重试这一步）'
+            : ''
+          return '工具执行失败:' + msg + hint
         }
       }
     })

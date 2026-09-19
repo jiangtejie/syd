@@ -123,6 +123,42 @@ try {
   putAgent.run('builtin-default', '微信私域智能客服')
   putAgent.run('mine', '微信私域智能客服')
 
+  // 营销产出表的**老形状**（取自真实老库）：一键爆改时代的 job_id NOT NULL 无默认，
+  // 而现在的 createOutput() 根本不写它 —— 线上每次生成标题/正文/配图都撞这个约束。
+  db.exec(`CREATE TABLE growth_remix_output (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL,
+    variant TEXT NOT NULL DEFAULT 'A',
+    title TEXT NOT NULL DEFAULT '',
+    copy_text TEXT NOT NULL DEFAULT '',
+    content_id INTEGER,
+    compliance_json TEXT NOT NULL DEFAULT '{}',
+    score REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at INTEGER NOT NULL
+  )`)
+  db.exec('CREATE INDEX idx_growth_remix_out_job ON growth_remix_output (job_id)')
+  db.exec(
+    "INSERT INTO growth_remix_output (id, job_id, variant, title, copy_text, content_id, status, created_at)" +
+      " VALUES (7, 3, 'A', '老产出标题', '老产出正文', 11, 'selected', 1700000000000)"
+  )
+  // 同一次演进：代码不再写 updated_at，老库里它还是 NOT NULL 无默认 → 任何「把图挂到产出上」都失败
+  db.exec(`CREATE TABLE growth_output_asset (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    output_id INTEGER NOT NULL,
+    asset_id INTEGER,
+    role TEXT NOT NULL DEFAULT 'image',
+    source TEXT NOT NULL DEFAULT '',
+    prompt TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`)
+  db.exec(
+    "INSERT INTO growth_output_asset (id, output_id, asset_id, role, created_at, updated_at)" +
+      " VALUES (5, 7, 42, 'cover', 1700000000001, 1700000000001)"
+  )
+
   db.exec(`INSERT INTO issue_feedback (id, key, wxid, group_username, status) VALUES (1, 'k1', 'wxid_a', '111@chatroom', 'open')`)
   // 故意留 2 条重复证据：迁移要去重并建唯一索引
   const putMsg = db.prepare('INSERT INTO issue_feedback_msg (id, issue_id, seq) VALUES (?, ?, ?)')
@@ -134,13 +170,13 @@ try {
   console.log('迁移结果:', JSON.stringify(res))
 
   console.log('\n一次性迁移:')
-  ok(res.applied.length === 4, '四条数据迁移都跑了（未被老版本号 2 跳过）', res.applied.join(', '))
+  ok(res.applied.length === 5, '五条数据迁移都跑了（未被老版本号 2 跳过）', res.applied.join(', '))
   ok(
     res.columnsAdded.includes('issue_feedback.assignee') && res.columnsAdded.includes('issue_feedback_msg.is_team'),
     '老库缺列被补齐',
     res.columnsAdded.length + ' 列'
   )
-  ok(res.from === 2 && res.to === 6, '版本号从 2 对齐到最新', res.from + ' → ' + res.to)
+  ok(res.from === 2 && res.to === 7, '版本号从 2 对齐到最新', res.from + ' → ' + res.to)
 
   console.log('\n产品改名（迁移 6）：')
   const agentName = (id) => db.prepare('SELECT name FROM ai_agent WHERE id = ?').get(id)?.name
@@ -185,6 +221,49 @@ try {
     ok(idx.includes(ix), ix)
   }
   ok(db.prepare('SELECT COUNT(*) c FROM issue_feedback_msg').get().c === 2, '重复证据行被去重（3 → 2）')
+
+  console.log('\n老库遗留 NOT NULL 列（迁移 7）:')
+  const outCols = db.prepare('PRAGMA table_info(growth_remix_output)').all()
+  const jobCol = outCols.find((c) => c.name === 'job_id')
+  ok(!!jobCol, 'job_id 列仍在（放宽约束而不是删列，老数据留着）')
+  ok(!!jobCol && jobCol.notnull === 0, '★ job_id 已放宽为可空：当前代码不写它也不再撞约束', jobCol ? 'notnull=' + jobCol.notnull : '缺列')
+  const legacyOut = db.prepare('SELECT * FROM growth_remix_output WHERE id = 7').get()
+  ok(
+    legacyOut?.title === '老产出标题' && legacyOut?.copy_text === '老产出正文' && legacyOut?.status === 'selected' && legacyOut?.job_id === 3,
+    '★ 老产出行连数据一起保留（含 job_id 的原值）',
+    JSON.stringify({ title: legacyOut?.title, status: legacyOut?.status, job_id: legacyOut?.job_id })
+  )
+  ok(outCols.some((c) => c.name === 'task_id') && outCols.some((c) => c.name === 'meta_json'), '缺列仍由补列补齐（task_id / meta_json）')
+  // 线上失败的就是这一条：createOutput() 的列清单里没有 job_id
+  let outInsert = null
+  try {
+    db.exec(
+      "INSERT INTO growth_remix_output (variant, title, copy_text, content_id, task_id, compliance_json, meta_json, status, created_at)" +
+        " VALUES ('chat:title', '新候选标题', '', 11, 9, '[]', '{}', 'candidate', 1700000000002)"
+    )
+  } catch (e) {
+    outInsert = e.message
+  }
+  ok(outInsert === null, '★ 当前代码形状的 INSERT 成功（正是线上失败的那条写入）', outInsert ?? '')
+  const assetCols = db.prepare('PRAGMA table_info(growth_output_asset)').all()
+  const upCol = assetCols.find((c) => c.name === 'updated_at')
+  ok(!!upCol && upCol.notnull === 0, '★ growth_output_asset.updated_at 同样放宽为可空')
+  const legacyAsset = db.prepare('SELECT * FROM growth_output_asset WHERE id = 5').get()
+  ok(legacyAsset?.output_id === 7 && legacyAsset?.asset_id === 42 && legacyAsset?.updated_at === 1700000000001, '★ 老图片勾稽行保留（updated_at 原值还在）', JSON.stringify(legacyAsset))
+  let assetInsert = null
+  try {
+    db.exec(
+      "INSERT INTO growth_output_asset (output_id, asset_id, role, source, prompt, note, created_at)" +
+        " VALUES (7, 43, 'image', 'gen', '俯拍锅底', '', 1700000000003)"
+    )
+  } catch (e) {
+    assetInsert = e.message
+  }
+  ok(assetInsert === null, '★ 挂图 INSERT 成功（生图 / 换封面 / 换配图都走这条）', assetInsert ?? '')
+  ok(
+    !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_growth_remix_out_job'").get(),
+    '一键爆改时代的索引已清（列留着，索引没人查了）'
+  )
 
   console.log('\n幂等:')
   const res2 = migrate(db)

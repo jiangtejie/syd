@@ -36,6 +36,7 @@ import {
   addOutputAsset,
   createOutput,
   getBrandProfile,
+  listOutputsByTask,
   listStores,
   removeOutputAssetsByRole,
   saveStore,
@@ -270,6 +271,34 @@ export interface GrowthToolDefaults {
   storeId?: number | null
 }
 
+/**
+ * 本任务的产出清单（给模型看，让它自己就能拿到 outputId）。
+ *
+ * 为什么必须给：产出 id 是**工具创建时回执**的，而工具结果只在同一轮里可见 ——
+ * 下一轮（用户说「把标题写进去」）模型手里没有 id，历史上就出现过「请用户去右侧手工建一个
+ * 产出块，把 outputId 告我」这种把库操作甩给用户的假流程。
+ */
+export function outputBrief(taskId: number, limit = 8): string {
+  const list = listOutputsByTask(taskId).slice(0, limit)
+  if (list.length === 0) {
+    return '（本任务还没有产出。生成类工具会自己建产出块并回执 outputId：growth_rewrite_title / growth_rewrite_copy / growth_gen_image / growth_make_cover 不带 outputId 时新建）'
+  }
+  return list
+    .map(
+      (o) =>
+        '#' +
+        String(o.id) +
+        ' ' +
+        o.variant +
+        ' ' +
+        o.status +
+        (o.title ? ' 「' + o.title.split('\n')[0].slice(0, 20) + '」' : '') +
+        ' 图' +
+        String(o.assets.length)
+    )
+    .join('\n')
+}
+
 const META = new Map(GROWTH_TOOL_META.map((m) => [m.name, m]))
 function metaOf(name: string): GrowthToolMeta {
   const m = META.get(name)
@@ -289,6 +318,26 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
   /** 需要素材上下文但调用方没给（例如从注册表裸调）→ 给可行动提示 */
   const needContentGuard = (args: Record<string, unknown>): string | null =>
     contentIdOf(args) > 0 ? null : '请提供 contentId（当前会话没有绑定营销任务）'
+
+  /**
+   * outputId 校验：必须是本任务里真实存在的一条。
+   * 不校验的后果实测过两种：① undefined 被拼成字符串，UPDATE 影响 0 行却回「已更新」；
+   * ② 真报错（NOT NULL constraint failed）时模型没有可自救的上下文，就开始编流程。
+   */
+  const outputGuard = (args: Record<string, unknown>, outputId: unknown): string | null => {
+    const taskId = taskIdOf(args)
+    const n = Number(outputId)
+    const hint =
+      '\n本任务当前产出：\n' +
+      outputBrief(taskId) +
+      '\n要新建产出就直接调用生成类工具（它们会自己建块并回执 outputId）；**不要要求用户手工建产出块或提供 outputId**。'
+    if (!Number.isInteger(n) || n <= 0) return '缺少有效的 outputId。' + hint
+    if (!listOutputsByTask(taskId).some((o) => o.id === n)) {
+      return '产出 #' + String(n) + ' 不存在或不属于本任务。' + hint
+    }
+    return null
+  }
+
   return [
     {
       name: 'growth_read_material',
@@ -563,6 +612,10 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         if (miss) return miss
         const title = (args.title ?? '').trim()
         if (!title) return '请给出封面标题（通常直接用采纳的那条标题）。'
+        if (args.outputId !== undefined) {
+          const badOut = outputGuard(args, args.outputId)
+          if (badOut) return badOut
+        }
         const contentId = contentIdOf(args)
         const cfg = getImageConfig()
         const platform = normalizePlatform(args.platform || cfg.platform)
@@ -824,9 +877,20 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           copy?: string
           status?: 'selected' | 'archived'
         }
+        const bad = outputGuard(args, args.outputId)
+        if (bad) return bad
+        if (args.title === undefined && args.copy === undefined && !args.status) {
+          return '没有要改的内容：请给出 title / copy / status 之一。'
+        }
         updateOutputFields(args.outputId, { title: args.title, copy: args.copy })
         if (args.status) setOutputStatus(args.outputId, args.status)
-        return '已更新产出 #' + String(args.outputId) + '。'
+        // 回执带上「改了什么」，模型下一步才能确认自己真的写进去了（此前无论成败都回「已更新」）
+        const done = [
+          args.title !== undefined ? '标题' : '',
+          args.copy !== undefined ? '正文' : '',
+          args.status ? '状态→' + args.status : ''
+        ].filter(Boolean)
+        return '已更新产出 #' + String(args.outputId) + '（' + done.join(' · ') + '）。'
       }
     },
     {
@@ -847,6 +911,8 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         }
         const miss = needContentGuard(args)
         if (miss) return miss
+        const badOut = outputGuard(args, args.outputId)
+        if (badOut) return badOut
         const role = args.role === 'cover' ? 'cover' : 'image'
         if (args.assetId) {
           const dropped = removeOutputAssetsByRole(args.outputId, role)

@@ -28,6 +28,56 @@ function num0(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+interface ColInfo {
+  name: string
+  type: string
+  notnull: number
+  dflt_value: string | null
+  pk: number
+}
+
+/**
+ * 放宽老库里「遗留列」的 NOT NULL 约束：按列重建表并原样搬数据。
+ *
+ * 为什么需要：代码演进时删掉的常常只是**建表 DDL 里的那一行**，而 CREATE TABLE IF NOT EXISTS
+ * 从不修改既有表 —— 老库里那一列还在，而且往往还是 NOT NULL 无默认值，于是「当前代码的 INSERT
+ * 不写它」就变成每次写入都撞 NOT NULL constraint failed。用户侧的观感是「功能时好时坏/模型在胡说」，
+ * 排查却要从「库形状」这一层才能看出来（实测：growth_remix_output.job_id、growth_output_asset.updated_at）。
+ *
+ * 为什么不是 ALTER TABLE DROP COLUMN：① 老库上这些列带着索引，SQLite 会直接拒绝；
+ * ② 我们要的不是「删数据」而是「放宽约束」—— 遗留列里的值留着（它们是好数据），NULL 完全合理。
+ */
+function relaxNotNull(db: Database.Database, table: string, relax: string[]): boolean {
+  const info = db.prepare('PRAGMA table_info(' + table + ')').all() as ColInfo[]
+  if (info.length === 0) return false
+  const hit = info.filter((c) => relax.includes(c.name) && c.notnull === 1)
+  if (hit.length === 0) return false
+
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(table) as { sql?: string } | undefined
+  /** 还原 AUTOINCREMENT（PRAGMA 读不到它）：丢了会让删除后的 id 被复用，历史引用可能错位 */
+  const autoinc = /AUTOINCREMENT/i.test(row?.sql ?? '')
+
+  const defs = info.map((c) => {
+    const relaxed = hit.some((h) => h.name === c.name)
+    const parts = ['"' + c.name + '"', c.type || 'TEXT']
+    if (c.pk === 1 && autoinc) parts.push('PRIMARY KEY AUTOINCREMENT')
+    else if (c.pk === 1) parts.push('PRIMARY KEY')
+    if (!relaxed && c.notnull === 1) parts.push('NOT NULL')
+    if (c.dflt_value !== null && c.dflt_value !== undefined)
+      parts.push('DEFAULT ' + String(c.dflt_value))
+    return parts.join(' ')
+  })
+  const names = info.map((c) => '"' + c.name + '"').join(', ')
+  const tmp = table + '__relax_notnull'
+  db.exec('CREATE TABLE "' + tmp + '" (' + defs.join(', ') + ')')
+  db.exec('INSERT INTO "' + tmp + '" (' + names + ') SELECT ' + names + ' FROM "' + table + '"')
+  db.exec('DROP TABLE "' + table + '"')
+  db.exec('ALTER TABLE "' + tmp + '" RENAME TO "' + table + '"')
+  return true
+}
+
 export const DATA_MIGRATIONS: DataMigration[] = [
   {
     id: 3,
@@ -224,6 +274,31 @@ export const DATA_MIGRATIONS: DataMigration[] = [
         'builtin-default',
         '微信私域智能客服'
       )
+    }
+  },
+  {
+    id: 7,
+    name: 'relax-legacy-growth-notnull-columns',
+    /**
+     * 老库里两张营销产出表的遗留 NOT NULL 列，让当前代码的写入**每次都失败**：
+     *
+     * 1) growth_remix_output.job_id —— 一键爆改时代的任务外键。58629e0 删掉一键爆改链路时
+     *    只删了建表 DDL 里那一行，老库里 job_id INTEGER NOT NULL 至今还在，而 createOutput()
+     *    的 INSERT 不带它 → 「生成标题 / 生成正文 / 生成配图」全部撞
+     *    NOT NULL constraint failed: growth_remix_output.job_id。
+     *    实测后果：任务 5 里模型拿到工具报错后，编了一套「请用户手动建产出块并把 outputId 告我」
+     *    的流程 —— 手工建块走的是同一条 INSERT，一样会失败；错的不是模型的态度，是库形状。
+     * 2) growth_output_asset.updated_at —— 早期版本的建表 DDL 里带这一列且 NOT NULL 无默认，
+     *    同一个提交改成不写它之后，凡是「那一版建过表」的库，挂图（生图 / 换封面 / 换配图）
+     *    都会失败。本机这台的老库没有这一列（放宽是无害的 no-op），但别的机器可能有 —— 一并放宽。
+     *
+     * 这两列里的旧值是好数据（老产出与老勾稽关系），所以是放宽约束而不是删列。
+     * 顺带清掉 job_id 上的老索引（一键爆改下线后已无人查它）。
+     */
+    run: (db) => {
+      db.exec('DROP INDEX IF EXISTS idx_growth_remix_out_job')
+      relaxNotNull(db, 'growth_remix_output', ['job_id'])
+      relaxNotNull(db, 'growth_output_asset', ['updated_at'])
     }
   }
 ]

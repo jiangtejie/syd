@@ -17,6 +17,7 @@ import { readProviderConfig } from '../../ai/provider'
 import { describeModelError } from '../../ai/modelErrors'
 import { emitWorkbenchEvent } from '../../ai/workbench/events'
 import { brandBrief, buildGrowthToolSet, itemBrief, storeBrief } from './growthTools'
+import { outputBrief } from './growthToolDefs'
 import { createLogger } from '../../logging'
 
 const log = createLogger('growth-ai')
@@ -52,9 +53,12 @@ function buildGrowthSystem(
     '【素材摘要】',
     itemBrief(contentId).slice(0, 1200),
     '',
+    '【当前产出】(右侧产出面板里的东西; 改哪一条就用它的 #id)',
+    outputBrief(taskId),
+    '',
     '【工作方式】',
     '1. 需要素材细节用 growth_read_material; 需要门店信息用 growth_get_store;',
-    '2. 改写一律先用 growth_rewrite_title / growth_rewrite_copy 生成候选, 由用户点选后再 growth_update_output;',
+    '2. 改写一律先用 growth_rewrite_title / growth_rewrite_copy 生成候选(它们会**自己建产出块**并在回执里给出 outputId), 由用户点选后再 growth_update_output 把选中的写进产出;',
     '3. 配图: 门店实拍图由用户在右侧产出面板点选; 缺图时用 growth_gen_image 生成候选图 —— 提示词由「生图策略」自动按平台比例(小红书/抖音竖版、朋友圈方版) + 画面模板 + 门店招牌菜/禁用词 + 品牌定位与色调拼装, 你只需给画面主体描述(甚至留空), **不要把尺寸/比例/风格长篇写进 prompt**; 需要指定画面类型时传 template(dish/store/cover/people), 需要指定平台时传 platform; 想照着原爆款图生成"我们店的版本"时传 referenceAssetId(结构模板: 只借构图与版式), 有自家实拍图就同时传 contentAssetId(内容以它为准: 菜品/场景不靠编造)(素材本地图的 id 见 growth_read_material 的 assetId 列表), 通道不支持图生图会如实回退纯文本(会在回执里说明)。**「照这条爆款出我们店版本」一律用 referenceAssetId 走图生图, 不要用文字重新描述一遍画面** —— 前者保持构图只换内容, 后者等于重新画; 生成后由用户在右侧点「用这张」选一张; 标题定稿后可用 growth_make_cover 把标题合成到实拍图上做封面(纯本地渲染, 不占生图额度, 模板可选, 传 outputId 则直接顶替该产出的封面);',
     // 联网搜索此前在这里（缺地址/电话先 growth_search_web 查）。该链路已整体下线，
     // 现在缺事实只能追问用户：宁可留占位符，也不要用编造或来路不明的地址电话。
@@ -62,17 +66,59 @@ function buildGrowthSystem(
     '5. 门店清单/选品表/排期表/素材台账若在飞书多维表格里: 用 growth_read_lark_base 读(只读; 先不带 table_id 看有哪些表, 再带 table_id 读记录);',
     '6. 每次回复只推进一小步, 用中文简洁说明「做了什么 + 建议下一步」; 不要长篇大论;',
     '7. 涉及对外发布的内容必须过一遍合规: 不用绝对化用语与食品功效宣称。',
+    '8. **一切库操作都由你通过工具完成**: 产出块的创建/写入都是工具的事(生成类工具自己建块, 回执里带 outputId),',
+    '   绝不要要求用户「手工建一个产出块」「把 outputId 告我」「去库里改一条」——用户做不了这些, 那是你的活;',
+    '   需要 id 就看上面的【当前产出】或工具回执; 工具报错时如实说明失败原因并换个做法重试, 不要编造一套用户要配合的流程。',
     '任务 ID: ' + String(taskId)
   ].join('\n')
 }
 
+/** meta 是 JSON 字符串（老行可能是对象）：解析失败当没有，别让脏 meta 打断整轮 */
+function metaOf(raw: unknown): Record<string, unknown> | null {
+  if (!raw) return null
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown
+      return p && typeof p === 'object' ? (p as Record<string, unknown>) : null
+    } catch {
+      return null
+    }
+  }
+  return typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+}
+
+/**
+ * 会话历史 → 模型消息。
+ *
+ * 工具痕迹（kind=tool_call）也要回放：**产出 id 只存在于工具回执里**，只回放 text 的话，
+ * 下一轮（「把标题写进产出」）模型手里根本没有 id —— 实测就是从这里长出「请用户手工建产出块
+ * 并把 outputId 告我」这种把库操作甩给用户的假流程。回放成一行 assistant 文本，
+ * 既保住 id / 失败原因，又不需要给 SDK 还原完整的 tool-call 结构（历史轮次的工具调用
+ * 重新构造 tool_call_id 很容易配错，代价不值）。
+ */
 function historyMessages(sessionId: number): ModelMessage[] {
   const rows = listChatMessages(sessionId)
   const out: ModelMessage[] = []
   for (const r of rows) {
-    if (r.kind !== 'text') continue
+    if (r.kind === 'tool_call') {
+      const m = metaOf(r.meta)
+      const name = typeof m?.name === 'string' && m.name ? m.name : '工具'
+      const status = m?.status === 'fail' ? '失败' : '完成'
+      const detail = String(
+        (typeof m?.output === 'string' && m.output) || (typeof m?.args === 'string' && m.args) || ''
+      )
+        .replace(/\s+/g, ' ')
+        .slice(0, 200)
+      out.push({ role: 'assistant', content: '[工具 ' + name + ' ' + status + '] ' + detail })
+      continue
+    }
     const text = (r.content ?? '').trim()
     if (!text) continue
+    if (r.kind === 'error') {
+      out.push({ role: 'assistant', content: '[上一步失败] ' + text.slice(0, 300) })
+      continue
+    }
+    if (r.kind !== 'text') continue
     if (r.role === 'user') out.push({ role: 'user', content: text })
     else if (r.role === 'assistant') out.push({ role: 'assistant', content: text })
   }
