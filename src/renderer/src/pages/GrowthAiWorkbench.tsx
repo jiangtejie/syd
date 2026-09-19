@@ -17,6 +17,7 @@ import './growth-ai.css'
 import { useAsyncEffect } from '../lib/useAsyncEffect'
 import { toolCnName } from '../../../shared/types'
 import { Modal } from '../components/ui/Modal'
+import { Spinner } from '../components/ui/Feedback'
 import {
   EvidenceChips,
   FeedbackBar,
@@ -507,6 +508,8 @@ export default function GrowthAiWorkbench({
   const [pickStoreId, setPickStoreId] = useState(0)
   const [pickGoal, setPickGoal] = useState('image_text')
   const [creating, setCreating] = useState(0)
+  /** 建任务的等待秒数：首次要跑一次拆解（LLM，10-30 秒），秒数在跳才不像卡死 */
+  const createSec = useWaitElapsed(creating > 0)
 
   // 出口：把「采用」的结果送出工作台（导出发布包 / 回仓库）
   const [exporting, setExporting] = useState(false)
@@ -1404,7 +1407,12 @@ export default function GrowthAiWorkbench({
         open={pickOpen}
         onClose={closePick}
         title={'新建爆改任务'}
-        desc={'选一条爆款素材, AI 先拆解结构, 再按你的要求爆改'}
+        desc={
+          creating > 0
+            ? '正在拆解这条素材（首次约 10-30 秒，之后秒开）' +
+              (createSec > 0 ? ' · 已等待 ' + String(createSec) + 's' : '')
+            : '选一条爆款素材, AI 先拆解结构, 再按你的要求爆改'
+        }
       >
         <div className="gai-pick-filters">
           <input
@@ -1471,7 +1479,16 @@ export default function GrowthAiWorkbench({
                     {m.score > 0 ? m.score : '—'}
                   </span>
                 </span>
-                <span className="gai-pick-go">{creating === m.id ? '创建中…' : '创建任务'}</span>
+                <span className="gai-pick-go">
+                  {creating === m.id ? (
+                    <>
+                      <Spinner />
+                      拆解并创建中…
+                    </>
+                  ) : (
+                    '创建任务'
+                  )}
+                </span>
               </button>
             ))
           )}

@@ -5,6 +5,8 @@ import { confirmAsk } from '../../stores/confirmDialog'
 import SkeletonRows from './SkeletonRows'
 import { growthApi } from './meta'
 import { Badge, SearchInput, EmptyState, ErrBar } from './common'
+import { Spinner } from '../ui/Feedback'
+import { useWaitElapsed } from '../chat/msgMeta'
 import { MediaGallery } from './MediaGallery'
 import DecompCard from './DecompCard'
 import { remoteImageUrlsOf, remoteVideoUrlOf } from './meta'
@@ -34,6 +36,8 @@ export interface WarehousePanelProps {
   onChanged: () => void
   /** 「用 AI 爆改」：交回页面去「找到或创建该素材的 AI 任务 + 切到 AI 工作台」 */
   onOpenWorkbench?: (contentId: number) => void
+  /** 正在建爆改任务的那条素材（含阶段文案）：按钮据此转圈并禁用 */
+  workbenchBusy?: { contentId: number; stage: string } | null
 }
 
 /**
@@ -75,7 +79,14 @@ export const IngestBar = memo(function IngestBar({
         disabled={busy || !value.trim()}
         onClick={submit}
       >
-        {busy ? '解析中…' : '链接入库'}
+        {busy ? (
+          <>
+            <Spinner />
+            解析中…
+          </>
+        ) : (
+          '链接入库'
+        )}
       </button>
     </>
   )
@@ -83,7 +94,8 @@ export const IngestBar = memo(function IngestBar({
 
 export function WarehousePanel({
   onChanged,
-  onOpenWorkbench
+  onOpenWorkbench,
+  workbenchBusy
 }: WarehousePanelProps): React.JSX.Element {
   const PAGE_SIZE = 100
   const [items, setItems] = useState<GrowthContentItem[]>([])
@@ -105,6 +117,11 @@ export function WarehousePanel({
   const [detail, setDetail] = useState<GrowthContentDetailView | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [patchBusy, setPatchBusy] = useState(false)
+  /**
+   * 「用 AI 爆改」的等待秒数：首次会先拆解素材（10-30 秒），光转圈用户还是不知道要等多久；
+   * 秒数在跳，起码能判断"没卡死"。计时用共享 hook（与工作台的「思考中 Ns」同一套）。
+   */
+  const busySec = useWaitElapsed(!!workbenchBusy)
   const [noteDraft, setNoteDraft] = useState('')
   /** 正文展开态：默认截断（长正文会把整个详情卡撑得很长，挡住下面的拆解卡） */
   const [textOpen, setTextOpen] = useState(false)
@@ -470,7 +487,14 @@ export function WarehousePanel({
           title={'导入门店自有图片/视频(不进公域, 供爆改使用)'}
           onClick={() => void uploadLocal()}
         >
-          {uploading ? '导入中…' : '上传本地素材'}
+          {uploading ? (
+            <>
+              <Spinner />
+              导入中…
+            </>
+          ) : (
+            '上传本地素材'
+          )}
         </button>
       </div>
 
@@ -808,10 +832,27 @@ export function WarehousePanel({
                   <button
                     className={'ui-btn is-primary gth-btn sm'}
                     type={'button'}
-                    title={'在「AI 工作台」里爆改这条素材（已有任务直接切过去）'}
+                    disabled={workbenchBusy?.contentId === detail.id}
+                    title={
+                      '在「AI 工作台」里爆改这条素材（已有任务直接切过去）。' +
+                      (detail.decomp
+                        ? '这条素材已有拆解卡，点开就能用。'
+                        : '这条素材还没拆解：首次会先拆解结构与画面（约 10-30 秒），之后秒开。')
+                    }
                     onClick={() => onOpenWorkbench(detail.id)}
                   >
-                    用 AI 爆改
+                    {workbenchBusy?.contentId === detail.id ? (
+                      <>
+                        <Spinner />
+                        {workbenchBusy.stage}中…{busySec > 0 ? ' ' + String(busySec) + 's' : ''}
+                      </>
+                    ) : detail.decomp ? (
+                      '用 AI 爆改'
+                    ) : (
+                      /* 还没拆解过：把"这一步会先花 10-30 秒拆解"写在按钮上，
+                         而不是点下去才让人对着转圈猜（反馈的原话就是"以为没反应"） */
+                      '拆解并用 AI 爆改'
+                    )}
                   </button>
                 ) : null}
                 <button
@@ -820,7 +861,14 @@ export function WarehousePanel({
                   disabled={patchBusy}
                   onClick={() => void exportPkg(detail.id)}
                 >
-                  导出发布包
+                  {patchBusy ? (
+                    <>
+                      <Spinner />
+                      导出中…
+                    </>
+                  ) : (
+                    '导出发布包'
+                  )}
                 </button>
                 {/* 次要动作用 is-quiet：常态是文字，hover 才显出按钮边界（原来五个按钮一样重） */}
                 <button
@@ -830,7 +878,14 @@ export function WarehousePanel({
                   title={'本地图片缺失时按源链接重新下载'}
                   onClick={() => void redownload(detail.id)}
                 >
-                  重下图片
+                  {patchBusy ? (
+                    <>
+                      <Spinner />
+                      处理中…
+                    </>
+                  ) : (
+                    '重下图片'
+                  )}
                 </button>
                 <button
                   className={

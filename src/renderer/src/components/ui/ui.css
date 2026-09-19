@@ -111,6 +111,26 @@
 }
 
 /* ── 空态与错误条（跨页共用） ── */
+/* ── 转圈：慢操作（首次爆改先拆解素材 10-30s / 媒体重下 / 批量诊断）必须有"在动"的证据 ── */
+.ui-spin {
+  display: inline-block;
+  flex: none;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.85;
+  animation: ui-spin 0.7s linear infinite;
+  vertical-align: -2px;
+  /* JSX 里 <Spinner /> 与后面的文字之间没有空白节点，间距只能靠这里给 */
+  margin-right: 5px;
+}
+
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .ui-empty {
   display: flex;
   flex-direction: column;

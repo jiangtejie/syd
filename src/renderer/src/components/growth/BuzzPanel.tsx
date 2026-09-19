@@ -18,6 +18,7 @@ import type {
 } from '../../../../shared/growth'
 import { useAsyncEffect } from '../../lib/useAsyncEffect'
 import { Modal } from '../ui/Modal'
+import { Spinner } from '../ui/Feedback'
 
 const api = window.api?.cs?.growthbuzz
 const storeApi = window.api?.cs?.growthai
@@ -751,35 +752,33 @@ export default function BuzzPanel({
           </button>
         }
       >
-            <div className={'gth-field'}>
-              <span className={'gth-field-label'}>关联门店</span>
-              <select
-                className={'ui-select gth-select'}
-                value={addStoreId}
-                onChange={(e) => setAddStoreId(Number(e.target.value))}
-              >
-                <option value={0}>不关联(仅记录)</option>
-                {stores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name || s.brandName || '门店 ' + String(s.id)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className={'gth-field'}>
-              <span className={'gth-field-label'}>抖音 / 小红书 链接或分享口令</span>
-              <textarea
-                autoFocus
-                className={'ui-textarea gth-input gth-input--area'}
-                rows={5}
-                placeholder={'支持: 抖音分享链接 / 口令文本 / 小红书笔记链接'}
-                value={addText}
-                onChange={(e) => setAddText(e.target.value)}
-              />
-              <span className={'gth-field-hint'}>
-                解析后会保留原链接与封面, 并自动跑一次智能诊断
-              </span>
-            </div>
+        <div className={'gth-field'}>
+          <span className={'gth-field-label'}>关联门店</span>
+          <select
+            className={'ui-select gth-select'}
+            value={addStoreId}
+            onChange={(e) => setAddStoreId(Number(e.target.value))}
+          >
+            <option value={0}>不关联(仅记录)</option>
+            {stores.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name || s.brandName || '门店 ' + String(s.id)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className={'gth-field'}>
+          <span className={'gth-field-label'}>抖音 / 小红书 链接或分享口令</span>
+          <textarea
+            autoFocus
+            className={'ui-textarea gth-input gth-input--area'}
+            rows={5}
+            placeholder={'支持: 抖音分享链接 / 口令文本 / 小红书笔记链接'}
+            value={addText}
+            onChange={(e) => setAddText(e.target.value)}
+          />
+          <span className={'gth-field-hint'}>解析后会保留原链接与封面, 并自动跑一次智能诊断</span>
+        </div>
       </Modal>
 
       {/* 详情抽屉 */}
@@ -1098,7 +1097,14 @@ export default function BuzzPanel({
                     disabled={busy === detail.mention.id}
                     onClick={() => void toWorkbench(detail.mention.id)}
                   >
-                    {busy === detail.mention.id ? '创建中…' : '转 AI 工作台生成回应'}
+                    {busy === detail.mention.id ? (
+                      <>
+                        <Spinner />
+                        拆解并创建中…
+                      </>
+                    ) : (
+                      '转 AI 工作台生成回应'
+                    )}
                   </button>
                   <button
                     className={'ui-btn gth-btn sm'}

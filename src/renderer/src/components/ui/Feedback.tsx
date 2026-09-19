@@ -11,6 +11,17 @@ import './ui.css'
  * 约定：空态必须"说清下一步"（steps 给可执行步骤，而不是"暂无数据"四个字）；
  * 错误条必须能给重试（onRetry 传了就渲染按钮）。
  */
+/**
+ * 转圈基元（按钮内/加载态共用）。
+ *
+ * 为什么要有它：慢操作（**首次爆改会先拆解素材，10-30 秒**、媒体重下、批量诊断）此前只有文字
+ * 变化甚至毫无变化 —— 用户的原话是「点了以为没反应」。一行 CSS 转圈 + 一句"正在做什么"，
+ * 比任何文案都更能说明"它在干活"。
+ */
+export function Spinner({ size = 12 }: { size?: number }): React.JSX.Element {
+  return <span className={'ui-spin'} style={{ width: size, height: size }} aria-hidden="true" />
+}
+
 export interface EmptyProps {
   title: string
   /** 可执行的下一步（每步一句话，前面自动编号） */

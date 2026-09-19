@@ -50,6 +50,8 @@ export default function GrowthPage(): React.JSX.Element {
   const [stats, setStats] = useState<GrowthStats | null>(null)
   /** 从素材仓库跳转 AI 工作台时携带的任务 id */
   const [aiFocusTask, setAiFocusTask] = useState<number | null>(null)
+  /** 「用 AI 爆改」的等待态：{ 哪条素材, 当前阶段 } —— 按钮据此转圈并说清在做什么 */
+  const [aiBusy, setAiBusy] = useState<{ contentId: number; stage: string } | null>(null)
 
   const loadStats = useCallback((): void => {
     if (!growthApi) return
@@ -73,21 +75,32 @@ export default function GrowthPage(): React.JSX.Element {
         toast.error('AI 工作台不可用(请重启应用以加载最新主进程)')
         return
       }
-      const list = await ai.listTasks()
-      const tasks = (list.ok ? (list.tasks ?? []) : []) as Array<{ id: number; contentId: number }>
-      const existing = tasks.find((t) => t.contentId === contentId)
-      if (existing) {
-        setAiFocusTask(existing.id)
+      // 让按钮立刻进入「在干活」的状态：首次爆改会先跑一次拆解（LLM，10-30 秒），
+      // 此前按钮毫无反应，用户以为点空了（实测反馈）。
+      setAiBusy({ contentId, stage: '拆解素材' })
+      try {
+        const list = await ai.listTasks()
+        const tasks = (list.ok ? (list.tasks ?? []) : []) as Array<{
+          id: number
+          contentId: number
+        }>
+        const existing = tasks.find((t) => t.contentId === contentId)
+        if (existing) {
+          setAiFocusTask(existing.id)
+          setTab('ai')
+          return
+        }
+        setAiBusy({ contentId, stage: '创建任务' })
+        const res = await ai.createTask({ contentId })
+        if (!res.ok || !res.taskId) {
+          toast.error(res.error ?? '创建爆改任务失败')
+          return
+        }
+        setAiFocusTask(res.taskId)
         setTab('ai')
-        return
+      } finally {
+        setAiBusy(null)
       }
-      const res = await ai.createTask({ contentId })
-      if (!res.ok || !res.taskId) {
-        toast.error(res.error ?? '创建爆改任务失败')
-        return
-      }
-      setAiFocusTask(res.taskId)
-      setTab('ai')
       // setTab 来自 store（引用稳定），依赖里列上以免 eslint 报 missing dependency
     },
     [setTab]
@@ -178,6 +191,8 @@ export default function GrowthPage(): React.JSX.Element {
         <WarehousePanel
           onChanged={loadStats}
           onOpenWorkbench={(cid) => void openWorkbenchForContent(cid)}
+          // 哪条素材正在建任务（阶段文案见 openWorkbenchForContent）：按钮转圈 + 禁用
+          workbenchBusy={aiBusy}
         />
       ) : null}
       {tab === 'buzz' ? (
