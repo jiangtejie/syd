@@ -72,7 +72,8 @@ function toolFromDef(
   spec: WbToolSpec,
   approvalTimeoutMs: number,
   lines: WbLineState,
-  onRow?: (row: WbEvidenceRow) => void
+  onRow?: (row: WbEvidenceRow) => void,
+  signal?: AbortSignal
 ): Tool {
   return tool({
     description: def.description,
@@ -92,7 +93,8 @@ function toolFromDef(
               sessionId,
               name,
               JSON.stringify(input).slice(0, 300),
-              approvalTimeoutMs
+              approvalTimeoutMs,
+              signal
             )
             if (!ok) return `工具 ${name} 未获确认(超时或被拒绝),已跳过。`
           }
@@ -101,13 +103,16 @@ function toolFromDef(
             sessionId,
             name,
             JSON.stringify(input).slice(0, 300),
-            approvalTimeoutMs
+            approvalTimeoutMs,
+            signal
           )
           if (!ok) return `工具 ${name} 未获确认(超时或被拒绝),已跳过。`
         }
       }
+      // 用户点了停止：别再动手（模型可能在同一轮里连着发好几个调用）
+      if (signal?.aborted) return '已取消：用户停止了本轮生成。'
       try {
-        const result = await def.run({ wxid, sessionId: String(sessionId) }, input)
+        const result = await def.run({ wxid, sessionId: String(sessionId), signal }, input)
         const text = result ?? '(无返回)'
         return evidenceNumbered(name, text, lines, onRow)
       } catch (e) {
@@ -149,7 +154,12 @@ function evidenceNumbered(
 export function buildWorkbenchToolSet(
   wxid: string,
   sessionId: number,
-  opts: { approvalTimeoutMs?: number; onEvidenceRow?: (row: WbEvidenceRow) => void } = {}
+  opts: {
+    approvalTimeoutMs?: number
+    onEvidenceRow?: (row: WbEvidenceRow) => void
+    /** 本轮取消信号：透传给能力实现（慢能力才会真的用上） */
+    signal?: AbortSignal
+  } = {}
 ): ToolSet {
   const timeout = opts.approvalTimeoutMs ?? 60_000
   /** 本轮行号状态:跨工具累加(与模型看到的 [n] 前缀一致);上限 200 行 */
@@ -160,7 +170,17 @@ export function buildWorkbenchToolSet(
     if (!spec) continue
     const def = spec.resolve()
     if (!def) continue
-    out[name] = toolFromDef(name, def, wxid, sessionId, spec, timeout, lines, opts.onEvidenceRow)
+    out[name] = toolFromDef(
+      name,
+      def,
+      wxid,
+      sessionId,
+      spec,
+      timeout,
+      lines,
+      opts.onEvidenceRow,
+      opts.signal
+    )
   }
   return out
 }

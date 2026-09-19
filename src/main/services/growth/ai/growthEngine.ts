@@ -169,7 +169,10 @@ export async function sendGrowthMessage(
       sessionId,
       taskId,
       contentId: task.contentId,
-      storeId: task.storeId
+      storeId: task.storeId,
+      // 取消信号一路传到工具里：点「停止」时生图 / 子模型调用也要立刻中断，
+      // 否则用户要干等到那一步自己跑完（实测就是「点了停止没停」）
+      signal: ctrl.signal
     })
 
     // 图片输入: 附加到最后一条用户消息(多模态)
@@ -366,6 +369,9 @@ export async function sendGrowthMessage(
       : describeModelError(e) || (e instanceof Error ? e.message : String(e))
     appendChatMessage(sessionId, 'assistant', aborted ? 'text' : 'error', errMsg)
     emitWorkbenchEvent(sessionId, { type: aborted ? 'status' : 'error', text: errMsg })
+    // 中止也要补一个 done：界面靠它复位（清掉流式气泡/工具过程、把「已停止生成」这条
+    // 落库消息读回来）。不给的话界面只能靠本地兜底定时器，会有一段「停不下来」的观感。
+    if (aborted) emitWorkbenchEvent(sessionId, { type: 'done' })
     if (!aborted) log.warn('growth turn failed: ' + errMsg)
     return { ok: false, error: errMsg }
   } finally {

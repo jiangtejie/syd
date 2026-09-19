@@ -99,7 +99,8 @@ export function requestToolApproval(
   sessionId: number,
   toolName: string,
   argsClip: string,
-  timeoutMs = 60_000
+  timeoutMs = 60_000,
+  signal?: AbortSignal
 ): Promise<boolean> {
   const decision = toolDecision(sessionId, toolName)
   if (decision === 'allow') return Promise.resolve(true) // 偏好直通:不打扰
@@ -111,6 +112,21 @@ export function requestToolApproval(
       pending.delete(runId)
       resolve(false)
     }, timeoutMs)
+    // 用户点了停止：审批卡不再有意义，立刻按「未获确认」收尾（否则要干等到超时，
+    // 表现就是「点了停止还挂着」）
+    if (signal) {
+      const onAbort = (): void => {
+        clearTimeout(timer)
+        pending.delete(runId)
+        resolve(false)
+      }
+      if (signal.aborted) {
+        clearTimeout(timer)
+        resolve(false)
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
     pending.set(runId, { resolve, timer })
     emitWorkbenchEvent(sessionId, {
       type: 'approval',

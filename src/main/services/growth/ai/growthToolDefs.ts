@@ -228,10 +228,16 @@ export function storeBrief(storeId: number | null): string {
   return lines.join('\n')
 }
 
-function modelText(system: string, user: string): Promise<string> {
+/** 子模型调用（生成候选标题/正文）：把取消信号透传下去，用户点停止能立刻收手 */
+function modelText(system: string, user: string, signal?: AbortSignal): Promise<string> {
   const provider = createAiProvider('growth-ai')
   if (!provider) throw new Error('AI 通道未配置: 请到 设置 → AI 助手 配置模型')
-  return provider.complete(system, user, { maxTokens: 1600 })
+  return provider.complete(system, user, { maxTokens: 1600, signal })
+}
+
+/** 用户点了停止：工具立刻收手（不落库、不建产出），并给模型一个明确结论 */
+function cancelled(signal?: AbortSignal): string | null {
+  return signal?.aborted ? '已取消：用户停止了本轮生成，本次没有产生任何产出。' : null
 }
 
 function parseJson(raw: string): Record<string, unknown> | null {
@@ -396,7 +402,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         'AI 出图(封面/氛围图/菜品示意图)。两种模式由「生图策略」自动切换: 不给参考图 = 凭描述生成; ' +
         '给 referenceAssetId = **在参考图上改写**(保持构图机位光线, 把菜品/场景/门店换成档案里的本店信息) —— ' +
         '做「照这条爆款图出我们店版本」时用后者。提示词由策略层拼装, 你只给主体描述或本次改写要求即可。结果作为候选图待用户点选。',
-      run: async (_ctx, argsIn) => {
+      run: async (ctx, argsIn) => {
         const args = argsIn as {
           prompt?: string
           template?: string
@@ -410,6 +416,8 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         }
         const miss = needContentGuard(args)
         if (miss) return miss
+        const stopped = cancelled(ctx.signal)
+        if (stopped) return stopped
         const cfg = getImageConfig()
         const storeId = storeIdOf(args)
         const store = storeId
@@ -473,7 +481,9 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
             negative: strategy.negative,
             count: strategy.count,
             size: strategy.size,
-            references: refs
+            references: refs,
+            // 生图是最慢的一步（可达分钟级）：用户点停止要能立刻中断这个请求
+            signal: ctx.signal
           })
           const imgs = gen.images
           // 图生图的隐蔽失败：返回 200 但画面几乎没变（模型没接受改写，或通道把输入原样回传）。
@@ -584,6 +594,9 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           )
         } catch (e) {
           if (e instanceof ImageSetupError) return e.message
+          // 用户取消是预期结果，不要包装成「生图失败」（否则模型会去排查通道/提示词）
+          const stopMsg = cancelled(ctx.signal)
+          if (stopMsg) return stopMsg
           return '生图失败: ' + (e instanceof Error ? e.message : String(e))
         }
       }
@@ -596,7 +609,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
       params: metaOf('growth_make_cover').params,
       description:
         '把标题合成到实拍图上做封面（大字排版 + 折行 + 缩字号，模板可选）。纯本地渲染：不调用生图接口、不占每月张数。底图默认取素材里第一张本地图。',
-      run: async (_ctx, argsIn) => {
+      run: async (ctx, argsIn) => {
         const args = argsIn as {
           title?: string
           subtitle?: string
@@ -610,6 +623,8 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         }
         const miss = needContentGuard(args)
         if (miss) return miss
+        const stopped = cancelled(ctx.signal)
+        if (stopped) return stopped
         const title = (args.title ?? '').trim()
         if (!title) return '请给出封面标题（通常直接用采纳的那条标题）。'
         if (args.outputId !== undefined) {
@@ -738,7 +753,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
       confirm: true,
       params: metaOf('growth_rewrite_title').params,
       description: '生成标题候选(3-5 条)。只生成候选, 用户点选后才写入产出。',
-      run: async (_ctx, argsIn) => {
+      run: async (ctx, argsIn) => {
         const args = argsIn as {
           strategy?: string
           style?: string
@@ -748,6 +763,8 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         }
         const miss = needContentGuard(args)
         if (miss) return miss
+        const stopped = cancelled(ctx.signal)
+        if (stopped) return stopped
         const system = [
           '你是餐饮门店内容运营。基于素材与门店事实, 生成 5 条全新原创标题。',
           '规则: 不得复述素材原句; 不虚构门店事实(缺失用占位符【菜品】【地址】等); 不用绝对化用语与功效宣称;',
@@ -761,7 +778,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           storeBrief(storeIdOf(args)) +
           (args.strategy ? '\n\n要求: ' + args.strategy : '')
         try {
-          const parsed = parseJson(await modelText(system, user))
+          const parsed = parseJson(await modelText(system, user, ctx.signal))
           const titles = Array.isArray(parsed?.['titles'])
             ? (parsed?.['titles'] as unknown[])
                 .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
@@ -800,7 +817,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
       confirm: true,
       params: metaOf('growth_rewrite_copy').params,
       description: '生成/改写正文候选(1-3 篇)。只生成候选, 用户点选后才写入产出。',
-      run: async (_ctx, argsIn) => {
+      run: async (ctx, argsIn) => {
         const args = argsIn as {
           instruction?: string
           style?: string
@@ -811,6 +828,8 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         }
         const miss = needContentGuard(args)
         if (miss) return miss
+        const stopped = cancelled(ctx.signal)
+        if (stopped) return stopped
         const n = Math.min(Math.max(args.copies ?? 2, 1), 3)
         const system = [
           '你是餐饮门店内容运营。基于素材与门店事实, 写 ' +
@@ -827,7 +846,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           storeBrief(storeIdOf(args)) +
           (args.instruction ? '\n\n改写要求: ' + args.instruction : '')
         try {
-          const parsed = parseJson(await modelText(system, user))
+          const parsed = parseJson(await modelText(system, user, ctx.signal))
           const copies = Array.isArray(parsed?.['copies'])
             ? (parsed?.['copies'] as unknown[])
                 .filter((x): x is string => typeof x === 'string' && x.trim() !== '')

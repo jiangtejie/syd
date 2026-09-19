@@ -23,6 +23,14 @@ export interface ToolCtx {
   wxid: string
   /** 当前正在对话的微信会话 id(群聊时用于读取该群问题/消息) */
   sessionId?: string
+  /**
+   * 本轮的取消信号（用户点「停止」时中止）。
+   *
+   * 为什么工具要拿到它：LLM 流的 abort 只能停住「模型还在说话」这一段；
+   * 生图 / 子模型调用 / 封面渲染这类**工具内部的慢动作**不接信号的话，
+   * 用户点了停止还要干等十几秒到两分钟 —— 实测就是「点了停止没停」。
+   */
+  signal?: AbortSignal
 }
 
 /** 轻量参数声明(原生 function-calling 生成精确 JSON Schema;JSON 协议仍靠 description) */

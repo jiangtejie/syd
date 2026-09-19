@@ -348,7 +348,9 @@ export async function sendWorkbenchMessage(
     const toolSet = buildWorkbenchToolSet(boundWxid, sessionId, {
       onEvidenceRow: (row) => {
         if (evPool.length < 200) evPool.push(row)
-      }
+      },
+      // 与营销工作台同一套：点「停止」时工具层也立刻收手，而不是等它自己跑完
+      signal
     })
 
     // 本轮时间线日志:正文按工具边界分段,工具痕迹带参数/结果;

@@ -250,6 +250,12 @@
   color: var(--text-3);
   font-size: var(--fs-sm);
 }
+/* 已停止：用户点了停止、引擎还没回 done 时的就地提示（随后会被落库的那条消息替换） */
+.gai-stopped {
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  align-self: flex-start;
+}
 /* 实时思考卡（reasoner）：气泡里只放一张可展开的「思考中」条，别抢正文位置 */
 .gai-reason-live {
   padding: 7px 11px;
@@ -529,11 +535,6 @@
   background: var(--danger-soft);
 }
 
-
-
-
-
-
 .gai-pick-filters {
   display: flex;
   align-items: center;
@@ -620,8 +621,6 @@
   color: var(--brand);
   font-weight: 500;
 }
-
-
 
 .gai-tasks-head {
   position: relative;

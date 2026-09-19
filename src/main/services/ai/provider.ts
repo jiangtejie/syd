@@ -61,8 +61,12 @@ export type WireMsg =
   | { role: 'tool'; tool_call_id: string; content: string }
 
 export interface AiProvider {
-  /** 系统 + 用户消息，返回模型输出文本 */
-  complete(system: string, user: string, opts?: { maxTokens?: number }): Promise<string>
+  /** 系统 + 用户消息，返回模型输出文本（signal 可中断：用户点停止时子调用也要立刻收手） */
+  complete(
+    system: string,
+    user: string,
+    opts?: { maxTokens?: number; signal?: AbortSignal }
+  ): Promise<string>
   /** 多轮流式对话（AI 助手用）：SSE 逐 token 回调，signal 可中断 */
   streamChat(
     messages: ChatTurn[],
@@ -245,7 +249,11 @@ class OpenAiCompatProvider implements AiProvider {
     })
   }
 
-  async complete(system: string, user: string, opts?: { maxTokens?: number }): Promise<string> {
+  async complete(
+    system: string,
+    user: string,
+    opts?: { maxTokens?: number; signal?: AbortSignal }
+  ): Promise<string> {
     const model = this.cfg.model
     const messages = [
       { role: 'system', content: system },
@@ -264,7 +272,9 @@ class OpenAiCompatProvider implements AiProvider {
 
     // 整段（请求 + 解析 + 放大重试）都在闸门内：重试是**整次调用**重来，
     // 不会出现「重试了但只重试了半截」的状态。
-    return await this.withGate('complete', JSON_TIMEOUT_MS, undefined, async (signal, meter) => {
+    // 把外部（用户点停止）的 signal 也接进闸门：一次 complete 可能跑几十秒，
+    // 不接的话停止按钮对这种子调用完全无效
+    return await this.withGate('complete', JSON_TIMEOUT_MS, opts?.signal, async (signal, meter) => {
       const post = (withTemp: boolean): Promise<Response> =>
         fetch(`${this.cfg.baseUrl}/chat/completions`, {
           method: 'POST',

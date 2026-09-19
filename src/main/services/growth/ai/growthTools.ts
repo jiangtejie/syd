@@ -21,6 +21,8 @@ export interface GrowthToolCtx {
   taskId: number
   contentId: number
   storeId: number | null
+  /** 本轮的取消信号（用户点「停止」）：工具内部的慢动作（生图 / 子模型 / 封面）靠它立刻收手 */
+  signal?: AbortSignal
 }
 
 export { itemBrief, storeBrief, brandBrief } from './growthToolDefs'
@@ -43,15 +45,26 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
             ctx.sessionId,
             def.name,
             JSON.stringify(input).slice(0, 500),
-            120_000
+            120_000,
+            ctx.signal
           )
+          if (ctx.signal?.aborted) return '已取消：用户停止了本轮生成，本次没有产生任何产出。'
           if (!ok) return '用户拒绝了本次操作, 请说明原因或换一种方式。'
         }
+        // 已经取消就别再动手了（模型可能在同一轮里连续发好几个工具调用）
+        if (ctx.signal?.aborted) return '已取消：用户停止了本轮生成，本次没有产生任何产出。'
         try {
-          const result = await def.run({ wxid: '', sessionId: String(ctx.sessionId) }, input)
+          const result = await def.run(
+            { wxid: '', sessionId: String(ctx.sessionId), signal: ctx.signal },
+            input
+          )
           return result ?? '(无返回)'
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e)
+          // 用户点了停止：这是预期结果，不是故障 —— 别记 warn，也别报「工具执行失败」
+          if (ctx.signal?.aborted) {
+            return '已取消：用户停止了本轮生成，本次没有产生任何产出。'
+          }
           // 必须落日志：工具异常此前只作为字符串回给模型，日志里一行都没有 ——
           // 出问题时唯一的记录是模型自己的复述（实测被它讲成「后端任务没落库」）。
           log.warn(

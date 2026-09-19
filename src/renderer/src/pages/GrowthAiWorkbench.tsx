@@ -473,6 +473,12 @@ export default function GrowthAiWorkbench({
   const [streaming, setStreaming] = useState('')
   /** 生成中的思考内容（reasoner 会先流一段推理；与 AI 工作台的实时思考卡同一套渲染） */
   const [reasonLive, setReasonLive] = useState('')
+  /**
+   * 用户已点停止、引擎还没回 done。用于两件事：① 界面上立刻写「已停止生成」；
+   * ② 丢弃这一轮迟到的 delta/tool 事件（否则点了停止，文字还会继续往下蹦）。
+   */
+  const [stopped, setStopped] = useState(false)
+  const stoppedRef = useRef(false)
   const [toolLog, setToolLog] = useState<ToolRow[]>([])
   const [approval, setApproval] = useState<ApprovalRow | null>(null)
   const [input, setInput] = useState('')
@@ -673,6 +679,14 @@ export default function GrowthAiWorkbench({
       }
       // 事件类型：delta(正文增量) / reasoning(思考增量) / tool / approval / done / error / status
       if (!e.sessionId || e.sessionId !== sessionRef.current) return
+      // 已停止的那一轮：迟到的分片/工具事件不再上屏（主进程的中止是异步的，
+      // 生图那种慢工具还会再蹦几条事件出来）。done/error 仍放行 —— 它们负责复位与重读。
+      if (
+        stoppedRef.current &&
+        (e.type === 'delta' || e.type === 'reasoning' || e.type === 'tool' || e.type === 'approval')
+      ) {
+        return
+      }
       if (e.type === 'delta' && e.token) {
         streamBufRef.current += e.token
         if (streamRafRef.current === null) {
@@ -705,6 +719,8 @@ export default function GrowthAiWorkbench({
       } else if (e.type === 'approval') {
         setApproval({ runId: e.runId ?? '', tool: e.tool ?? '', text: e.approvalText ?? '' })
       } else if (e.type === 'done') {
+        stoppedRef.current = false
+        setStopped(false)
         resetStream()
         setSending(false)
         // 先重载（工具步骤已按 tool_call 落库，重载后就由消息流渲染），再清实时列表 ——
@@ -755,6 +771,9 @@ export default function GrowthAiWorkbench({
     const text = input.trim()
     if (!text) return
     setInput('')
+    // 新一轮开始：撤掉上一次的「已停止」提示与丢弃标记
+    stoppedRef.current = false
+    setStopped(false)
     setSending(true)
     setToolLog([])
     setMessages((prev) => [
@@ -768,9 +787,29 @@ export default function GrowthAiWorkbench({
     }
   }
 
+  /**
+   * 停止本轮生成：先**就地**把界面收干净，再等引擎的中止生效。
+   *
+   * 此前只做了 setSending(false)：流式气泡和工具过程仍留在屏幕上，主进程里正在跑的生图 /
+   * 子模型调用还会继续往下发事件 —— 观感就是「点了停止没停」。现在：
+   * 清流式缓冲与过程列表 → 立即显示「已停止生成」→ 丢弃这一轮的迟到事件；
+   * 引擎中止后补发的 done 事件会重读会话，把落库的那条「已停止生成」换上。
+   */
   const stop = (): void => {
-    if (growthaiApi && activeId) void growthaiApi.stop(activeId)
+    const taskId = activeId
+    if (growthaiApi && taskId) void growthaiApi.stop(taskId)
+    stoppedRef.current = true
+    setStopped(true)
+    resetStream()
+    setToolLog([])
+    setApproval(null)
     setSending(false)
+    // 兜底：中止事件万一丢了（引擎卡在某个不可中断的调用里），也要把落库状态读回来
+    if (taskId) {
+      window.setTimeout(() => {
+        if (stoppedRef.current && sessionRef.current) void loadBundle(taskId)
+      }, 3000)
+    }
   }
 
   const resolveApproval = async (ok: boolean): Promise<void> => {
@@ -1005,6 +1044,10 @@ export default function GrowthAiWorkbench({
                 </div>
               ) : null}
               {streaming ? <StreamBubble text={streaming} /> : null}
+              {/* 停止后就地给个明确结论：不让用户对着「不动了但也没说停没停」的界面猜 */}
+              {stopped && !sending ? (
+                <div className="gai-msg is-ai gai-stopped">已停止生成</div>
+              ) : null}
               {approval ? (
                 <div className="gai-approval">
                   {/* 审批条也要中文名：这里原来直接把 growth_gen_image 这种标识摆给用户看 */}
