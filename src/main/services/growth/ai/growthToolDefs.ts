@@ -69,6 +69,9 @@ import { exportPublishPackage } from '../publisher/exporter'
 import { checkComplianceBatch } from '../remix/compliance'
 import { isSelfOwned, NO_SELF_IMAGE_HINT, sourceLabel } from '../../../../shared/imageSource'
 import { buildReadBackPrompt, judgeTextOnlyVisual, verifyTextLines } from './imageText'
+import { createLogger } from '../../logging'
+
+const log = createLogger('growth-ai')
 
 export interface GrowthToolCtx {
   sessionId: number
@@ -249,9 +252,12 @@ function modelText(system: string, user: string, signal?: AbortSignal): Promise<
  *
  * 返回一句能直接拼进回执的结论（校对失败也如实说，绝不假装"校对通过"）。
  */
-async function verifyImagesText(shots: string[], textLines: string[]): Promise<string> {
+async function verifyImagesTextDetailed(
+  shots: string[],
+  textLines: string[]
+): Promise<{ note: string; missing: string[] }> {
   const provider = createAiProvider('growth-ai')
-  if (!provider) return '（文字校对未做：AI 通道未配置）'
+  if (!provider) return { note: '（文字校对未做：AI 通道未配置）', missing: [] }
   const results: Array<{ ok: boolean; matched: number; total: number; missing: string[] }> = []
   for (const shot of shots) {
     try {
@@ -273,28 +279,91 @@ async function verifyImagesText(shots: string[], textLines: string[]): Promise<s
         missing: v.lines.filter((l) => !l.found).map((l) => l.expected)
       })
     } catch (e) {
-      return (
-        '（文字校对未完成：' + (e instanceof Error ? e.message.slice(0, 60) : '读图失败') + '）'
-      )
+      return {
+        note:
+          '（文字校对未完成：' + (e instanceof Error ? e.message.slice(0, 60) : '读图失败') + '）',
+        missing: []
+      }
     }
   }
-  if (results.length === 0) return ''
+  if (results.length === 0) return { note: '', missing: [] }
   const pass = results.filter((r) => r.ok).length
   if (pass === results.length) {
-    return '（✓ 文字校对：' + String(results.length) + ' 张产物的文字与要求逐行一致）'
+    return {
+      note: '（✓ 文字校对：' + String(results.length) + ' 张产物的文字与要求逐行一致）',
+      missing: []
+    }
   }
   const missing = [...new Set(results.flatMap((r) => r.missing))].slice(0, 4)
-  return (
-    '（⚠ 文字校对：' +
-    String(results.length - pass) +
-    '/' +
-    String(results.length) +
-    ' 张没写全，缺：' +
-    missing.map((m) => '「' + m + '」').join('') +
-    '。多半是文案太长被裁或被改写。两条路：① 把缺的那行**缩短**后重试；' +
-    '② 改走本地压字 —— growth_gen_image(noText=true) 出干净画面，再 growth_make_cover(title=…, subtitle=…, badge=…) ' +
-    '把文字压上去（本地渲染，保证完整不被裁）。）'
-  )
+  return {
+    note:
+      '（⚠ 文字校对：' +
+      String(results.length - pass) +
+      '/' +
+      String(results.length) +
+      ' 张没写全，缺：' +
+      missing.map((m) => '「' + m + '」').join('') +
+      '。多半是文案太长被裁或被改写；本次已自动补一张本地补字版（见下），' +
+      '若还要模型重画，就把缺的那行**缩短**后重试。）',
+    missing
+  }
+}
+
+/**
+ * 本地补字：把模型没写全的那几行，用本地排版压在**已生成的那张画面**上。
+ *
+ * 底图来自生图产物（source_mark=gen:image，属自家产物，可作底图），文字走 cover 模板渲染，
+ * 因此中文逐字准确、不会被裁。产出的是一张**新图**（不覆盖原图），挂在同一产出里供点选。
+ */
+async function localFixText(
+  baseRelPath: string,
+  missingLines: string[],
+  opts: { width: string; storeName: string; contentId: number }
+): Promise<{ assetId: number; relPath: string; note: string } | null> {
+  try {
+    const dataUri = await assetToDataUri({
+      id: 0,
+      contentId: opts.contentId,
+      kind: 'image',
+      relPath: baseRelPath,
+      thumbRelPath: '',
+      mime: 'image/png',
+      width: 0,
+      height: 0,
+      size: 0,
+      durationMs: 0,
+      sourceMark: 'gen:image'
+    } as GrowthAsset)
+    if (!dataUri) return null
+    const size = /^d+xd+$/.test(opts.width) ? opts.width : '1024x1536'
+    const [w, h] = size.split('x').map((x) => Number(x))
+    const doc = buildCoverHtml({
+      // 补字用「大字压底」：与大多数封面一致，且文字块集中在底部，不容易盖住主体
+      templateId: 'bold-bottom',
+      title: missingLines.join(' '),
+      badge: opts.storeName,
+      imageDataUri: dataUri,
+      width: w,
+      height: h
+    })
+    const png = await renderHtmlToPng(doc.html, { width: w, height: h })
+    const stored = await storeImageBuffer(
+      png,
+      'image/png',
+      opts.contentId,
+      'local-text-fix: ' + doc.lines.join(' / '),
+      size,
+      'cover:composite'
+    )
+    return {
+      assetId: stored.assetId,
+      relPath: stored.relPath,
+      note: '本地补字版（生图漏字时自动生成）: ' + missingLines.join(' / ').slice(0, 60)
+    }
+  } catch (e) {
+    log.warn('local text fix failed: ' + (e instanceof Error ? e.message : String(e)))
+    return null
+  }
 }
 
 /** 门店名（清单版式底部署名用）：取当前门店，没有就留空 */
@@ -660,6 +729,8 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
             signal: ctx.signal
           })
           const imgs = gen.images
+          /** 兜底补字的产物（挂在同一产出里） */
+          const extraAssets: Array<{ assetId: number; relPath: string; note: string }> = []
           // 图生图的隐蔽失败：返回 200 但画面几乎没变（模型没接受改写，或通道把输入原样回传）。
           // 拿产物与结构参考图比一次灰度签名，疑似就如实说 —— 否则用户会以为"爆改"成功了。
           let echoNote = ''
@@ -707,7 +778,29 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
               }
             }
             if (shots.length > 0) {
-              verifyNote = await verifyImagesText(shots, textLines)
+              const v = await verifyImagesTextDetailed(shots, textLines)
+              verifyNote = v.note
+              /**
+               * 自动兜底：模型没写全的文案，用**本地渲染**补在产物上。
+               *
+               * 为什么直接做而不是只报告：实测"文案太长被裁"是提示词压不住的必然事件，
+               * 而本地渲染的中文是逐字准确的 —— 与其让用户看着缺字的图，不如再给一张补好的。
+               * 补出来的那张挂在**同一个产出**里（role=image，source=local-text），点选即可采用，
+               * 不覆盖原图（原图留着，用户能对比）。
+               */
+              if (v.missing.length > 0 && imgs.length > 0) {
+                const fixed = await localFixText(imgs[0].relPath, v.missing, {
+                  width: strategy.size,
+                  storeName: storeNameOf(args),
+                  contentId: contentIdOf(args)
+                })
+                if (fixed) {
+                  extraAssets.push(fixed)
+                  verifyNote +=
+                    '（已自动补一张本地补字版：把缺的那几行用本地渲染压在同一张画面上，文字保证完整，' +
+                    '在右侧图片卡里可以点选；原始图保留以便对比）'
+                }
+              }
             }
           }
           if (gen.warning) refNote = '（注意：' + gen.warning + '）'
@@ -769,6 +862,17 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
               (args.contentAssetId ? '，内容 assetId=' + String(args.contentAssetId) : '') +
               ')'
             : ''
+          // 本地补字版也挂进同一产出（点选即可采用；原图保留，便于对比）
+          for (const x of extraAssets) {
+            addOutputAsset({
+              outputId,
+              assetId: x.assetId,
+              role: 'image',
+              source: 'local-text',
+              prompt: '',
+              note: x.note
+            })
+          }
           for (const g of imgs) {
             addOutputAsset({
               outputId,

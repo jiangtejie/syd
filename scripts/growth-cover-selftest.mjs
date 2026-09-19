@@ -215,6 +215,41 @@ try {
     }).html.includes('&lt;b&gt;'),
     '条目同样转义（清单内容来自模型/用户，不能把 HTML 冲掉）'
   )
+  // 两栏写法：原图常见「店名 + 品类/评分/人均」
+  const twoCol = buildCoverHtml({
+    templateId: 'list',
+    title: '国庆来重庆必吃',
+    items: ['眼镜火锅|重庆火锅 · 4.8分', '鸭肠王|人均 68'],
+    width: 1024,
+    height: 1536
+  })
+  ok(
+    twoCol.html.includes('class="it-main">眼镜火锅<') &&
+      twoCol.html.includes('class="it-meta">重庆火锅 · 4.8分<'),
+    '★ 条目支持「名称|说明」两栏（说明靠右、色淡一档）'
+  )
+  const oneCol = buildCoverHtml({
+    templateId: 'list',
+    title: 't',
+    items: ['只有店名'],
+    width: 800,
+    height: 800
+  })
+  ok(
+    // 注意：模板 CSS 里永远有 .it-meta 规则，要断言的是**元素**没渲染出来
+    oneCol.html.includes('class="it-main">只有店名<') && !oneCol.html.includes('<span class="it-meta"'),
+    '没有竖线就整条当名称（向后兼容）'
+  )
+  ok(
+    buildCoverHtml({
+      templateId: 'list',
+      title: 't',
+      items: ['全角｜也认'],
+      width: 800,
+      height: 800
+    }).html.includes('class="it-meta">也认<'),
+    '全角竖线一样认（模型常打 ｜）'
+  )
 
   console.log('回执字段（落库/界面回显要用）：')
   const doc = buildCoverHtml({

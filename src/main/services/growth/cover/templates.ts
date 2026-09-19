@@ -53,7 +53,10 @@ export const COVER_TEMPLATES: CoverTemplate[] = [
       '.cover-list{position:static;flex:1 1 auto;min-height:0;margin:5% 0 0;padding:0;list-style:none;' +
         'counter-reset:cover-item;overflow:hidden}',
       '.cover-list li{position:relative;padding:0 0 0 9%;margin:0 0 2.2%;line-height:1.4;' +
-        'color:#222;font-weight:500}',
+        'color:#222;font-weight:500;display:flex;align-items:baseline;gap:2.5%}',
+      // 名称|说明 两栏：原图（店名 + 品类/评分/人均）就是这种排版，说明靠右、色淡一档
+      '.cover-list .it-main{flex:0 1 auto;min-width:0}',
+      '.cover-list .it-meta{flex:none;margin-left:auto;color:#8a8a8a;font-weight:400;text-align:right}',
       '.cover-list li::before{counter-increment:cover-item;content:counter(cover-item);position:absolute;' +
         'left:0;top:0;width:6.5%;text-align:right;color:#e03131;font-weight:800}',
       '.cover-foot{position:static;margin-top:auto;padding-top:2%;color:#999;border-top:1px solid #eee}'
@@ -280,9 +283,29 @@ export function buildCoverHtml(input: CoverInput): CoverDoc {
       '</div>'
     : ''
 
+  /**
+   * 条目两栏写法：`名称|说明`（原图的「店名 + 品类/评分/人均」就是这种排版）。
+   * 没有竖线就整条当名称 —— 保持向后兼容，模型只给店名也能用。
+   */
+  const splitItem = (raw: string): { main: string; meta: string } => {
+    const i = raw.search(/[|｜]/)
+    if (i < 0) return { main: raw, meta: '' }
+    return { main: raw.slice(0, i).trim(), meta: raw.slice(i + 1).trim() }
+  }
   const listHtml = items.length
     ? '<ol class="cover-list">' +
-      items.map((it) => '<li>' + escapeHtml(it) + '</li>').join('') +
+      items
+        .map((it) => {
+          const { main, meta } = splitItem(it)
+          return (
+            '<li><span class="it-main">' +
+            escapeHtml(main) +
+            '</span>' +
+            (meta ? '<span class="it-meta">' + escapeHtml(meta) + '</span>' : '') +
+            '</li>'
+          )
+        })
+        .join('') +
       '</ol>'
     : ''
   const footHtml = items.length
