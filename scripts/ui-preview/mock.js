@@ -203,7 +203,88 @@
     'export.business': function () { return Promise.resolve({ ok: true, files: 12 }) },
     'app.version': function () { return Promise.resolve('1.0.0') },
     // keyStore.list 返回数组（不是 {ok}）—— 设置页会对它调 .some()，给错形状会直接崩到错误边界
-    'keyStore.list': function () { return Promise.resolve([]) }
+    'keyStore.list': function () { return Promise.resolve([]) },
+    // 议题/看板：**形状必须给全**。给 {ok:true} 会让监控页在空数据上反复重算，主线程像卡死一样
+    // （实测：整页 Runtime.evaluate 超时，只能关掉标签页重来）。
+    'issue.list': function () {
+      return Promise.resolve({ ok: true, issues: [], total: 0 })
+    },
+    'issue.overview': function () {
+      return Promise.resolve({
+        ok: true,
+        metrics: {
+          kpis: {
+            pending: 0,
+            following: 0,
+            followOverdue: 0,
+            backlog48: 0,
+            createdToday: 0,
+            resolvedToday: 0,
+            closedRate: null,
+            archivedClosed: 0
+          },
+          trend: [],
+          typeOpen: [],
+          groupTop: [],
+          age: []
+        }
+      })
+    },
+    'issue.state': function () { return Promise.resolve({ ok: true, state: null }) },
+    'reply.getSendStatus': function () {
+      return Promise.resolve({
+        enabled: true,
+        halted: false,
+        todayCount: 42,
+        dailyLimit: 200,
+        lastFailures: []
+      })
+    },
+    'reply.stats7d': function () {
+      return Promise.resolve(
+        Array.from({ length: 7 }, function (_, i) {
+          return { day: '2026-09-' + String(11 + i), sent: 20 + i * 3, failed: i % 3 }
+        })
+      )
+    },
+    // SendOverview：days / totals / verifiedRate / failReasons —— 形状给错看板会崩在 .length
+    'reply.overview': function () {
+      return Promise.resolve({
+        ok: true,
+        data: {
+          days: 7,
+          totals: { sent: 271, failed: 15, blocked: 3 },
+          verifiedRate: 0.93,
+          failReasons: [
+            { reason: '对端已删除', count: 8 },
+            { reason: '发送超时', count: 4 },
+            { reason: '被风控拦截', count: 3 }
+          ]
+        }
+      })
+    },
+    // 消息级运营统计（看板下半屏）
+    'reply.opsStats': function () {
+      return Promise.resolve({
+        ok: true,
+        data: {
+          days: 7,
+          series: Array.from({ length: 7 }, function (_, i) {
+            return { day: '9/' + String(11 + i), inbound: 60 + i * 8, outbound: 42 + i * 5 }
+          }),
+          byHour: Array.from({ length: 24 }, function (_, h) {
+            return { hour: h, count: h >= 9 && h <= 21 ? 30 + ((h * 7) % 25) : 2 }
+          }),
+          byType: [
+            { type: '群聊', count: 320 },
+            { type: '单聊', count: 180 },
+            { type: '公众号', count: 12 }
+          ],
+          activeSessions: 38,
+          newSessions: 6
+        }
+      })
+    }
   }
 
   function mk(path) {

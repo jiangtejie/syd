@@ -961,7 +961,7 @@ export default function GrowthAiWorkbench({
             此前导出发布包只在「素材仓库」的详情里有入口，用户得自己记住
             「先去仓库找这条素材」——闭环在最后一跳断掉。 */}
         <div className="gai-out-head is-acts">
-          <span>产出</span>
+          <span>已采用 {outputs.length > 0 ? '(' + String(outputs.length) + ')' : ''}</span>
           {task ? (
             <span className="gai-out-acts">
               <button
@@ -989,7 +989,7 @@ export default function GrowthAiWorkbench({
           ) : null}
         </div>
         {outputs.length === 0 ? (
-          <div className="gai-empty">还没有采用的产出</div>
+          <div className="gai-empty">还没有采用的产出（在下方「待选」里点「采用」）</div>
         ) : (
           outputs.map((o) => (
             <div className="gai-out-card" key={o.id}>
@@ -1073,11 +1073,16 @@ export default function GrowthAiWorkbench({
           ))
         )}
 
+        {/* 「候选」这词对运营没有信息量：它其实等价于「AI 给的、还没采用」。改成「待选」，
+            与上面的「已采用」形成一组动作语义（采用 → 上移），也顺手把计数补上。 */}
         <div className="gai-out-head">
-          候选 {candidates.length > 0 ? '(' + String(candidates.length) + ')' : ''}
+          <span>待选 {candidates.length > 0 ? '(' + String(candidates.length) + ')' : ''}</span>
+          {candidates.length > 0 ? (
+            <span className="gai-out-tip">点「采用」收下满意的版本</span>
+          ) : null}
         </div>
         {candidates.length === 0 ? (
-          <div className="gai-empty">暂无候选</div>
+          <div className="gai-empty">暂无待选（让 AI 改一版，候选会出现在这里）</div>
         ) : (
           candidates.map((c) => (
             <div className="gai-out-card is-candidate" key={c.id}>
@@ -1160,7 +1165,7 @@ export default function GrowthAiWorkbench({
                 </div>
               ) : null}
               <button
-                className="ui-btn is-danger gth-btn sm"
+                className="ui-btn is-danger gth-btn sm is-quiet"
                 type="button"
                 onClick={() => void resolveCandidate(c.id, 'delete')}
               >

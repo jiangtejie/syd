@@ -13,7 +13,7 @@
 
 .st-tab {
   padding: 7px 16px;
-  font-size: 13px;
+  font-size: var(--fs-md);
   border-radius: var(--r-pill);
   border: 1px solid var(--line);
   background: transparent;
@@ -69,14 +69,14 @@
 }
 
 .st-title {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   margin-bottom: 12px;
 }
 
 /* 卡片内二级分区标题（如「图片解密」） */
 .st-subtitle {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-2);
   margin-top: 14px;
@@ -89,7 +89,7 @@
   align-items: center;
   gap: 10px;
   padding: 6px 0;
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .st-label {
@@ -105,7 +105,7 @@
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: var(--fs-md);
   outline: none;
   user-select: text;
 }
@@ -139,7 +139,7 @@ select.st-input {
 }
 
 .st-hint {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 
@@ -162,7 +162,7 @@ select.st-input {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   margin-bottom: 8px;
 }
@@ -171,7 +171,7 @@ select.st-input {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 4px 0;
   border-top: 1px dashed var(--border-light);
 }
@@ -226,7 +226,7 @@ select.st-input {
   display: flex;
   justify-content: space-between;
   max-width: 320px;
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .st-kv > span:first-child {
@@ -247,7 +247,7 @@ select.st-input {
 .st-ai-test {
   min-height: 18px;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   word-break: break-all;
 }
 
@@ -269,7 +269,7 @@ select.st-input {
   min-height: 18px;
   margin-top: 2px;
   padding-left: 180px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   word-break: break-all;
 }
 
@@ -294,7 +294,7 @@ select.st-input {
 
 .ag-actions .st-bad {
   margin-left: 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .ag-avatar {
@@ -303,7 +303,7 @@ select.st-input {
   height: 26px;
   border-radius: 50%;
   color: #fff;
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -314,7 +314,7 @@ select.st-input {
 .ag-style {
   margin-left: auto;
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1;
   padding: 3px 6px;
   border-radius: var(--r-pill);
@@ -339,7 +339,7 @@ select.st-input {
 
 .ag-dirty {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--warn-text);
   flex: none;
@@ -359,7 +359,7 @@ select.st-input {
 }
 
 .st-path {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   word-break: break-all;
   text-align: right;
@@ -369,7 +369,7 @@ select.st-input {
 /* 瑙ｅ瘑灞傛彁绀?*/
 .st-decrypt-note {
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.7;
   color: var(--warn-text);
   background: var(--warn-soft);
@@ -407,7 +407,7 @@ select.st-input {
 
 .st-cache-tag {
   width: fit-content;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1;
   padding: 3px 8px;
   border-radius: var(--r-pill);
@@ -421,7 +421,7 @@ select.st-input {
 }
 
 .st-cache-dir {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-1);
   word-break: break-all;
   line-height: 1.4;
@@ -429,7 +429,7 @@ select.st-input {
 
 .st-cache-change {
   flex-shrink: 0;
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--brand);
 }
 
@@ -442,7 +442,7 @@ select.st-input {
   margin-top: 14px;
   padding-top: 10px;
   border-top: 1px dashed var(--border-light);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   text-align: center;
 }
@@ -469,11 +469,11 @@ select.st-input {
 }
 
 .mcp-item-main b {
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .mcp-kind {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
   padding: 1px 6px;
@@ -482,7 +482,7 @@ select.st-input {
 }
 
 .mcp-on {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--success-strong);
   background: var(--success-soft);
   border-radius: var(--r-pill);
@@ -490,7 +490,7 @@ select.st-input {
 }
 
 .mcp-off {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -500,7 +500,7 @@ select.st-input {
 
 .mcp-desc {
   width: 100%;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -536,7 +536,7 @@ select.st-input {
 
 .ag-loading {
   color: var(--text-3);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   padding: 12px 2px;
 }
 
@@ -554,7 +554,7 @@ select.st-input {
 }
 
 .ag-head-title b {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -562,7 +562,7 @@ select.st-input {
 }
 
 .ag-scope {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   line-height: 1.6;
   color: var(--text-3);
   background: var(--bg-hover);
@@ -604,7 +604,7 @@ select.st-input {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
 }
 
@@ -615,14 +615,14 @@ select.st-input {
 }
 
 .rel-fails-title {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
 .rel-fail {
   display: flex;
   gap: 10px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-2);
   line-height: 1.5;
 }
@@ -630,7 +630,7 @@ select.st-input {
 .rel-fail time {
   flex: none;
   color: var(--text-4);
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   line-height: 1.7;
 }
 
@@ -660,13 +660,13 @@ select.st-input {
 }
 
 .sf-card-title {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text-1);
 }
 
 .sf-card-desc {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   color: var(--text-3);
 }
@@ -745,12 +745,12 @@ select.st-input {
 }
 
 .sf-switch-label {
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-1);
 }
 
 .sf-switch-desc {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.55;
   color: var(--text-3);
 }
@@ -759,7 +759,7 @@ select.st-input {
 .sf-card-body p {
   margin: 0 0 8px;
   line-height: 1.7;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
 }
 
@@ -793,7 +793,7 @@ select.st-input {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   white-space: nowrap;
 }
@@ -806,12 +806,12 @@ select.st-input {
   flex: none;
   width: 64px !important;
   padding: 2px 6px !important;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .wb-skills-count {
   flex: none;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   white-space: nowrap;
 }
@@ -860,7 +860,7 @@ select.st-input {
 }
 
 .wb-skill-name {
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-1);
   overflow: hidden;
@@ -870,7 +870,7 @@ select.st-input {
 
 .wb-skill-desc {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.55;
   color: var(--text-2);
   display: -webkit-box;
@@ -886,7 +886,7 @@ select.st-input {
   gap: 8px;
   min-width: 0;
   padding-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
@@ -937,7 +937,7 @@ select.st-input {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   cursor: pointer;
 }
@@ -949,13 +949,13 @@ select.st-input {
 }
 
 .lg-auto-hint {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   white-space: nowrap;
 }
 
 .lg-meta {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
 }
 
@@ -997,7 +997,7 @@ select.st-input {
 
 .lg-time {
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
 }
 
@@ -1005,7 +1005,7 @@ select.st-input {
   flex: none;
   width: 42px;
   text-align: center;
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   padding: 1px 0;
   border-radius: 4px;
@@ -1035,7 +1035,7 @@ select.st-input {
 .lg-scope {
   flex: none;
   max-width: 90px;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1045,7 +1045,7 @@ select.st-input {
 .lg-msg {
   min-width: 0;
   flex: 1;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1055,7 +1055,7 @@ select.st-input {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
 }
 
@@ -1102,12 +1102,12 @@ select.st-input {
 }
 
 .rp-job-head b {
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-1);
 }
 
 .rp-job-sched {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-2);
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -1119,7 +1119,7 @@ select.st-input {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
@@ -1128,7 +1128,7 @@ select.st-input {
 }
 
 .rp-job-last {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   display: flex;
   align-items: center;
@@ -1136,7 +1136,7 @@ select.st-input {
 }
 
 .rp-job-run {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--brand);
   display: flex;
   align-items: center;
@@ -1187,7 +1187,7 @@ select.st-input {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-2);
 }
 
@@ -1195,7 +1195,7 @@ select.st-input {
   margin: 6px 0 0;
   max-height: 140px;
   overflow: auto;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
@@ -1219,7 +1219,7 @@ select.st-input {
   align-items: center;
   gap: 4px;
   padding: 3px 9px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   border-radius: var(--r-pill);
   border: 1px solid var(--line);
@@ -1259,7 +1259,7 @@ select.st-input {
 
 .sf-adv > summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   list-style: none;
 }
@@ -1311,6 +1311,6 @@ select.st-input {
   border: 1px solid var(--warn-text);
   background: var(--warn-soft);
   color: var(--warn-text);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.65;
 }

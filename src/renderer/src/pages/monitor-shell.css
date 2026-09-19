@@ -24,7 +24,7 @@
 
 /* 页签外观走全局 ui-tab；这里只留本页尺寸（与导出页 exp-tab 同一手法） */
 .mon-tab {
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   padding: 5px 14px;
 }
 
@@ -36,6 +36,6 @@
 
 .mon-loading {
   padding: 24px 8px;
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-3);
 }

@@ -4,31 +4,33 @@
   background: var(--danger-soft);
   border: 1px solid #f5c2c2;
   color: #c92a2a;
-  font-size: 13px;
+  font-size: var(--fs-md);
   border-radius: var(--r-md);
   padding: 10px 14px;
   margin-bottom: 14px;
 }
 
-/* 指标卡 */
+/* 指标卡（2026-09 压扁：26px 数字 + 14px 内边距的"大卡"装一个数字，五张就吃掉近 100px；
+ * 现在数字 17px、内边距 10px，高度约 56px，一屏多出一整块面板的位置） */
 .db-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
 }
 
 .db-card {
-  text-align: center;
-  padding: 14px 8px;
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
   min-width: 0;
 }
 
 .db-card-num {
-  font-size: 26px;
-  font-weight: 700;
-  color: #1a1a1a;
-  line-height: 1.2;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  color: var(--text-1);
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
 }
 
 .db-card-num.warn {
@@ -36,9 +38,9 @@
 }
 
 .db-card-label {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 /* 图表面板网格 */
@@ -56,7 +58,7 @@
 }
 
 .db-panel-title {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   margin-bottom: 14px;
   display: flex;
@@ -65,7 +67,7 @@
 }
 
 .db-panel-hint {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 400;
   color: #b8860b;
   background: #fdf3d7;
@@ -78,7 +80,7 @@
 .db-panel-act {
   margin-left: auto;
   flex: none;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 3px 10px;
   border-radius: var(--r-md);
   border: 1px solid var(--border);
@@ -96,7 +98,7 @@
 
 /* 会话构成附加说明（置顶/折叠） */
 .db-comp-note {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 
@@ -107,13 +109,13 @@
   align-items: center;
   justify-content: center;
   color: #b0b6bf;
-  font-size: 13px;
+  font-size: var(--fs-md);
   min-height: 120px;
 }
 
 /* 面板内小节标题（失败原因 Top） */
 .db-panel-sub {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   margin: 14px 0 4px;
 }
@@ -137,7 +139,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-2);
   padding: 6px 4px;
   border-radius: 6px;
@@ -156,7 +158,7 @@
 }
 
 .db-reason-count {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--danger);
 }
@@ -173,7 +175,7 @@
   border-radius: 9px;
   background: var(--danger);
   color: var(--on-brand);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   vertical-align: middle;
 }
@@ -211,7 +213,7 @@
   align-items: center;
   justify-content: center;
   color: var(--on-brand);
-  font-size: 15px;
+  font-size: var(--fs-lg);
   font-weight: 600;
 }
 
@@ -230,7 +232,7 @@
 .db-q-name-text {
   color: #1a1a1a;
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--fs-md);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -247,12 +249,12 @@
   border-radius: var(--r-md);
   background: var(--danger);
   color: var(--on-brand);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
 
 .db-q-sub {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
@@ -262,7 +264,7 @@
 
 .db-q-time {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: #b0b6bf;
 }
 
@@ -272,7 +274,7 @@
 }
 
 .db-q-more {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   padding: 8px 6px 4px;
 }
@@ -287,7 +289,7 @@
 .db-freq-row {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-2);
 }
 
@@ -309,7 +311,7 @@
 }
 
 .db-freq-note {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: #b8860b;
 }
 
@@ -334,7 +336,7 @@
 }
 
 .db-footnote {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 400;
   color: var(--text-3);
   margin-left: 6px;
@@ -358,7 +360,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
 }
 
