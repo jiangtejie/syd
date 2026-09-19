@@ -42,7 +42,6 @@ try {
   db = new Database(join(work, 'reconcile.db'))
   db.exec('CREATE TABLE im_audit (id INTEGER PRIMARY KEY, status TEXT, error TEXT, created_at INTEGER, finished_at INTEGER)')
   db.exec('CREATE TABLE report_run (id INTEGER PRIMARY KEY, status TEXT, errors TEXT, started_at INTEGER, ended_at INTEGER)')
-  db.exec('CREATE TABLE growth_crawl_task (id INTEGER PRIMARY KEY, status TEXT, error TEXT, started_at INTEGER, ended_at INTEGER)')
 
   const started = 1_000_000
   const old = started - 60_000
@@ -51,7 +50,6 @@ try {
   // 这里按真实 DDL 插，别用一个通用 helper 糊过去 —— 糊过去就测不出列名写错。
   const insAudit = db.prepare('INSERT INTO im_audit (status, error, created_at) VALUES (?, NULL, ?)')
   const insRun = db.prepare('INSERT INTO report_run (status, errors, started_at) VALUES (?, NULL, ?)')
-  const insCrawl = db.prepare('INSERT INTO growth_crawl_task (status, error, started_at) VALUES (?, NULL, ?)')
 
   insAudit.run('running', old)
   insAudit.run('queued', old)
@@ -60,8 +58,6 @@ try {
   insRun.run('running', old)
   insRun.run('ok', old)
   insRun.run('running', fresh)
-  insCrawl.run('running', old)
-  insCrawl.run('error', old)
 
   const r = reconcileInterruptedTasks(db, started)
   const statusOf = (t, ats, st) =>
@@ -70,7 +66,6 @@ try {
   console.log('改判范围：')
   ok(r.imAudit === 2, 'im_audit：遗留 running+queued 被改判（2 条）', 'got ' + r.imAudit)
   ok(r.reportRun === 1, 'report_run：只改遗留 running（1 条）', 'got ' + r.reportRun)
-  ok(r.growthCrawl === 1, 'growth_crawl_task：只改遗留 running（1 条）', 'got ' + r.growthCrawl)
 
   console.log('不许误伤：')
   const myRun = db.prepare('SELECT COUNT(*) AS n FROM im_audit WHERE created_at = ? AND status = ?').get(fresh, 'running').n
@@ -79,7 +74,6 @@ try {
   ok(rrFresh === 1, '本进程新起的上报运行保持不动', 'got ' + rrFresh)
   ok(statusOf('im_audit', null, 'done') === 1, '终态 done 不动')
   ok(statusOf('report_run', null, 'ok') === 1, '终态 ok 不动')
-  ok(statusOf('growth_crawl_task', null, 'error') === 1, '终态 error 不动')
 
   console.log('改判内容：')
   ok(statusOf('im_audit', null, INTERRUPTED) === 2, '状态写成 interrupted')
@@ -90,7 +84,7 @@ try {
 
   console.log('幂等：')
   const again = reconcileInterruptedTasks(db, started)
-  ok(again.imAudit === 0 && again.reportRun === 0 && again.growthCrawl === 0, '再跑一轮不再改任何行（幂等）')
+  ok(again.imAudit === 0 && again.reportRun === 0, '再跑一轮不再改任何行（幂等）')
 } finally {
   try {
     if (db) db.close()

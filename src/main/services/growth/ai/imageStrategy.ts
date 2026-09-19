@@ -353,6 +353,98 @@ export function readBrandStyle(profileRaw: unknown): BrandStyle {
   }
 }
 
+/**
+ * 视觉拆解（growth_decomp.visual_json）解析结果 —— 图生图「保持什么」的事实来源。
+ *
+ * 为什么单独一套：文字拆解说的是「这条为什么有效」，与画面的构图/机位/光线无关。
+ * 有了这些字段，「保持」才能写成「构图：居中对称；机位：90 度俯拍；光线：侧逆光」，
+ * 而不是让模型自己看图猜 —— 猜错的表现就是改出来不是同一个版式。
+ */
+export interface VisualFacts {
+  composition: string
+  camera: string
+  lighting: string
+  colorTone: string
+  layout: string
+  subjectRatio: string
+  elements: string[]
+  textInImage: string
+}
+
+/** 模型爱用「空 / 无 / 没有」表示"图上没有文字"，这些都不算事实 */
+const NO_VALUE_RE = /^(空|无|没有|none|n\/a|-{1,2})$/i
+
+/**
+ * 读取视觉拆解。容错三种输入：已解析对象、JSON 文本（库里存的是字符串）、null/坏值。
+ * 也容忍模型换个键名（如 cameraAngle / 色调写 tone），只要能读懂就别让整块失效。
+ */
+export function readVisualFacts(raw: unknown): VisualFacts {
+  const empty: VisualFacts = {
+    composition: '',
+    camera: '',
+    lighting: '',
+    colorTone: '',
+    layout: '',
+    subjectRatio: '',
+    elements: [],
+    textInImage: ''
+  }
+  let obj: Record<string, unknown> | null = null
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) obj = raw as Record<string, unknown>
+  else {
+    const text = asText(raw)
+    if (!text || !text.startsWith('{')) return empty
+    try {
+      const parsed = JSON.parse(text) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        obj = parsed as Record<string, unknown>
+      }
+    } catch {
+      return empty
+    }
+  }
+  if (!obj) return empty
+  const pick = (...keys: string[]): string => {
+    for (const k of keys) {
+      const s = clip(obj?.[k], 60)
+      if (s) return s
+    }
+    return ''
+  }
+  const rawElements = obj.elements ?? obj.props ?? obj.objects
+  const elements = Array.isArray(rawElements)
+    ? rawElements
+        .map((x) => clip(x, 20))
+        .filter(Boolean)
+        .slice(0, 8)
+    : []
+  // 只认明确的「图上文字」键名：退到泛化的 text 会把正文当图上文字写进负向词
+  const textInImage = pick('textInImage', 'text_in_image', 'overlayText', 'imageText')
+  return {
+    composition: pick('composition', 'layout_structure'),
+    camera: pick('camera', 'cameraAngle', 'shot', 'angle'),
+    lighting: pick('lighting', 'light'),
+    colorTone: pick('colorTone', 'color', 'tone', 'palette'),
+    layout: pick('layout', 'whitespace', 'textLayout'),
+    subjectRatio: pick('subjectRatio', 'subject_ratio', 'subject'),
+    elements,
+    textInImage: NO_VALUE_RE.test(textInImage) ? '' : textInImage
+  }
+}
+
+/** 视觉拆解里有没有真的可用的事实（全空就当没有，别拿空对象去改写提示词） */
+export function hasVisualFacts(v: VisualFacts): boolean {
+  return Boolean(
+    v.composition ||
+    v.camera ||
+    v.lighting ||
+    v.colorTone ||
+    v.layout ||
+    v.subjectRatio ||
+    v.elements.length > 0
+  )
+}
+
 /** 门店档案里与「画面」有关的事实 —— 只取真的能拍出来的东西，电话/营业时间不参与构图 */
 export function readStoreVisualFacts(
   profileRaw: unknown,
@@ -423,6 +515,11 @@ export interface ImageStrategyInput {
   brand?: { name?: unknown; profile?: unknown } | null
   /** 素材线索：菜品名/场景/用途等，来自 itemBrief */
   materialHint?: unknown
+  /**
+   * 结构参考图的**视觉拆解**（growth_decomp.visual_json 原文）。
+   * 只在 edit 模式用得上：它把「保持构图机位光线」从一句套话变成具体清单。
+   */
+  referenceVisual?: unknown
 }
 
 export type ImageMode = 'gen' | 'edit'
@@ -453,6 +550,8 @@ export interface ImageStrategy {
   finalPrompt: string
   /** 给人看的策略说明（落库 + 界面回显，让「策略」看得见） */
   notes: string[]
+  /** 图生图的「保持」用了素材的视觉拆解（真·锁定版式）而不是通用口径 */
+  visualLocked: boolean
   /** 模板库本身的问题（JSON 坏掉等），要如实告诉用户而不是静默回退 */
   warning?: string
 }
@@ -532,6 +631,9 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
   const brandName = asText(brand?.name) || ''
 
   const mode = normalizeMode(input.mode)
+  const visual = readVisualFacts(input.referenceVisual)
+  /** 视觉拆解只在图生图里说话；没有它（旧卡/没拆过）就退回通用口径 */
+  const visualOn = mode === 'edit' && hasVisualFacts(visual)
   const referenceCount = clampInt(input.referenceCount, 0, 8, 0)
   /** 多图时指向「结构模板」那一张：prompt 里所有"保持/不要带出"都该说图1，而不是笼统的"参考图" */
   const refTag = referenceCount >= 2 ? '图1' : '参考图'
@@ -547,10 +649,28 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
     } else {
       lines.push('改写任务：以随本次请求附上的参考图为基础改图，不是凭描述画一张新图。')
     }
+    // 有视觉拆解就逐项点名要保持什么（这是「同一个版式换内容」成败的关键）；
+    // 没有就退回通用口径 —— 通用口径也能用，只是模型得自己看图猜构图。
+    const holdBits = visualOn
+      ? joinFacts([
+          visual.composition ? '构图：' + visual.composition : '',
+          visual.camera ? '机位与视角：' + visual.camera : '',
+          visual.lighting ? '光线：' + visual.lighting : '',
+          visual.colorTone ? '色调：' + visual.colorTone : '',
+          visual.layout ? '版式与留白：' + visual.layout : '',
+          visual.subjectRatio ? '主体占比与位置：' + visual.subjectRatio : '',
+          visual.elements.length > 0
+            ? '画面元素（道具/桌面/背景，不含菜品）：' + visual.elements.join('/')
+            : ''
+        ])
+      : ''
     lines.push(
       '【保持】' +
         refTag +
-        '的构图与机位、镜头与光线、场景氛围、画面留白位置、主体在画面里的占比；只改内容，不要改版式'
+        '的' +
+        (holdBits
+          ? holdBits + '；只改内容，不要改版式'
+          : '构图与机位、镜头与光线、场景氛围、画面留白位置、主体在画面里的占比；只改内容，不要改版式')
     )
     if (userPrompt) lines.push('【本次要求】' + userPrompt)
   } else {
@@ -592,6 +712,14 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
     template.negative,
     // 图生图最要命的一条：参考图是别人的作品，像素级特征（原文字/水印/logo/人脸）绝不能带出来
     mode === 'edit' ? '不要保留' + refTag + '里的任何文字、Logo、水印、二维码' : '',
+    // 把参考图上原有的文字点名写出来：只说"不要文字"时，模型常把原字照抄进新图（尤其大字贴纸）
+    visualOn && visual.textInImage
+      ? '不要带出' +
+        refTag +
+        '上的原有文字（原文：' +
+        visual.textInImage +
+        '），换成上面给出的本店信息'
+      : '',
     mode === 'edit' ? '不要照抄' + refTag + '的菜品摆盘与人物，要换成上面给出的本店信息' : '',
     facts.bannedWords ? '不要出现这些词/' + facts.bannedWords : '',
     UNIVERSAL_NEGATIVE
@@ -607,6 +735,15 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
           '保持构图，替换为本店信息）'
       : '模式：文生图'
   )
+  if (visualOn) {
+    notes.push(
+      '视觉拆解：' +
+        clip(joinFacts([visual.composition, visual.camera, visual.lighting, visual.layout]), 80) +
+        '（据此锁定「保持」清单）'
+    )
+  } else if (mode === 'edit') {
+    notes.push('提示：这条素材没有视觉拆解，「保持」用的是通用口径（构图/机位/光线不具体）')
+  }
   notes.push('模板：' + template.label + '（' + template.id + '）')
   notes.push('平台：' + spec.label + ' · ' + spec.ratio + ' · ' + size)
   notes.push('角色：' + (role === 'cover' ? '封面' : '正文图') + ' · ' + String(count) + ' 张')
@@ -649,7 +786,8 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
     prompt,
     negative,
     finalPrompt,
-    notes
+    notes,
+    visualLocked: visualOn
   }
   if (blocked) {
     out.blockedReason =

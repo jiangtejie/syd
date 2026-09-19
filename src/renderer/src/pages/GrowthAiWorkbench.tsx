@@ -9,7 +9,12 @@ import SkeletonRows from '../components/growth/SkeletonRows'
 import { useEscape } from '../lib/useEscape'
 import { fmtStamp } from '../../../shared/monitorMetrics'
 import { ToolTimeline } from '../components/workbench/ToolTimeline'
+import { Lightbox, type LightboxItem } from '../components/growth/MediaGallery'
 import { splitToolRuns, type TimelineItem } from '../lib/toolTimeline'
+import { growthApi } from '../components/growth/meta'
+import PublishRecordForm from '../components/growth/PublishRecordForm'
+import { useWorkbenchStore } from '../stores/workbench'
+import type { GrowthMetricView, GrowthRemixOutputView } from '../../../shared/growth'
 import './growth-ai.css'
 import { useAsyncEffect } from '../lib/useAsyncEffect'
 
@@ -27,7 +32,6 @@ interface TaskView {
   goal: string
   status: string
   sessionId: number | null
-  stage: string
   summary: string
   updatedAt: number
   lastMessageAt: number | null
@@ -175,14 +179,6 @@ const ChatMessage = memo(function ChatMessage({ m }: { m: ChatRow }): React.JSX.
 const growthaiApi = window.api?.cs?.growthai
 const wbApi = window.api?.cs?.wb
 
-const STAGE_LABEL: Record<string, string> = {
-  analyze: '拆解',
-  rewrite: '改写',
-  visual: '配图',
-  compose: '成稿',
-  review: '复核'
-}
-
 const GOAL_OPTIONS: Array<{ id: string; label: string }> = [
   { id: 'image_text', label: '图文(小红书/抖音)' },
   { id: 'video', label: '短视频脚本' },
@@ -292,7 +288,8 @@ const TaskCard = memo(function TaskCard({
               执行中
             </span>
           ) : null}
-          {STAGE_LABEL[t.stage] ?? t.stage} · {t.summary || '待开始'}
+          {/* 任务进度以摘要为准：原「阶段」列没有任何写入点，显示的永远是「拆解」 */}{' '}
+          {t.summary || '待开始'}
         </span>
         <span className="gai-task-meta">
           {fmtTime(t.lastMessageAt ?? t.updatedAt)}
@@ -356,6 +353,16 @@ export default function GrowthAiWorkbench({
   const [task, setTask] = useState<TaskView | null>(null)
   const [outputs, setOutputs] = useState<OutputView[]>([])
   const [candidates, setCandidates] = useState<OutputView[]>([])
+  /** 缩略图加载失败的行（本地文件可能已被清理）——不显示破图，改成一个明确的占位 */
+  const [imgFailed, setImgFailed] = useState<Record<number, true>>({})
+  /** 大图预览：候选/产出里的图点开看，同一块内可 ←/→ 翻；候选块还能直接在预览里采用 */
+  const [zoom, setZoom] = useState<{
+    items: LightboxItem[]
+    assetIds: Array<number | null>
+    index: number
+    outputId: number
+    adoptable: boolean
+  } | null>(null)
   const [messages, setMessages] = useState<ChatRow[]>([])
   /** 连续的工具步骤合成一条时间线（与客服工作台同一手法：纯函数切段） */
   const chatRuns = useMemo(
@@ -391,6 +398,12 @@ export default function GrowthAiWorkbench({
   const [pickGoal, setPickGoal] = useState('image_text')
   const [creating, setCreating] = useState(0)
 
+  // 出口：把「采用」的结果送出工作台（导出发布包 / 登记发布 / 回仓库）
+  const [pubOpen, setPubOpen] = useState(false)
+  const [pubMetrics, setPubMetrics] = useState<GrowthMetricView[]>([])
+  const [pubOutputs, setPubOutputs] = useState<GrowthRemixOutputView[]>([])
+  const [exporting, setExporting] = useState(false)
+
   const loadTasks = useCallback(async (): Promise<void> => {
     if (!growthaiApi) return
     const res = await growthaiApi.listTasks()
@@ -417,6 +430,70 @@ export default function GrowthAiWorkbench({
   const closePick = useCallback((): void => setPickOpen(false), [])
 
   useEscape(pickOpen, closePick)
+
+  /**
+   * 打开「登记发布」。
+   *
+   * 为什么要现拉一次 getContent 而不是用手上的 outputs：这个表单要展示「效果登记历史」，
+   * 那是素材级的数据(growth_metric_snapshot)，本页只加载了任务级产出，攒不出来。
+   */
+  const openPublish = useCallback(async (contentId: number): Promise<void> => {
+    if (!growthApi?.getContent) {
+      toast.error('通道未就绪（改到主进程/preload 后需完全重启应用）')
+      return
+    }
+    const res = await growthApi.getContent(contentId)
+    if (!res.ok) {
+      toast.error(res.error || '读取素材详情失败')
+      return
+    }
+    if (!res.item) {
+      toast.error('素材不存在（可能已被删除）')
+      return
+    }
+    setPubMetrics(res.item.metrics ?? [])
+    setPubOutputs(res.item.remixOutputs ?? [])
+    setPubOpen(true)
+  }, [])
+
+  const closePublish = useCallback((): void => setPubOpen(false), [])
+
+  useEscape(pubOpen, closePublish)
+
+  /**
+   * 导出发布包：只带**本任务已采用**的产出 id，避免把同一素材下别的任务的产出一起塞进包。
+   * 目录由主进程弹窗选择，导出后直接打开，省得用户再去翻「数据」页。
+   */
+  const exportPkg = useCallback(async (): Promise<void> => {
+    if (!task) return
+    if (!growthApi?.exportPackage) {
+      toast.error('通道未就绪（改到主进程/preload 后需完全重启应用）')
+      return
+    }
+    setExporting(true)
+    try {
+      const res = await growthApi.exportPackage(
+        task.contentId,
+        outputs.map((o) => o.id)
+      )
+      if (!res.ok) {
+        // 用户自己点的「取消」不是失败，别弹红条
+        if (res.error !== '已取消导出') toast.error(res.error || '导出失败')
+        return
+      }
+      toast.success('发布包已导出(' + String(res.files ?? 0) + ' 个文件)')
+      const openFolder = window.api?.cs?.export?.openFolder
+      if (res.dir && openFolder) void openFolder(res.dir)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '导出失败')
+    } finally {
+      setExporting(false)
+    }
+  }, [task, outputs])
+
+  const goWarehouse = useCallback((): void => {
+    useWorkbenchStore.getState().setGrowthTab('warehouse')
+  }, [])
 
   const openPick = useCallback((): void => {
     setPickOpen(true)
@@ -624,6 +701,26 @@ export default function GrowthAiWorkbench({
     setApproval(null)
   }
 
+  /** 图的角标：导出包按顺序命名「封面 / 图2 / 图3」，界面用同一套口径，避免两边对不上 */
+  const imgBadge = (i: number): string => (i === 0 ? '封面' : '图' + String(i + 1))
+
+  /** 打开大图预览（items 与缩略图同序，翻页时下标一一对应） */
+  const openZoom = (o: OutputView, index: number, adoptable: boolean): void => {
+    setZoom({
+      items: o.assets.map((a, i) => ({
+        relPath: a.relPath,
+        badge: imgBadge(i),
+        note: [a.role === 'cover' ? '封面位' : '正文图', a.note || a.prompt || a.source]
+          .filter(Boolean)
+          .join(' · ')
+      })),
+      assetIds: o.assets.map((a) => a.assetId),
+      index,
+      outputId: o.id,
+      adoptable
+    })
+  }
+
   const resolveCandidate = async (
     outputId: number,
     action: 'select' | 'archive' | 'delete' | 'pick',
@@ -784,7 +881,6 @@ export default function GrowthAiWorkbench({
                   </option>
                 ))}
               </select>
-              <span className="gth-badge gray">{STAGE_LABEL[task.stage] ?? task.stage}</span>
               {task.status === 'drafting' ? (
                 <button
                   className="ui-btn gth-btn sm"
@@ -890,7 +986,45 @@ export default function GrowthAiWorkbench({
       </section>
 
       <aside className="gai-output">
-        <div className="gai-out-head">产出</div>
+        {/* 产出面板就是这条素材的终点站：采用之后必须能直接送出工作台。
+            此前导出发布包与登记发布只在「素材仓库」的详情里有入口，用户得自己记住
+            「先去仓库找这条素材」——闭环在最后一跳断掉。 */}
+        <div className="gai-out-head is-acts">
+          <span>产出</span>
+          {task ? (
+            <span className="gai-out-acts">
+              <button
+                className="ui-btn gth-btn sm"
+                type="button"
+                disabled={exporting}
+                title={
+                  outputs.length > 0
+                    ? '导出本任务已采用的产出 + 素材原文/原图到发布包文件夹'
+                    : '本任务还没有采用的产出，将导出该素材最新的爆改产出'
+                }
+                onClick={() => void exportPkg()}
+              >
+                {exporting ? '导出中…' : '导出发布包'}
+              </button>
+              <button
+                className="ui-btn gth-btn sm"
+                type="button"
+                title="登记发布渠道与互动数据，回填后素材分与看板立即更新"
+                onClick={() => void openPublish(task.contentId)}
+              >
+                登记发布
+              </button>
+              <button
+                className="ui-btn gth-btn sm"
+                type="button"
+                title="回到素材仓库看这条素材的完整详情"
+                onClick={goWarehouse}
+              >
+                素材仓库
+              </button>
+            </span>
+          ) : null}
+        </div>
         {outputs.length === 0 ? (
           <div className="gai-empty">还没有采用的产出</div>
         ) : (
@@ -936,22 +1070,29 @@ export default function GrowthAiWorkbench({
                 </>
               ) : null}
               {o.assets.length > 0 ? (
-                <div className="gai-out-imgs">
-                  {o.assets.map((a) => (
-                    <div className="gai-img-pick" key={a.id}>
-                      <img
-                        className="gai-out-img"
-                        src={a.relPath ? 'ct-growth://media/' + a.relPath : ''}
-                        alt={a.role}
-                        loading={'lazy'}
-                        decoding={'async'}
-                        title={a.note || a.prompt || a.source}
-                      />
-                      {o.variant === 'chat:image' || o.variant === 'chat:cover' ? (
-                        <span className="gai-img-role">
-                          {a.role === 'cover' ? '封面' : '正文图'}
-                        </span>
-                      ) : null}
+                <div className="gai-thumbs">
+                  {o.assets.map((a, i) => (
+                    <div className="gai-thumb" key={a.id}>
+                      <button
+                        type="button"
+                        className="gai-thumb-view"
+                        title={a.note || a.prompt || '点击预览大图'}
+                        onClick={() => openZoom(o, i, false)}
+                      >
+                        {imgFailed[a.id] || !a.relPath ? (
+                          <span className="gai-thumb-missing">图片缺失</span>
+                        ) : (
+                          <img
+                            className="gai-thumb-img"
+                            src={'ct-growth://media/' + a.relPath}
+                            alt={imgBadge(i)}
+                            loading={'lazy'}
+                            decoding={'async'}
+                            onError={() => setImgFailed((m) => ({ ...m, [a.id]: true }))}
+                          />
+                        )}
+                      </button>
+                      <span className="gai-thumb-badge">{imgBadge(i)}</span>
                     </div>
                   ))}
                 </div>
@@ -1018,20 +1159,35 @@ export default function GrowthAiWorkbench({
                 </>
               ) : null}
               {c.assets.length > 0 ? (
-                <div className="gai-out-imgs">
-                  {c.assets.map((a) => (
-                    <div className="gai-img-pick" key={a.id}>
-                      <img
-                        className="gai-out-img"
-                        src={a.relPath ? 'ct-growth://media/' + a.relPath : ''}
-                        alt={a.role}
-                        loading={'lazy'}
-                        decoding={'async'}
-                        title={a.note || a.prompt}
-                      />
+                <div className="gai-thumbs">
+                  {c.assets.map((a, i) => (
+                    <div className="gai-thumb" key={a.id}>
                       <button
-                        className="ui-btn is-primary gth-btn sm"
                         type="button"
+                        className="gai-thumb-view"
+                        title={a.note || a.prompt || '点击预览大图'}
+                        onClick={() => openZoom(c, i, true)}
+                      >
+                        {imgFailed[a.id] || !a.relPath ? (
+                          <span className="gai-thumb-missing">图片缺失</span>
+                        ) : (
+                          <img
+                            className="gai-thumb-img"
+                            src={'ct-growth://media/' + a.relPath}
+                            alt={imgBadge(i)}
+                            loading={'lazy'}
+                            decoding={'async'}
+                            onError={() => setImgFailed((m) => ({ ...m, [a.id]: true }))}
+                          />
+                        )}
+                      </button>
+                      <span className="gai-thumb-badge">{imgBadge(i)}</span>
+                      {/* 采用按钮平时不占位：悬浮/键盘聚焦才出现（否则一屏十几个重复按钮很吵）。
+                          点图本身是大图预览，采用也留在预览里，两条路都通。 */}
+                      <button
+                        type="button"
+                        className="gai-thumb-adopt"
+                        title="采用这一张"
                         onClick={() => void resolveCandidate(c.id, 'pick', a.assetId ?? undefined)}
                       >
                         用这张
@@ -1051,6 +1207,65 @@ export default function GrowthAiWorkbench({
           ))
         )}
       </aside>
+      {zoom ? (
+        <Lightbox
+          items={zoom.items}
+          index={zoom.index}
+          onClose={() => setZoom(null)}
+          onIndex={(i) => setZoom((z) => (z ? { ...z, index: i } : z))}
+          actions={
+            zoom.adoptable ? (
+              <button
+                className="ui-btn is-primary gth-btn sm"
+                type="button"
+                onClick={() => {
+                  const assetId = zoom.assetIds[zoom.index] ?? undefined
+                  void resolveCandidate(zoom.outputId, 'pick', assetId)
+                  setZoom(null)
+                }}
+              >
+                采用这张
+              </button>
+            ) : null
+          }
+        />
+      ) : null}
+      {pubOpen && task ? (
+        <div className="gai-pick-mask" onClick={closePublish}>
+          <div
+            className="gai-pick gai-pub"
+            role="dialog"
+            aria-modal="true"
+            aria-label="登记发布"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="gai-pick-head">
+              <span className="t">
+                登记发布 · {task.contentTitle || task.title || '未命名素材'}
+              </span>
+              <span className="s">
+                渠道与互动数据回填后，素材分会重算，看板「营销内容效果」立即更新
+              </span>
+              <button className="ui-btn gth-btn sm" type="button" onClick={closePublish}>
+                关闭
+              </button>
+            </div>
+            <div className="gai-pub-body">
+              <PublishRecordForm
+                contentId={task.contentId}
+                metrics={pubMetrics}
+                outputs={pubOutputs}
+                onSaved={async (): Promise<void> => {
+                  // 重新拉一次，让「效果登记历史」把刚填的这条显示出来
+                  const res = await growthApi?.getContent(task.contentId)
+                  if (res?.ok && res.item) setPubMetrics(res.item.metrics ?? [])
+                  onChanged()
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
       {pickOpen ? (
         <div className="gai-pick-mask" onClick={() => setPickOpen(false)}>
           <div

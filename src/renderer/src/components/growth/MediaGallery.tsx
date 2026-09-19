@@ -1,31 +1,49 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from '../../stores/toast'
 import { growthApi } from './meta'
 import type { GrowthAsset } from '../../../../shared/growth'
 
 /** 详情封面预览(本地已下载媒体, 经 ct-growth:// 协议加载; 失败自动隐藏) */
 
+/**
+ * 灯箱里的一张图。
+ * 只要 relPath 就能显示 —— 这样素材图（GrowthAsset）与 AI 产出的候选图都能直接用同一个灯箱。
+ */
+export interface LightboxItem {
+  relPath: string
+  /** 角标（如「封面」「图2」），可空 */
+  badge?: string
+  /** 说明（来源/策略/模板），可空 */
+  note?: string
+}
+
 export interface LightboxProps {
-  imgs: GrowthAsset[]
+  items: LightboxItem[]
   index: number
   onClose: () => void
   onIndex: (i: number) => void
+  /** 页面自己的动作按钮（放在底部条左侧），如「采用这张」 */
+  actions?: ReactNode
+  /** 是否显示「复制当前图」（默认显示） */
+  allowCopy?: boolean
 }
 
 /** 图片灯箱: 全屏查看, ←/→ 翻页, Esc 关闭, 可复制当前图 */
 export function Lightbox({
-  imgs,
+  items,
   index,
   onClose,
-  onIndex
+  onIndex,
+  actions,
+  allowCopy = true
 }: LightboxProps): React.JSX.Element | null {
-  const cur = imgs[index] ?? null
+  const cur = items[index] ?? null
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
-      else if (e.key === 'ArrowLeft') onIndex((index - 1 + imgs.length) % imgs.length)
-      else if (e.key === 'ArrowRight') onIndex((index + 1) % imgs.length)
+      else if (e.key === 'ArrowLeft') onIndex((index - 1 + items.length) % items.length)
+      else if (e.key === 'ArrowRight') onIndex((index + 1) % items.length)
     }
     window.addEventListener('keydown', onKey)
     const prevOverflow = document.body.style.overflow
@@ -34,7 +52,7 @@ export function Lightbox({
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = prevOverflow
     }
-  }, [index, imgs.length, onClose, onIndex])
+  }, [index, items.length, onClose, onIndex])
 
   if (!cur) return null
   const copy = async (): Promise<void> => {
@@ -49,10 +67,17 @@ export function Lightbox({
       <img
         className="gth-lightbox-img"
         src={'ct-growth://media/' + cur.relPath}
-        alt={'素材图 ' + String(index + 1)}
+        alt={(cur.badge ? cur.badge + ' ' : '') + '图 ' + String(index + 1)}
         onClick={(e) => e.stopPropagation()}
       />
-      {imgs.length > 1 ? (
+      {/* 角标与说明放左上角：不遮住图片主体 */}
+      {cur.badge || cur.note ? (
+        <div className="gth-lightbox-info" onClick={(e) => e.stopPropagation()}>
+          {cur.badge ? <span className="gth-lightbox-badge">{cur.badge}</span> : null}
+          {cur.note ? <span className="gth-lightbox-note">{cur.note}</span> : null}
+        </div>
+      ) : null}
+      {items.length > 1 ? (
         <>
           <button
             className="gth-lightbox-nav left"
@@ -60,7 +85,7 @@ export function Lightbox({
             aria-label="上一张"
             onClick={(e) => {
               e.stopPropagation()
-              onIndex((index - 1 + imgs.length) % imgs.length)
+              onIndex((index - 1 + items.length) % items.length)
             }}
           >
             ‹
@@ -71,20 +96,23 @@ export function Lightbox({
             aria-label="下一张"
             onClick={(e) => {
               e.stopPropagation()
-              onIndex((index + 1) % imgs.length)
+              onIndex((index + 1) % items.length)
             }}
           >
             ›
           </button>
           <span className="gth-lightbox-count">
-            {String(index + 1)}/{String(imgs.length)}
+            {String(index + 1)}/{String(items.length)}
           </span>
         </>
       ) : null}
       <div className="gth-lightbox-bar" onClick={(e) => e.stopPropagation()}>
-        <button className="ui-btn gth-btn sm" type="button" onClick={() => void copy()}>
-          复制当前图
-        </button>
+        {actions}
+        {allowCopy ? (
+          <button className="ui-btn gth-btn sm" type="button" onClick={() => void copy()}>
+            复制当前图
+          </button>
+        ) : null}
         <button className="ui-btn gth-btn sm" type="button" onClick={onClose}>
           关闭 (Esc)
         </button>
@@ -239,7 +267,7 @@ export function MediaGallery({
       </button>
       {zoom ? (
         <Lightbox
-          imgs={imgs}
+          items={imgs.map((a) => ({ relPath: a.relPath }))}
           index={showIdx}
           onClose={() => setZoom(false)}
           onIndex={(i) => {

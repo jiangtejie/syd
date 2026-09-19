@@ -17,7 +17,6 @@ export interface GrowthAiTaskView {
   goal: string
   status: string
   sessionId: number | null
-  stage: string
   summary: string
   createdAt: number
   updatedAt: number
@@ -87,20 +86,11 @@ export function createTask(input: {
   const now = Date.now()
   const res = getDb()
     .prepare(
-      'INSERT INTO growth_ai_task (content_id, store_id, title, goal, status, stage, summary, created_at, updated_at, last_message_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      // 注: 原 stage 列（拆解/改写/配图/成稿/复核）已删 —— 从来没有任何地方写过它，
+      // 界面却按它显示阶段徽标，等于永远显示「拆解」。任务进度以 status + 对话时间线为准。
+      'INSERT INTO growth_ai_task (content_id, store_id, title, goal, status, summary, created_at, updated_at, last_message_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
-    .run(
-      input.contentId,
-      input.storeId,
-      input.title,
-      input.goal,
-      'drafting',
-      'analyze',
-      '',
-      now,
-      now,
-      null
-    )
+    .run(input.contentId, input.storeId, input.title, input.goal, 'drafting', '', now, now, null)
   return Number(res.lastInsertRowid)
 }
 
@@ -116,7 +106,6 @@ export function updateTask(
     title: string
     goal: string
     status: string
-    stage: string
     summary: string
     storeId: number | null
   }>
@@ -134,10 +123,6 @@ export function updateTask(
   if (patch.status !== undefined) {
     keys.push('status = ?')
     vals.push(patch.status)
-  }
-  if (patch.stage !== undefined) {
-    keys.push('stage = ?')
-    vals.push(patch.stage)
   }
   if (patch.summary !== undefined) {
     keys.push('summary = ?')
@@ -182,7 +167,6 @@ function taskRowToView(r: Record<string, unknown>): GrowthAiTaskView {
     goal: String(r.goal ?? 'image_text'),
     status: String(r.status ?? 'drafting'),
     sessionId: r.session_id === null || r.session_id === undefined ? null : Number(r.session_id),
-    stage: String(r.stage ?? 'analyze'),
     summary: String(r.summary ?? ''),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
@@ -335,10 +319,9 @@ export function createOutput(input: {
 }): number {
   const res = getDb()
     .prepare(
-      'INSERT INTO growth_remix_output (job_id, variant, title, copy_text, content_id, task_id, compliance_json, meta_json, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO growth_remix_output (variant, title, copy_text, content_id, task_id, compliance_json, meta_json, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     .run(
-      0,
       input.variant,
       input.title,
       input.copy,

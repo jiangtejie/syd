@@ -48,6 +48,8 @@ try {
     pickTemplate,
     readBrandStyle,
     readStoreVisualFacts,
+    readVisualFacts,
+    hasVisualFacts,
     buildImageStrategy,
     formatStrategy
   } = S
@@ -308,6 +310,75 @@ try {
   )
   const single = buildImageStrategy({ mode: 'edit', referenceCount: 1 })
   ok(single.prompt.includes('【保持】参考图'), '只有一张时仍说「参考图」', '')
+
+  console.log('视觉拆解 → 图生图的「保持」清单：')
+  const visualJson = JSON.stringify({
+    composition: '居中对称, 主体略偏下',
+    camera: '90 度俯拍',
+    lighting: '自然侧逆光, 高光在汤面',
+    colorTone: '暖橙高饱和',
+    layout: '上方三分之一留白压标题',
+    subjectRatio: '主体占画面 60%',
+    elements: ['白瓷碗', '木桌', '干冰雾气'],
+    textInImage: '人均68'
+  })
+  const vf = readVisualFacts(visualJson)
+  ok(
+    vf.composition.includes('居中') && vf.camera.includes('俯拍'),
+    '库里存的是 JSON 文本 → 能解析出构图与机位'
+  )
+  ok(vf.elements.length === 3 && vf.textInImage === '人均68', '元素清单与图上原文都读出来')
+  ok(
+    readVisualFacts({ composition: '三分法', tone: '冷调', objects: ['玻璃杯'] }).colorTone === '冷调',
+    '容忍模型换键名（tone / objects）'
+  )
+  ok(
+    readVisualFacts({ textInImage: '空' }).textInImage === '' &&
+      readVisualFacts({ textInImage: '无' }).textInImage === '',
+    '「空 / 无」不算事实（否则会写出「不要带出原文：空」）'
+  )
+  ok(!hasVisualFacts(readVisualFacts(null)) && !hasVisualFacts(readVisualFacts('')), '没有拆解 → 不算有视觉事实')
+  ok(!hasVisualFacts({ composition: '', elements: [] }), '字段全空 → 不算有视觉事实')
+  ok(readVisualFacts('{坏').composition === '', '坏 JSON 不抛错，退回空')
+
+  const e3 = buildImageStrategy({
+    mode: 'edit',
+    referenceCount: 1,
+    referenceVisual: visualJson,
+    userPrompt: '把菜品换成我们店的鲜切黄牛肉'
+  })
+  ok(e3.visualLocked === true, '策略标记 visualLocked（回执据此说明「逐项锁定」）')
+  ok(
+    e3.prompt.includes('【保持】参考图的构图：居中对称') &&
+      e3.prompt.includes('机位与视角：90 度俯拍') &&
+      e3.prompt.includes('光线：自然侧逆光'),
+    '「保持」逐项点名构图/机位/光线（不再是一句套话）'
+  )
+  ok(
+    e3.prompt.includes('版式与留白：上方三分之一留白压标题') &&
+      e3.prompt.includes('主体占比与位置：主体占画面 60%'),
+    '留白与主体占比也进「保持」'
+  )
+  ok(e3.prompt.includes('画面元素（道具/桌面/背景，不含菜品）：白瓷碗/木桌/干冰雾气'), '道具沿用参考图（菜品仍以本店事实为准）')
+  ok(e3.prompt.includes('只改内容，不要改版式'), '具体清单之后仍保留「不改版式」这条总纲')
+  ok(
+    e3.negative.includes('人均68') && e3.negative.includes('不要带出'),
+    '参考图上的原文字被点名禁带出（只写「不要文字」时模型常照抄）'
+  )
+  ok(
+    e3.notes.some((n) => n.includes('视觉拆解')) && e3.notes.some((n) => n.includes('保持')),
+    '策略说明里写明「保持」来自视觉拆解（让策略看得见）'
+  )
+  const e4 = buildImageStrategy({ mode: 'edit', referenceCount: 1 })
+  ok(e4.visualLocked === false, '没有视觉拆解 → 不谎报锁定')
+  ok(
+    e4.prompt.includes('构图与机位、镜头与光线、场景氛围') && e4.notes.some((n) => n.includes('通用口径')),
+    '退回通用口径，并如实说明（旧卡/没拆过）'
+  )
+  ok(
+    !buildImageStrategy({ mode: 'gen', referenceVisual: visualJson }).prompt.includes('【保持】'),
+    '文生图不吃视觉拆解（没有参考图可保持）'
+  )
 
   console.log('月度额度（唯一一道花钱的闸门，必须在发起请求前收敛）：')
   const q1 = buildImageStrategy({ count: 3, maxCount: 4, monthlyLimit: 100, usedThisMonth: 10 })

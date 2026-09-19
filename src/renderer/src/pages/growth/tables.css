@@ -1,4 +1,4 @@
-/* ── 表格行(订阅 / 素材 / 任务 各自列模板) ── */
+/* ── 表格行(素材 / 产出 各自列模板) ── */
 .gth-list {
   border: 1px solid var(--border-light);
   border-radius: var(--r-md);

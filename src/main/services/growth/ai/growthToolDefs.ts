@@ -57,8 +57,10 @@ import { looksLikeEcho } from './imageSimilarity'
 import {
   buildImageStrategy,
   formatStrategy,
+  hasVisualFacts,
   normalizePlatform,
   parseSize,
+  readVisualFacts,
   PLATFORM_SPECS
 } from './imageStrategy'
 import { getImageConfig } from './config'
@@ -132,6 +134,24 @@ export function itemBrief(contentId: number): string {
   )
   if (d.decomp?.structure) lines.push('拆解卡: ' + clipValue(d.decomp.structure, 700))
   else lines.push('拆解卡: 尚未生成')
+  // 视觉拆解单独给一行：图生图的「保持」清单直接取自它，模型看得见这些事实，
+  // 写改写要求时才不会只说「保持构图」这种没有信息量的话。
+  const v = readVisualFacts(d.decomp?.visual)
+  if (hasVisualFacts(v)) {
+    const bits = [
+      v.composition ? '构图=' + v.composition : '',
+      v.camera ? '机位=' + v.camera : '',
+      v.lighting ? '光线=' + v.lighting : '',
+      v.colorTone ? '色调=' + v.colorTone : '',
+      v.layout ? '版式留白=' + v.layout : '',
+      v.subjectRatio ? '主体=' + v.subjectRatio : '',
+      v.elements.length > 0 ? '元素=' + v.elements.join('/') : '',
+      v.textInImage ? '图上文字=' + v.textInImage : ''
+    ].filter(Boolean)
+    lines.push('视觉拆解: ' + bits.join(' · '))
+  } else {
+    lines.push('视觉拆解: 无(旧版拆解卡或本次没读出画面维度; 图生图的「保持」只能用通用口径)')
+  }
   return lines.join('\n')
 }
 
@@ -143,7 +163,7 @@ export function itemBrief(contentId: number): string {
  */
 export function brandBrief(): string {
   const b = getBrandProfile()
-  if (!b) return '尚未配置品牌资料包: 可到 营销 → 数据服务 → 门店与品牌 填写定位与语气'
+  if (!b) return '尚未配置品牌资料包: 可到 营销 → 设置 → 门店与品牌档案 填写定位与语气'
   const name = (b.name ?? '').trim()
   const raw = (b.profile ?? '').trim()
   if (!raw) return name ? '品牌: ' + name : '品牌资料包为空'
@@ -176,7 +196,7 @@ export function brandBrief(): string {
 export function storeBrief(storeId: number | null): string {
   const stores = listStores()
   const s = storeId ? stores.find((x) => x.id === storeId) : stores.find((x) => x.enabled)
-  if (!s) return '尚未配置门店档案: 请在 营销 → 数据服务 → 门店与品牌 中填写'
+  if (!s) return '尚未配置门店档案: 请在 营销 → 设置 → 门店与品牌档案 中填写'
   const lines: string[] = []
   lines.push('品牌: ' + (s.brandName || s.name))
   lines.push(
@@ -418,10 +438,19 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
               String(args.contentAssetId) +
               ' 取不到本地文件，本次只用结构参考图）'
         }
+        // 结构参考图的视觉拆解：只在该图确实属于当前素材时采用 —— 把 A 素材的构图事实
+        // 套到 B 素材的参考图上，会让「保持」写的是另一张图，比不给更糟。
+        const detail = getContentDetail(contentIdOf(args))
+        const refIsOwnAsset =
+          !!detail &&
+          !!args.referenceAssetId &&
+          detail.assets.some((a) => a.id === args.referenceAssetId)
+        const referenceVisual = refIsOwnAsset ? detail?.decomp?.visual : null
         // 策略层：模板选择 + 平台比例 + 门店事实 + 品牌资料包 + 月度额度 → prompt/negative/size/count
         const strategy = buildImageStrategy({
           mode: refs.length > 0 ? 'edit' : 'gen',
           referenceCount: refs.length,
+          referenceVisual,
           userPrompt: args.prompt ?? '',
           platform: args.platform || cfg.platform,
           role: args.role ?? 'cover',
@@ -477,9 +506,13 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
               String(gen.referenceCount) +
               ' 张参考图上改写：保持' +
               (gen.referenceCount > 1 ? '图1 的构图' : '构图') +
+              (strategy.visualLocked ? '/机位/光线/留白（按该素材的视觉拆解逐项锁定）' : '') +
               '，内容换成' +
               (gen.referenceCount > 1 ? '图2 的本店实拍 + ' : '') +
               '门店档案里的真实信息）' +
+              (strategy.visualLocked
+                ? ''
+                : '（这条素材还没有视觉拆解，构图只能靠模型自己看图猜）') +
               echoNote
           }
           const explicitTemplate = args.template !== undefined && args.template !== 'auto'
@@ -923,7 +956,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
         const args = argsIn as { storeId?: number; key: string; value: string }
         const id = args.storeId ?? storeIdOf(args)
         const s = id ? listStores().find((x) => x.id === id) : listStores().find((x) => x.enabled)
-        if (!s) return '没有可更新的门店档案, 请先在 营销 → 数据服务 → 门店与品牌 中创建。'
+        if (!s) return '没有可更新的门店档案, 请先在 营销 → 设置 → 门店与品牌档案 中创建。'
         let profile: Record<string, unknown> = {}
         try {
           profile = JSON.parse(s.profile || '{}') as Record<string, unknown>

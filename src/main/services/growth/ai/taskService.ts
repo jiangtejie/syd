@@ -18,7 +18,8 @@ import {
   type GrowthOutputView
 } from '../../../db/repos/growthAiRepo'
 import { getContentDetail } from '../../../db/repos/growthRepo'
-import { analyzeContent } from '../remix/service'
+import { ANALYZE_VER, analyzeContent } from '../remix/service'
+import { hasVisualFacts, readVisualFacts } from './imageStrategy'
 import { itemBrief, storeBrief } from './growthTools'
 import { createLogger } from '../../logging'
 
@@ -42,8 +43,14 @@ export async function createTaskFromContent(input: {
   const storeId = input.storeId ?? listStores().find((s) => s.enabled)?.id ?? null
   const goal = input.goal ?? 'image_text'
 
-  // 缺拆解卡则补一次(失败不阻塞建任务)
-  if (!detail.decomp?.structure) {
+  // 缺拆解卡、或卡是**旧版本**（没有视觉维度）时补一次，失败不阻塞建任务。
+  // 为什么要认版本：拆解输出结构升级（v2 加了 visual）后，老卡不会自己变新，
+  // 图生图的「保持」就永远只能退回通用口径。建任务是唯一自然的重拆时机，顺手自愈。
+  const staleDecomp =
+    !detail.decomp?.structure ||
+    detail.decomp.modelVer !== ANALYZE_VER ||
+    !hasVisualFacts(readVisualFacts(detail.decomp.visual))
+  if (staleDecomp) {
     try {
       await analyzeContent(input.contentId)
     } catch (e) {

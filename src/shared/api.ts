@@ -66,12 +66,8 @@ import type {
   GrowthContentDetailView,
   GrowthContentFilter,
   GrowthContentItem,
-  GrowthCrawlTaskView,
   GrowthOverview,
-  GrowthProgressPayload,
-  GrowthStats,
-  GrowthSubscription,
-  GrowthSubscriptionInput
+  GrowthStats
 } from './growth'
 
 export interface KeyActionResult {
@@ -184,11 +180,7 @@ export interface CsApi {
      * 导入配套工具 wechat-decrypt-cli 产出的密钥文件（口令 + 每库派生密钥）。
      * 拿不到账号口令时（4.1.11+ 需要 hook），整套派生密钥同样能解密。
      */
-    importKeyFile: (
-      wxid: string,
-      filePath: string,
-      dbPath?: string
-    ) => Promise<KeyFileImportResult>
+    importKeyFile: (wxid: string, filePath: string, dbPath?: string) => Promise<KeyFileImportResult>
     /** 清空该账号的每库派生密钥 */
     clearKeyRing: (wxid: string) => Promise<number>
   }
@@ -1087,17 +1079,6 @@ export interface CsApi {
       patch: { usage?: string; status?: string; note?: string }
     ) => Promise<{ ok: boolean; error?: string }>
     removeContent: (id: number) => Promise<{ ok: boolean; error?: string }>
-    listSubscriptions: () => Promise<Result<{ subscriptions?: GrowthSubscription[] }>>
-    saveSubscription: (
-      input: GrowthSubscriptionInput & { id?: number }
-    ) => Promise<{ ok: boolean; id?: number; error?: string }>
-    setSubscriptionEnabled: (
-      id: number,
-      enabled: boolean
-    ) => Promise<{ ok: boolean; error?: string }>
-    deleteSubscription: (id: number) => Promise<{ ok: boolean; error?: string }>
-    runCrawl: (id: number) => Promise<Result<{ fetched?: number; inserted?: number }>>
-    recentTasks: (limit?: number) => Promise<Result<{ tasks?: GrowthCrawlTaskView[] }>>
     copyClipboard: (payload: {
       text?: string
       relPath?: string
@@ -1133,14 +1114,6 @@ export interface CsApi {
     ) => Promise<Result<{ dir?: string; exported?: number; files?: number; failed?: string[] }>>
     redownloadMedia: (id: number) => Promise<Result<{ added?: number; failed?: number }>>
     overview: () => Promise<Result<{ overview?: GrowthOverview }>>
-    configGet: () => Promise<
-      Result<{ autoEnabled?: boolean; provider?: string; providerApiKey?: string }>
-    >
-    configSet: (
-      field: 'autoEnabled' | 'provider' | 'providerApiKey',
-      value: string
-    ) => Promise<{ ok: boolean; error?: string }>
-    onProgress: (callback: (payload: GrowthProgressPayload) => void) => () => void
   }
 
   growthai: {

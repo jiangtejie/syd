@@ -70,52 +70,13 @@ export const GROWTH_TABLES: string[] = [
     comment_topics_json TEXT NOT NULL DEFAULT '[]',
     created_at INTEGER NOT NULL
   )`,
-  `CREATE TABLE IF NOT EXISTS growth_subscription (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    source_type TEXT NOT NULL DEFAULT 'thirdparty',
-    vendor TEXT NOT NULL DEFAULT '',
-    city TEXT NOT NULL DEFAULT '',
-    biz_type TEXT NOT NULL DEFAULT '',
-    target_kind TEXT NOT NULL DEFAULT 'keyword',
-    target TEXT NOT NULL DEFAULT '',
-    store_id INTEGER,
-    enabled INTEGER NOT NULL DEFAULT 0,
-    interval_hours INTEGER NOT NULL DEFAULT 24,
-    next_at INTEGER,
-    last_status TEXT NOT NULL DEFAULT '',
-    last_at INTEGER,
-    last_error TEXT NOT NULL DEFAULT '',
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS growth_crawl_task (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    subscription_id INTEGER NOT NULL,
-    trigger TEXT NOT NULL DEFAULT 'auto',
-    status TEXT NOT NULL DEFAULT 'running',
-    fetched INTEGER NOT NULL DEFAULT 0,
-    inserted INTEGER NOT NULL DEFAULT 0,
-    error TEXT NOT NULL DEFAULT '',
-    started_at INTEGER NOT NULL,
-    ended_at INTEGER
-  )`,
-  `CREATE TABLE IF NOT EXISTS growth_remix_job (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_content_id INTEGER NOT NULL,
-    store_id INTEGER,
-    mode TEXT NOT NULL DEFAULT 'mid',
-    snapshot_json TEXT NOT NULL DEFAULT '{}',
-    status TEXT NOT NULL DEFAULT 'queued',
-    stage TEXT NOT NULL DEFAULT '',
-    progress REAL NOT NULL DEFAULT 0,
-    error TEXT NOT NULL DEFAULT '',
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
+  // 注: growth_subscription / growth_crawl_task（第三方采集订阅 + 抓取任务表）已随采集链路
+  // 整体下线删除 —— 数据来源只剩「粘贴链接入库 / 本地导入 / 媒体重下」三条人工路径，
+  // 调度器与第三方适配器已无代码引用。老库里那两张表原样留着（不影响使用），新装库不再建。
+  // 注: growth_remix_job（旧「一键爆改」的任务表）已随该链路下线删除 —— 写入点早没了，
+  // 只剩历史数据；现已没有代码引用。老库里那张表原样留着（不影响使用），新装库不再建。
   `CREATE TABLE IF NOT EXISTS growth_remix_output (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id INTEGER NOT NULL,
     variant TEXT NOT NULL DEFAULT 'A',
     title TEXT NOT NULL DEFAULT '',
     copy_text TEXT NOT NULL DEFAULT '',
@@ -125,27 +86,9 @@ export const GROWTH_TABLES: string[] = [
     status TEXT NOT NULL DEFAULT 'draft',
     created_at INTEGER NOT NULL
   )`,
-  `CREATE TABLE IF NOT EXISTS growth_publish_task (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    output_id INTEGER,
-    store_id INTEGER,
-    channel TEXT NOT NULL DEFAULT '',
-    scheduled_at INTEGER,
-    status TEXT NOT NULL DEFAULT 'pending',
-    lead_json TEXT NOT NULL DEFAULT '{}',
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS growth_publish_result (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id INTEGER NOT NULL,
-    remote_id TEXT NOT NULL DEFAULT '',
-    url TEXT NOT NULL DEFAULT '',
-    published_at INTEGER,
-    error TEXT NOT NULL DEFAULT '',
-    raw_json TEXT NOT NULL DEFAULT '{}',
-    created_at INTEGER NOT NULL
-  )`,
+  // 注: growth_publish_task / growth_publish_result（Phase 2「半自动发布」预留）已删除 ——
+  // 除了这两段 DDL 与它们的索引，全仓从无一行代码读写过它们。发布回流走的是
+  // growth_metric_snapshot（见 publisher/publishMetrics.ts），与这两张表无关。
   `CREATE TABLE IF NOT EXISTS growth_metric_snapshot (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     target_type TEXT NOT NULL DEFAULT 'content',
@@ -170,7 +113,6 @@ export const GROWTH_TABLES: string[] = [
     goal TEXT NOT NULL DEFAULT 'image_text',
     status TEXT NOT NULL DEFAULT 'drafting',
     session_id INTEGER,
-    stage TEXT NOT NULL DEFAULT 'analyze',
     summary TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -233,12 +175,6 @@ export const GROWTH_INDEXES: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_growth_content_created ON growth_content (created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_growth_asset_content ON growth_asset (content_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_growth_decomp_content ON growth_decomp (content_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_growth_sub_next ON growth_subscription (enabled, next_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_growth_crawl_sub ON growth_crawl_task (subscription_id, id DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_growth_remix_src ON growth_remix_job (source_content_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_growth_remix_out_job ON growth_remix_output (job_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_growth_publish_due ON growth_publish_task (status, scheduled_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_growth_pub_res_task ON growth_publish_result (task_id)`,
   `CREATE INDEX IF NOT EXISTS idx_growth_metric_target
     ON growth_metric_snapshot (target_type, target_id, captured_at)`,
   `CREATE INDEX IF NOT EXISTS idx_growth_task_status ON growth_ai_task (status, updated_at DESC)`,

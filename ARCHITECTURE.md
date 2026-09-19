@@ -463,7 +463,9 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 
 ## 9. 营销增长模块（`growth/*`）
 
-采集（抖音/小红书，vendor 脚本 + 解析器 + 本地导入）→ 仓库（去重/评分/标签）→ 舆情（`buzz`：门店相关评论/提及与诊断）→ 二创（`remix`：prompt + 合规检查）→ 发布/导出（`publisher/exporter`）→ AI 工作台（任务化生成/图片通道/搜索通道）。
+入库（粘贴抖音/小红书链接或口令解析 + 本地导入）→ 仓库（去重/评分/标签）→ 拆解（`remix`：结构 + **视觉**拆解卡）→ AI 工作台（任务化爆改 / 生图策略 / 封面合成 / 联网搜索）→ 采用 → 导出发布包（`publisher/exporter`）→ 发布登记与效果回填（`growth_metric_snapshot` → 素材分 → 看板）；另有独立的舆情通道（`buzz`：门店相关评论/提及与诊断）。
+
+**第三方采集订阅已整体下线**（2026-09-19，按用户决定）：`collector/` 的 vendor 适配器注册表**从来没有过调用方**，`runCrawl` 必然失败、调度器只是空转心跳，界面却摆着「采集源」页让人配数据服务商。现在数据来源只有三条人工路径（粘贴链接入库 / 本地导入 / 媒体重下），`growth_subscription` / `growth_crawl_task` / `growth_remix_job` / `growth_publish_task` / `growth_publish_result` 五张无写入点的表不再新建（老库原样留着），`cs:growth:progress` 事件通道（只发过 crawl 一种 kind）与 `cs:growthai:configGet/configSet` 一并删除。
 
 **生图策略层（`growth/ai/imageStrategy.ts`，纯函数 + 自检 `scripts/growth-image-strategy-selftest.mjs`）**：
 `imageProvider` 只是「通道」（把 prompt 发给 `/images/generations`），策略必须单独一层，否则同一家店两次生图可以毫无共同点。策略输入（平台 / 角色 / 模板 / 门店档案 / 品牌资料包 / 素材线索）→ 输出 prompt、negative、size、count 与给人看的 `notes`：
@@ -474,9 +476,9 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 - **负向词**：接口不保证都支持 `negative_prompt`，统一以「【避免出现】…」拼进 prompt 文本（`composeFinalPrompt`），并固定带上「不要文字/水印/logo/可辨认人脸」。
 - **张数与成本**：单次张数受设置里「每次张数」约束、硬上限 4；另有**每月张数上限**（`growth.image.monthlyLimit`，按自然月统计 `growth_asset.source_mark='gen:image'` 的行数，0 = 不限）——额度用尽时策略层在**发起请求前**就把 `blocked` 置位，调用方不得生成，并给出「到哪里调额度」的原话。张数被单次上限或月度额度压过时，都会在策略说明里如实写出（不静默少给、不静默失败）。
 
-**配置入口在营销页**（`营销 → 设置`）：采集服务商 / 门店与品牌档案 / AI 生图 / 联网搜索同屏 —— 它们共同决定「这条内容是怎么生成的」，此前生图在 设置→AI 助手、门店品牌在营销页，排查「生成的图和门店对不上」要跨两个页面。设置页的「AI 助手」只留一行指路（可点击跳转，`stores/workbench.ts` 的 `growthTab` + `setPage`，与「监控」的 `monitorTab` 同口径）。
+**配置入口在营销页**（`营销 → 设置`）：门店与品牌档案 / AI 生图 / 联网搜索同屏 —— 它们共同决定「这条内容是怎么生成的」，此前生图在 设置→AI 助手、门店品牌在营销页，排查「生成的图和门店对不上」要跨两个页面。设置页的「AI 助手」只留一行指路（可点击跳转，`stores/workbench.ts` 的 `growthTab` + `setPage`，与「监控」的 `monitorTab` 同口径）。
 
-配置读写只有一条路径：`cs:config:getAll/set`（app_config 真源）。此前 `cs:growthai:configGet/configSet` + `GrowthAiConfigField` 白名单是同一配置的第二条写路径，但渲染端从无调用者（ProviderPanel 走的是 `cs:growth`），已删除。
+配置读写只有一条路径：`cs:config:getAll/set`（app_config 真源）。此前 `cs:growthai:configGet/configSet` + `GrowthAiConfigField` 白名单是同一配置的第二条写路径，渲染端从无调用者（配置面板一直走 `cs:growth`），已删除。
 
 **封面模板引擎（`growth/cover/`）**：小红书图文的封面价值大半在「实拍图 + 大字标题」的排版上，而此前只能把裸图当封面（刚爆改出来的标题落不到图上）。实现路子是**不引任何图像库**：
 - `cover/templates.ts`（纯函数 + 自检 `scripts/growth-cover-selftest.mjs`）产出一份**自包含 HTML**（底图走 `data:` URI、无外链）；
@@ -490,6 +492,9 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 - **多图的分工必须写进 prompt**：图1 = 结构模板（只借构图），图2 = 本店实拍（内容以它为准）；不写清模型会把两张混着用。
 - **「产物到底改没改」检测**（`ai/imageSimilarity.ts` + 自检）：图生图有一种隐蔽失败 —— 接口 200、返回的图却与参考图几乎一样（模型没接受改写，或通道把输入原样回传）。产物与结构参考图各取 16×16 灰度签名比 MAD，疑似就写进工具回执（措辞是「疑似」；阈值 4/255，两头都有自检：几乎一致要抓到、正常改写不能误报）。
 - **能力探测**（`ai/imageProbe.ts`）：中转站的可用能力取决于密钥所属分组，只能实测。营销 → 设置里一键探测：默认档**不产生生图调用**（`/v1/models` + 一次故意缺参数的 `/images/edits` —— 400 = 分组开放、404 = 没开该接口），勾选后才真发 generations / edits / 多图 / mask 各一次，并如实报出计费次数。
+- **视觉拆解驱动「保持」**（`remix/prompts.ts` + 自检 `scripts/growth-analyze-prompt-selftest.mjs`）：拆解卡除文字维度外还产出 `visual`（构图/机位/光线/色调/版式留白/主体占比/画面元素/图上文字），落 `growth_decomp.visual_json` —— 这一列此前**恒为 null**（拆解只写给文字看）。图生图时策略层的 `readVisualFacts` 把它变成逐项「保持」清单（`【保持】参考图的构图：居中对称；机位与视角：90 度俯拍；…`），并把参考图上的原文字点名禁带出；没有视觉拆解（旧卡/没拆过）就退回通用口径，并在 `notes` 与工具回执里如实说明（`visualLocked` 标记，不谎报"已锁定"）。拆解卡版本 `ANALYZE_VER` 升级后，建任务时会自动重拆一次（老卡不会自己变新）；素材详情里也把拆解卡（结构 + 视觉）显示出来，此前界面上只有一枚「已拆解」徽标。
+
+**闭环的出口长在工作台里**：产出一旦「采用」，用户必须能**直接送出去** —— 产出面板头部三个动作：导出发布包（`exportPackage`，只带本任务已采用的产出 id）、登记发布（复用 `PublishRecordForm` 的内嵌弹窗，回填写 `growth_metric_snapshot`）、回素材仓库（切 `growthTab`）。此前这两个入口只在素材仓库详情里，用户得自己记住「回仓库找这条素材」，闭环在最后一跳断掉。看板的「营销内容效果」面板同理加了「去营销板块」直达：看板只读汇总，看到数字想动手就得能一步跳过去，空态文案也改成同时指路工作台与仓库。
 
 配套的两处收敛：**候选图按张采用**（`resolveCandidate` 的 `pick` 动作，一次生图 N 张落在同一产出块里，点「用这张」只保留选中的那张，此前是整块一起采用）与**换图按 role 真替换**（`removeOutputAssetsByRole`，此前 `growth_replace_image` 只 append，换三次就攒出三张封面）。
 
@@ -620,7 +625,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | `im` | `list/save/remove/toggle/clawQrPoll` | 外部 IM 渠道 |
 | `feishu` `lark` | `notify/audit/contact/status/test` | 飞书通知与云文档 |
 | `report` | `list/save/remove/setEnabled/runNow/cancel/history/testConn` | 定时上报 |
-| `growth` `growthai` `growthbuzz` | 采集/仓库/二创/舆情/任务 | 营销增长 |
+| `growth` `growthai` `growthbuzz` | 素材仓库/二创/舆情/任务 | 营销增长 |
 | `export` | `chat/business/openFolder/writeFile` | 导出 |
 | `config` `app` `dialog` `logs` | 配置 KV、应用信息、目录选择、日志 | 通用 |
 

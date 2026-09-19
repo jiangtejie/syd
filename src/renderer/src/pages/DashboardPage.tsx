@@ -338,6 +338,8 @@ function DashboardPage(): React.JSX.Element {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const gotoSession = useWorkbenchStore((s) => s.gotoSession)
   const refreshSessions = useWorkbenchStore((s) => s.refreshSessions)
+  const setPage = useWorkbenchStore((s) => s.setPage)
+  const setGrowthTab = useWorkbenchStore((s) => s.setGrowthTab)
   const [sendStatus, setSendStatus] = useState<SendStatusInfo | null>(null)
   const [sendStats, setSendStats] = useState<DayStat[]>([])
   const [overview, setOverview] = useState<SendOverview | null>(null)
@@ -570,6 +572,18 @@ function DashboardPage(): React.JSX.Element {
           <div className="db-panel-title">
             营销内容效果
             <span className="db-panel-hint">营销板块</span>
+            {/* 看板只读汇总，看到数字想动手时必须能一步跳过去；
+                落在「素材仓库」是因为那里能看到素材与产出全貌（工作台也有登记发布入口）。 */}
+            <button
+              className="db-panel-act"
+              type="button"
+              onClick={() => {
+                setGrowthTab('warehouse')
+                setPage('growth')
+              }}
+            >
+              去营销板块
+            </button>
           </div>
           <div className="db-panel-sub">
             素材 {growthOv.contentCount} · 已拆解 {growthOv.decompCount} · 爆改产出{' '}
@@ -606,7 +620,8 @@ function DashboardPage(): React.JSX.Element {
             </div>
           ) : (
             <div className="db-panel-sub">
-              还没有发布登记; 在营销板块的素材详情里「登记发布」后会出现在这里
+              还没有发布登记; 在「营销 → AI
+              工作台」产出面板或素材仓库详情里点「登记发布」后会出现在这里
             </div>
           )}
         </div>

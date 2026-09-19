@@ -1,22 +1,11 @@
 import { clipboard, dialog, ipcMain, nativeImage } from 'electron'
-import { getGrowthConfig, setGrowthConfigField } from '../services/growth/config'
-import { runCrawl } from '../services/growth/collector/service'
 import {
   ingestShareText,
   queryContentDetail,
   queryContents,
   patchContent
 } from '../services/growth/warehouse/service'
-import {
-  deleteSubscription,
-  getSubscription,
-  growthStats,
-  insertSubscription,
-  listSubscriptions,
-  recentCrawlTasks,
-  setSubscriptionEnabled,
-  updateSubscription
-} from '../db/repos/growthOpsRepo'
+import { growthStats } from '../db/repos/growthOpsRepo'
 import { deleteContent } from '../db/repos/growthRepo'
 import { importLocalMaterials } from '../services/growth/collector/localImport'
 import { exportPublishPackage } from '../services/growth/publisher/exporter'
@@ -29,16 +18,12 @@ import { growthOverview } from '../db/repos/growthOpsRepo'
 import { existsSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { getGrowthMediaDir } from '../services/paths'
-import type { GrowthSubscriptionInput } from '../../shared/growth'
 import { clampInt } from './_util'
 
 /**
  * 营销增长(growth)IPC: cs:growth:*。
  * 与既有域保持一致: 参数在入口处做基本校验, 错误统一回 { ok:false, error }。
  */
-
-const SOURCE_TYPES = new Set<string>(['thirdparty', 'official', 'manual'])
-const TARGET_KINDS = new Set<string>(['keyword', 'account', 'topic', 'rank'])
 
 function err<T = never>(error: string): { ok: false; error: string } & T {
   return { ok: false, error } as { ok: false; error: string } & T
@@ -49,10 +34,7 @@ function ok<T>(value: T): { ok: true } & T {
 }
 
 export function registerGrowthHandlers(): void {
-  ipcMain.handle('cs:growth:stats', () => {
-    const cfg = getGrowthConfig()
-    return ok({ stats: growthStats(cfg.autoEnabled, cfg.provider) })
-  })
+  ipcMain.handle('cs:growth:stats', () => ok({ stats: growthStats() }))
 
   ipcMain.handle('cs:growth:listContent', (_e, filter?: unknown) => {
     const f = (filter ?? {}) as Record<string, unknown>
@@ -113,76 +95,6 @@ export function registerGrowthHandlers(): void {
     if (!cid) return err('非法素材 ID')
     deleteContent(cid)
     return ok({})
-  })
-
-  ipcMain.handle('cs:growth:listSubscriptions', () => ok({ subscriptions: listSubscriptions() }))
-
-  ipcMain.handle('cs:growth:saveSubscription', (_e, input: unknown) => {
-    const raw = input as Record<string, unknown>
-    const target = typeof raw.target === 'string' ? raw.target.trim().slice(0, 120) : ''
-    if (!target) return err('订阅目标不能为空')
-    const sourceType = SOURCE_TYPES.has(raw.sourceType as string)
-      ? (raw.sourceType as string)
-      : 'thirdparty'
-    const targetKind = TARGET_KINDS.has(raw.targetKind as string)
-      ? (raw.targetKind as string)
-      : 'keyword'
-    const input2: GrowthSubscriptionInput = {
-      name: typeof raw.name === 'string' ? raw.name.trim().slice(0, 60) : '',
-      sourceType: sourceType as GrowthSubscriptionInput['sourceType'],
-      vendor: typeof raw.vendor === 'string' ? raw.vendor.trim().slice(0, 64) : '',
-      city: typeof raw.city === 'string' ? raw.city.trim().slice(0, 32) : '',
-      bizType: typeof raw.bizType === 'string' ? raw.bizType.trim().slice(0, 32) : '',
-      targetKind: targetKind as GrowthSubscriptionInput['targetKind'],
-      target,
-      storeId: null,
-      enabled: raw.enabled === true || raw.enabled === '1' || raw.enabled === 1,
-      intervalHours: clampInt(raw.intervalHours, 24, 1, 168)
-    }
-    const id = Number(raw.id)
-    if (Number.isFinite(id) && id > 0) {
-      if (!getSubscription(id)) return err('订阅不存在')
-      updateSubscription(id, input2)
-      return ok({ id })
-    }
-    const created = insertSubscription(input2)
-    return ok({ id: created })
-  })
-
-  ipcMain.handle('cs:growth:setSubscriptionEnabled', (_e, id: unknown, enabled: unknown) => {
-    const sid = clampInt(id, 0, 1, Number.MAX_SAFE_INTEGER)
-    if (!sid) return err('非法订阅 ID')
-    setSubscriptionEnabled(sid, enabled === true || enabled === 1 || enabled === '1')
-    return ok({})
-  })
-
-  ipcMain.handle('cs:growth:deleteSubscription', (_e, id: unknown) => {
-    const sid = clampInt(id, 0, 1, Number.MAX_SAFE_INTEGER)
-    if (!sid) return err('非法订阅 ID')
-    deleteSubscription(sid)
-    return ok({})
-  })
-
-  ipcMain.handle('cs:growth:runCrawl', async (_e, id: unknown) => {
-    const sid = clampInt(id, 0, 1, Number.MAX_SAFE_INTEGER)
-    if (!sid) return err('非法订阅 ID')
-    const out = await runCrawl(sid, 'manual')
-    return out.ok
-      ? ok({ fetched: out.fetched, inserted: out.inserted })
-      : err(out.error ?? '采集失败')
-  })
-
-  ipcMain.handle('cs:growth:recentTasks', (_e, limit: unknown) => {
-    return ok({ tasks: recentCrawlTasks(clampInt(limit, 10, 1, 100)) })
-  })
-
-  ipcMain.handle('cs:growth:configGet', () => {
-    const cfg = getGrowthConfig()
-    return ok({
-      autoEnabled: cfg.autoEnabled,
-      provider: cfg.provider,
-      providerApiKey: cfg.apiKey
-    })
   })
 
   // ── 剪贴板复制 ──
@@ -337,14 +249,5 @@ export function registerGrowthHandlers(): void {
     } catch (e) {
       return err(e instanceof Error ? e.message : '读取概览失败')
     }
-  })
-
-  ipcMain.handle('cs:growth:configSet', (_e, field: unknown, value: unknown) => {
-    if (field !== 'autoEnabled' && field !== 'provider' && field !== 'providerApiKey') {
-      return err('非法配置项')
-    }
-    const v = typeof value === 'string' ? value : String(value ?? '')
-    setGrowthConfigField(field as 'autoEnabled' | 'provider' | 'providerApiKey', v)
-    return ok({})
   })
 }

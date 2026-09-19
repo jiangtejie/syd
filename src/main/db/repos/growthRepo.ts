@@ -12,7 +12,7 @@ import type {
   GrowthListResult
 } from '../../../shared/growth'
 
-/** growth_* 表访问层：素材 / 资产 / 拆解卡。任务与订阅见 growthOpsRepo。 */
+/** growth_* 表访问层：素材 / 资产 / 拆解卡。任务与产出见 growthOpsRepo。 */
 
 function toNum(v: unknown, fb = 0): number {
   const n = Number(v)
@@ -340,8 +340,7 @@ export function insertAsset(input: {
 /** 按 id 取单个资产（图生图的参考图、封面的底图都要先拿到它的 rel_path） */
 export function getAssetById(id: number): GrowthAsset | null {
   const row = getDb().prepare('SELECT * FROM growth_asset WHERE id = ?').get(id) as
-    | AssetRow
-    | undefined
+    AssetRow | undefined
   return row ? rowToAsset(row) : null
 }
 

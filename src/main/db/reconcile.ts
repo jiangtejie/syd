@@ -17,7 +17,6 @@ import type { Database } from 'better-sqlite3-multiple-ciphers'
 export interface ReconcileResult {
   imAudit: number
   reportRun: number
-  growthCrawl: number
 }
 
 /** 改判后的状态值。终端语义：任务被中断，不是失败也不是成功，可安全重跑。 */
@@ -26,7 +25,7 @@ export const INTERRUPTED = 'interrupted'
 export const INTERRUPTED_NOTE = '进程重启中断（启动对账改判）'
 
 export function reconcileInterruptedTasks(db: Database, processStartedAt: number): ReconcileResult {
-  const out: ReconcileResult = { imAudit: 0, reportRun: 0, growthCrawl: 0 }
+  const out: ReconcileResult = { imAudit: 0, reportRun: 0 }
   const now = Date.now()
   out.imAudit = db
     .prepare(
@@ -40,11 +39,7 @@ export function reconcileInterruptedTasks(db: Database, processStartedAt: number
        WHERE started_at < ? AND status = 'running'`
     )
     .run(INTERRUPTED, INTERRUPTED_NOTE, now, processStartedAt).changes
-  out.growthCrawl = db
-    .prepare(
-      `UPDATE growth_crawl_task SET status = ?, error = COALESCE(error, ?), ended_at = ?
-       WHERE started_at < ? AND status = 'running'`
-    )
-    .run(INTERRUPTED, INTERRUPTED_NOTE, now, processStartedAt).changes
+  // 注: 这里原本还有一段 growth_crawl_task 的改判。采集订阅链路整体下线后那张表不再被写入，
+  // 对账段一并删除；老库里遗留的 running 行没有消费者，不影响任何界面。
   return out
 }

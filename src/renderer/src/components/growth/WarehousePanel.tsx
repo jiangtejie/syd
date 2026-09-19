@@ -7,6 +7,7 @@ import { growthApi } from './meta'
 import { Badge, SearchInput, EmptyState, ErrBar } from './common'
 import { MediaGallery } from './MediaGallery'
 import PublishRecordForm from './PublishRecordForm'
+import DecompCard from './DecompCard'
 import { remoteImageUrlsOf, remoteVideoUrlOf } from './meta'
 import type { GrowthContentDetailView, GrowthContentItem } from '../../../../shared/growth'
 import { useAsyncEffect } from '../../lib/useAsyncEffect'
@@ -616,7 +617,7 @@ export function WarehousePanel({
               steps={[
                 '粘贴小红书/抖音分享链接或口令, 或点「上传本地素材」导入门店实拍',
                 '到「AI 工作台」点「+ 新建」选这条素材, 与 AI 对话逐项爆改成品牌文案',
-                '在「采集源」页配置订阅, 由数据服务定时批量拉取爆款素材'
+                '在产出面板点「采用」收下满意的版本, 再用「导出发布包」送出、用「登记发布」把效果回填'
               ]}
               extra={
                 <button
@@ -915,6 +916,9 @@ export function WarehousePanel({
                 工作台」原创化处理。
               </div>
             </div>
+
+            {/* 拆解卡：AI 从这条爆款里读出了什么（结构 + 视觉），此前只有一枚徽标 */}
+            <DecompCard decomp={detail.decomp} />
 
             {/* 发布登记 + 效果历史：看板空态一直指引的这个入口，此前并不存在 */}
             <PublishRecordForm

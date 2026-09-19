@@ -149,39 +149,8 @@
   gap: 8px;
   flex: none;
 }
-.gth-hero-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--border-light);
-  /* 毛玻璃改「半透明底 + 描边」模拟：滚动区不做 backdrop-filter 合成 */
-  background: rgba(255, 255, 255, 0.86);
-  border-color: var(--border);
-  font-size: 12px;
-  color: var(--text-2);
-}
-.gth-hero-chip .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-4);
-}
-.gth-hero-chip.on {
-  color: var(--success-strong);
-}
-.gth-hero-chip.on .dot {
-  background: var(--success);
-  animation: gth-breathe 2.4s ease-in-out infinite;
-}
-.gth-hero-chip.warn {
-  color: var(--warn-text);
-}
-.gth-hero-chip.warn .dot {
-  background: var(--warn);
-}
+/* 注: 原 .gth-hero-chip（.dot/.on/.warn 三个变体）随采集链路下线删除 —— 它只被页头那两个
+   「自动采集运行中/未开启」与「最近采集」胶囊用过，全仓已无引用。 */
 .gth-seg {
   display: inline-flex;
   align-items: center;

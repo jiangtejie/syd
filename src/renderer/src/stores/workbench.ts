@@ -29,7 +29,7 @@ export type WorkbenchPage =
 export type MonitorTab = 'issues' | 'ops'
 
 /** 「营销」下的页签（放这里而不是页面内 useState：设置页要能跳过去并直接落在某一屏） */
-export type GrowthTab = 'provider' | 'sources' | 'warehouse' | 'ai' | 'buzz'
+export type GrowthTab = 'provider' | 'warehouse' | 'ai' | 'buzz'
 
 const MONITOR_TAB_KEY = 'cs.monitorTab'
 const GROWTH_TAB_KEY = 'cs.growthTab'
@@ -71,7 +71,8 @@ function persistMonitorTab(tab: MonitorTab): void {
 function readGrowthTab(): GrowthTab {
   try {
     const v = localStorage.getItem(GROWTH_TAB_KEY)
-    return v === 'provider' || v === 'sources' || v === 'ai' || v === 'buzz' ? v : 'warehouse'
+    // 'sources'（采集源）已下线：记住它的用户回落到素材仓库
+    return v === 'provider' || v === 'ai' || v === 'buzz' ? v : 'warehouse'
   } catch {
     return 'warehouse'
   }

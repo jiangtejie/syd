@@ -1,7 +1,7 @@
 /**
  * 营销增长(growth)域共享类型 —— 主进程 / preload / 渲染端 IPC 契约。
- * Phase 0：采集订阅 / 素材仓库 / 链接解析入库 / 数据服务配置。
- * 后续阶段：拆解详情、爆改任务/成品、发布任务、回流快照等类型随功能上线补充。
+ * 素材入库(粘贴链接 / 本地导入) / AI 拆解与爆改 / 发布包导出 / 效果回填 / 舆情。
+ * 注：「第三方采集订阅 + 调度」链路已整体下线，相关类型一并删除。
  */
 
 export type GrowthContentKind = 'image_text' | 'video' | 'unknown'
@@ -92,68 +92,10 @@ export interface GrowthListResult {
   total: number
 }
 
-export type GrowthSourceType = 'thirdparty' | 'official' | 'manual'
-export type GrowthTargetKind = 'keyword' | 'account' | 'topic' | 'rank'
-
-export interface GrowthSubscription {
-  id: number
-  name: string
-  sourceType: GrowthSourceType
-  /** 数据服务商标识(如 chanmama / xhs-newhong), Phase 1 提供适配器 */
-  vendor: string
-  city: string
-  bizType: string
-  targetKind: GrowthTargetKind
-  /** 订阅目标: 关键词/账号/话题/榜单名 */
-  target: string
-  storeId: number | null
-  enabled: boolean
-  /** 自动采集间隔(小时) */
-  intervalHours: number
-  nextAt: number | null
-  lastStatus: string
-  lastAt: number | null
-  lastError: string
-  createdAt: number
-  updatedAt: number
-}
-
-export type GrowthSubscriptionInput = Omit<
-  GrowthSubscription,
-  'id' | 'nextAt' | 'lastStatus' | 'lastAt' | 'lastError' | 'createdAt' | 'updatedAt'
->
-
+/** 素材仓库的规模统计（采集订阅相关字段随该链路下线删除，见 ARCHITECTURE §9） */
 export interface GrowthStats {
   contentCount: number
   assetCount: number
-  subscriptionCount: number
-  /** 自动采集总开关(growth.enabled) */
-  autoEnabled: boolean
-  provider: string
-  providerConfigured: boolean
-  lastCrawlAt: number | null
-  lastCrawlError: string
-}
-
-export interface GrowthCrawlTaskView {
-  id: number
-  subscriptionId: number
-  trigger: 'auto' | 'manual'
-  status: string
-  fetched: number
-  inserted: number
-  error: string
-  startedAt: number
-  endedAt: number | null
-}
-
-/** 采集进度推送(主进程 → 渲染层 cs:growth:progress) */
-export interface GrowthProgressPayload {
-  kind: 'crawl' | 'ingest'
-  subscriptionId?: number
-  status: string
-  detail: string
-  at: number
 }
 
 // ── AI 拆解 / 爆改 / 发布回填(落地批 A/B) ──
@@ -163,13 +105,8 @@ export interface GrowthProgressPayload {
 /** 一次爆改产出的一个输出块(titles 用换行分隔多标题; copy 为单篇正文) */
 export interface GrowthRemixOutputView {
   id: number
-  jobId: number
   contentId: number
   variant: string
-  /** 本次任务使用的爆改风格 */
-  jobMode: string
-  /** 任务创建时间(用于按批次分组展示) */
-  jobCreatedAt: number
   title: string
   copy: string
   complianceHints: string[]

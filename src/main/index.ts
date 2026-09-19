@@ -63,7 +63,6 @@ import { registerLarkHandlers } from './ipc/larkHandlers'
 import { migrateLegacyImAudit } from './db/repos/imAuditRepo'
 import { registerFeishuNotifyHandlers } from './ipc/feishuNotifyHandlers'
 import { startReportScheduler, stopReportScheduler } from './services/report/scheduler'
-import { startGrowthScheduler, stopGrowthScheduler } from './services/growth/scheduler'
 import { createLogger } from './services/logging'
 import { startFileHousekeeping, stopFileHousekeeping } from './services/im/channelFiles'
 import { startMediaHousekeeping, stopMediaHousekeeping } from './services/media/mediaCache'
@@ -421,10 +420,8 @@ if (!app.requestSingleInstanceLock()) {
     // 断电/杀进程/升级重启后这些行不会被任何东西收尾，界面会一直显示「运行中」，
     // 运营以为通道还在跑，实际它再也不会自动跑（数字员工停摆最隐蔽）。
     const rec = reconcileInterruptedTasks(getDb(), processStartedAt)
-    if (rec.imAudit + rec.reportRun + rec.growthCrawl > 0) {
-      appLog.warn(
-        `启动对账：中断任务改判 im_audit ${rec.imAudit} / report_run ${rec.reportRun} / growth_crawl ${rec.growthCrawl}`
-      )
+    if (rec.imAudit + rec.reportRun > 0) {
+      appLog.warn(`启动对账：中断任务改判 im_audit ${rec.imAudit} / report_run ${rec.reportRun}`)
     }
     // 上次是异常退出？写一条 error 日志（设置页日志可查），不再只表现为「软件自己关了」
     const crash = consumeCrashMarker()
@@ -438,6 +435,8 @@ if (!app.requestSingleInstanceLock()) {
     migrateLegacyCacheLayout()
 
     // 敏感配置迁移：存量明文 ai.apiKey 加封为 safeStorage 密文（幂等）
+    // growth.providerApiKey 是已下线的「第三方数据服务商」留下的键。这里保留封存动作
+    // 而不是删掉：老库里可能还躺着明文，封存一次比留在库里强；新库取不到该键，是空操作。
     migrateStoredSecrets([
       'ai.apiKey',
       'growth.providerApiKey',
@@ -498,8 +497,9 @@ if (!app.requestSingleInstanceLock()) {
     startDbHousekeeping()
 
     // 数据上报·定时任务:恢复启用的任务调度
+    // 注: 营销的「采集订阅」调度(startGrowthScheduler)已随该链路下线删除 —— 第三方数据服务
+    // 适配器从未接入，订阅注定失败，留着只是空转心跳。
     startReportScheduler()
-    startGrowthScheduler()
 
     // 微信库变更 → 新消息提醒（节流 + 聚焦抑制）
     setOnDbChangedNotify(notifyNewMessage)
@@ -531,7 +531,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true
   stopReportScheduler()
-  stopGrowthScheduler()
   closeDb()
   stopAllWatches()
   stopIssueScheduler()

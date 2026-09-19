@@ -350,11 +350,86 @@
   color: var(--text-3);
   margin-bottom: 6px;
 }
-.gai-out-imgs {
+/* 候选/产出图：3:4 竖版卡片（生图默认就是竖版，正方形缩略图会把构图裁掉）。
+   图片用 contain：宁可留白也不要裁掉画面，否则用户没法判断封面对不对。 */
+.gai-thumbs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  gap: 8px;
+  margin-top: 8px;
+}
+.gai-thumb {
+  position: relative;
+  width: 76px;
+}
+.gai-thumb-view {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  cursor: zoom-in;
+  overflow: hidden;
+  transition:
+    border-color var(--m-2) var(--ease-out),
+    transform var(--m-2) var(--ease-out);
+}
+.gai-thumb-view:hover {
+  border-color: var(--brand-line);
+  transform: translateY(-1px);
+}
+.gai-thumb-view:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.gai-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.gai-thumb-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 11px;
+  color: var(--text-3);
+}
+/* 角标与导出包同一口径（封面 / 图2 / 图3），用户一眼知道哪张会被命名成封面 */
+.gai-thumb-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  pointer-events: none;
+}
+/* 采用按钮平时隐藏：一屏十几个重复按钮太吵；悬浮或键盘聚焦时才出现 */
+.gai-thumb-adopt {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  padding: 3px 0;
+  font-size: 11px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--brand);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--m-2) var(--ease-out);
+}
+.gai-thumb:hover .gai-thumb-adopt,
+.gai-thumb:focus-within .gai-thumb-adopt {
+  opacity: 1;
 }
 /* 生图策略回显: 模板/平台/比例/张数, 让用户看得出这张图是按什么生成的 */
 .gai-out-strategy {
@@ -363,24 +438,6 @@
   color: var(--text-3);
   margin-bottom: 6px;
   word-break: break-word;
-}
-.gai-img-role {
-  font-size: 11px;
-  color: var(--text-3);
-}
-.gai-out-img {
-  width: 84px;
-  height: 84px;
-  object-fit: cover;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-light);
-  background: var(--bg-hover);
-}
-.gai-img-pick {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: center;
 }
 .gai-cand-line {
   display: flex;
@@ -619,12 +676,6 @@
   box-shadow: var(--lift-2);
   border-color: var(--brand-line);
 }
-.gai-out-img {
-  transition: transform var(--m-2) var(--ease-out);
-}
-.gai-out-img:hover {
-  transform: scale(1.03);
-}
 .gai-thinking {
   display: inline-flex;
   align-items: center;
@@ -709,4 +760,35 @@
 .gai-approval {
   border-radius: var(--r-md);
   animation: gth-pop var(--m-2) var(--ease-spring) both;
+}
+
+/* ── 产出面板的出口条：导出发布包 / 登记发布 / 回素材仓库 ──
+ * 面板本身窄（约 300px），三个按钮横排会挤成一团 —— 允许换行，宁可占两行也别做成省略号。
+ * 标题与按钮同排（原 .gai-out-head 只是一行文字），保证「采用完就能送出去」在视口内。 */
+/* 只有带动作的「产出」头需要 flex（另一处「候选」头是纯文字，别被 space-between 拆开） */
+.gai-out-head.is-acts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gai-out-acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.gai-pub {
+  width: min(880px, 94vw);
+}
+.gai-pub-body {
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+/* 表单在素材详情里是接在「效果历史」下面的，自带分隔线；在弹窗里它是第一个元素，
+   那条虚线和上边距反而像没画完的框，这里去掉。 */
+.gai-pub .gth-ops {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }

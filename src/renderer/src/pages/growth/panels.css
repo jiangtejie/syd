@@ -121,6 +121,33 @@
   transform: translateX(-50%);
   display: flex;
   gap: 10px;
+  align-items: center;
+}
+/* 角标 + 说明放左上角：看大图时不遮主体 */
+.gth-lightbox-info {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  max-width: min(46vw, 520px);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.92);
+}
+.gth-lightbox-badge {
+  flex: none;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.92);
+  color: #111;
+  font-weight: 600;
+}
+.gth-lightbox-note {
+  line-height: 1.6;
+  word-break: break-word;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
 }
 
 /* ── 窄窗口断点 ── */
@@ -148,7 +175,73 @@
   background: #000;
 }
 
-/* ── 门店档案(数据服务 tab) ── */
+/* ── AI 拆解卡(素材详情内) ──
+ * 与「效果登记」同一套分隔线口径：卡片内追加区块一律用虚线分隔，避免看起来像新卡片。 */
+.gth-decomp {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-light);
+}
+.gth-decomp-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+.gth-decomp-h .v {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-4);
+}
+.gth-decomp-row {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text-2);
+  word-break: break-word;
+}
+.gth-decomp-row .k {
+  color: var(--text-4);
+  margin-right: 6px;
+}
+/* 视觉维度单独一块底色：它是图生图「保持」的来源，值得和文字维度区分开 */
+.gth-decomp-vis {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--bg-hover);
+}
+.gth-decomp-vis-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.gth-decomp-vis-h .tag {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--brand);
+  background: var(--brand-soft);
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+}
+.gth-decomp-vis-h .tag.gray {
+  color: var(--text-4);
+  background: var(--bg-panel);
+}
+.gth-decomp-empty {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text-4);
+}
+
+/* ── 门店档案(设置 tab) ── */
 .gai-store-row {
   display: flex;
   align-items: center;

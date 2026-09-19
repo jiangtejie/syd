@@ -18,6 +18,7 @@ import {
 } from '../../../db/repos/growthRepo'
 import { insertMetricSnapshot, listMetricViews } from '../../../db/repos/growthOpsRepo'
 import { buildAnalyzePrompt, parseModelJson } from './prompts'
+import { hasVisualFacts, readVisualFacts } from '../ai/imageStrategy'
 import { createLogger } from '../../logging'
 import type { GrowthMetricView } from '../../../../shared/growth'
 
@@ -58,6 +59,13 @@ async function generateJson(system: string, user: string): Promise<Record<string
   return parsed
 }
 
+/**
+ * 拆解卡的版本。**改了 buildAnalyzePrompt 的输出结构就要把它加一** ——
+ * 建任务时按它判断旧卡要不要重拆（见 ai/taskService），不然老卡永远缺新维度。
+ * v2: 增加 visual（构图/机位/光线/色调/留白/元素/图上文字），供图生图锁定「保持」。
+ */
+export const ANALYZE_VER = 'analyze-v2'
+
 /** 素材 id → 拆解卡落库(growth_decomp); 返回 structure 文本供爆改用 */
 export async function analyzeContent(contentId: number): Promise<string> {
   const item = getContentItem(contentId)
@@ -78,13 +86,15 @@ export async function analyzeContent(contentId: number): Promise<string> {
       : [],
     whyWorks: typeof parsed['whyWorks'] === 'string' ? parsed['whyWorks'] : ''
   }
+  // 视觉维度（模型没给/给空就存 null：宁可不写，也别写一个空对象让下游以为有事实）
+  const visual = readVisualFacts(parsed['visual'])
   setDecomp(contentId, {
-    modelVer: 'analyze-v1',
+    modelVer: ANALYZE_VER,
     structure: structure as unknown as Record<string, unknown>,
-    visual: null,
+    visual: hasVisualFacts(visual) ? (visual as unknown as Record<string, unknown>) : null,
     commentTopics: (structure as { commentTopics: string[] }).commentTopics
   })
-  return JSON.stringify(structure, null, 2)
+  return JSON.stringify(hasVisualFacts(visual) ? { ...structure, visual } : structure, null, 2)
 }
 
 /**

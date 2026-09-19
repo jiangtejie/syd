@@ -55,12 +55,8 @@ import type {
   GrowthContentDetailView,
   GrowthContentFilter,
   GrowthContentItem,
-  GrowthCrawlTaskView,
   GrowthOverview,
-  GrowthProgressPayload,
-  GrowthStats,
-  GrowthSubscription,
-  GrowthSubscriptionInput
+  GrowthStats
 } from '../shared/growth'
 
 // Custom APIs for renderer
@@ -1021,40 +1017,6 @@ const api: PreloadApi = {
         ipcRenderer.invoke('cs:growth:patchContent', id, patch),
       removeContent: (id: number): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('cs:growth:removeContent', id),
-      listSubscriptions: (): Promise<{
-        ok: boolean
-        subscriptions?: GrowthSubscription[]
-        error?: string
-      }> => ipcRenderer.invoke('cs:growth:listSubscriptions'),
-      saveSubscription: (
-        input: GrowthSubscriptionInput & { id?: number }
-      ): Promise<{
-        ok: boolean
-        id?: number
-        error?: string
-      }> => ipcRenderer.invoke('cs:growth:saveSubscription', input),
-      setSubscriptionEnabled: (
-        id: number,
-        enabled: boolean
-      ): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:growth:setSubscriptionEnabled', id, enabled),
-      deleteSubscription: (id: number): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:growth:deleteSubscription', id),
-      runCrawl: (
-        id: number
-      ): Promise<{
-        ok: boolean
-        fetched?: number
-        inserted?: number
-        error?: string
-      }> => ipcRenderer.invoke('cs:growth:runCrawl', id),
-      recentTasks: (
-        limit?: number
-      ): Promise<{
-        ok: boolean
-        tasks?: GrowthCrawlTaskView[]
-        error?: string
-      }> => ipcRenderer.invoke('cs:growth:recentTasks', limit),
       copyClipboard: (payload: {
         text?: string
         relPath?: string
@@ -1109,25 +1071,7 @@ const api: PreloadApi = {
       ): Promise<{ ok: boolean; added?: number; failed?: number; error?: string }> =>
         ipcRenderer.invoke('cs:growth:redownloadMedia', id),
       overview: (): Promise<{ ok: boolean; overview?: GrowthOverview; error?: string }> =>
-        ipcRenderer.invoke('cs:growth:overview'),
-      configGet: (): Promise<{
-        ok: boolean
-        autoEnabled?: boolean
-        provider?: string
-        providerApiKey?: string
-        error?: string
-      }> => ipcRenderer.invoke('cs:growth:configGet'),
-      configSet: (
-        field: 'autoEnabled' | 'provider' | 'providerApiKey',
-        value: string
-      ): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:growth:configSet', field, value),
-      onProgress: (callback: (payload: GrowthProgressPayload) => void): (() => void) => {
-        const listener = (_e: Electron.IpcRendererEvent, payload: GrowthProgressPayload): void =>
-          callback(payload)
-        ipcRenderer.on('cs:growth:progress', listener)
-        return () => ipcRenderer.removeListener('cs:growth:progress', listener)
-      }
+        ipcRenderer.invoke('cs:growth:overview')
     },
 
     growthai: {

@@ -73,6 +73,27 @@
   border-radius: var(--r-md);
 }
 
+/* 面板标题里的「跳去别的页面」按钮：靠右、比正文小一档，别抢标题的视线。
+   不直接用 ui-btn：它的 13px/6px14px 在标题行里会撑高整行。 */
+.db-panel-act {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.db-panel-act:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
 /* 会话构成附加说明（置顶/折叠） */
 .db-comp-note {
   font-size: 12px;
