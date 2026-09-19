@@ -221,6 +221,12 @@ function GroupIssuesPanel(): React.JSX.Element {
   const analyzedAt = useWorkbenchStore((s) => s.groupAnalyzedAt)
   const days = useWorkbenchStore((s) => s.groupDays)
   const coverage = useWorkbenchStore((s) => s.groupCoverage)
+  /**
+   * 覆盖条数：状态行可能只带 truncated 而没带 msgs（历史行 / 半截状态 / 老库迁移过来的行），
+   * 直接拼进文案会把「覆盖 undefined 条」打到界面上（实测复现）。
+   * 取不到就整段不显示，title 也退回通用说明。
+   */
+  const covMsgs = Number.isFinite(coverage?.msgs) ? Number(coverage?.msgs) : null
   const setDays = useWorkbenchStore((s) => s.setGroupDays)
   const activeDetail = useWorkbenchStore((s) => s.groupActiveDetail)
   const detailLoading = useWorkbenchStore((s) => s.groupDetailLoading)
@@ -606,14 +612,16 @@ function GroupIssuesPanel(): React.JSX.Element {
           <span
             className="gip-meta"
             title={
-              coverage?.truncated
-                ? `本群消息超过单次扫描上限，本次只分析了最新的 ${coverage.msgs} 条：窗口内更早的消息未覆盖，可用「重新分析」缩小窗口或分批处理`
-                : '本次分析实际读取并参与提取的消息条数'
+              covMsgs !== null && coverage?.truncated
+                ? `本群消息超过单次扫描上限，本次只分析了最新的 ${covMsgs} 条：窗口内更早的消息未覆盖，可用「重新分析」缩小窗口或分批处理`
+                : covMsgs !== null
+                  ? '本次分析实际读取并参与提取的消息条数'
+                  : '本次分析的时间与覆盖情况'
             }
           >
             {analyzedAt ? `${fmtTime(analyzedAt)} · ` : ''}
             {methodHint}
-            {coverage ? ` · 覆盖 ${coverage.msgs} 条` : ''}
+            {covMsgs !== null ? ` · 覆盖 ${String(covMsgs)} 条` : ''}
             {coverage?.truncated ? ' · 条数超限未覆盖全窗口' : ''}
           </span>
         )}
