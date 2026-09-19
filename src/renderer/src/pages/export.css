@@ -2,7 +2,10 @@
  *
  * 控件外观（按钮/输入/页签/胶囊/链接）已迁到全局 ui-*（见 assets/base.css），
  * 这里只保留本页**布局**（宽度、flex、栅格）—— 别再把按钮长什么样写第二份。
- */
+ *
+ * 2026-09 排版调整：字号归一到 assets/base.css 的 --fs-* 六档；左右两栏从 5:4 改成 1.5:1
+ * （会话列表是主战场，设置项是辅助）；导出设置栏 sticky 粘住，滚列表时主按钮不会跑出视野；
+ * 分组之间用一条淡分隔线，不再只靠间距暗示。 */
 
 .exp-page {
   max-width: 1520px;
@@ -11,13 +14,13 @@
 .exp-tabs {
   display: flex;
   gap: 8px;
-  margin: 4px 0 14px;
+  margin: 4px 0 var(--sp-4);
 }
 
 .exp-empty {
   color: var(--text-3);
-  font-size: 13px;
-  padding: 24px 8px;
+  font-size: var(--fs-md);
+  padding: var(--sp-6) var(--sp-2);
   text-align: center;
 }
 
@@ -32,13 +35,13 @@
 }
 
 .exp-empty-title {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text-1);
 }
 
 .exp-empty-desc {
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   max-width: 420px;
   line-height: 1.7;
@@ -46,13 +49,13 @@
 
 .exp-chat-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 5fr) minmax(300px, 4fr);
-  gap: 14px;
+  grid-template-columns: minmax(360px, 3fr) minmax(300px, 2fr);
+  gap: var(--sp-4);
   align-items: start;
 }
 
 .exp-sessions {
-  padding: 12px;
+  padding: var(--sp-3);
 }
 
 .exp-toolbar {
@@ -76,10 +79,10 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  font-size: 12.5px;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
   color: var(--text-2);
-  padding: 4px 2px 8px;
+  padding: var(--sp-1) 2px var(--sp-2);
   border-bottom: 1px solid var(--border-light);
 }
 
@@ -91,7 +94,7 @@
 
 .exp-sess-count b {
   color: var(--brand);
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .exp-check {
@@ -101,8 +104,9 @@
   cursor: pointer;
 }
 
+/* 列表自带滚动（窗口化按这里的可视高度算切片）：跟着视口走，一屏尽量多列几行 */
 .exp-sess-list {
-  max-height: 460px;
+  max-height: clamp(300px, calc(100vh - 300px), 760px);
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -135,14 +139,14 @@
 }
 
 .exp-sess-name {
-  font-size: 13px;
+  font-size: var(--fs-md);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .exp-sess-sub {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -151,27 +155,38 @@
 
 .exp-tag {
   font-style: normal;
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
   padding: 0 5px;
   margin-right: 5px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-sm);
   background: var(--info-soft);
   color: var(--info);
 }
 
+/* 设置栏：粘住，列表再长主按钮也在视野里 */
 .exp-opts {
-  padding: 14px;
+  padding: var(--sp-4);
+  position: sticky;
+  top: 0;
 }
 
+/* 分组标题：第 2 组起加一条淡分隔线 —— 分组靠线，不靠大间距 */
 .exp-section-title {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--text-2);
-  margin: 12px 0 8px;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  margin: var(--sp-4) 0 var(--sp-2);
 }
 
 .exp-section-title:first-child {
   margin-top: 0;
+}
+
+.exp-opts > .exp-section-title ~ .exp-section-title {
+  border-top: 1px solid var(--border-light);
+  padding-top: var(--sp-3);
 }
 
 .exp-pill-row {
@@ -183,23 +198,23 @@
 .exp-date-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  font-size: 12px;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 
 .exp-folder-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 4px 0 14px;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-4);
 }
 
 .exp-folder {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   background: var(--bg);
   border-radius: var(--r-sm);
@@ -211,14 +226,17 @@
 
 .exp-go {
   width: 100%;
-  margin-top: 4px;
+  margin-top: var(--sp-2);
+  height: 36px;
+  font-size: var(--fs-md);
 }
 
+/* 辅助说明：一行细字，不要抢主按钮的注意力 */
 .exp-hint {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   line-height: 1.6;
-  margin: 8px 0 4px;
+  margin: var(--sp-2) 0 var(--sp-1);
 }
 
 .exp-progress {
@@ -235,7 +253,7 @@
 }
 
 .exp-progress-text {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   min-width: 0;
 }
@@ -254,8 +272,8 @@
 }
 
 .exp-result {
-  margin-top: 14px;
-  font-size: 12.5px;
+  margin-top: var(--sp-4);
+  font-size: var(--fs-sm);
   color: var(--success-strong);
 }
 

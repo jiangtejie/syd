@@ -1,14 +1,16 @@
-/* ── 表格行(素材 / 产出 各自列模板) ── */
+/* ── 表格行(素材 / 产出 各自列模板) ──
+ * 2026-09 密度调整：行高 9px→7px 内边距（行高约 40px）、表头贴一条浅底不带下边框、
+ * 表头与数字列右对齐/等宽数字 —— 一屏能多看两行，扫数字时不再左右跳。 */
 .gth-list {
   border: 1px solid var(--border-light);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   overflow: hidden;
 }
 .gth-row {
   display: grid;
   align-items: center;
-  gap: 12px;
-  padding: 9px 12px;
+  gap: var(--sp-3);
+  padding: 7px 12px;
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-panel);
   min-width: 0;
@@ -18,10 +20,51 @@
 }
 .gth-row.is-head {
   background: var(--bg-hover);
-  font-size: 12px;
+  border-bottom: 0;
+  font-size: var(--fs-xs);
   color: var(--text-3);
-  padding-top: 7px;
-  padding-bottom: 7px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+/* 互动表头：四个等宽小格，与行内 .gth-eng 的列对齐 */
+.gth-eng-head {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+.gth-eng-head em {
+  font-style: normal;
+  text-align: right;
+}
+/* 行内互动：四格等宽、右对齐、等宽数字 —— 0 值压暗，一眼看出哪项没数据 */
+.gth-eng {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.gth-eng > span {
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gth-eng > span:first-child {
+  color: var(--text-1);
+}
+.gth-time {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gth-score {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
 }
 .gth-row.is-head:hover {
   background: var(--bg-hover);
@@ -33,7 +76,8 @@
   grid-template-columns: minmax(220px, 1fr) 88px 130px 170px;
 }
 .gth-row--item {
-  grid-template-columns: minmax(240px, 1fr) 108px 150px 150px 64px auto;
+  /* 列宽固定：标题撑满，其余定宽（此前互动列 108px 装 "1200/210/33/12" 会被挤成两行） */
+  grid-template-columns: minmax(240px, 1fr) 104px 168px 116px 64px 76px;
 }
 .gth-row.clickable {
   cursor: pointer;
@@ -72,7 +116,7 @@
   flex: none;
 }
 .gth-main .s {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   margin-top: 2px;
   overflow: hidden;

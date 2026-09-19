@@ -33,31 +33,15 @@
   line-height: 1.7;
 }
 
-/* ── 指标卡(风格对齐数据看板 db-card) ── */
+/* ── 指标条（紧凑一行；原型是「两张居中的大卡」，已在 polish.css 收敛为 36px 的指标） ── */
 .gth-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-.gth-metric {
-  text-align: center;
-  padding: 13px 8px 12px;
-}
-.gth-metric-num {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1a1a1a;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
 }
 .gth-metric-num.muted {
   color: var(--text-4);
-}
-.gth-metric-label {
-  font-size: 12px;
-  color: var(--text-3);
-  margin-top: 3px;
 }
 
 /* ── 徽标 ── */

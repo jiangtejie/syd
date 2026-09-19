@@ -39,27 +39,32 @@ export function IcMetricMedia(): React.JSX.Element {
   )
 }
 
+/**
+ * 素材规模指标。
+ *
+ * 布局口径（2026-09）：从「两张 ~92px 高的大卡」压成一行 36px 的紧凑指标 ——
+ * 它们说的是「有多少素材」，不值得占掉近 100px 的首屏高度；省下的高度给列表与表单。
+ * 数字与标签同排（值在前、名字在后），视线一次扫完。
+ */
 export function StatsBar({ stats }: StatsBarProps): React.JSX.Element {
   const contentCount = useCountUp(stats ? stats.contentCount : null)
   const assetCount = useCountUp(stats ? stats.assetCount : null)
   return (
-    <>
-      <div className={'gth-cards'}>
-        <div className={'page-card gth-metric'}>
-          <span className={'gth-metric-ic'}>
-            <IcMetricBox />
-          </span>
-          <div className={'gth-metric-num'}>{contentCount ?? '—'}</div>
-          <div className={'gth-metric-label'}>仓库素材</div>
-        </div>
-        <div className={'page-card gth-metric tone-violet'}>
-          <span className={'gth-metric-ic'}>
-            <IcMetricMedia />
-          </span>
-          <div className={'gth-metric-num'}>{assetCount ?? '—'}</div>
-          <div className={'gth-metric-label'}>媒体文件</div>
-        </div>
+    <div className={'gth-cards'}>
+      <div className={'page-card gth-metric'}>
+        <span className={'gth-metric-ic'}>
+          <IcMetricBox />
+        </span>
+        <span className={'gth-metric-num'}>{contentCount ?? '—'}</span>
+        <span className={'gth-metric-label'}>仓库素材</span>
       </div>
-    </>
+      <div className={'page-card gth-metric tone-violet'}>
+        <span className={'gth-metric-ic'}>
+          <IcMetricMedia />
+        </span>
+        <span className={'gth-metric-num'}>{assetCount ?? '—'}</span>
+        <span className={'gth-metric-label'}>媒体文件</span>
+      </div>
+    </div>
   )
 }

@@ -83,25 +83,18 @@
     transform: translateY(-3px);
   }
 }
+/* 页头：从「渐变卡片 + 双层标题」收敛为一条工具条。
+ * 改这版的原因：原先是双径向渐变 + 顶部高光 + 38px 渐变 logo 方块 + 17px 标题 + 一行副标题，
+ * 底下再跟一排 30px 高的渐变药丸页签 —— 一屏里三个焦点互相抢，第一眼不知道该看哪。
+ * 现在只有一个焦点（页签当前位置），装饰全部让位给信息。 */
 .gth-hero {
   position: relative;
-  overflow: hidden;
-  margin-bottom: 16px;
-  padding: 16px 18px 12px;
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
   border: 1px solid var(--border-light);
-  border-radius: var(--r-card);
-  background:
-    radial-gradient(130% 150% at 0% 0%, rgba(7, 193, 96, 0.13), transparent 58%),
-    radial-gradient(120% 140% at 100% 0%, rgba(60, 130, 246, 0.1), transparent 55%), var(--bg-panel);
-  box-shadow: var(--lift-1);
+  border-radius: var(--r-lg);
+  background: var(--bg-panel);
   animation: gth-fade-up var(--m-3) var(--ease-out) both;
-}
-.gth-hero::after {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9), transparent);
 }
 .gth-hero-top {
   display: flex;
@@ -111,15 +104,14 @@
 }
 .gth-hero-logo {
   flex: none;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  background: linear-gradient(135deg, #10d473, #07a84f 60%, #0b8f6a);
-  box-shadow: 0 8px 18px -8px rgba(7, 193, 96, 0.75);
+  color: var(--brand);
+  background: var(--brand-soft);
 }
 .gth-hero-logo svg {
   display: block;
@@ -129,14 +121,14 @@
 }
 .gth-hero .page-title {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--fs-xl);
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text-1);
 }
 .gth-hero .page-subtitle {
-  margin: 3px 0 0;
-  font-size: 12px;
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -146,24 +138,36 @@
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex: none;
+}
+/* 页签行：左边页签、右边一行说明（说明随页签变，单行省略） */
+.gth-hero-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.gth-hero-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* 注: 原 .gth-hero-chip（.dot/.on/.warn 三个变体）随采集链路下线删除 —— 它只被页头那两个
    「自动采集运行中/未开启」与「最近采集」胶囊用过，全仓已无引用。 */
 .gth-seg {
   display: inline-flex;
   align-items: center;
-  margin: 14px 0 0;
-  padding: 3px;
-  gap: 4px;
-  /* 毛玻璃改「半透明底 + 描边」模拟：去掉 backdrop-filter */
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  box-shadow:
-    inset 0 1px 2px rgba(31, 35, 41, 0.04),
-    0 1px 2px rgba(31, 35, 41, 0.04);
+  margin: var(--sp-3) 0 0;
+  padding: 2px;
+  gap: 2px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
 }
 .gth-seg-btn {
   display: inline-flex;
@@ -172,56 +176,49 @@
   border: 0;
   background: transparent;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   cursor: pointer;
-  animation: gth-fade-in var(--m-2) var(--ease-out) both;
-  animation-delay: calc(var(--i, 0) * 45ms);
-  height: 30px;
-  padding: 0 16px;
-  border-radius: var(--r-pill);
+  height: 26px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
   transition:
-    background var(--m-2) var(--ease-out),
-    color var(--m-2) var(--ease-out),
-    transform var(--m-1) var(--ease-out),
-    box-shadow var(--m-2) var(--ease-out);
+    background var(--m-1) var(--ease-out),
+    color var(--m-1) var(--ease-out);
 }
 .gth-seg-btn:hover {
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.85);
-}
-.gth-seg-btn:active {
-  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.7);
 }
 .gth-seg-btn.is-active {
-  background: linear-gradient(135deg, #10d473, #07a84f);
-  color: #fff;
+  background: var(--bg-panel);
+  color: var(--brand);
   font-weight: 600;
-  box-shadow: 0 6px 16px -8px rgba(7, 193, 96, 0.9);
+  box-shadow: var(--shadow-card);
 }
 .gth-seg-btn.is-active:hover {
-  background: linear-gradient(135deg, #12dd7a, #07b356);
+  color: var(--brand-hover);
 }
 .gth-seg-hint {
-  margin-left: 10px;
-  font-size: 12px;
+  margin-left: var(--sp-3);
+  font-size: var(--fs-xs);
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--text-4);
 }
+/* 卡片：平面化。原来 hover 会同时抬阴影 + 上移 1px，一屏十来张卡时整页都在动，
+ * 而且 14px 圆角 + 双层阴影与别的页面（10px / 单层）对不上。现在统一 r-lg + 一档浅描边，
+ * hover 只改描边色 —— 交互反馈还在，噪音没了。 */
 .gth-page .page-card {
-  border-radius: var(--r-card);
+  border-radius: var(--r-lg);
   border-color: var(--border-light);
-  box-shadow: var(--lift-1);
+  box-shadow: var(--shadow-card);
   transition:
-    box-shadow var(--m-2) var(--ease-out),
     border-color var(--m-2) var(--ease-out),
-    transform var(--m-2) var(--ease-out);
+    box-shadow var(--m-2) var(--ease-out);
 }
 .gth-page .gth-card:hover {
-  border-color: #dfe3e9;
-  box-shadow: var(--lift-2);
-  transform: translateY(-1px);
+  border-color: var(--border);
 }
 .gth-card {
   animation: gth-fade-up var(--m-3) var(--ease-out) both;
@@ -237,64 +234,57 @@
 .gth-cards {
   gap: 12px;
 }
+/* 指标：原来是一张 ~92px 高的大卡（30px 彩色图标块 + 26px 数字 + 径向渐变底）装一个数字，
+ * 一屏光这两张卡就吃掉近 100px，而它们说的只是「有多少素材」。改成一行内的紧凑指标：
+ * 图标 20px、数字与小标签同一行，高度约 36px。省下来的高度全给列表与表单。 */
 .gth-metric {
-  position: relative;
-  overflow: hidden;
-  padding: 14px 14px 13px;
+  padding: var(--sp-2) var(--sp-3);
   text-align: left;
-  border-radius: var(--r-card);
+  border-radius: var(--r-md);
   background: var(--bg-panel);
-}
-.gth-metric::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  opacity: 0.5;
-  background: radial-gradient(
-    120% 120% at 0% 0%,
-    var(--metric-tint, rgba(7, 193, 96, 0.14)),
-    transparent 62%
-  );
-  pointer-events: none;
-}
-.gth-metric > * {
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 36px;
 }
 .gth-metric-ic {
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   color: var(--metric-color, var(--brand));
   background: var(--metric-tint, var(--brand-soft));
-  margin-bottom: 10px;
 }
+.gth-metric-ic svg {
+  width: 13px;
+  height: 13px;
+}
+/* 数字与标签同一行：值在前、名字在后，视线一次扫完（原来是上下两行） */
 .gth-metric-num {
-  font-size: 25px;
-  font-weight: 700;
-  line-height: 1.1;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.2;
   color: var(--text-1);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
 }
 .gth-metric-label {
-  margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 .gth-metric.tone-blue {
-  --metric-color: #2f6fed;
-  --metric-tint: rgba(60, 130, 246, 0.14);
+  --metric-color: var(--info);
+  --metric-tint: var(--info-soft);
 }
 .gth-metric.tone-violet {
-  --metric-color: #7a4ff0;
-  --metric-tint: rgba(122, 79, 240, 0.14);
+  --metric-color: var(--text-2);
+  --metric-tint: var(--bg-hover);
 }
 .gth-metric.tone-amber {
-  --metric-color: #b8791a;
-  --metric-tint: rgba(245, 166, 35, 0.18);
+  --metric-color: var(--warn-text);
+  --metric-tint: var(--warn-soft);
 }
 .gth-row {
   transition:

@@ -642,9 +642,14 @@ export function WarehousePanel({
               </span>
               <span>标题 / 内容</span>
               <span>平台 / 形态</span>
-              <span className={'gth-num'}>互动(赞/藏/评/转)</span>
+              <span className={'gth-eng-head'}>
+                <em>赞</em>
+                <em>藏</em>
+                <em>评</em>
+                <em>转</em>
+              </span>
               <span>入库时间</span>
-              <span>爆款分</span>
+              <span className={'gth-col-right'}>爆款分</span>
               <span className={'gth-col-right'}>用途</span>
             </div>
             {items.map((it, i) => (
@@ -680,12 +685,25 @@ export function WarehousePanel({
                     {ORIGIN_LABEL[it.origin] ?? it.origin} · {KIND_LABEL[it.kind] ?? it.kind}
                   </Badge>
                 </div>
-                <div className={'gth-num'}>
-                  {fmtNum(it.interactions.likes)}/{fmtNum(it.interactions.collects)}/
-                  {fmtNum(it.interactions.comments)}/{fmtNum(it.interactions.shares)}
+                {/* 互动拆成四格：此前是 1200/210/33/12 一串，读不出哪个是赞（列头也只写「赞/藏/评/转」） */}
+                <div className={'gth-eng'}>
+                  {(
+                    [
+                      ['赞', it.interactions.likes],
+                      ['藏', it.interactions.collects],
+                      ['评', it.interactions.comments],
+                      ['转', it.interactions.shares]
+                    ] as Array<[string, number]>
+                  ).map(([label, n]) => (
+                    <span key={label} title={label + ' ' + fmtNum(n)}>
+                      {fmtNum(n)}
+                    </span>
+                  ))}
                 </div>
-                <div className={'gth-num'}>{fmt(it.createdAt)}</div>
-                <div className={'gth-num'}>{it.score > 0 ? it.score : '—'}</div>
+                <div className={'gth-time'}>{fmt(it.createdAt)}</div>
+                <div className={'gth-col-right gth-score'}>
+                  {it.score > 0 ? Math.round(it.score) : '—'}
+                </div>
                 <div className={'gth-col-right'}>
                   <Badge tone={it.usage === 'ref' ? 'gray' : 'green'}>
                     {USAGE_LABEL[it.usage] ?? it.usage}

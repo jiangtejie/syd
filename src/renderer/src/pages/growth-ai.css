@@ -2,8 +2,15 @@
 
 .gai-page {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 320px;
-  gap: 12px;
+  grid-template-columns: 296px minmax(0, 1fr) 316px;
+  /* 栏间不再各留 12px 间距：分隔线在栏内，gap 只留 0（否则线和线之间又是一道空隙） */
+  gap: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  padding: 0 var(--sp-1);
   /* 210px = 应用头 + 页面标题 + 分段页签 + 四个统计卡(实测 115.5 + 14 下边距 = 129.5px)。
      统计卡在 AI 工作台这一屏不再渲染(见 GrowthPage)，所以这里把这 129.5px 还给对话区。 */
   height: calc(100vh - 80px);
@@ -21,12 +28,15 @@
   --r-card: 14px;
 }
 
-/* ── 左: 任务列表 ── */
+/* ── 左: 任务列表 ──
+ * 2026-09 边界调整：三栏此前各是一张 1px 描边 + 圆角的卡片，一屏三层边框把内容压得很碎。
+ * 现在三栏共用一张面板（.gai-page 是那块面板），栏与栏之间只用一条淡分隔线 ——
+ * 结构靠留白与分隔线，不靠一圈圈描边。 */
 .gai-tasks {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 8px;
+  background: transparent;
+  padding: var(--sp-2);
+  padding-right: var(--sp-3);
+  border-right: 1px solid var(--border-light);
   overflow-y: auto;
   min-width: 0;
 }
@@ -34,10 +44,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-1);
-  padding: 2px 4px 8px;
+  padding: 2px 4px var(--sp-2);
 }
 .gai-tasks-head > span:first-child {
   margin-right: auto;
@@ -164,9 +174,7 @@
 
 /* ── 中: 对话 ── */
 .gai-main {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  background: transparent;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -320,10 +328,10 @@
 
 /* ── 右: 产出面板 ── */
 .gai-output {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 8px;
+  background: transparent;
+  border-left: 1px solid var(--border-light);
+  padding: var(--sp-2);
+  padding-left: var(--sp-3);
   overflow-y: auto;
   min-width: 0;
 }
@@ -650,12 +658,10 @@
 .gai-task:hover {
   background: var(--bg-hover);
   border-color: var(--border-light);
-  transform: translateX(2px);
 }
 .gai-task.is-active {
-  background: linear-gradient(90deg, var(--brand-soft), transparent 70%);
+  background: var(--brand-soft);
   border-left-color: var(--brand);
-  box-shadow: var(--lift-1);
 }
 .gai-task-cover {
   transition: transform var(--m-2) var(--ease-out);
@@ -674,9 +680,7 @@
   animation: gth-pop var(--m-2) var(--ease-out) both;
 }
 .gai-out-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--lift-2);
-  border-color: var(--brand-line);
+  border-color: var(--border);
 }
 .gai-thinking {
   display: inline-flex;

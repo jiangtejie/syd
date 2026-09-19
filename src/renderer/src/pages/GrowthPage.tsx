@@ -30,13 +30,17 @@ import './growth/polish.css'
  * 面板实现见 components/growth/{common,StatsBar,WarehousePanel,BuzzPanel,StoresCard,MediaGallery}.tsx。
  */
 
+/**
+ * 每个页签一句话（**必须是一行**，页头右侧单行省略显示）。
+ *
+ * 此前这里是 40~90 字的长句，渲染出来要占两行、把页头撑成一块；
+ * 细节说明放各屏自己的空态里（那里才是用户真正需要它的时候）。
+ */
 const TAB_DESC: Record<GrowthTab, string> = {
-  buzz: '门店舆情监控: 跟踪抖音/小红书上的门店相关内容, 结合正文与评论区高赞做情绪评级与根因诊断',
-  ai: '任务式爆改工作台: 左边素材任务列表, 右边与 AI 对话逐项改标题/正文/配图, 右侧产出面板点选采用',
-  warehouse:
-    '本地爆款素材仓库: 粘贴链接/口令入库、检索与筛选、批量改用途/状态/删除、批量导出发布包; AI 拆解与爆改在「AI 工作台」进行(详情里可一键跳过去)',
-  provider:
-    '营销域的全部设置: 门店与品牌档案(AI 的事实来源)、AI 生图通道与生图策略。数据服务商订阅与联网搜索已下线'
+  warehouse: '粘贴链接入库、检索筛选、批量导出发布包',
+  ai: '与 AI 对话逐项改标题/正文/配图，产出点选采用',
+  buzz: '门店相关内容的情绪评级与根因诊断',
+  provider: '门店与品牌档案、AI 生图通道与生图策略'
 }
 
 export default function GrowthPage(): React.JSX.Element {
@@ -118,10 +122,7 @@ export default function GrowthPage(): React.JSX.Element {
               <path d={'M4 20h16'} />
             </svg>
           </span>
-          <div className={'gth-hero-text'}>
-            <h2 className={'page-title'}>营销</h2>
-            <div className={'page-subtitle'}>{TAB_DESC[tab]}</div>
-          </div>
+          <h2 className={'page-title'}>营销</h2>
           <div className={'gth-hero-side'}>
             {/* 注: 原「自动采集运行中/未开启」与「最近采集」两个胶囊随采集链路下线删除 */}
             <button
@@ -134,25 +135,28 @@ export default function GrowthPage(): React.JSX.Element {
             </button>
           </div>
         </div>
-        <div className={'gth-seg'}>
-          {(['warehouse', 'ai', 'buzz', 'provider'] as GrowthTab[]).map((k, i) => (
-            <button
-              key={k}
-              type={'button'}
-              className={'gth-seg-btn' + (tab === k ? ' is-active' : '')}
-              style={{ '--i': i } as React.CSSProperties}
-              onClick={() => setTab(k)}
-            >
-              {k === 'warehouse'
-                ? '素材仓库'
-                : k === 'ai'
-                  ? 'AI 工作台'
-                  : k === 'buzz'
-                    ? '舆情'
-                    : '设置'}
-            </button>
-          ))}
-          <span className={'gth-seg-hint'}>设置 = 门店与品牌档案 / AI 生图</span>
+        {/* 页签 + 一行说明：说明随页签变，右侧单行省略（长说明会把页头撑成两行） */}
+        <div className={'gth-hero-tabs'}>
+          <div className={'gth-seg'}>
+            {(['warehouse', 'ai', 'buzz', 'provider'] as GrowthTab[]).map((k, i) => (
+              <button
+                key={k}
+                type={'button'}
+                className={'gth-seg-btn' + (tab === k ? ' is-active' : '')}
+                style={{ '--i': i } as React.CSSProperties}
+                onClick={() => setTab(k)}
+              >
+                {k === 'warehouse'
+                  ? '素材仓库'
+                  : k === 'ai'
+                    ? 'AI 工作台'
+                    : k === 'buzz'
+                      ? '舆情'
+                      : '设置'}
+              </button>
+            ))}
+          </div>
+          <span className={'gth-hero-desc'}>{TAB_DESC[tab]}</span>
         </div>
       </div>
       {/* 四个统计卡(仓库素材/采集订阅/媒体文件/数据服务商)说的是"采集管线健康度"，
