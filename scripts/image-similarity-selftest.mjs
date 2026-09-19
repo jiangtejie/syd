@@ -40,12 +40,24 @@ try {
     format: 'cjs',
     outfile: bundle
   })
-  const { meanAbsDiff, looksLikeEcho, ECHO_MAD_THRESHOLD, SIG_SIZE } = require(bundle)
+  const {
+    meanAbsDiff,
+    looksLikeEcho,
+    looksRebuilt,
+    diffLevel,
+    ECHO_MAD_THRESHOLD,
+    REBUILD_MAD_THRESHOLD,
+    SIG_SIZE
+  } = require(bundle)
 
   console.log('基本量：')
   ok(SIG_SIZE === 16, '签名边长 16（256 个采样点）', String(SIG_SIZE))
   ok(meanAbsDiff([10, 20], [10, 20]) === 0, '同一张图 MAD = 0')
-  ok(meanAbsDiff([0, 0], [10, 10]) === 10, '差 10 的两张 MAD = 10', String(meanAbsDiff([0, 0], [10, 10])))
+  ok(
+    meanAbsDiff([0, 0], [10, 10]) === 10,
+    '差 10 的两张 MAD = 10',
+    String(meanAbsDiff([0, 0], [10, 10]))
+  )
   ok(Number.isNaN(meanAbsDiff([], [])), '空输入返回 NaN（不假装算出 0）')
 
   console.log('判据两头：')
@@ -56,10 +68,16 @@ try {
     '内容真的换了（明暗整体反转）→ 不报，避免天天误报'
   )
   ok(
-    looksLikeEcho(withBlock(40, 200), withBlock(40, 200).map((v) => v + 30)) === false,
+    looksLikeEcho(
+      withBlock(40, 200),
+      withBlock(40, 200).map((v) => v + 30)
+    ) === false,
     '整体调色变化 30 → 不报'
   )
-  ok(looksLikeEcho([], []) === false && looksLikeEcho([1], [1, 2]) === false, '取不到签名/长度不一致 → 不报警')
+  ok(
+    looksLikeEcho([], []) === false && looksLikeEcho([1], [1, 2]) === false,
+    '取不到签名/长度不一致 → 不报警'
+  )
   ok(
     ECHO_MAD_THRESHOLD > 0 && ECHO_MAD_THRESHOLD < 10,
     '阈值落在合理区间（既不放过几乎一致，也不误伤正常改写）',
@@ -67,6 +85,45 @@ try {
   )
   ok(looksLikeEcho(flat(0), flat(ECHO_MAD_THRESHOLD + 1)) === false, '刚好超过阈值就不报（边界）')
   ok(looksLikeEcho(flat(0), flat(ECHO_MAD_THRESHOLD - 1)) === true, '刚好低于阈值就报（边界）')
+
+  /**
+   * 反方向：最小改造被做成整张重画。
+   * 营销改造的默认口径是"只换品牌/事实、其余保留"，重画会把原图的意思整个抹掉，
+   * 而这种失败同样是 200 + 一张好看的图 —— 不查就发现不了。
+   */
+  console.log('整张重画判据（最小改造的护栏）：')
+  ok(
+    looksRebuilt(withBlock(40, 200), withBlock(120, 60)) === true,
+    '★ 内容整体反转（明暗互换）→ 判为疑似整张重画'
+  )
+  ok(looksRebuilt(withBlock(), withBlock()) === false, '同一张图 → 不报')
+  ok(
+    looksRebuilt(withBlock(40, 200), withBlock(42, 203)) === false,
+    '★ 只改了一小块（局部换字/换店名）→ 不报（这正是我们要的改造）'
+  )
+  ok(
+    looksRebuilt([], []) === false && looksRebuilt([1], [1, 2]) === false,
+    '取不到签名/长度不一致 → 不报警'
+  )
+  ok(
+    REBUILD_MAD_THRESHOLD > ECHO_MAD_THRESHOLD * 5,
+    '两条阈值分得开（回传阈值 << 重画阈值），不会两边同时报',
+    String(ECHO_MAD_THRESHOLD) + ' vs ' + String(REBUILD_MAD_THRESHOLD)
+  )
+  ok(
+    looksRebuilt(flat(0), flat(REBUILD_MAD_THRESHOLD + 1)) === true,
+    '刚好超过重画阈值就报（边界）'
+  )
+  ok(
+    looksRebuilt(flat(0), flat(REBUILD_MAD_THRESHOLD - 1)) === false,
+    '刚好低于重画阈值不报（边界）'
+  )
+  ok(
+    diffLevel(withBlock(), withBlock()) === 0 &&
+      diffLevel(withBlock(40, 200), withBlock(120, 60)) > 20,
+    'diffLevel 给出可读的差异百分比'
+  )
+  ok(diffLevel([], []) === -1, '取不到签名 → -1（回执里不写假数字）')
 } finally {
   try {
     rmSync(work, { recursive: true, force: true })

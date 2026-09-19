@@ -104,6 +104,15 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
         type: 'number',
         desc: '内容参考图 assetId（本店实拍图：结果里的菜品与场景以它为准。与 referenceAssetId 一起给 = 图1 结构 + 图2 内容）'
       },
+      editScope: {
+        type: 'enum',
+        enum: ['minimal', 'restructure', 'regenerate'],
+        desc:
+          '改写粒度（给了 referenceAssetId 才有意义）：minimal=最小改造（默认，读懂原图在讲什么，' +
+          '只换品牌/店名/与事实不符的数字/不合规表述，其余画面与语气全部保留）；' +
+          'restructure=保留构图但把内容换成本店（配 contentAssetId 用，用户明确说"换成我家实拍"时才用）；' +
+          'regenerate=只要画面、全新生成'
+      },
       textLines: {
         type: 'string_array',
         desc:

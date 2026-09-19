@@ -522,6 +522,19 @@ export interface ImageStrategyInput {
    */
   referenceVisual?: unknown
   /**
+   * 改写的粒度（决定"改多少"）：
+   *  - minimal（默认）：**理解原图在讲什么，只改必须改的**（品牌/店名/门店事实/不合规表述），
+   *    主体、构图、光线、道具、氛围、版式、文字语气一律保留 —— 用户要的是"营销图改造"，不是重画；
+   *  - restructure：保留构图与叙事，主体内容换成本店（图1 结构 + 图2 本店实拍的口径）；
+   *  - regenerate：只要画面、全新生成（配 noText 用）。
+   */
+  editScope?: unknown
+  /**
+   * 原图"在讲什么"（来自拆解卡 hook/structure/whyWorks）—— 最小改造必须先看懂它，
+   * 否则模型会把"改造"做成"按关键词重画"。
+   */
+  intent?: unknown
+  /**
    * 要在图上出现的文字（一行一条）。给了就逐字写进提示词 —— 实测只写一句"换成我们店的文案"，
    * 模型会自己编字；写全（含主标题/副标题/角标的角色）它才逐字照抄。
    */
@@ -542,6 +555,16 @@ export interface ImageStrategyInput {
 }
 
 export type ImageMode = 'gen' | 'edit'
+/** 改写粒度：最小改造 / 同款重构 / 只要画面 */
+export type EditScope = 'minimal' | 'restructure' | 'regenerate'
+
+export function normalizeEditScope(v: unknown): EditScope {
+  const s = String(v ?? '')
+    .trim()
+    .toLowerCase()
+  if (s === 'restructure' || s === 'regenerate') return s
+  return 'minimal'
+}
 
 export interface ImageStrategy {
   mode: ImageMode
@@ -656,6 +679,18 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
     .filter((x) => x !== '')
     .slice(0, 6)
   const noText = input.noText === true
+  const scope = normalizeEditScope(input.editScope)
+  /** 原图在讲什么（拆解卡的文字维度）：最小改造必须先看懂，再动手 */
+  const intent = (input.intent ?? null) as {
+    hook?: unknown
+    structure?: unknown
+    whyWorks?: unknown
+  } | null
+  const intentBits = joinFacts([
+    typeof intent?.hook === 'string' ? '钩子：' + intent.hook.slice(0, 120) : '',
+    typeof intent?.structure === 'string' ? '结构：' + intent.structure.slice(0, 200) : '',
+    typeof intent?.whyWorks === 'string' ? '为什么有效：' + intent.whyWorks.slice(0, 120) : ''
+  ])
   const visual = readVisualFacts(input.referenceVisual)
   /** 有视觉拆解（旧卡/没拆过时为空） */
   const hasVisual = hasVisualFacts(visual)
@@ -668,17 +703,7 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
   const refTag = referenceCount >= 2 ? '图1' : '参考图'
   const lines: string[] = []
   if (mode === 'edit') {
-    // 图生图：参考图提供了画面结构，prompt 要说的不是「画什么」，而是
-    // **什么保持不变、什么换成我家的、什么是绝对不要的**（三段固定，别混在一句话里）。
-    if (referenceCount >= 2) {
-      lines.push(
-        '改写任务：随本次请求附上 2 张参考图。【图1】是结构模板，只借它的构图/机位/光线/留白/氛围；' +
-          '【图2】是本店的真实实拍，画面里的菜品与场景**以图2 为准**（图2 里没有的东西不要出现在结果里）。'
-      )
-    } else {
-      lines.push('改写任务：以随本次请求附上的参考图为基础改图，不是凭描述画一张新图。')
-    }
-    // 有视觉拆解就逐项点名要保持什么（这是「同一个版式换内容」成败的关键）；
+    // 有视觉拆解就逐项点名要保持什么（这是「同一张画面换内容」成败的关键）；
     // 没有就退回通用口径 —— 通用口径也能用，只是模型得自己看图猜构图。
     const holdBits = visualOn
       ? joinFacts([
@@ -693,14 +718,58 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
             : ''
         ])
       : ''
-    lines.push(
-      '【保持】' +
-        refTag +
-        '的' +
-        (holdBits
-          ? holdBits + '；只改内容，不要改版式'
-          : '构图与机位、镜头与光线、场景氛围、画面留白位置、主体在画面里的占比；只改内容，不要改版式')
-    )
+    if (scope === 'minimal') {
+      /**
+       * 最小改造（默认）：读懂原图在讲什么，只改"必须改的"，其余一律不动。
+       *
+       * 为什么默认这一档：用户要的是「营销图改造」—— 把同行爆款里的品牌信息换成自家的，
+       * 而不是把那张图重画一遍。此前的口径写的是"把菜品/场景换成门店信息""不要照抄参考图的
+       * 菜品摆盘与人物"，等于**命令模型重画**，原图的意思（什么场景、什么语气、在说什么事）
+       * 全被抹掉，改造出来是一张不相干的新海报。
+       */
+      lines.push(
+        '改造任务：随本次请求附上原图。请**先理解这张图在讲什么**（场景、主体、语气、它在向谁说什么），' +
+          '然后在**保留这张图整体面貌**的前提下做**最小改动** —— 这是一次"改造"，不是"重画"。'
+      )
+      if (intentBits) lines.push('【原图在讲什么】' + intentBits)
+      if (visual.textInImage) lines.push('【原图上的文字】' + visual.textInImage)
+      lines.push(
+        '【只改这些（除此之外任何地方都不要动）】' +
+          '① 品牌与店名（换成门店档案里的本店名）；' +
+          '② 与事实不符的数字或说法（人均/地址/电话/营业时间等，换成档案里的真实值）；' +
+          '③ 法规不允许的表述（绝对化用语、食品功效宣称）。' +
+          '找不到对应本店事实的地方就**原样保留**，不要自己编。'
+      )
+      lines.push(
+        '【必须保留】' +
+          (holdBits ? holdBits + '；' : '') +
+          '画面的主体与场景、道具与背景、人物的动作与神态、整体色调与氛围、文字的版式与位置与语气；' +
+          '改完之后，除了上面"只改这些"，画面应当**看起来还是原来那张图**。'
+      )
+      lines.push(
+        '【绝对不要】不要重画整张图；不要更换主体或场景；不要新增原图里没有的元素；' +
+          '不要把画面改成本店实拍的另一种样子；不要改变构图、镜头、光线与留白。'
+      )
+    } else {
+      // 同款重构：保留构图与叙事，主体内容换成本店（用户明确要"换成我家实拍"时用）
+      if (referenceCount >= 2) {
+        lines.push(
+          '改写任务：随本次请求附上 2 张参考图。【图1】是结构模板，只借它的构图/机位/光线/留白/氛围；' +
+            '【图2】是本店的真实实拍，画面里的菜品与场景**以图2 为准**（图2 里没有的东西不要出现在结果里）。'
+        )
+      } else {
+        lines.push('改写任务：以随本次请求附上的参考图为基础改图，不是凭描述画一张新图。')
+      }
+      lines.push(
+        '【保持】' +
+          refTag +
+          '的' +
+          (holdBits
+            ? holdBits + '；只改内容，不要改版式'
+            : '构图与机位、镜头与光线、场景氛围、画面留白位置、主体在画面里的占比；只改内容，不要改版式')
+      )
+      if (intentBits) lines.push('【原图在讲什么（换了内容也要保留这个意思）】' + intentBits)
+    }
     if (userPrompt) lines.push('【本次要求】' + userPrompt)
   } else {
     lines.push('画面主体：' + subject)
@@ -756,11 +825,16 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
   ])
   if (storeFacts) {
     lines.push(
-      (mode === 'edit'
-        ? '【替换为本店真实信息】把' +
-          refTag +
-          '里的菜品/场景/门店元素换成下面这些；只能用这些事实、不要编造其它菜品：'
-        : '画面里可以出现的真实元素（只能用这些，不要编造其它菜品）：') + storeFacts
+      (mode !== 'edit'
+        ? '画面里可以出现的真实元素（只能用这些，不要编造其它菜品）：'
+        : scope === 'minimal'
+          ? // 最小改造：事实只用在"原图本来就在说这类事"的地方，不做整体替换
+            '【本店事实（按原图语境融入，不要整体替换）】以下事实**只在原图本来就在讲这类内容时**用它：' +
+            '原图提到价格就换成我们的人均、提到地址就换成我们的地址、提到菜就换成我们的招牌菜；' +
+            '原图根本没提的，就不要新增。只能用下面这些事实、不要编造：'
+          : '【替换为本店真实信息】把' +
+            refTag +
+            '里的菜品/场景/门店元素换成下面这些；只能用这些事实、不要编造其它菜品：') + storeFacts
     )
   }
 
@@ -783,17 +857,36 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
     noText ? '任何文字、字幕、贴纸、水印、logo、二维码' : '',
     // 照结构生成时也要点名：结构来自别人的作品，但画面里不能出现那张图上的任何东西
     structureOn ? '不要出现参考图上的任何文字、Logo、水印、二维码，也不要复制其菜品摆盘与人物' : '',
-    // 图生图最要命的一条：参考图是别人的作品，像素级特征（原文字/水印/logo/人脸）绝不能带出来
-    mode === 'edit' ? '不要保留' + refTag + '里的任何文字、Logo、水印、二维码' : '',
+    /**
+     * 归属性文字（同行的店名/水印/二维码）任何时候都不能带出来 —— 这是版权红线。
+     * 注意「换成上面给出的本店信息」只在非最小改造时加：最小改造下有些文字本来就要原样保留
+     * （原图没提价格，就不该凭空出现我们的人均）。
+     */
+    mode === 'edit'
+      ? scope === 'minimal'
+        ? '不要保留' +
+          refTag +
+          '里的店名/品牌标识/水印/二维码（原图其余文字的**语气与句式要保留**，只换指向同行的信息）'
+        : '不要保留' + refTag + '里的任何文字、Logo、水印、二维码'
+      : '',
     // 把参考图上原有的文字点名写出来：只说"不要文字"时，模型常把原字照抄进新图（尤其大字贴纸）
     visualOn && visual.textInImage
       ? '不要带出' +
         refTag +
-        '上的原有文字（原文：' +
+        '上的原有店名与品牌字样（原文：' +
         visual.textInImage +
-        '），换成上面给出的本店信息'
+        '）' +
+        (scope === 'minimal' ? '；其余文字按原意保留' : '，换成上面给出的本店信息')
       : '',
-    mode === 'edit' ? '不要照抄' + refTag + '的菜品摆盘与人物，要换成上面给出的本店信息' : '',
+    /**
+     * 最小改造**绝不能**写"不要照抄参考图的菜品摆盘与人物" ——
+     * 那条正是逼模型重画整张图的元凶（原图的意思就是这么没的）。
+     */
+    mode === 'edit'
+      ? scope === 'minimal'
+        ? '不要重画整张图、不要更换主体与场景、不要新增原图没有的元素、不要把画面改成本店实拍的另一种样子'
+        : '不要照抄' + refTag + '的菜品摆盘与人物，要换成上面给出的本店信息'
+      : '',
     facts.bannedWords ? '不要出现这些词/' + facts.bannedWords : '',
     UNIVERSAL_NEGATIVE
   ])
@@ -803,7 +896,9 @@ export function buildImageStrategy(input: ImageStrategyInput): ImageStrategy {
 
   notes.push(
     mode === 'edit'
-      ? '模式：图生图（' +
+      ? scope === 'minimal'
+        ? '模式：图生图·**最小改造**（读懂原图在讲什么，只改品牌/事实/不合规表述，其余原样保留）'
+        : '模式：图生图（' +
           (referenceCount >= 2 ? '图1 结构模板 + 图2 本店实拍，' : '') +
           '保持构图，替换为本店信息）'
       : structureOn

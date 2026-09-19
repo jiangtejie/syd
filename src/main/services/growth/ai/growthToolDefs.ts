@@ -62,6 +62,7 @@ import {
   normalizePlatform,
   parseSize,
   readVisualFacts,
+  normalizeEditScope,
   PLATFORM_SPECS
 } from './imageStrategy'
 import { getImageConfig } from './config'
@@ -69,6 +70,7 @@ import { exportPublishPackage } from '../publisher/exporter'
 import { checkComplianceBatch } from '../remix/compliance'
 import { isSelfOwned, NO_SELF_IMAGE_HINT, sourceLabel } from '../../../../shared/imageSource'
 import { buildReadBackPrompt, judgeTextOnlyVisual, verifyTextLines } from './imageText'
+import { diffLevel, looksRebuilt } from './imageSimilarity'
 import { createLogger } from '../../logging'
 
 const log = createLogger('growth-ai')
@@ -538,9 +540,11 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
       confirm: true,
       params: metaOf('growth_gen_image').params,
       description:
-        'AI 出图(封面/氛围图/菜品示意图)。两种模式由「生图策略」自动切换: 不给参考图 = 凭描述生成; ' +
-        '给 referenceAssetId = **在参考图上改写**(保持构图机位光线, 把菜品/场景/门店换成档案里的本店信息) —— ' +
-        '做「照这条爆款图出我们店版本」时用后者。提示词由策略层拼装, 你只给主体描述或本次改写要求即可。结果作为候选图待用户点选。',
+        'AI 出图。给 referenceAssetId = 在**原图**上做营销改造, 默认口径是「最小改造」: 先读懂原图在讲什么, ' +
+        '只把品牌/店名/与事实不符的数字/不合规表述换成本店的, 主体、场景、构图、氛围、版式全部保留 —— ' +
+        '改造完应当看起来还是原来那张图(实测模型很容易做成整张重画, 那会毁掉原图的意思)。' +
+        '要「保留构图但把内容换成本店实拍」时显式传 editScope=restructure(配 contentAssetId); ' +
+        '不给参考图 = 凭描述生成。结果作为候选图, 用户点选用哪张。',
       run: async (ctx, argsIn) => {
         const args = argsIn as {
           prompt?: string
@@ -550,6 +554,7 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           role?: 'cover' | 'image'
           referenceAssetId?: number
           contentAssetId?: number
+          editScope?: 'minimal' | 'restructure' | 'regenerate'
           textLines?: string[]
           noText?: boolean
           contentId?: number
@@ -566,6 +571,8 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           .filter((x) => x !== '')
           .slice(0, 6)
         const noText = args.noText === true
+        /** 改写粒度：默认最小改造（读懂原图 → 只改必须改的） */
+        const editScope = normalizeEditScope(args.editScope)
         const storeId = storeIdOf(args)
         const store = storeId
           ? (listStores().find((s) => s.id === storeId) ?? null)
@@ -697,6 +704,11 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           // 现在没有调用方（策略层那个分支有自己的自检）。真要启用就加一个 noReference 参数，
           // 让模型能显式选择"只借结构不借像素"。
           structureFromVisual: mode === 'gen' && !!structureAssetId,
+          // 改写粒度（默认最小改造：读懂原图 → 只改必须改的）
+          editScope,
+          // 原图「在讲什么」：来自拆解卡的文字维度（hook/structure/whyWorks）——
+          // 最小改造必须先看懂它，否则"改造"会变成"按关键词重画"
+          intent: detail?.decomp?.structure ?? null,
           // 要写的文字（逐字进提示词）与「只要画面不要文字」
           textLines,
           noText,
@@ -737,10 +749,18 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           if (gen.usedReference && refs.length > 0 && imgs.length > 0) {
             const refSig = graySignature(refs[0].data)
             let echoCount = 0
+            let rebuiltCount = 0
+            let maxDiff = 0
             for (const g of imgs) {
               try {
                 const buf = await readFile(join(getGrowthMediaDir(), g.relPath))
-                if (looksLikeEcho(refSig, graySignature(buf))) echoCount++
+                const sig = graySignature(buf)
+                if (looksLikeEcho(refSig, sig)) echoCount++
+                else {
+                  const level = diffLevel(refSig, sig)
+                  if (level > maxDiff) maxDiff = level
+                  if (looksRebuilt(refSig, sig)) rebuiltCount++
+                }
               } catch {
                 /* 读不到就不比，不因此报错 */
               }
@@ -751,6 +771,21 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
                 String(echoCount) +
                 ' 张结果与结构参考图几乎一致，疑似图生图**没生效**（模型可能直接回传了原图）——' +
                 '建议重试，或把要求写得更具体/换模型）'
+            } else if (editScope === 'minimal' && rebuiltCount > 0) {
+              /**
+               * 反方向的失败：最小改造被做成了整张重画。
+               * 不查就发现不了 —— 200、一张好看的图，但原图的意思（场景/语气/在说什么）没了。
+               */
+              echoNote =
+                '（⚠ ' +
+                String(rebuiltCount) +
+                '/' +
+                String(imgs.length) +
+                ' 张与原图差异约 ' +
+                String(maxDiff) +
+                '%，**不像是同一张画面** —— 最小改造被做成了重画，原图的意思可能已经丢了。' +
+                '建议：① 把要求收窄到"只换店名/事实/不合规表述"后重试；' +
+                '② 若确实想要整张重做，显式传 editScope=restructure 说明这是有意的。）'
             }
           }
           /**

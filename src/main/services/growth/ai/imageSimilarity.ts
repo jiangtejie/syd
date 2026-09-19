@@ -33,3 +33,30 @@ export function looksLikeEcho(a: number[], b: number[]): boolean {
   const mad = meanAbsDiff(a, b)
   return Number.isFinite(mad) && mad < ECHO_MAD_THRESHOLD
 }
+
+/**
+ * 疑似「整张被重画」（反方向的那种失败）。
+ *
+ * 为什么另一个方向也要抓：营销改造的默认口径是**最小改动** —— 理解原图在讲什么，
+ * 只把品牌/事实/不合规表述换掉，主体、构图、氛围、版式一律保留。实测里模型很容易
+ * 顺手整张重画（"改造"变"创作"），原图的意思就没了：本来是一张门店实拍 + 一句口号，
+ * 结果出来一张全新的火锅海报。这种失败同样是 200 + 一张好看的图，不查就发现不了。
+ *
+ * 阈值取 60/255 ≈ 23.5%：局部换文案/换店名的改动通常只有几个 MAD（同一张画面、只有
+ * 一小块区域变了）；整张重画（场景、主体、色调全换）会显著高于这个值。
+ * 判据只在**最小改造**口径下使用（restructure 本来就要大改，用它必然误报）。
+ */
+export const REBUILD_MAD_THRESHOLD = 60
+
+/** 疑似「整张被重画」：与原图的差异大到不像是同一张画面 */
+export function looksRebuilt(a: number[], b: number[]): boolean {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return false
+  const mad = meanAbsDiff(a, b)
+  return Number.isFinite(mad) && mad > REBUILD_MAD_THRESHOLD
+}
+
+/** 差异幅度（0~255 的平均绝对差），用于回执里"改了多少"的可读说明 */
+export function diffLevel(a: number[], b: number[]): number {
+  const mad = meanAbsDiff(a, b)
+  return Number.isFinite(mad) ? Math.round((mad / 255) * 100) : -1
+}

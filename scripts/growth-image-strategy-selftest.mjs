@@ -288,6 +288,7 @@ try {
   console.log('图生图（mode=edit）的 prompt 结构：')
   const e1 = buildImageStrategy({
     mode: 'edit',
+    editScope: 'restructure',
     userPrompt: '把画面里的菜品换成本店的鲜切黄牛肉',
     platform: 'xhs',
     role: 'cover',
@@ -330,6 +331,7 @@ try {
   console.log('两张参考图（图1 结构模板 + 图2 本店实拍）：')
   const e2 = buildImageStrategy({
     mode: 'edit',
+    editScope: 'restructure',
     referenceCount: 2,
     userPrompt: '把菜品换成我们店的鲜切黄牛肉',
     platform: 'xhs',
@@ -346,7 +348,7 @@ try {
     e2.notes.some((n) => n.includes('图1 结构模板') && n.includes('图2 本店实拍')),
     '策略说明里写明两张图的分工'
   )
-  const single = buildImageStrategy({ mode: 'edit', referenceCount: 1 })
+  const single = buildImageStrategy({ mode: 'edit', editScope: 'restructure', referenceCount: 1 })
   ok(single.prompt.includes('【保持】参考图'), '只有一张时仍说「参考图」', '')
 
   console.log('视觉拆解 → 图生图的「保持」清单：')
@@ -385,6 +387,7 @@ try {
 
   const e3 = buildImageStrategy({
     mode: 'edit',
+    editScope: 'restructure',
     referenceCount: 1,
     referenceVisual: visualJson,
     userPrompt: '把菜品换成我们店的鲜切黄牛肉'
@@ -414,7 +417,7 @@ try {
     e3.notes.some((n) => n.includes('视觉拆解')) && e3.notes.some((n) => n.includes('保持')),
     '策略说明里写明「保持」来自视觉拆解（让策略看得见）'
   )
-  const e4 = buildImageStrategy({ mode: 'edit', referenceCount: 1 })
+  const e4 = buildImageStrategy({ mode: 'edit', editScope: 'restructure', referenceCount: 1 })
   ok(e4.visualLocked === false, '没有视觉拆解 → 不谎报锁定')
   ok(
     e4.prompt.includes('构图与机位、镜头与光线、场景氛围') &&
@@ -522,9 +525,89 @@ try {
     '通用负向词覆盖文字/水印/logo'
   )
 
+  /**
+   * 最小改造（默认粒度）：读懂原图在讲什么 → 只改必须改的 → 其余原样保留。
+   * 这一档是用户反馈倒逼出来的：此前默认口径写的是"把菜品/场景换成本店信息""不要照抄原图的
+   * 菜品摆盘与人物"，等于命令模型重画，原图的意思（场景/语气/在说什么）全被抹掉。
+   */
+  console.log('最小改造（默认 editScope=minimal）：')
+  const m1 = buildImageStrategy({
+    mode: 'edit',
+    referenceCount: 1,
+    intent: {
+      hook: '节日节点点名(国庆来重庆)+ 攻略承诺',
+      structure: '痛点→方案→证据→促单，收尾用开放式提问征集评论',
+      whyWorks: '出行决策窗口 + 地域品类锁定 + 低成本互动设计'
+    },
+    referenceVisual: JSON.stringify({
+      composition: '居中对称',
+      camera: '90 度俯拍',
+      lighting: '自然侧逆光',
+      layout: '上方三分之一留白压标题',
+      elements: ['白瓷碗', '木桌'],
+      textInImage: '和朋友一致认为好吃的纯享版'
+    }),
+    userPrompt: '改成我们店的版本',
+    store: { name: '眼镜火锅', profile: '{"avgPrice":"98","signatureDishes":"麻辣鸡爪"}' }
+  })
+  ok(m1.mode === 'edit', '仍是图生图（在原图上改）')
+  ok(
+    m1.prompt.includes('先理解这张图在讲什么') && m1.prompt.includes('不是"重画"'),
+    '★ 明确要求先读懂原图、这是改造不是重画'
+  )
+  ok(
+    m1.prompt.includes('【原图在讲什么】') && m1.prompt.includes('节日节点点名'),
+    '★ 原图意图（拆解卡 hook/structure）进了提示词'
+  )
+  ok(
+    m1.prompt.includes('【原图上的文字】') && m1.prompt.includes('纯享版'),
+    '原图上的文字也点出来（改哪里、留哪里才判断得了）'
+  )
+  ok(
+    m1.prompt.includes('【只改这些') &&
+      m1.prompt.includes('品牌与店名') &&
+      m1.prompt.includes('找不到对应本店事实的地方就**原样保留**'),
+    '★ 只改品牌/事实/不合规表述，其余原样保留'
+  )
+  ok(
+    m1.prompt.includes('【必须保留】') && m1.prompt.includes('看起来还是原来那张图'),
+    '★ 必须保留主体/场景/氛围/版式，并给出可自检的判据'
+  )
+  ok(
+    m1.prompt.includes('【绝对不要】') && m1.prompt.includes('不要重画整张图'),
+    '把"不许重画"写成硬约束'
+  )
+  ok(
+    !m1.negative.includes('不要照抄') && m1.negative.includes('不要重画整张图'),
+    '★ 负向词不再逼模型重画（旧口径的"不要照抄参考图的菜品摆盘与人物"已按粒度区分）'
+  )
+  ok(
+    m1.prompt.includes('按原图语境融入，不要整体替换') &&
+      m1.prompt.includes('原图根本没提的，就不要新增'),
+    '★ 门店事实是"按语境融入"，不是整体替换（原图没提价格就不该凭空出现人均）'
+  )
+  ok(
+    m1.negative.includes('店名/品牌标识/水印/二维码') && m1.negative.includes('语气与句式要保留'),
+    '版权红线（同行店名/水印）仍然拦，但原图的语气句式保留'
+  )
+  ok(
+    m1.notes.some((n) => n.includes('最小改造')),
+    '策略说明标明这是最小改造'
+  )
+  const m2 = buildImageStrategy({ mode: 'edit', referenceCount: 1, editScope: 'restructure' })
+  ok(
+    m2.prompt.includes('【保持】') && m2.negative.includes('不要照抄'),
+    'restructure 才用"保持构图 + 换成本店"的旧口径'
+  )
+  ok(
+    buildImageStrategy({ mode: 'edit', referenceCount: 1 }).prompt.includes('先理解这张图在讲什么'),
+    '不传 editScope 默认最小改造'
+  )
+
   console.log('要写的文字 / 只要画面（noText）：')
   const t1 = buildImageStrategy({
     mode: 'edit',
+    editScope: 'restructure',
     referenceCount: 1,
     textLines: ['国庆来重庆，观音桥这家老重庆牛油锅别错过', '甜品免费 · 人均98', '观音桥'],
     userPrompt: '照原图高仿'
