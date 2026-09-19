@@ -25,6 +25,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import FirstRunWizard from './components/onboarding/FirstRunWizard'
 import { installIssueAlertSound } from './lib/issueAlert'
 import { APP_NAME } from '../../shared/appInfo'
+import { initTheme } from './lib/appearance'
 import './pages/shell.css'
 
 /**
@@ -241,6 +242,9 @@ function App(): React.JSX.Element {
 
   // 新问题提示音(全局监听 issue:changed,added>0 即响;开关在 设置→偏好与数据→通用)
   useEffect(() => installIssueAlertSound(), [])
+
+  // 外观主题：启动即按已保存的偏好落地（浅色/深色/跟随系统），并跟随系统切换
+  useEffect(() => initTheme(), [])
 
   return (
     <ErrorBoundary>

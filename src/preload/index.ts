@@ -982,7 +982,9 @@ const api: PreloadApi = {
         cachePath?: string
       }> => ipcRenderer.invoke('cs:app:dataStats'),
       clearCache: (): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('cs:app:clearCache')
+        ipcRenderer.invoke('cs:app:clearCache'),
+      setTheme: (mode: 'light' | 'dark' | 'system'): Promise<{ ok: boolean; dark?: boolean }> =>
+        ipcRenderer.invoke('cs:app:setTheme', mode)
     },
     growth: {
       stats: (): Promise<{ ok: boolean; stats?: GrowthStats; error?: string }> =>

@@ -8,14 +8,14 @@
   margin: 14px 0 16px;
   max-width: 1520px;
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
 }
 
 .st-tab {
   padding: 7px 16px;
   font-size: var(--fs-md);
   border-radius: var(--r-pill);
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   background: transparent;
   color: var(--text-2);
   cursor: pointer;
@@ -313,7 +313,7 @@ select.st-input {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  color: #fff;
+  color: var(--on-brand);
   font-size: var(--fs-md);
   font-weight: 600;
   display: inline-flex;
@@ -669,7 +669,7 @@ select.st-input {
   gap: 3px;
   padding-bottom: 10px;
   margin-bottom: 10px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
 }
 
 .sf-card-title {
@@ -695,7 +695,7 @@ select.st-input {
   width: 38px;
   height: 21px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   background: var(--bg-hover);
   cursor: pointer;
   padding: 0;
@@ -727,7 +727,7 @@ select.st-input {
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--bg-panel);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   transition: transform 0.18s ease;
 }
@@ -1235,7 +1235,7 @@ select.st-input {
   font-size: var(--fs-xs);
   line-height: 1.5;
   border-radius: var(--r-pill);
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   background: var(--bg-hover);
   color: var(--text-2);
   white-space: nowrap;

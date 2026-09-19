@@ -125,7 +125,7 @@ textarea.im-allow-area {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: var(--bg-panel);
   border-radius: var(--r-md);
   padding: 10px;
   min-height: 120px;

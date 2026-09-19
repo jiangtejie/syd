@@ -89,7 +89,7 @@
   border: 0;
   border-radius: var(--r-md);
   background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  color: var(--on-brand);
   font-size: var(--fs-kpi);
   line-height: 1;
   cursor: pointer;
@@ -108,7 +108,7 @@
   top: 18px;
   left: 50%;
   transform: translateX(-50%);
-  color: #fff;
+  color: var(--on-brand);
   font-size: var(--fs-md);
   background: rgba(0, 0, 0, 0.5);
   padding: 2px 12px;

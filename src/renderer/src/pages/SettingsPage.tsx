@@ -28,6 +28,8 @@ import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
 import { useWorkbenchStore } from '../stores/workbench'
 import { setIssueAlertPref } from '../lib/issueAlert'
+import { readThemeMode, setThemeMode } from '../lib/appearance'
+import type { ThemeMode } from '../../../shared/theme'
 import './settings.css'
 
 /**
@@ -191,6 +193,8 @@ const SETTINGS_TAB_KEY = 'cs.settingsTab'
 function SettingsPage(): React.JSX.Element {
   const setPage = useWorkbenchStore((s) => s.setPage)
   const setGrowthTab = useWorkbenchStore((s) => s.setGrowthTab)
+  /** 外观主题：真源在 lib/appearance（localStorage），这里留一份 state 只为了让按钮选中态刷新 */
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => readThemeMode())
   const [tab, setTab] = useState<SettingsTab>(() => {
     const saved = localStorage.getItem(SETTINGS_TAB_KEY)
     return (SETTINGS_TAB_KEYS as readonly string[]).includes(saved as string)
@@ -1172,6 +1176,37 @@ function SettingsPage(): React.JSX.Element {
           </SettingsCard>
 
           <div className="st-grid">
+            {/* 外观：第一张卡，因为它是"看一眼就想改"的那类设置 */}
+            <SettingsCard
+              title="外观"
+              desc="深色适合夜间值班盯屏；跟随系统时以 Windows 的浅色/深色设置为准。切换立即生效，只影响本机显示。"
+            >
+              <div className={'st-row'}>
+                <span className={'st-label'}>主题</span>
+                <div className={'ui-seg'}>
+                  {(
+                    [
+                      ['light', '浅色'],
+                      ['dark', '深色'],
+                      ['system', '跟随系统']
+                    ] as Array<[ThemeMode, string]>
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type={'button'}
+                      className={'ui-seg-btn' + (themeMode === value ? ' is-on' : '')}
+                      onClick={() => {
+                        setThemeMode(value)
+                        setThemeModeState(value)
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </SettingsCard>
+
             {/* 数据缓存目录 */}
             <SettingsCard
               title="数据与缓存"

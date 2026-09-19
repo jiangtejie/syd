@@ -1,4 +1,5 @@
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, nativeTheme, BrowserWindow } from 'electron'
+import { normalizeThemeMode } from '../../shared/theme'
 import { join } from 'path'
 import { statSync, readdirSync, rmSync, mkdirSync } from 'fs'
 import { getCachePath } from '../services/paths'
@@ -9,7 +10,12 @@ import { getCachePath } from '../services/paths'
  * - cs:app:getAutoLaunch / setAutoLaunch   开机自启
  * - cs:app:dataStats     本地数据库与缓存占用
  * - cs:app:clearCache    清理缓存目录（保留数据库）
+ * - cs:app:setTheme      浅色 / 深色 / 跟随系统
  */
+
+/** 主题来源交给 nativeTheme 统管：它同时决定渲染端的 prefers-color-scheme，
+ *  以及窗口底色（切主题瞬间不会先闪一下白）。取值与渲染端 ThemeMode 一致。 */
+const THEME_BG: Record<string, string> = { light: '#f5f6f7', dark: '#14171a' }
 
 function dirSize(dir: string): number {
   let total = 0
@@ -67,6 +73,15 @@ export function registerAppHandlers(): void {
     cacheBytes: dirSize(getCachePath()),
     cachePath: getCachePath()
   }))
+
+  ipcMain.handle('cs:app:setTheme', (_e, mode: unknown) => {
+    const m = normalizeThemeMode(mode)
+    nativeTheme.themeSource = m
+    const dark = m === 'dark' || (m === 'system' && nativeTheme.shouldUseDarkColors)
+    const bg = THEME_BG[dark ? 'dark' : 'light']
+    for (const w of BrowserWindow.getAllWindows()) w.setBackgroundColor(bg)
+    return { ok: true, dark }
+  })
 
   ipcMain.handle('cs:app:clearCache', () => {
     const dir = getCachePath()

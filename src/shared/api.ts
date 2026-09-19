@@ -971,6 +971,8 @@ export interface CsApi {
       cachePath?: string
     }>
     clearCache: () => Promise<{ ok: boolean; error?: string }>
+    /** 外观：浅色 / 深色 / 跟随系统（主进程写 nativeTheme，渲染端据此写 <html data-theme>） */
+    setTheme: (mode: 'light' | 'dark' | 'system') => Promise<{ ok: boolean; dark?: boolean }>
   }
   wb: {
     listChats: (wxid: string) => Promise<Result<{ chats?: ChatSessionItem[] }>>

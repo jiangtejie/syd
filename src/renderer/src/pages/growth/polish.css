@@ -187,7 +187,7 @@
 }
 .gth-seg-btn:hover {
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--hover-sheen);
 }
 .gth-seg-btn.is-active {
   background: var(--bg-panel);
@@ -228,7 +228,7 @@
   width: 3px;
   height: 13px;
   border-radius: var(--r-pill);
-  background: linear-gradient(180deg, #10d473, #07a84f);
+  background: linear-gradient(180deg, var(--brand-2), var(--brand-3));
   flex: none;
 }
 .gth-cards {
@@ -315,13 +315,13 @@
   display: block;
   overflow: hidden;
   border-radius: 6px;
-  background: #eef0f3;
+  background: var(--border-light);
 }
 .gth-skel::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, #f7f8fa 45%, transparent);
+  background: linear-gradient(90deg, transparent, var(--bg-sunken) 45%, transparent);
   transform: translateX(-100%);
   animation: gth-shimmer 1.15s linear infinite;
 }
@@ -372,7 +372,7 @@
   margin-top: 66px;
 }
 .gth-badge {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 0 0 1px var(--badge-sheen);
 }
 .gth-badge.gray {
   box-shadow: none;
@@ -465,10 +465,10 @@
   transform: translateY(-1px);
 }
 .gth-page ::-webkit-scrollbar-thumb {
-  background: #cfd4db;
+  background: var(--border-strong);
 }
 .gth-page ::-webkit-scrollbar-thumb:hover {
-  background: #b6bcc6;
+  background: var(--text-4);
 }
 @media (prefers-reduced-motion: reduce) {
   .gth-page *,
@@ -498,7 +498,7 @@
   bottom: 12px;
   width: 3px;
   border-radius: var(--r-pill);
-  background: linear-gradient(180deg, #10d473, #07a84f);
+  background: linear-gradient(180deg, var(--brand-2), var(--brand-3));
 }
 .gth-ingest:focus-within {
   border-color: var(--brand-line);

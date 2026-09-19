@@ -1,7 +1,7 @@
 /**
  * 全局设计 token（浅色主题）。
  * 统一品牌色 / 状态色 / 中性色 / 圆角 / 阴影。业务 CSS 一律引用这些变量，禁止再出现
- * 与 token 语义重复的硬编码（如 #3c82f6、#089f5c、#dfe2e7 等）。
+ * 与 token 语义重复的硬编码（如 #3c82f6、#089f5c、var(--border-strong) 等）。
  */
 
 :root {
@@ -42,6 +42,22 @@
   --bg-panel: #fff;
   --bg-hover: #f7f9fb;
   --bg-mask: rgba(0, 0, 0, 0.32);
+
+  /* 结构补充：收口前散落在业务 CSS 里的写死值（浅色值与原值一致 → 视觉零变化）。
+     深色主题只覆盖这些语义令牌，业务 CSS 不必知道自己跑在哪个主题下。 */
+  --text-strong: #1a1a1a;
+  --placeholder: #b0b6bf;
+  --border-strong: #d9dce1;
+  --bg-sunken: #f7f8fa;
+  --danger-text: #c92a2a;
+  --warn-strong: #b8860b;
+  /* 悬停高光：浅色下是"再白一点"，深色下必须变成"再亮一点"，所以它必须是令牌 */
+  --hover-sheen: rgba(255, 255, 255, 0.7);
+  --badge-sheen: rgba(255, 255, 255, 0.5);
+  --brand-2: #10d473;
+  --brand-3: #07a84f;
+
+  color-scheme: light;
 
   /* 兼容旧命名（历史 CSS 用 var(--muted/--panel/--line) 取色） */
   --muted: #777;
@@ -184,13 +200,13 @@
 .ui-btn.is-danger.is-solid {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--on-brand);
 }
 
 .ui-btn.is-danger.is-solid:hover:not(:disabled) {
   background: var(--danger-hover);
   border-color: var(--danger-hover);
-  color: #fff;
+  color: var(--on-brand);
 }
 
 .ui-input,
@@ -277,7 +293,7 @@
 }
 
 .ui-chip.is-warn {
-  color: #b8860b;
+  color: var(--warn-strong);
   background: #fdf3d7;
 }
 
@@ -339,10 +355,79 @@
   text-decoration: underline;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #aab0ba;
+  background: var(--text-4);
   border: var(--sb-inset) solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* ══════════ 深色主题 ══════════
+ * 由「设置 → 偏好与数据 → 外观」切换：App 启动时按偏好往 <html> 写 data-theme，
+ * 「跟随系统」则监听 prefers-color-scheme。这里**只覆盖语义令牌**，
+ * 业务 CSS 一行都不用改 —— 这也是上一轮把字体/间距/颜色收口到令牌的回报。
+ *
+ * 取色原则：不做纯黑。--bg #14171a、面板 #1b1f24、浮起 #222831，
+ * 层次靠"面板比背景亮一档 + 1px 描边"，纯黑底配纯白字在长时间盯屏时对比过强。
+ * 状态色的 soft/line 一律改成同一色相的半透明，保证在深底上仍然可读且不刺眼。
+ */
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* 文字：整体降一档亮度，避免白字扎眼；--text-strong 留给标题 */
+  --text-1: #e6e8eb;
+  --text-2: #b8bfc7;
+  --text-3: #8b939c;
+  --text-4: #6a727b;
+  --text-strong: #f2f4f6;
+  --placeholder: #6a727b;
+  --muted: #9aa3ac;
+
+  /* 描边与背景：三级层次（底 / 面板 / 浮起） */
+  --border: #2e343c;
+  --border-light: #242a31;
+  --border-strong: #3a424b;
+  --bg: #14171a;
+  --bg-panel: #1b1f24;
+  --bg-hover: #222831;
+  --bg-sunken: #191d22;
+  --bg-mask: rgba(0, 0, 0, 0.62);
+  --panel: #1b1f24;
+  --line: rgba(255, 255, 255, 0.12);
+
+  /* 品牌与状态：软底改成半透明，深底上才有"染色感"而不是一块脏色 */
+  --brand-soft: rgba(7, 193, 96, 0.16);
+  --brand-line: rgba(7, 193, 96, 0.45);
+  --success-soft: rgba(7, 166, 63, 0.18);
+  --success-line: rgba(7, 166, 63, 0.36);
+  --success-strong: #3ddc84;
+  --danger-soft: rgba(250, 81, 81, 0.18);
+  --danger-line: rgba(250, 81, 81, 0.36);
+  --danger-text: #ff9b9b;
+  --warn-soft: rgba(245, 166, 35, 0.18);
+  --warn-line: rgba(245, 166, 35, 0.36);
+  --warn-text: #e8c37a;
+  --warn-strong: #e8c37a;
+  --info: #6ba1ff;
+  --info-soft: rgba(60, 130, 246, 0.18);
+
+  /* 交互高光：浅色下是"再白一点"，深色下只能是"再亮一点" */
+  --hover-sheen: rgba(255, 255, 255, 0.08);
+  --badge-sheen: rgba(255, 255, 255, 0.06);
+  --brand-2: #2ee584;
+  --brand-3: #07a84f;
+
+  /* 阴影与滚动条：深色下阴影要更重才看得出层次；滑块要比底亮 */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-toast: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --sb-thumb: #3a424b;
+}
+
+/* 图片/视频在深色下稍微压一点亮度，避免大面积白底图糊在深色界面上 */
+[data-theme='dark'] img,
+[data-theme='dark'] video {
+  filter: brightness(0.94);
+}
+

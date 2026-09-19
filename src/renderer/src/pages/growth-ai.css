@@ -241,7 +241,7 @@
   align-self: stretch;
   background: var(--danger-soft);
   border: 1px solid var(--danger-line);
-  color: #c92a2a;
+  color: var(--danger-text);
 }
 .gai-thinking {
   color: var(--text-3);
@@ -436,7 +436,7 @@
   padding: 3px 6px;
   border-radius: var(--r-pill);
   background: rgba(0, 0, 0, 0.62);
-  color: #fff;
+  color: var(--on-brand);
   pointer-events: none;
 }
 /* 采用按钮平时隐藏：一屏十几个重复按钮太吵；悬浮或键盘聚焦时才出现 */
@@ -450,7 +450,7 @@
   border: 0;
   border-radius: var(--r-sm);
   background: var(--brand);
-  color: #fff;
+  color: var(--on-brand);
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--m-2) var(--ease-out);
@@ -765,7 +765,7 @@
   box-shadow: 0 1px 2px rgba(31, 35, 41, 0.05);
 }
 .gai-msg.is-user {
-  background: linear-gradient(135deg, #10d473, #07a84f);
+  background: linear-gradient(135deg, var(--brand-2), var(--brand-3));
   border: none;
 }
 .gai-msg.is-ai {

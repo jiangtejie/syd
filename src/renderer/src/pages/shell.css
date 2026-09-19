@@ -17,7 +17,7 @@
   gap: 8px;
   padding: 0 176px 0 14px;
   background: var(--bg);
-  border-bottom: 1px solid #e8eaee;
+  border-bottom: 1px solid var(--border-light);
   -webkit-app-region: drag;
   user-select: none;
 }
@@ -60,7 +60,7 @@
 .app-nav {
   width: 64px;
   flex-shrink: 0;
-  background: #1f2329;
+  background: var(--text-1);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -113,7 +113,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #8a919a;
+  color: var(--text-3);
   background: #2a2f36;
   border: 1px dashed rgba(255, 255, 255, 0.28);
   box-sizing: border-box;
@@ -132,7 +132,7 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  border: 2px solid #1f2329;
+  border: 2px solid var(--text-1);
   box-sizing: border-box;
 }
 
@@ -146,11 +146,11 @@
 }
 
 .app-nav-dot.off {
-  background: #5b626b;
+  background: var(--text-2);
 }
 
 .app-nav-avatar:hover .app-nav-avatar-empty {
-  color: #cfd4da;
+  color: var(--border-strong);
 }
 
 .app-nav-item {
@@ -160,7 +160,7 @@
   border: none;
   border-radius: var(--r-md);
   background: transparent;
-  color: #9aa0a6;
+  color: var(--text-3);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -173,7 +173,7 @@
 
 .app-nav-item:hover {
   background: rgba(255, 255, 255, 0.08);
-  color: #d8dce1;
+  color: var(--border-light);
 }
 
 .app-nav-item.is-active {
@@ -239,7 +239,7 @@
 .page-title {
   font-size: var(--fs-xl);
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--text-strong);
   margin: 0 0 4px;
 }
 
@@ -250,7 +250,7 @@
 }
 
 /* 卡片语言（2026-09 统一）：白底 + 一档浅描边 + 一档极浅阴影 + 12px 圆角。
- * 此前是硬编码 #e8eaee + 10px 圆角 + 无阴影，而营销页自己写了一套 14px 圆角 + 双层阴影；
+ * 此前是硬编码 var(--border-light) + 10px 圆角 + 无阴影，而营销页自己写了一套 14px 圆角 + 双层阴影；
  * 同一产品里两种卡片口径，跨页切换时会有"换了个软件"的感觉。 */
 .page-card {
   background: var(--bg-panel);

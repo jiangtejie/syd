@@ -108,7 +108,7 @@
   transform: scale(0.97) translateY(0);
 }
 .gth-page .ui-btn.is-primary {
-  background: linear-gradient(135deg, #10d473, #07a84f);
+  background: linear-gradient(135deg, var(--brand-2), var(--brand-3));
   border-color: transparent;
   box-shadow: 0 6px 16px -10px rgba(7, 193, 96, 0.95);
 }
@@ -120,12 +120,12 @@
 .gth-page .ui-btn.is-danger.is-solid {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--on-brand);
 }
 .gth-page .ui-btn.is-danger.is-solid:hover:not(:disabled) {
   background: var(--danger-hover);
   border-color: var(--danger-hover);
-  color: #fff;
+  color: var(--on-brand);
 }
 .gth-page .ui-btn:focus-visible {
   outline: none;
@@ -181,7 +181,7 @@
 }
 .gth-page .ui-input:hover:not(:disabled),
 .gth-page .ui-select:hover:not(:disabled) {
-  border-color: #d6dae1;
+  border-color: var(--border-strong);
 }
 .gth-page .ui-input:focus,
 .gth-page .ui-select:focus,
@@ -266,7 +266,7 @@ textarea.gth-input,
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--bg-panel);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   transition: left 0.15s ease;
 }

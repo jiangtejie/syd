@@ -178,7 +178,7 @@
   gap: 10px;
   background: var(--danger-soft);
   border: 1px solid var(--danger-line);
-  color: #c92a2a;
+  color: var(--danger-text);
   font-size: var(--fs-md);
   border-radius: var(--r-md);
   padding: 8px 12px;
@@ -430,7 +430,7 @@
   right: 8px;
   bottom: 8px;
   font-size: var(--fs-xs);
-  color: #fff;
+  color: var(--on-brand);
   background: rgba(0, 0, 0, 0.55);
   border-radius: var(--r-pill);
   padding: 1px 8px;
@@ -456,7 +456,7 @@
   opacity: 0.85;
 }
 .gth-gallery-nav:hover {
-  background: #fff;
+  background: var(--bg-panel);
   color: var(--brand);
   opacity: 1;
 }
