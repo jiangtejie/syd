@@ -60,26 +60,6 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
     params: { storeId: { type: 'number', desc: '门店 id（不传用当前任务门店/默认门店）' } }
   },
   {
-    name: 'growth_search_web',
-    oneLine: '联网搜索公开信息(门店信息/菜品做法/口碑)，结果仅供参考',
-    when: '需要查门店地址/电话/做法/口碑等公开信息时',
-    confirm: false,
-    params: {
-      query: { type: 'string', required: true, desc: '搜索关键词' },
-      count: { type: 'number', desc: '结果条数（默认 5）' }
-    }
-  },
-  {
-    name: 'growth_search_images',
-    oneLine: '联网检索参考图(菜品/环境)，仅作参考不可直接对外发布',
-    when: '需要找配图灵感或参考图时',
-    confirm: false,
-    params: {
-      query: { type: 'string', required: true, desc: '图片检索关键词' },
-      count: { type: 'number', desc: '结果条数（默认 5）' }
-    }
-  },
-  {
     name: 'growth_read_lark_base',
     oneLine: '读飞书多维表格(选品表/排期表/门店清单/素材台账)',
     when: '运营的表在飞书里、需要按表里的口径写文案或核对信息时',

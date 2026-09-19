@@ -34,9 +34,22 @@ try {
   const { isSecretConfigKey, isInjectShot, shouldPruneInjectShot } = require(bundle)
 
   console.log('哪些配置键属于敏感值（落库前必须加封）：')
-  for (const k of ['ai.apiKey', 'growth.image.apiKey', 'growth.search.apiKey', 'lark.appSecret']) {
+  // growth.providerApiKey / growth.search.apiKey 所属链路已下线，但键名仍留在名单里：
+  // 老库可能还躺着明文，留在名单里才保证「读出来加封、不回传渲染层」。
+  const SECRET_KEYS = [
+    'ai.apiKey',
+    'growth.image.apiKey',
+    'growth.providerApiKey',
+    'growth.search.apiKey',
+    'lark.appSecret'
+  ]
+  for (const k of SECRET_KEYS) {
     ok(isSecretConfigKey(k) === true, '固定名单：' + k)
   }
+  ok(
+    SECRET_KEYS.includes('growth.providerApiKey') && SECRET_KEYS.includes('growth.search.apiKey'),
+    '已下线链路的旧 Key 仍在名单（历史明文不能漏在名单外）'
+  )
   ok(isSecretConfigKey('img:wxid_abc123:xorKey') === true, '★ 图片 XOR 密钥（键名带账号，此前认不出来）')
   ok(isSecretConfigKey('img:wxid_abc123:aesKey') === true, '★ 图片 AES 密钥')
   ok(isSecretConfigKey('img:someone-else:anyField') === true, '前缀匹配：账号换了也认得出')

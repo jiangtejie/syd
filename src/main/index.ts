@@ -435,8 +435,9 @@ if (!app.requestSingleInstanceLock()) {
     migrateLegacyCacheLayout()
 
     // 敏感配置迁移：存量明文 ai.apiKey 加封为 safeStorage 密文（幂等）
-    // growth.providerApiKey 是已下线的「第三方数据服务商」留下的键。这里保留封存动作
-    // 而不是删掉：老库里可能还躺着明文，封存一次比留在库里强；新库取不到该键，是空操作。
+    // growth.providerApiKey（第三方数据服务商）与 growth.search.apiKey（联网搜索）是两条已下线
+    // 链路留下的键。这里**保留封存动作**而不是跟着删：老库里可能还躺着明文，封存一次比留在库里强；
+    // 新库取不到这两个键，是空操作。同理见 services/securityPolicy.ts 的 SECRET_CONFIG_KEYS。
     migrateStoredSecrets([
       'ai.apiKey',
       'growth.providerApiKey',

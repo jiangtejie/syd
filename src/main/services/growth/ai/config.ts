@@ -1,6 +1,9 @@
 /**
- * 营销 AI 工作台配置读取: 生图通道(中转站 /images/generations) / 联网搜索 provider。
+ * 营销 AI 工作台配置读取: 生图通道(中转站 /images/generations)。
  * 敏感 Key 走 safeStorage 加封(与 ai.apiKey 同机制)。
+ *
+ * 注: 原有的联网搜索配置(growth.search.enabled/provider/apiKey)已随搜索链路整体下线删除。
+ * 老库里那几个键原样留着(见 index.ts 的 migrateStoredSecrets 注释)，新库不再写。
  *
  * 写入侧说明: **只读这里，写走通用配置 cs:config:set**(设置页表单即 app_config 真源)。
  * 历史上这里另有一套 setGrowthAiConfigField + GrowthAiConfigField 白名单，
@@ -30,12 +33,6 @@ export interface ImageConfig {
   monthlyLimit: number
 }
 
-export interface SearchConfig {
-  enabled: boolean
-  provider: string
-  apiKey: string
-}
-
 export function getImageConfig(): ImageConfig {
   return {
     enabled: getConfigBoolean('growth.image.enabled', false),
@@ -50,13 +47,5 @@ export function getImageConfig(): ImageConfig {
     templates: getConfig('growth.image.templates') ?? '',
     // 键名沿用 growth.image.monthlyLimit；旧的 monthlyBudget 是纯空壳（无 UI、无消费点），直接改名收口
     monthlyLimit: Math.max(Math.floor(Number(getConfig('growth.image.monthlyLimit')) || 0), 0)
-  }
-}
-
-export function getSearchConfig(): SearchConfig {
-  return {
-    enabled: getConfigBoolean('growth.search.enabled', false),
-    provider: (getConfig('growth.search.provider') ?? 'bocha').trim(),
-    apiKey: openSecret(getConfig('growth.search.apiKey'))
   }
 }

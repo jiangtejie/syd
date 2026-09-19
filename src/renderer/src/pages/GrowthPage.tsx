@@ -17,13 +17,14 @@ import './growth/buzz.css'
 import './growth/polish.css'
 
 /**
- * 营销增长页: 素材仓库 / AI 工作台 / 舆情 / 设置(门店品牌 · AI 生图 · 联网搜索)。
+ * 营销增长页: 素材仓库 / AI 工作台 / 舆情 / 设置(门店品牌 · AI 生图)。
  * 对齐仓库页面规范(page-scroll/page-title/page-card), 无 mock 数据;
  * 空态给引导步骤, 失败给错误条 + 重试。
  *
  * 注: 原「采集源」页签与第三方数据服务商配置已随采集链路下线删除 —— 适配器注册表从未被注册过，
  * 这条链路在结构上不可能成功（见 ARCHITECTURE §9）。入库仍有两条真能用的路：
  * 粘贴分享链接解析、本地图片/视频导入。
+ * 注: 联网搜索（搜索工具 + 配置卡）也已下线待重新设计（目标是「商家综合信息 + 菜品信息」）。
  *
  * 拆分层级(2026-09 结构整理):本文件只留页面外壳 —— 页签 + 各面板的拼装;
  * 面板实现见 components/growth/{common,StatsBar,WarehousePanel,BuzzPanel,StoresCard,MediaGallery}.tsx。
@@ -35,7 +36,7 @@ const TAB_DESC: Record<GrowthTab, string> = {
   warehouse:
     '本地爆款素材仓库: 粘贴链接/口令入库、检索与筛选、批量改用途/状态/删除、批量导出发布包; AI 拆解与爆改在「AI 工作台」进行(详情里可一键跳过去)',
   provider:
-    '营销域的全部设置: 门店与品牌档案(AI 的事实来源)、AI 生图通道与生图策略、联网搜索。采集服务商与订阅已下线'
+    '营销域的全部设置: 门店与品牌档案(AI 的事实来源)、AI 生图通道与生图策略。数据服务商订阅与联网搜索已下线'
 }
 
 export default function GrowthPage(): React.JSX.Element {
@@ -151,7 +152,7 @@ export default function GrowthPage(): React.JSX.Element {
                     : '设置'}
             </button>
           ))}
-          <span className={'gth-seg-hint'}>设置 = 门店与品牌档案 / AI 生图 / 联网搜索</span>
+          <span className={'gth-seg-hint'}>设置 = 门店与品牌档案 / AI 生图</span>
         </div>
       </div>
       {/* 四个统计卡(仓库素材/采集订阅/媒体文件/数据服务商)说的是"采集管线健康度"，

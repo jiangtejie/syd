@@ -687,7 +687,7 @@ function SettingsPage(): React.JSX.Element {
           {/* 指路：营销 AI 的通道与策略不在这里重复一份，去营销页和门店档案放一起配 */}
           <div className="st-actions">
             <span className="st-hint">
-              营销相关的 AI（AI 生图 / 联网搜索）已移到「营销 → 设置」，与门店/品牌档案同屏。
+              营销相关的 AI（AI 生图）已移到「营销 → 设置」，与门店/品牌档案同屏。
             </span>
             <button type="button" className="ui-btn is-sm" onClick={goMarketingAi}>
               去设置

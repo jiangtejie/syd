@@ -6,10 +6,17 @@
  * 2. 注入截图该不该清理。
  */
 
-/** 固定键名的敏感配置 */
+/**
+ * 固定键名的敏感配置。
+ *
+ * 注: `growth.providerApiKey` / `growth.search.apiKey` 所属的两条链路（第三方数据服务商、
+ * 联网搜索）都已下线，但**这两个键名长期留在名单里** —— 老库可能仍存着它们的明文，
+ * 留在名单里才能保证「读出来加封、不回传渲染层」，删掉就等于把历史明文敞开。新库不写这两个键。
+ */
 export const SECRET_CONFIG_KEYS: readonly string[] = [
   'ai.apiKey',
   'growth.image.apiKey',
+  'growth.providerApiKey',
   'growth.search.apiKey',
   'lark.appSecret'
 ]

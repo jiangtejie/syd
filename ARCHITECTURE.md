@@ -463,9 +463,11 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 
 ## 9. 营销增长模块（`growth/*`）
 
-入库（粘贴抖音/小红书链接或口令解析 + 本地导入）→ 仓库（去重/评分/标签）→ 拆解（`remix`：结构 + **视觉**拆解卡）→ AI 工作台（任务化爆改 / 生图策略 / 封面合成 / 联网搜索）→ 采用 → 导出发布包（`publisher/exporter`）→ 发布登记与效果回填（`growth_metric_snapshot` → 素材分 → 看板）；另有独立的舆情通道（`buzz`：门店相关评论/提及与诊断）。
+入库（粘贴抖音/小红书链接或口令解析 + 本地导入）→ 仓库（去重/评分/标签）→ 拆解（`remix`：结构 + **视觉**拆解卡）→ AI 工作台（任务化爆改 / 生图策略 / 封面合成）→ 采用 → 导出发布包（`publisher/exporter`）→ 发布登记与效果回填（`growth_metric_snapshot` → 素材分 → 看板）；另有独立的舆情通道（`buzz`：门店相关评论/提及与诊断）。
 
 **第三方采集订阅已整体下线**（2026-09-19，按用户决定）：`collector/` 的 vendor 适配器注册表**从来没有过调用方**，`runCrawl` 必然失败、调度器只是空转心跳，界面却摆着「采集源」页让人配数据服务商。现在数据来源只有三条人工路径（粘贴链接入库 / 本地导入 / 媒体重下），`growth_subscription` / `growth_crawl_task` / `growth_remix_job` / `growth_publish_task` / `growth_publish_result` 五张无写入点的表不再新建（老库原样留着），`cs:growth:progress` 事件通道（只发过 crawl 一种 kind）与 `cs:growthai:configGet/configSet` 一并删除。
+
+**联网搜索也已下线（2026-09-19，待重新设计）**：`growth_search_web` / `growth_search_images` 两个工具、`ai/searchProvider.ts`（bocha/tavily/serper 三家适配）与设置里的「联网搜索」卡片全部删除，营销域工具从 14 个收敛到 12 个（`scripts/tool-registry-selftest.mjs` 同步）。原因是这条链路解决的是「查门店地址/电话/口碑」这种**零散公开信息**，而运营真正要的是「这个商家/这道菜到底什么样」——下次按「商家综合信息 + 菜品信息」重新设计，先把位置空出来。当前缺事实只能追问用户或用占位符（`buildGrowthSystem` 的工作方式第 4 条已改写）。
 
 **生图策略层（`growth/ai/imageStrategy.ts`，纯函数 + 自检 `scripts/growth-image-strategy-selftest.mjs`）**：
 `imageProvider` 只是「通道」（把 prompt 发给 `/images/generations`），策略必须单独一层，否则同一家店两次生图可以毫无共同点。策略输入（平台 / 角色 / 模板 / 门店档案 / 品牌资料包 / 素材线索）→ 输出 prompt、negative、size、count 与给人看的 `notes`：
@@ -476,7 +478,7 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 - **负向词**：接口不保证都支持 `negative_prompt`，统一以「【避免出现】…」拼进 prompt 文本（`composeFinalPrompt`），并固定带上「不要文字/水印/logo/可辨认人脸」。
 - **张数与成本**：单次张数受设置里「每次张数」约束、硬上限 4；另有**每月张数上限**（`growth.image.monthlyLimit`，按自然月统计 `growth_asset.source_mark='gen:image'` 的行数，0 = 不限）——额度用尽时策略层在**发起请求前**就把 `blocked` 置位，调用方不得生成，并给出「到哪里调额度」的原话。张数被单次上限或月度额度压过时，都会在策略说明里如实写出（不静默少给、不静默失败）。
 
-**配置入口在营销页**（`营销 → 设置`）：门店与品牌档案 / AI 生图 / 联网搜索同屏 —— 它们共同决定「这条内容是怎么生成的」，此前生图在 设置→AI 助手、门店品牌在营销页，排查「生成的图和门店对不上」要跨两个页面。设置页的「AI 助手」只留一行指路（可点击跳转，`stores/workbench.ts` 的 `growthTab` + `setPage`，与「监控」的 `monitorTab` 同口径）。
+**配置入口在营销页**（`营销 → 设置`）：门店与品牌档案 / AI 生图同屏 —— 它们共同决定「这条内容是怎么生成的」，此前生图在 设置→AI 助手、门店品牌在营销页，排查「生成的图和门店对不上」要跨两个页面。设置页的「AI 助手」只留一行指路（可点击跳转，`stores/workbench.ts` 的 `growthTab` + `setPage`，与「监控」的 `monitorTab` 同口径）。
 
 配置读写只有一条路径：`cs:config:getAll/set`（app_config 真源）。此前 `cs:growthai:configGet/configSet` + `GrowthAiConfigField` 白名单是同一配置的第二条写路径，渲染端从无调用者（配置面板一直走 `cs:growth`），已删除。
 
@@ -642,7 +644,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 群问题 | `issue.autoScan.enabled`、`issue.escalate.enabled`、`issue.escalateUrgentHours`、`issue.escalateUnassignedHours`、`issue.escalateAssignedHours`、`issue.autoMergeDuplicates`、`monitor.followUpHours`、`monitor.backlogHours`、`monitor.autoCloseHours`、`monitor.alertSound` |
 | 飞书 | `lark.appId`、`lark.appSecret`、`lark.defaultUrl`、`feishu.notify.enabled/targets/events/dailyLimit` |
 | 上报 | `report.*`（任务本体存 `report_job`） |
-| 营销 | `growth.enabled/provider/providerApiKey`、`growth.image.*`、`growth.search.*` |
+| 营销 | `growth.image.*`（在用）；`growth.enabled/provider/providerApiKey`、`growth.search.*` 是两条已下线链路留下的键（老库可能仍有明文，仍在 `SECRET_CONFIG_KEYS` 名单里） |
 | 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
 | 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
 | 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |

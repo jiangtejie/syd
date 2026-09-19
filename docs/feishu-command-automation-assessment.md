@@ -27,7 +27,7 @@
 | 回执 | 纯文本回复(Markdown→纯文本降级 + 3000 字分片) | `feishuService.sendTextReply` |
 | 忙碌 | 会话忙时新消息进队列(覆盖式只留最新) | `feishuService.pendingQueue` |
 
-**现有工具盘点(统一注册表 28 个 + 营销 13 个)**:
+**现有工具盘点(统一注册表 28 个 + 营销 12 个)**：
 
 | 域 | 已有工具 | 缺口 |
 | --- | --- | --- |
@@ -36,7 +36,7 @@
 | 工作区(12) | workspace_list/read/search/file_info/write/mkdir/delete、csv_read/append、xlsx_preview/write、site_scaffold | **飞书会话完全用不到**(未进 `cap/registry`,只在工作台页的 `workbench/tools.ts`);无"飞书会话绑定工作区"入口 |
 | 飞书云文档(3) | lark_base_tables / lark_base_records / lark_doc_read(只读) | 写回记录、电子表格、附件下载 |
 | 核心元技能(3) | list_capabilities / mount_capability / unmount_capability | 缺 `/help` 面向**用户**的能力说明 |
-| 营销(13) | 素材读取/门店/联网搜索/生图/标题正文改写/产出/导出/发布登记 | 只存在于营销 AI 工作台,**IM/飞书入口触达不到** |
+| 营销(12) | 素材读取/门店/生图/封面/标题正文改写/产出/导出/发布登记 | 只存在于营销 AI 工作台,**IM/飞书入口触达不到** |
 
 ## 2. 差距清单(按"要能自动完成任务"倒推)
 

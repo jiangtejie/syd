@@ -44,7 +44,6 @@ import {
 } from '../../../db/repos/growthAiRepo'
 import { downloadMediaAssets } from '../collector/media/assetStore'
 import { readBaseAsText } from '../../lark/api'
-import { searchImages, searchWeb } from './searchProvider'
 import {
   generateImages,
   graySignature,
@@ -315,54 +314,6 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
       run: async (_ctx, argsIn) => {
         const args = argsIn as { storeId?: number }
         return storeBrief(args.storeId ?? storeIdOf(args)) + '\n【品牌资料包】\n' + brandBrief()
-      }
-    },
-    {
-      name: 'growth_search_web',
-      kind: 'builtin',
-      needsWx: false,
-      params: metaOf('growth_search_web').params,
-      description:
-        '联网搜索公开信息(门店地址/电话/营业时间/菜品做法/口碑等)。结果仅供参考, 地址电话价格必须让用户确认后才能写入档案。',
-      run: async (_ctx, argsIn) => {
-        const args = argsIn as { query: string; count?: number }
-        try {
-          const rows = await searchWeb(args.query, { count: args.count ?? 6 })
-          if (rows.length === 0) return '没有找到相关结果, 换个说法再试。'
-          return rows
-            .map(
-              (r, i) =>
-                String(i + 1) +
-                '. ' +
-                r.title +
-                ' | ' +
-                r.site +
-                '\n   ' +
-                r.snippet +
-                '\n   ' +
-                r.url
-            )
-            .join('\n')
-        } catch (e) {
-          return '搜索失败: ' + (e instanceof Error ? e.message : String(e))
-        }
-      }
-    },
-    {
-      name: 'growth_search_images',
-      kind: 'builtin',
-      needsWx: false,
-      params: metaOf('growth_search_images').params,
-      description: '联网检索图片(菜品/环境参考图)。结果只作参考, 不得直接用于对外发布(版权)。',
-      run: async (_ctx, argsIn) => {
-        const args = argsIn as { query: string; count?: number }
-        try {
-          const rows = await searchImages(args.query, { count: args.count ?? 8 })
-          if (rows.length === 0) return '没有找到相关图片。'
-          return rows.map((r, i) => String(i + 1) + '. ' + r.source + ' | ' + r.url).join('\n')
-        } catch (e) {
-          return '图片检索失败: ' + (e instanceof Error ? e.message : String(e))
-        }
       }
     },
     {

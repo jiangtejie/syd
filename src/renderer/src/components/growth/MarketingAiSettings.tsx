@@ -1,9 +1,11 @@
 /**
- * 营销 AI 的通道与策略设置：AI 生图 + 联网搜索。
+ * 营销 AI 的通道与策略设置：AI 生图。
  *
- * 为什么放在营销页而不是「设置」：这两项配的是营销域能力，语义上和「门店与品牌档案」同级 ——
- * 它们共同决定「这条内容是怎么生成的」。此前生图在 设置→AI 助手、门店品牌在 营销→数据服务，
+ * 为什么放在营销页而不是「设置」：它配的是营销域能力，语义上和「门店与品牌档案」同级 ——
+ * 两者共同决定「这条内容是怎么生成的」。此前生图在 设置→AI 助手、门店品牌在 营销→数据服务，
  * 排查「为什么生成的图和门店对不上」要跨两个页面。
+ *
+ * 注: 原有的「联网搜索」卡片已随该链路整体下线删除（后续按「商家综合信息 + 菜品信息」重新设计）。
  *
  * 保存语义与设置页一致：开关与下拉即时生效，输入框失焦/回车即存（不需要「保存」按钮）。
  */
@@ -26,9 +28,6 @@ interface AiForm {
   'growth.image.platform': string
   'growth.image.templates': string
   'growth.image.monthlyLimit': string
-  'growth.search.enabled': string
-  'growth.search.provider': string
-  'growth.search.apiKey': string
 }
 
 const DEFAULTS: AiForm = {
@@ -41,10 +40,7 @@ const DEFAULTS: AiForm = {
   'growth.image.count': '2',
   'growth.image.platform': 'xhs',
   'growth.image.templates': '',
-  'growth.image.monthlyLimit': '0',
-  'growth.search.enabled': '0',
-  'growth.search.provider': 'bocha',
-  'growth.search.apiKey': ''
+  'growth.image.monthlyLimit': '0'
 }
 
 /** 能力探测结果（与主进程 imageProbe.ts 的 ProbeResult 对应） */
@@ -332,37 +328,6 @@ export function MarketingAiSettings(): React.JSX.Element {
             )}
           </div>
         )}
-      </SettingsCard>
-
-      <SettingsCard
-        title="联网搜索"
-        desc="营销工作台里 AI 查地址/电话/口碑/菜品参考时使用。结果仅供参考, 地址电话需人工确认后才写入档案。"
-      >
-        <SwitchRow
-          label="启用联网搜索"
-          desc="关闭后搜索工具会提示去这里开启。"
-          checked={boolVal(form['growth.search.enabled'])}
-          onChange={(v) => setNow('growth.search.enabled', boolStr(v))}
-        />
-        <FieldRow label="供应商">
-          <select
-            className="st-input"
-            value={form['growth.search.provider'] ?? 'bocha'}
-            onChange={(e) => setNow('growth.search.provider', e.target.value)}
-          >
-            <option value="bocha">博查(国内直连)</option>
-            <option value="tavily">Tavily</option>
-            <option value="serper">Serper</option>
-          </select>
-        </FieldRow>
-        <FieldRow label="API Key">
-          <input
-            className="st-input"
-            type="password"
-            placeholder="搜索服务密钥(本地加密存储)"
-            {...field('growth.search.apiKey')}
-          />
-        </FieldRow>
       </SettingsCard>
     </>
   )

@@ -199,7 +199,12 @@ AI：[调用 growth_rewrite_copy(指令=精简第二段)] + [调用 growth_updat
 
 ## 6. 联网搜索与 AI 生图
 
-### 6.1 搜索能力（`services/growth/ai/searchProvider.ts`）
+> **状态（2026-09-19）**：6.1 的搜索能力**已按用户决定下线** —— `ai/searchProvider.ts`（bocha/tavily/serper）、
+> `growth_search_web` / `growth_search_images` 工具、设置里的「联网搜索」卡片全部删除，营销域工具 14 → 12。
+> 下面保留的是**待重新设计**的原始方案：目标是「商家综合信息 + 菜品信息」（而不是零散地查地址/电话/口碑）。
+> 6.2 的生图能力已落地，见 ARCHITECTURE §9。
+
+### 6.1 搜索能力（`services/growth/ai/searchProvider.ts`，已下线待重设计）
 
 ```ts
 interface SearchProvider {
