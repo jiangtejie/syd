@@ -200,13 +200,53 @@ const KIND_LABEL: Record<string, string> = {
 
 const fmtNum = (n: number): string => (n >= 10000 ? (n / 10000).toFixed(1) + 'w' : String(n))
 
-const VARIANT_LABEL: Record<string, string> = {
-  'chat:title': '标题候选',
-  'chat:copy1': '正文候选 A',
-  'chat:copy2': '正文候选 B',
-  'chat:copy3': '正文候选 C',
-  'chat:image': '生成图候选',
-  'chat:cover': '封面候选'
+/**
+ * 产出块类型 → 人话。
+ *
+ * 两条链路写进来的 variant 不一样：AI 工作台写 `chat:title|copy1..3|image|cover`；
+ * 历史「一键爆改」写 `titles|copy|A|B`（growth_remix_output.variant 的 DDL 默认值就是 'A'）。
+ * 以前只映射了前者，老数据在界面上直接显示原始键名（实测截图里就出现了 "titles"）。
+ *
+ * 另外「已采用」与「待选」两种语境说法不同：已采用的是成品（标题/正文），待选的是候选。
+ */
+const VARIANT_KIND: Record<string, 'title' | 'copy' | 'image' | 'cover' | 'other'> = {
+  'chat:title': 'title',
+  titles: 'title',
+  'chat:copy1': 'copy',
+  'chat:copy2': 'copy',
+  'chat:copy3': 'copy',
+  copy: 'copy',
+  copyA: 'copy',
+  copyB: 'copy',
+  A: 'copy',
+  B: 'copy',
+  'chat:image': 'image',
+  image: 'image',
+  'chat:cover': 'cover',
+  cover: 'cover'
+}
+
+const KIND_ADOPTED: Record<string, string> = {
+  title: '标题组',
+  copy: '正文',
+  image: '配图',
+  cover: '封面',
+  other: '产出'
+}
+const KIND_CANDIDATE: Record<string, string> = {
+  title: '标题候选',
+  copy: '正文候选',
+  image: '配图候选',
+  cover: '封面候选',
+  other: '候选'
+}
+
+/** adopted=true 表示这块已采用（说成品），false 表示还在待选（说候选） */
+function variantLabel(variant: string, adopted: boolean): string {
+  const kind = VARIANT_KIND[variant] ?? 'other'
+  const table = adopted ? KIND_ADOPTED : KIND_CANDIDATE
+  // 老数据里可能是完全没见过的键名：退回原始值也比显示「产出」更有信息量
+  return kind === 'other' && variant ? variant : (table[kind] ?? table.other)
 }
 
 /**
@@ -994,7 +1034,7 @@ export default function GrowthAiWorkbench({
           outputs.map((o) => (
             <div className="gai-out-card" key={o.id}>
               <div className="gai-out-variant">
-                {VARIANT_LABEL[o.variant] ?? o.variant}
+                {variantLabel(o.variant, true)}
                 <button
                   className="ui-btn gth-btn sm"
                   type="button"
@@ -1086,7 +1126,7 @@ export default function GrowthAiWorkbench({
         ) : (
           candidates.map((c) => (
             <div className="gai-out-card is-candidate" key={c.id}>
-              <div className="gai-out-variant">{VARIANT_LABEL[c.variant] ?? c.variant}</div>
+              <div className="gai-out-variant">{variantLabel(c.variant, false)}</div>
               <StrategyNote o={c} />
               {c.title
                 ? c.title

@@ -73,7 +73,7 @@
   border: 1px solid var(--warn-line);
   background: var(--warn-soft);
   color: var(--warn-text);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   text-align: center;
 }
@@ -81,7 +81,7 @@
 .wb-img-hint {
   padding: 24px 32px;
   color: var(--text-3);
-  font-size: 13px;
+  font-size: var(--fs-md);
   text-align: center;
   line-height: 1.7;
 }
@@ -96,7 +96,7 @@
 .wb-img-btn {
   min-width: 26px;
   padding: 2px 8px;
-  font-size: 13px;
+  font-size: var(--fs-md);
   line-height: 1.6;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -113,7 +113,7 @@
 .wb-img-pct {
   min-width: 56px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   border: none;
   background: none;
@@ -123,7 +123,7 @@
 /* 档位标注：高清原图=绿色；默认图/缩略图=警示色（解密层降级不再静默） */
 .wb-img-tier {
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -146,7 +146,7 @@
 .wb-att-video-hint {
   padding: 24px;
   color: var(--text-3);
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .wb-att-file {
@@ -169,12 +169,12 @@
 
 .wb-att-file-size {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .wb-att-file-hint {
   color: #b0b3b8;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .wb-att-close {
@@ -215,7 +215,7 @@
   border: none;
   border-radius: 5px;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-1);
   cursor: pointer;
 }

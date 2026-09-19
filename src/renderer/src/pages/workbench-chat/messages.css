@@ -31,20 +31,20 @@
 }
 
 .wb-welcome-title {
-  font-size: 20px;
+  font-size: var(--fs-xl);
   font-weight: 700;
 }
 
 .wb-welcome-sub {
   margin-top: 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   line-height: 1.7;
 }
 
 .wb-loading {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 8px 2px;
 }
 
@@ -66,7 +66,7 @@
   border-radius: var(--r-md);
   background: var(--bg);
   border: 1px solid var(--border-light);
-  font-size: 13.5px;
+  font-size: var(--fs-md);
   line-height: 1.65;
   word-break: break-word;
 }
@@ -102,7 +102,7 @@
 .wb-bubble h1,
 .wb-bubble h2,
 .wb-bubble h3 {
-  font-size: 15px;
+  font-size: var(--fs-lg);
   margin: 8px 0 4px;
 }
 
@@ -117,7 +117,7 @@
   border: 1px solid var(--border-light);
   border-radius: 4px;
   padding: 1px 4px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-1);
 }
 
@@ -168,7 +168,7 @@
  * 并行:同一 step 里多个 node,节点竖轴共用、子节点缩进；串行:一步一节点。
  */
 .wb-tl {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   margin: 2px 0 6px;
 }
 
@@ -181,14 +181,14 @@
 
 .wb-tl-kind {
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-4);
   user-select: none;
 }
 
 .wb-tl-meta {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   font-variant-numeric: tabular-nums;
 }
@@ -290,7 +290,7 @@
 
 .wb-tl-name {
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-2);
   transition: color 0.15s;
 }
@@ -305,7 +305,7 @@
 
 .wb-tl-state {
   font-style: normal;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--info);
   animation: wb-run-pulse 1.1s ease-in-out infinite;
 }
@@ -316,7 +316,7 @@
 }
 
 .wb-tl-dur {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   font-variant-numeric: tabular-nums;
 }
@@ -324,7 +324,7 @@
 .wb-tl-caret {
   margin-left: auto;
   flex: none;
-  font-size: 9px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   transition: transform 0.15s;
 }
@@ -337,7 +337,7 @@
 .wb-tl-tag {
   display: inline-block;
   margin: 1px 0 2px;
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   border: 1px dashed var(--border);
   border-radius: 8px;
@@ -360,7 +360,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
 }
 
@@ -371,7 +371,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   color: var(--text-2);
   background: none;
@@ -388,7 +388,7 @@
  * 只动间距/字号，不动颜色与结构 —— 两边的视觉语言必须保持一致。 */
 .wb-tl.is-roomy {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .wb-tl.is-roomy .wb-tl-head {
@@ -398,7 +398,7 @@
 
 .wb-tl.is-roomy .wb-tl-kind,
 .wb-tl.is-roomy .wb-tl-meta {
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .wb-tl.is-roomy .wb-tl-step {
@@ -434,22 +434,22 @@
 }
 
 .wb-tl.is-roomy .wb-tl-name {
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   line-height: 1.5;
 }
 
 .wb-tl.is-roomy .wb-tl-state,
 .wb-tl.is-roomy .wb-tl-dur {
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .wb-tl.is-roomy .wb-tl-caret {
-  font-size: 10px;
+  font-size: var(--fs-xs);
 }
 
 .wb-tl.is-roomy .wb-tl-tag {
   margin: 4px 0 2px;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   padding: 1px 8px;
   border-radius: 9px;
 }
@@ -460,12 +460,12 @@
 }
 
 .wb-tl.is-roomy .wb-toolcard-detail-title {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   margin-bottom: 2px;
 }
 
 .wb-tl.is-roomy .wb-toolcard-detail-pre {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   line-height: 1.7;
   max-height: 220px;
 }
@@ -487,7 +487,7 @@
   border-radius: 10px;
   background: var(--warn-soft);
   padding: 7px 12px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   box-shadow: 0 1px 3px rgba(245, 166, 35, 0.12);
 }
 
@@ -539,7 +539,7 @@
   border-radius: var(--r-sm);
   background: var(--danger-soft);
   color: var(--danger);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
 }
 
 .wb-composer {
@@ -561,7 +561,7 @@
   border-radius: var(--r-md);
   background: var(--bg);
   padding: 9px 11px;
-  font-size: 13.5px;
+  font-size: var(--fs-md);
   line-height: 1.55;
   outline: none;
   font-family: inherit;
@@ -610,7 +610,7 @@
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1;
   cursor: pointer;
 }
@@ -628,6 +628,6 @@
 
 .wb-hint {
   margin-right: auto;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
 }

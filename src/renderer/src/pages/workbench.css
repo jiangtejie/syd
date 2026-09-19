@@ -9,7 +9,7 @@
   grid-template-columns: 280px minmax(0, 1fr) 520px;
   height: 100%; /* 嵌入应用外壳页面区 */
   background: var(--bg);
-  font-size: 14px;
+  font-size: var(--fs-lg);
   color: var(--text-1);
   overflow: hidden;
 }

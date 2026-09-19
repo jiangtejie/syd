@@ -1,17 +1,17 @@
 /* 外观走全局 ui-btn；这里只留右栏的密度（比工具栏再小一号） */
 .gip-btn {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 4px 10px;
 }
 
 .gip-sync {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
 }
 
 /* 转账消息双方显示名（49/2000） */
 .wb-msg-transfer-names {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-2);
   font-weight: 500;
   margin-bottom: 4px;
@@ -22,14 +22,14 @@
 
 /* 动画表情加载占位 */
 .wb-msg-emoji-loading {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
 /* 会话列表「待办问题」徽标（群） */
 .wb-issue-badge {
   display: inline-block;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 14px;
   padding: 0 5px;
   margin-left: 6px;
@@ -43,7 +43,7 @@
 /* 气泡发送人「团队客服」标记 */
 .wb-msg-sender-team {
   font-style: normal;
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
   line-height: 13px;
   padding: 0 5px;
   margin-left: 5px;
@@ -91,7 +91,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 7px 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   background: var(--bg);
   border: none;
@@ -117,7 +117,7 @@
 }
 
 .gip-senders-hint {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   margin-bottom: 6px;
   line-height: 1.5;
@@ -137,7 +137,7 @@
   gap: 8px;
   padding: 4px 6px;
   border-radius: var(--r-sm);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   cursor: pointer;
 }
@@ -155,7 +155,7 @@
 
 .gip-sender-count {
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
 }
 
@@ -189,7 +189,7 @@
 /* 历史顶部状态 */
 .wb-history-end {
   text-align: center;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   padding: 10px 0 4px;
 }
@@ -250,13 +250,13 @@
 }
 
 .ph-empty-title {
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 500;
   color: var(--text-2);
 }
 
 .ph-empty-desc {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   line-height: 1.6;
   color: var(--text-4);
   max-width: 300px;
@@ -287,7 +287,7 @@
 /* 单行对话框:⊕附件入口 + 浮层菜单 + 状态行 */
 .wb-chat-status {
   align-self: flex-start;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--brand);
   margin-left: 44px;
   animation: wb-run-pulse 1.1s ease-in-out infinite;
@@ -328,7 +328,7 @@
 }
 
 .wb-chat-attach-plus {
-  font-size: 17px;
+  font-size: var(--fs-xl);
   line-height: 1;
 }
 
@@ -365,7 +365,7 @@
   border-radius: var(--r-sm);
   background: transparent;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--text-1);
   cursor: pointer;
   text-align: left;
@@ -382,7 +382,7 @@
 
 .wb-chat-attach-menu > button span {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
 }
 
@@ -390,7 +390,7 @@
   margin-top: 4px;
   padding-top: 6px;
   border-top: 1px dashed var(--border-light);
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   color: var(--text-4);
 }
@@ -398,7 +398,7 @@
 /* ── 群问题面板：跟进人（默认显示 + 一键指派建议） ── */
 .gip-owner-tag {
   font-style: normal;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1;
   padding: 2px 6px;
   border-radius: var(--r-pill);
@@ -411,7 +411,7 @@
 
 .gip-owner-none {
   font-style: normal;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1;
   padding: 2px 6px;
   border-radius: var(--r-pill);
@@ -422,7 +422,7 @@
 }
 
 .gip-owner-sug {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1;
   padding: 3px 7px;
   border-radius: var(--r-pill);
@@ -446,7 +446,7 @@
 }
 
 .gip-owner-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
@@ -455,7 +455,7 @@
 }
 
 .gip-owner-hint {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
@@ -469,7 +469,7 @@
   border-left: 2px solid var(--brand);
   background: var(--bg-hover);
   border-radius: var(--r-sm);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   white-space: pre-wrap;
 }

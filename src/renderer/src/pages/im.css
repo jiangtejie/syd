@@ -50,7 +50,7 @@ textarea.im-allow-area {
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   transition:
     background 0.15s,
@@ -111,7 +111,7 @@ textarea.im-allow-area {
 
 .im-qr-msg {
   margin-top: 6px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--brand);
   line-height: 1.6;
 }
@@ -142,7 +142,7 @@ textarea.im-allow-area {
 .im-qr-steps {
   margin: 8px 0 4px;
   padding-left: 18px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   line-height: 1.8;
 }

@@ -118,7 +118,7 @@
  */
 .ui-btn {
   flex: none;
-  font-size: 13px;
+  font-size: var(--fs-md);
   padding: 6px 14px;
   border-radius: var(--r-md);
   border: 1px solid var(--border);
@@ -164,7 +164,7 @@
 }
 
 .ui-btn.is-sm {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   padding: 3px 10px;
 }
 
@@ -196,7 +196,7 @@
 .ui-input,
 .ui-select,
 .ui-textarea {
-  font-size: 13px;
+  font-size: var(--fs-md);
   padding: 6px 9px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -218,7 +218,7 @@
 
 /* 分段/页签:同「选中态」一种表达,别再各页自定 */
 .ui-tab {
-  font-size: 13px;
+  font-size: var(--fs-md);
   padding: 6px 16px;
   border-radius: var(--r-pill);
   border: 1px solid var(--border);
@@ -236,7 +236,7 @@
 
 /* 胶囊筛选(可多选/单选的小圆片) */
 .ui-pill {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 4px 11px;
   border-radius: var(--r-pill);
   border: 1px solid var(--border);
@@ -256,7 +256,7 @@
 .ui-chip {
   display: inline-block;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 18px;
   padding: 2px 10px;
   border-radius: 10px;
@@ -265,7 +265,7 @@
 }
 
 .ui-chip.is-sm {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 15px;
   padding: 1px 7px;
   border-radius: 9px;
@@ -307,7 +307,7 @@
   border: none;
   background: var(--bg-hover);
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 5px 12px;
   cursor: pointer;
   transition:
@@ -330,7 +330,7 @@
   background: none;
   border: none;
   color: var(--info);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   padding: 0;
 }

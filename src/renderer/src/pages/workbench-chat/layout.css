@@ -16,7 +16,7 @@
 }
 
 .wb-side-tip {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   background: var(--bg-panel);
   border-radius: var(--r-sm);
@@ -57,7 +57,7 @@
 .wb-side-search-input {
   width: 100%;
   box-sizing: border-box;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 5px 26px 5px 9px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -80,7 +80,7 @@
   border: none;
   background: transparent;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -113,7 +113,7 @@
 }
 
 .wb-search-hit-title {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-1);
   display: flex;
@@ -124,7 +124,7 @@
 
 .wb-search-hit-title em {
   font-style: normal;
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
   padding: 0 5px;
   border-radius: var(--r-pill);
   background: var(--bg-hover);
@@ -133,7 +133,7 @@
 }
 
 .wb-search-hit-text {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-2);
   line-height: 1.5;
   display: -webkit-box;
@@ -153,7 +153,7 @@
 
 .wb-ctxline-label {
   flex: none;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   user-select: none;
 }
@@ -184,7 +184,7 @@
 
 .wb-empty {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-align: center;
   padding: 20px 4px;
 }
@@ -212,7 +212,7 @@
 .wb-side-title {
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -237,7 +237,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--info);
 }
 
@@ -260,7 +260,7 @@
 }
 
 .wb-side-new {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   line-height: 1.4;
   padding: 1px 7px;
   border-radius: var(--r-pill);
@@ -270,7 +270,7 @@
 }
 
 .wb-side-err {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   line-height: 1.4;
   padding: 1px 7px;
   border-radius: var(--r-pill);
@@ -292,7 +292,7 @@
   border: none;
   background: transparent;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   cursor: pointer;
   padding: 1px 3px;
 }
@@ -326,14 +326,14 @@
 }
 
 .wb-head-title b {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .wb-head-sub {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 

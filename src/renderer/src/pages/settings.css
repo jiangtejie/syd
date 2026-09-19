@@ -579,9 +579,11 @@ select.st-input {
 }
 
 .rel-rate {
-  font-size: 30px;
-  font-weight: 700;
-  line-height: 1;
+  /* 关键数字走 --fs-kpi：原来写死 30px，比全站任何一处数字都大，也不在阶梯上 */
+  font-size: var(--fs-kpi);
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 
 .rel-rate.is-ok {

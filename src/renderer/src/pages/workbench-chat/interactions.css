@@ -50,7 +50,7 @@
 }
 
 .wb-thinking-text {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   margin-left: 3px;
   opacity: 0.75;
@@ -76,7 +76,7 @@
   display: block;
   margin: 6px auto 2px;
   padding: 5px 16px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   border: 1px solid var(--border-light);
   border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.94);
@@ -98,7 +98,7 @@
   display: block;
   margin: 2px auto 8px;
   padding: 4px 14px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   border: 1px solid var(--border-light);
   border-radius: var(--r-pill);
   background: var(--bg-panel);
@@ -125,7 +125,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.65;
   color: var(--text-2);
   background: var(--bg-hover);
@@ -162,7 +162,7 @@
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   cursor: pointer;
   transition: color 0.15s;
@@ -194,7 +194,7 @@
 
 .wb-reason-live-caret {
   display: inline-block;
-  font-size: 9px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   transition: transform 0.15s;
 }
@@ -211,7 +211,7 @@
   padding: 1px 2px;
   border: none;
   background: transparent;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   cursor: pointer;
   transition: color 0.15s;
@@ -235,7 +235,7 @@
   margin-top: 7px;
   padding-top: 5px;
   border-top: 1px dashed var(--border-light);
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   text-align: right;
   user-select: none;
@@ -257,7 +257,7 @@
   padding: 5px 10px;
   border: none;
   background: none;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   cursor: pointer;
   text-align: left;
@@ -270,13 +270,13 @@
 
 .wb-ev-icon {
   color: var(--brand);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .wb-ev-caret {
   margin-left: auto;
   display: inline-block;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   transition: transform 0.15s;
 }
 
@@ -296,7 +296,7 @@
   display: flex;
   align-items: baseline;
   gap: 7px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   user-select: text;
 }
@@ -309,7 +309,7 @@
   border-radius: 8px;
   background: var(--brand-soft);
   color: var(--brand);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -323,7 +323,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace;
 }

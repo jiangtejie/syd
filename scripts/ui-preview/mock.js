@@ -128,8 +128,10 @@
       id: 1000 + i, sessionId: '1111@chatroom', serverId: 's' + i, sortSeq: i,
       timestamp: now - (8 - i) * 7 * MIN, isSend: i % 3 === 2, senderName: i % 3 === 2 ? '我' : '黄巧',
       senderUsername: i % 3 === 2 ? 'me' : 'wxid_huangqiao', type: 1, localType: 1,
-      content: ['今天的鸭肠到货了吗', '到了，早上 9 点到的', '[图片]', '总价多少', '电子单开给我哈', '好，下午发你', '收到', '谢谢'][i],
-      parsedContent: '', isTeam: false, quote: null
+      content: ['今天的鸭肠到货了吗', '到了，早上 9 点到的', '总价多少', '按老价格算，鸭肠 22 一斤', '电子单开给我哈', '好，下午发你', '收到', '谢谢'][i],
+      // 气泡文字取自 parsedContent（不是 content）——给空串会整列显示「[消息]」占位
+      parsedContent: ['今天的鸭肠到货了吗', '到了，早上 9 点到的', '总价多少', '按老价格算，鸭肠 22 一斤', '电子单开给我哈', '好，下午发你', '收到', '谢谢'][i],
+      isTeam: false, quote: null
     }
   })
   var TASKS = [

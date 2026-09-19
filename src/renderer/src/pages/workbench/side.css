@@ -30,7 +30,7 @@
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   border: none;
   border-radius: var(--r-pill);
   background: transparent;
@@ -50,7 +50,7 @@
 
 .wb-pane-badge {
   font-style: normal;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 14px;
   min-width: 15px;
   padding: 0 4px;
@@ -90,7 +90,7 @@
 }
 
 .wb-suggest-agent-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
   flex: none;
 }
@@ -102,7 +102,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 4px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -132,7 +132,7 @@
 .wb-suggest-agent-current .wb-suggest-agent-edit {
   margin-left: auto;
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
@@ -142,12 +142,12 @@
 
 .wb-suggest-empty {
   color: var(--text-3);
-  font-size: 13px;
+  font-size: var(--fs-md);
   line-height: 1.6;
 }
 
 .wb-suggest-tag {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   margin-left: 6px;
   padding: 1px 6px;
@@ -183,7 +183,7 @@
 }
 
 .wb-suggest-text {
-  font-size: 13px;
+  font-size: var(--fs-md);
   line-height: 1.6;
   color: var(--text-1);
   white-space: pre-wrap;
@@ -198,7 +198,7 @@
 }
 
 .wb-suggest-btn {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 4px 14px;
   border-radius: 6px;
   border: 1px solid var(--brand);
@@ -229,7 +229,7 @@
 
 .wb-suggest-regenerate {
   width: 100%;
-  font-size: 13px;
+  font-size: var(--fs-md);
   padding: 8px 0;
   border-radius: var(--r-md);
   border: 1px solid #d9dce1;
@@ -250,7 +250,7 @@
 
 .wb-suggest-error {
   color: var(--danger-hover);
-  font-size: 13px;
+  font-size: var(--fs-md);
   line-height: 1.6;
 }
 
@@ -268,12 +268,12 @@
 }
 
 .wb-suggest-quote-label {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
 .wb-suggest-quote-text {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   line-height: 1.5;
   word-break: break-word;
@@ -281,7 +281,7 @@
 
 /* 发送结果提示 */
 .wb-send-result {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 6px 10px;
   border-radius: 6px;
   margin-bottom: 10px;
@@ -312,7 +312,7 @@
   background: var(--warn-soft);
   border: 1px solid var(--warn-line);
   color: var(--warn-text);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   z-index: 10;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   pointer-events: none; /* 不遮挡下方内容点击 */
