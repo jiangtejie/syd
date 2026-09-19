@@ -377,9 +377,11 @@
 
   /* 文字：整体降一档亮度，避免白字扎眼；--text-strong 留给标题 */
   --text-1: #e6e8eb;
-  --text-2: #b8bfc7;
-  --text-3: #8b939c;
-  --text-4: #6a727b;
+  /* 次要文字比浅色主题相对更亮一档：深底上 11~12px 的灰字（会话列表「暂无消息」、时间戳、
+     卡片 meta 行）按浅色的换算值会掉到读不清，实测提亮后正常 */
+  --text-2: #c2c9d1;
+  --text-3: #9aa3ac;
+  --text-4: #7d868f;
   --text-strong: #f2f4f6;
   --placeholder: #6a727b;
   --muted: #9aa3ac;

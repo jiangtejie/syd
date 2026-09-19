@@ -16,6 +16,7 @@ import { useWorkbenchStore } from '../stores/workbench'
 import './growth-ai.css'
 import { useAsyncEffect } from '../lib/useAsyncEffect'
 import { toolCnName } from '../../../shared/types'
+import { Modal } from '../components/ui/Modal'
 
 interface TaskView {
   id: number
@@ -1238,27 +1239,14 @@ export default function GrowthAiWorkbench({
           }
         />
       ) : null}
-      {pickOpen ? (
-        <div className="gai-pick-mask" onClick={() => setPickOpen(false)}>
-          <div
-            className="gai-pick"
-            role="dialog"
-            aria-modal="true"
-            aria-label="新建爆改任务"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="gai-pick-head">
-              <span className="t">新建爆改任务</span>
-              <span className="s">选一条爆款素材, AI 先拆解结构, 再按你的要求爆改</span>
-              <button
-                className="ui-btn gth-btn sm"
-                type="button"
-                onClick={() => setPickOpen(false)}
-              >
-                关闭
-              </button>
-            </div>
-            <div className="gai-pick-filters">
+      {/* 弹层走共享基元（components/ui/Modal）：遮罩/卡片/头/关闭这一层不再各页自造 */}
+      <Modal
+        open={pickOpen}
+        onClose={closePick}
+        title={'新建爆改任务'}
+        desc={'选一条爆款素材, AI 先拆解结构, 再按你的要求爆改'}
+      >
+        <div className="gai-pick-filters">
               <input
                 autoFocus
                 className="ui-input gth-input"
@@ -1329,10 +1317,8 @@ export default function GrowthAiWorkbench({
                   </button>
                 ))
               )}
-            </div>
-          </div>
         </div>
-      ) : null}
+      </Modal>
     </div>
   )
 }

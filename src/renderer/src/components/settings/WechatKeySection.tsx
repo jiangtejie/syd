@@ -322,314 +322,321 @@ function WechatKeySection(): React.JSX.Element {
   const keyReady = !!status?.hasKey
 
   return (
-    <SettingsCard title="微信数据与密钥">
-      {/* 当前账号：已保存密钥的账号下拉选择；无已导入账号或手动输入其他账号时展开文本输入 */}
-      {accounts.length > 0 && (
-        <label className="st-row">
-          <span className="st-label">当前账号</span>
-          <select
-            className="st-input"
-            value={accounts.some((a) => a.wxid === wxid) ? wxid : '__manual__'}
-            onChange={(e) => {
-              const v = e.target.value
-              if (v !== '__manual__') setWxid(v)
-            }}
-            title="选择已导入密钥的账号"
-          >
-            <option value="__manual__">＋ 手动输入其他账号…</option>
-            {accounts.map((a) => (
-              <option key={a.wxid} value={a.wxid}>
-                {a.wxid}（{STATUS_TEXT[a.status ?? 'pending'] ?? a.status ?? '未知'}）
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+    <div className={'st-grid'}>
+      {/* 拆成两张卡（2026-09）：此前是一张卡竖排 5 段 —— 账号/密钥、语音转写、图片解密、ffmpeg、
+          密钥状态，宽屏上右侧全空，纵向要滚三轮才看完。现在左「账号与密钥」（解密的入口与状态）、
+          右「语音转写与图片解密」（接入的附加能力），解密说明跟着它解释的对象留在左卡。 */}
+      <SettingsCard title="账号与密钥">
+        {/* 当前账号：已保存密钥的账号下拉选择；无已导入账号或手动输入其他账号时展开文本输入 */}
+        {accounts.length > 0 && (
+          <label className="st-row">
+            <span className="st-label">当前账号</span>
+            <select
+              className="st-input"
+              value={accounts.some((a) => a.wxid === wxid) ? wxid : '__manual__'}
+              onChange={(e) => {
+                const v = e.target.value
+                if (v !== '__manual__') setWxid(v)
+              }}
+              title="选择已导入密钥的账号"
+            >
+              <option value="__manual__">＋ 手动输入其他账号…</option>
+              {accounts.map((a) => (
+                <option key={a.wxid} value={a.wxid}>
+                  {a.wxid}（{STATUS_TEXT[a.status ?? 'pending'] ?? a.status ?? '未知'}）
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
-      {(accounts.length === 0 || !accounts.some((a) => a.wxid === wxid)) && (
+        {(accounts.length === 0 || !accounts.some((a) => a.wxid === wxid)) && (
+          <label className="st-row">
+            <span className="st-label">
+              {accounts.length > 0 ? '账号 wxid（手动输入）' : '当前账号 wxid'}
+            </span>
+            <input
+              className="st-input"
+              value={wxid}
+              onChange={(e) => setWxid(e.target.value)}
+              placeholder="wxid_xxxxxxxx"
+            />
+          </label>
+        )}
+
         <label className="st-row">
-          <span className="st-label">
-            {accounts.length > 0 ? '账号 wxid（手动输入）' : '当前账号 wxid'}
-          </span>
+          <span className="st-label">微信数据根路径</span>
           <input
             className="st-input"
-            value={wxid}
-            onChange={(e) => setWxid(e.target.value)}
-            placeholder="wxid_xxxxxxxx"
+            value={dbPath}
+            onChange={(e) => setDbPath(e.target.value)}
+            placeholder="如 C:\Users\xxx\Documents\xwechat_files"
+          />
+          <button type="button" className="ui-btn" onClick={() => void browse()}>
+            浏览…
+          </button>
+        </label>
+
+        <label className="st-row">
+          {/* 标签只写「是什么」，格式细节放占位符 —— 标签折成两行会把整行的控件高度带偏 */}
+          <span className="st-label">数据库密钥</span>
+          <input
+            className="st-input"
+            type={showKey ? 'text' : 'password'}
+            value={keyHex}
+            onChange={(e) => setKeyHex(e.target.value)}
+            placeholder="64 位十六进制，外部工具导出后粘贴到此处"
+          />
+          <button
+            type="button"
+            className="ui-btn"
+            onClick={() => setShowKey((v) => !v)}
+            title={showKey ? '隐藏' : '显示'}
+          >
+            {showKey ? '隐藏' : '显示'}
+          </button>
+        </label>
+
+        <div className="st-actions">
+          <button
+            type="button"
+            className="ui-btn is-primary"
+            disabled={busy !== null}
+            onClick={() => void doImport()}
+          >
+            {busy === 'import' ? '导入中…' : '导入密钥'}
+          </button>
+          <button
+            type="button"
+            className="ui-btn"
+            disabled={busy !== null}
+            onClick={() => void doImportKeyFile()}
+            title="导入 wechat-decrypt-cli 产出的 JSON：账号口令与每库派生密钥都可；只有派生密钥时同样能解密（按库各取各的密钥）"
+          >
+            {busy === 'import' ? '导入中…' : '导入密钥文件'}
+          </button>
+          <button
+            type="button"
+            className="ui-btn"
+            disabled={busy !== null || !keyReady}
+            onClick={() => void doTest()}
+          >
+            {busy === 'test' ? '验证中…' : '测试解密'}
+          </button>
+          <button
+            type="button"
+            className="ui-btn"
+            disabled={busy !== null || !keyReady}
+            onClick={() => void doConnect()}
+          >
+            {busy === 'connect' ? '连接中…' : '连接并启动监控'}
+          </button>
+        </div>
+
+        {/* 语音转写：腾讯云一句话识别（SILK 直传，不需要本地模型） */}
+        <div className="st-decrypt-note">
+          提示：微信 4.x（xwechat）是魔改 SQLCipher（页 4096、尾部 80B 保留区放 IV 与 HMAC-SHA512、
+          AES-256-CBC），标准 SQLCipher 驱动无法直开；本应用自带完整解密层 —— 解密前先用页 1 的 HMAC
+          验证密钥，再逐页校验解密（能抓出微信正在写入导致的撕裂页）、合并 WAL、结构自检后原子落盘。
+          <br />
+          <strong>一个账号只有一把密钥</strong>：每个库文件自带独立的随机 16 字节 salt，派生出的 AES
+          密钥按库各不相同，但口令是同一把 —— 所以这里粘一次即可解密该账号的全部数据库。
+          <br />
+          请填<strong>账号口令</strong>（KDF 之前的 64 位十六进制）。若你拿到的是某个库的
+          <strong>派生密钥</strong>（KDF 之后，内存扫描常按每库一把列出），它只开得动那一个库，
+          导入时会被识别并提示。取密钥请用外部工具导出后手动导入；密钥以系统级 safeStorage
+          保存，主进程持有明文，渲染端只看到状态。
+        </div>
+      </SettingsCard>
+
+      <SettingsCard title="语音转写与图片解密">
+        <div className="st-subtitle">语音转写（腾讯云 ASR）</div>
+        <label className="st-row">
+          <span className="st-label">SecretId</span>
+          <input
+            className="st-input"
+            value={tcSecretId}
+            onChange={(e) => setTcSecretId(e.target.value)}
+            placeholder="腾讯云 → 访问管理 → API 密钥"
           />
         </label>
-      )}
+        <label className="st-row">
+          <span className="st-label">SecretKey</span>
+          <input
+            className="st-input"
+            type="password"
+            value={tcSecretKey}
+            onChange={(e) => setTcSecretKey(e.target.value)}
+            placeholder={
+              asrStage?.hasSecretKey ? '已保存（留空=不修改）' : '仅提交一次，主进程加密保存'
+            }
+          />
+        </label>
+        <label className="st-row">
+          <span className="st-label">地域</span>
+          <input
+            className="st-input"
+            value={tcRegion}
+            onChange={(e) => setTcRegion(e.target.value)}
+            placeholder="ap-guangzhou"
+          />
+        </label>
+        <label className="st-row">
+          <span className="st-label">引擎模型</span>
+          <input
+            className="st-input"
+            value={tcEngine}
+            onChange={(e) => setTcEngine(e.target.value)}
+            placeholder="16k_zh（中文通用）/ 16k_zh_dialect（23 种方言）"
+          />
+        </label>
+        <div className="st-actions">
+          <button
+            type="button"
+            className="ui-btn is-primary"
+            disabled={busy !== null}
+            onClick={() => void saveAsrConfig()}
+          >
+            {busy === 'asr' ? '检测中…' : '保存并检测'}
+          </button>
+          <span className="st-hint">
+            {asrStage
+              ? asrStage.available
+                ? '已就绪：语音气泡点「转写」即可（微信 SILK 直传，不走本地模型）'
+                : asrStage.reason || '不可用'
+              : '未配置也不影响语音播放；配置后转写文本会进入界面、议题分析与数字员工的判断依据'}
+          </span>
+        </div>
 
-      <label className="st-row">
-        <span className="st-label">微信数据根路径</span>
-        <input
-          className="st-input"
-          value={dbPath}
-          onChange={(e) => setDbPath(e.target.value)}
-          placeholder="如 C:\Users\xxx\Documents\xwechat_files"
-        />
-        <button type="button" className="ui-btn" onClick={() => void browse()}>
-          浏览…
-        </button>
-      </label>
+        {/* 图片 .dat 解密密钥（M3：msg/attach 内 <md5>.dat 原图与缩略图） */}
+        <div className="st-subtitle">图片解密（msg/attach 内 .dat 附件）</div>
+        <label className="st-row">
+          <span className="st-label">XOR 密钥（1 字节）</span>
+          <input
+            className="st-input"
+            type={showXor ? 'text' : 'password'}
+            value={xorKey}
+            onChange={(e) => setXorKey(e.target.value)}
+            placeholder="如 0x3b / 3b / 59"
+          />
+          <button type="button" className="ui-btn" onClick={() => setShowXor((v) => !v)}>
+            {showXor ? '隐藏' : '显示'}
+          </button>
+        </label>
+        <label className="st-row">
+          <span className="st-label">AES 密钥（16 字节文本）</span>
+          <input
+            className="st-input"
+            type={showAes ? 'text' : 'password'}
+            value={aesKey}
+            onChange={(e) => setAesKey(e.target.value)}
+            placeholder="16 字符文本（取前 16 字符）或 32 位十六进制"
+          />
+          <button type="button" className="ui-btn" onClick={() => setShowAes((v) => !v)}>
+            {showAes ? '隐藏' : '显示'}
+          </button>
+        </label>
+        <label className="st-row">
+          <span className="st-label">ffmpeg 路径（HEVC 原图转码）</span>
+          <input
+            className="st-input"
+            value={ffmpegPath}
+            onChange={(e) => setFfmpegPath(e.target.value)}
+            placeholder="留空则按 WECHAT_CS_FFMPEG 环境变量 / PATH 查找"
+          />
+        </label>
 
-      <label className="st-row">
-        {/* 标签只写「是什么」，格式细节放占位符 —— 标签折成两行会把整行的控件高度带偏 */}
-        <span className="st-label">数据库密钥</span>
-        <input
-          className="st-input"
-          type={showKey ? 'text' : 'password'}
-          value={keyHex}
-          onChange={(e) => setKeyHex(e.target.value)}
-          placeholder="64 位十六进制，外部工具导出后粘贴到此处"
-        />
-        <button
-          type="button"
-          className="ui-btn"
-          onClick={() => setShowKey((v) => !v)}
-          title={showKey ? '隐藏' : '显示'}
-        >
-          {showKey ? '隐藏' : '显示'}
-        </button>
-      </label>
+        <div className="st-actions">
+          <button
+            type="button"
+            className="ui-btn"
+            disabled={busy !== null || !keyReady}
+            onClick={() => void deriveImgKeys()}
+            title="读账号目录下的 *_t.dat 模板：本地推导 XOR 密钥，并用模板探测段校验 AES（不读内存、不需要额外组件）"
+          >
+            {busy === 'img' ? '处理中…' : '自动推导图片密钥'}
+          </button>
+          <button
+            type="button"
+            className="ui-btn is-primary"
+            disabled={busy !== null}
+            onClick={() => void saveImgKeys()}
+          >
+            {busy === 'img' ? '保存中…' : '保存图片密钥'}
+          </button>
+          <span className="st-hint">不同微信版本可能只需要其中一种，留空表示未配置</span>
+        </div>
+        <div className="st-actions">
+          <button
+            type="button"
+            className="ui-btn"
+            disabled={busy !== null}
+            onClick={() => void testImageKey()}
+          >
+            {busy === 'img' ? '测试中…' : '测试解密一张图片'}
+          </button>
+          <span className="st-hint">保存后从当前账号的 msg/attach 中取一张图验证密钥</span>
+        </div>
 
-      <div className="st-actions">
-        <button
-          type="button"
-          className="ui-btn is-primary"
-          disabled={busy !== null}
-          onClick={() => void doImport()}
-        >
-          {busy === 'import' ? '导入中…' : '导入密钥'}
-        </button>
-        <button
-          type="button"
-          className="ui-btn"
-          disabled={busy !== null}
-          onClick={() => void doImportKeyFile()}
-          title="导入 wechat-decrypt-cli 产出的 JSON：账号口令与每库派生密钥都可；只有派生密钥时同样能解密（按库各取各的密钥）"
-        >
-          {busy === 'import' ? '导入中…' : '导入密钥文件'}
-        </button>
-        <button
-          type="button"
-          className="ui-btn"
-          disabled={busy !== null || !keyReady}
-          onClick={() => void doTest()}
-        >
-          {busy === 'test' ? '验证中…' : '测试解密'}
-        </button>
-        <button
-          type="button"
-          className="ui-btn"
-          disabled={busy !== null || !keyReady}
-          onClick={() => void doConnect()}
-        >
-          {busy === 'connect' ? '连接中…' : '连接并启动监控'}
-        </button>
-      </div>
-
-      {/* 语音转写：腾讯云一句话识别（SILK 直传，不需要本地模型） */}
-      <div className="st-subtitle">语音转写（腾讯云 ASR）</div>
-      <label className="st-row">
-        <span className="st-label">SecretId</span>
-        <input
-          className="st-input"
-          value={tcSecretId}
-          onChange={(e) => setTcSecretId(e.target.value)}
-          placeholder="腾讯云 → 访问管理 → API 密钥"
-        />
-      </label>
-      <label className="st-row">
-        <span className="st-label">SecretKey</span>
-        <input
-          className="st-input"
-          type="password"
-          value={tcSecretKey}
-          onChange={(e) => setTcSecretKey(e.target.value)}
-          placeholder={
-            asrStage?.hasSecretKey ? '已保存（留空=不修改）' : '仅提交一次，主进程加密保存'
-          }
-        />
-      </label>
-      <label className="st-row">
-        <span className="st-label">地域</span>
-        <input
-          className="st-input"
-          value={tcRegion}
-          onChange={(e) => setTcRegion(e.target.value)}
-          placeholder="ap-guangzhou"
-        />
-      </label>
-      <label className="st-row">
-        <span className="st-label">引擎模型</span>
-        <input
-          className="st-input"
-          value={tcEngine}
-          onChange={(e) => setTcEngine(e.target.value)}
-          placeholder="16k_zh（中文通用）/ 16k_zh_dialect（23 种方言）"
-        />
-      </label>
-      <div className="st-actions">
-        <button
-          type="button"
-          className="ui-btn is-primary"
-          disabled={busy !== null}
-          onClick={() => void saveAsrConfig()}
-        >
-          {busy === 'asr' ? '检测中…' : '保存并检测'}
-        </button>
-        <span className="st-hint">
-          {asrStage
-            ? asrStage.available
-              ? '已就绪：语音气泡点「转写」即可（微信 SILK 直传，不走本地模型）'
-              : asrStage.reason || '不可用'
-            : '未配置也不影响语音播放；配置后转写文本会进入界面、议题分析与数字员工的判断依据'}
-        </span>
-      </div>
-
-      {/* 图片 .dat 解密密钥（M3：msg/attach 内 <md5>.dat 原图与缩略图） */}
-      <div className="st-subtitle">图片解密（msg/attach 内 .dat 附件）</div>
-      <label className="st-row">
-        <span className="st-label">XOR 密钥（1 字节）</span>
-        <input
-          className="st-input"
-          type={showXor ? 'text' : 'password'}
-          value={xorKey}
-          onChange={(e) => setXorKey(e.target.value)}
-          placeholder="如 0x3b / 3b / 59"
-        />
-        <button type="button" className="ui-btn" onClick={() => setShowXor((v) => !v)}>
-          {showXor ? '隐藏' : '显示'}
-        </button>
-      </label>
-      <label className="st-row">
-        <span className="st-label">AES 密钥（16 字节文本）</span>
-        <input
-          className="st-input"
-          type={showAes ? 'text' : 'password'}
-          value={aesKey}
-          onChange={(e) => setAesKey(e.target.value)}
-          placeholder="16 字符文本（取前 16 字符）或 32 位十六进制"
-        />
-        <button type="button" className="ui-btn" onClick={() => setShowAes((v) => !v)}>
-          {showAes ? '隐藏' : '显示'}
-        </button>
-      </label>
-      <label className="st-row">
-        <span className="st-label">ffmpeg 路径（HEVC 原图转码）</span>
-        <input
-          className="st-input"
-          value={ffmpegPath}
-          onChange={(e) => setFfmpegPath(e.target.value)}
-          placeholder="留空则按 WECHAT_CS_FFMPEG 环境变量 / PATH 查找"
-        />
-      </label>
-
-      <div className="st-actions">
-        <button
-          type="button"
-          className="ui-btn"
-          disabled={busy !== null || !keyReady}
-          onClick={() => void deriveImgKeys()}
-          title="读账号目录下的 *_t.dat 模板：本地推导 XOR 密钥，并用模板探测段校验 AES（不读内存、不需要额外组件）"
-        >
-          {busy === 'img' ? '处理中…' : '自动推导图片密钥'}
-        </button>
-        <button
-          type="button"
-          className="ui-btn is-primary"
-          disabled={busy !== null}
-          onClick={() => void saveImgKeys()}
-        >
-          {busy === 'img' ? '保存中…' : '保存图片密钥'}
-        </button>
-        <span className="st-hint">不同微信版本可能只需要其中一种，留空表示未配置</span>
-      </div>
-      <div className="st-actions">
-        <button
-          type="button"
-          className="ui-btn"
-          disabled={busy !== null}
-          onClick={() => void testImageKey()}
-        >
-          {busy === 'img' ? '测试中…' : '测试解密一张图片'}
-        </button>
-        <span className="st-hint">保存后从当前账号的 msg/attach 中取一张图验证密钥</span>
-      </div>
-
-      {/* 密钥状态卡片 */}
-      {wxid.trim() && (
-        <div className="st-keystatus">
-          {!status?.hasKey ? (
-            <div className="st-kv">
-              <span>密钥状态</span>
-              <span className="st-bad">未导入</span>
-            </div>
-          ) : (
-            <>
+        {/* 密钥状态卡片 */}
+        {wxid.trim() && (
+          <div className="st-keystatus">
+            {!status?.hasKey ? (
               <div className="st-kv">
                 <span>密钥状态</span>
-                <span className={status.status === 'valid' ? 'st-ok' : 'st-bad'}>
-                  {STATUS_TEXT[status.status ?? 'pending'] ?? status.status}
-                </span>
+                <span className="st-bad">未导入</span>
               </div>
-              <div className="st-kv">
-                <span>密钥层级</span>
-                <span className={status.layer === 'none' ? 'st-bad' : 'st-ok'}>
-                  {LAYER_TEXT[status.layer ?? 'none']}
-                </span>
-              </div>
-              {status.keyRingSize > 0 && (
+            ) : (
+              <>
                 <div className="st-kv">
-                  <span>每库派生密钥</span>
-                  <span className="st-ok">
-                    {status.keyRingSize} 条
-                    <button
-                      type="button"
-                      className="ui-btn"
-                      style={{ marginLeft: 8 }}
-                      disabled={busy !== null}
-                      onClick={() => void doClearKeyRing()}
-                    >
-                      清除
-                    </button>
+                  <span>密钥状态</span>
+                  <span className={status.status === 'valid' ? 'st-ok' : 'st-bad'}>
+                    {STATUS_TEXT[status.status ?? 'pending'] ?? status.status}
                   </span>
                 </div>
-              )}
-              <div className="st-kv">
-                <span>密钥来源</span>
-                <span>{SOURCE_TEXT[status.source ?? ''] ?? status.source ?? '—'}</span>
-              </div>
-              <div className="st-kv">
-                <span>数据路径</span>
-                <span className="st-path">{status.dbPath || '—'}</span>
-              </div>
-              {lastError && (
                 <div className="st-kv">
-                  <span>最近错误</span>
-                  <span className="st-bad">{lastError}</span>
+                  <span>密钥层级</span>
+                  <span className={status.layer === 'none' ? 'st-bad' : 'st-ok'}>
+                    {LAYER_TEXT[status.layer ?? 'none']}
+                  </span>
                 </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="st-decrypt-note">
-        提示：微信 4.x（xwechat）是魔改 SQLCipher（页 4096、尾部 80B 保留区放 IV 与 HMAC-SHA512、
-        AES-256-CBC），标准 SQLCipher 驱动无法直开；本应用自带完整解密层 —— 解密前先用页 1 的 HMAC
-        验证密钥，再逐页校验解密（能抓出微信正在写入导致的撕裂页）、合并 WAL、结构自检后原子落盘。
-        <br />
-        <strong>一个账号只有一把密钥</strong>：每个库文件自带独立的随机 16 字节 salt，派生出的 AES
-        密钥按库各不相同，但口令是同一把 —— 所以这里粘一次即可解密该账号的全部数据库。
-        <br />
-        请填<strong>账号口令</strong>（KDF 之前的 64 位十六进制）。若你拿到的是某个库的
-        <strong>派生密钥</strong>（KDF 之后，内存扫描常按每库一把列出），它只开得动那一个库，
-        导入时会被识别并提示。取密钥请用外部工具导出后手动导入；密钥以系统级 safeStorage
-        保存，主进程持有明文，渲染端只看到状态。
-      </div>
-    </SettingsCard>
+                {status.keyRingSize > 0 && (
+                  <div className="st-kv">
+                    <span>每库派生密钥</span>
+                    <span className="st-ok">
+                      {status.keyRingSize} 条
+                      <button
+                        type="button"
+                        className="ui-btn"
+                        style={{ marginLeft: 8 }}
+                        disabled={busy !== null}
+                        onClick={() => void doClearKeyRing()}
+                      >
+                        清除
+                      </button>
+                    </span>
+                  </div>
+                )}
+                <div className="st-kv">
+                  <span>密钥来源</span>
+                  <span>{SOURCE_TEXT[status.source ?? ''] ?? status.source ?? '—'}</span>
+                </div>
+                <div className="st-kv">
+                  <span>数据路径</span>
+                  <span className="st-path">{status.dbPath || '—'}</span>
+                </div>
+                {lastError && (
+                  <div className="st-kv">
+                    <span>最近错误</span>
+                    <span className="st-bad">{lastError}</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </SettingsCard>
+    </div>
   )
 }
 

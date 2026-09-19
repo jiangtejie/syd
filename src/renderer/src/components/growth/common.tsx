@@ -89,49 +89,14 @@ export function SearchInput({
   )
 }
 
-export interface EmptyStateProps {
-  title: string
-  steps?: string[]
-  extra?: React.ReactNode
-}
-
-export function EmptyState({ title, steps, extra }: EmptyStateProps): React.JSX.Element {
-  return (
-    <div className={'gth-empty'}>
-      <div>{title}</div>
-      {steps && steps.length > 0 ? (
-        <div className={'steps'}>
-          {steps.map((s, i) => (
-            <div className={'step'} key={s}>
-              <span className={'no'}>{i + 1}</span>
-              <span>{s}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {extra}
-    </div>
-  )
-}
-
-export interface ErrBarProps {
-  msg: string
-  onRetry?: () => void
-}
-
-export function ErrBar({ msg, onRetry }: ErrBarProps): React.JSX.Element {
-  return (
-    <div className={'gth-error'}>
-      <span className={'msg'} title={msg}>
-        {msg}
-      </span>
-      {onRetry ? (
-        <button className={'ui-btn gth-btn sm'} type={'button'} onClick={onRetry}>
-          重试
-        </button>
-      ) : null}
-    </div>
-  )
-}
+/**
+ * 空态与错误条：**实现已上移到 components/ui/Feedback.tsx**（客户页/数据页/看板都要用同一套），
+ * 这里只做转出，营销页的调用点一行都不用改。
+ *
+ * 注: 旧的 .gth-empty / .gth-error 两套样式已删除 —— 需要新写空态时请用 ui 版，
+ * 别再在页面里造第三份（此前同一句「没有数据」在四个页面是四种长相）。
+ */
+export { Empty as EmptyState, ErrBar } from '../ui/Feedback'
+export type { EmptyProps as EmptyStateProps, ErrBarProps } from '../ui/Feedback'
 
 // ── 指标与状态 ──

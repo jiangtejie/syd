@@ -17,6 +17,7 @@ import type {
   GrowthBuzzDiagnosisView
 } from '../../../../shared/growth'
 import { useAsyncEffect } from '../../lib/useAsyncEffect'
+import { Modal } from '../ui/Modal'
 
 const api = window.api?.cs?.growthbuzz
 const storeApi = window.api?.cs?.growthai
@@ -732,25 +733,24 @@ export default function BuzzPanel({
       )}
 
       {/* 添加舆情 */}
-      {addOpen ? (
-        <div className={'gth-buzz-mask'} onClick={() => setAddOpen(false)}>
-          <div
-            className={'gth-buzz-modal'}
-            role={'dialog'}
-            aria-modal={'true'}
-            aria-label={'添加舆情监控'}
-            onClick={(e) => e.stopPropagation()}
+      {/* 弹层走共享基元（components/ui/Modal）；抽屉（详情）是另一种形态，保留自带实现 */}
+      <Modal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title={'添加舆情监控'}
+        desc={'粘贴门店相关的抖音/小红书链接或分享口令，自动解析并诊断'}
+        size={'sm'}
+        actions={
+          <button
+            className={'ui-btn is-primary gth-btn'}
+            type={'button'}
+            disabled={adding}
+            onClick={() => void submitAdd()}
           >
-            <div className={'gth-card-head'}>
-              <span className={'gth-card-title'}>添加舆情监控</span>
-              <button
-                className={'ui-btn gth-btn sm'}
-                type={'button'}
-                onClick={() => setAddOpen(false)}
-              >
-                关闭
-              </button>
-            </div>
+            {adding ? '解析中…' : '解析并诊断'}
+          </button>
+        }
+      >
             <div className={'gth-field'}>
               <span className={'gth-field-label'}>关联门店</span>
               <select
@@ -780,19 +780,7 @@ export default function BuzzPanel({
                 解析后会保留原链接与封面, 并自动跑一次智能诊断
               </span>
             </div>
-            <div className={'gth-btn-row'}>
-              <button
-                className={'ui-btn is-primary gth-btn'}
-                type={'button'}
-                disabled={adding}
-                onClick={() => void submitAdd()}
-              >
-                {adding ? '解析中…' : '解析并诊断'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      </Modal>
 
       {/* 详情抽屉 */}
       {detail ? (

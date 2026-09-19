@@ -136,62 +136,12 @@
   gap: 6px;
 }
 
-/* ── 状态/空态/错误 ── */
-.gth-empty {
-  padding: 36px 16px 30px;
-  text-align: center;
-  color: var(--text-3);
-  font-size: var(--fs-md);
-  line-height: 1.8;
-}
-.gth-empty .steps {
-  margin: 16px auto 0;
-  max-width: 520px;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  font-size: var(--fs-md);
-  color: var(--text-2);
-}
-.gth-empty .step {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.gth-empty .step .no {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  border-radius: 50%;
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.gth-error {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--danger-soft);
-  border: 1px solid var(--danger-line);
-  color: var(--danger-text);
-  font-size: var(--fs-md);
-  border-radius: var(--r-md);
-  padding: 8px 12px;
-  margin-bottom: 12px;
-}
-.gth-error .msg {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+
+
+
+
+
+
 
 /* ── 素材入库动作条 ── */
 .gth-ingest {

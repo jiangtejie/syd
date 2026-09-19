@@ -520,49 +520,11 @@
   background: var(--danger-soft);
 }
 
-/* ── 新建任务: 素材选择 ── */
-.gai-pick-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 9000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.gai-pick {
-  width: min(720px, 92vw);
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
-  overflow: hidden;
-}
-.gai-pick-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-light);
-}
-.gai-pick-head .t {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  color: var(--text-1);
-  flex: none;
-}
-.gai-pick-head .s {
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+
+
+
+
+
 .gai-pick-filters {
   display: flex;
   align-items: center;
@@ -650,16 +612,8 @@
   font-weight: 500;
 }
 
-/* ══════════ 营销模块视觉与动效层（原 growth-polish.css 合并至此）══════════
- * 追加在文件末尾以保证级联顺序仍然压过上方基础规则；仅动效/层次，不改布局语义。
- */
-.gai-pick-mask {
-  animation: gth-fade-in var(--m-2) var(--ease-out) both;
-  background: rgba(0, 0, 0, 0.42);
-}
-.gai-pick {
-  animation: gth-pop var(--m-2) var(--ease-spring) both;
-}
+
+
 .gai-tasks-head {
   position: relative;
 }
