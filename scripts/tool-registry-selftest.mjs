@@ -12,6 +12,7 @@
  * 结构更简单（name + oneLine + when），同样在下面按同一套规矩校验。
  */
 import { GROWTH_TOOL_META } from '../src/main/services/growth/ai/toolMeta.ts'
+import { TOOL_CN_NAMES, toolCnName } from '../src/shared/types.ts'
 import {
   GROUP_TEXT,
   LARK_CAPS,
@@ -36,7 +37,20 @@ log(tools.every((t) => t.oneLine.trim().length >= 6), '每个能力都有一句�
 log(tools.every((t) => t.when.trim().length >= 6), '每个能力都有触发场景(给模型)')
 log(tools.every((t) => typeof t.confirm === 'boolean'), 'confirm 字段显式声明')
 
-console.log('\n[2] 写操作必须走审批')
+console.log('\n[2] 每个能力都要有中文名（对话里给用户看的是它，不是 growth_xxx）')
+for (const t of tools) {
+  const cn = toolCnName(t.name)
+  log(cn !== t.name, `${t.name} 有中文名`, cn)
+  log(/[\u4e00-\u9fa5]/.test(cn), `${t.name} 的中文名含汉字（不能是英文原样）`, cn)
+  log(cn.length <= 8, `${t.name} 的中文名够短（时间线一行放得下）`, cn)
+}
+log(
+  Object.keys(TOOL_CN_NAMES).length >= tools.length,
+  '中文名表不比能力表少（新增能力必须补一行）',
+  Object.keys(TOOL_CN_NAMES).length + ' vs ' + tools.length
+)
+
+console.log('\n[3] 写操作必须走审批')
 const writes = tools.filter((t) => t.confirm).map((t) => t.name)
 const expectWrites = [
   'growth_gen_image',
@@ -57,7 +71,7 @@ log(
   '只要改数据/花钱的能力都不在只读组'
 )
 
-console.log('\n[3] 参数声明完整(模型看到的就是这份)')
+console.log('\n[4] 参数声明完整(模型看到的就是这份)')
 for (const t of tools) {
   const params = Object.entries(t.params ?? {})
   log(params.length > 0, `${t.name} 至少有一个参数或显式空对象`, String(params.length))
@@ -72,7 +86,7 @@ for (const t of tools) {
   )
 }
 
-console.log('\n[4] 上下文依赖声明与参数一致')
+console.log('\n[5] 上下文依赖声明与参数一致')
 for (const t of tools) {
   if (t.needsContent) {
     log(
@@ -88,7 +102,7 @@ for (const t of tools) {
   }
 }
 
-console.log('\n[5] 营销页上下文可用性')
+console.log('\n[6] 营销页上下文可用性')
 const needContent = tools.filter((t) => t.needsContent).map((t) => t.name)
 log(needContent.length > 0, '有明确依赖素材上下文的能力', String(needContent.length))
 log(
@@ -97,7 +111,7 @@ log(
 )
 
 
-console.log('\n[6] 全能力目录契约（catalog.ts 纯数据，注册表与自检共用）')
+console.log('\n[7] 全能力目录契约（catalog.ts 纯数据，注册表与自检共用）')
 {
   const groups = Object.entries(GROUP_TEXT)
   log(groups.length === 6, '六个分组都有展示名', groups.map(([k]) => k).join(','))

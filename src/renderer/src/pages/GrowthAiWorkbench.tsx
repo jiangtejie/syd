@@ -17,6 +17,7 @@ import { useWorkbenchStore } from '../stores/workbench'
 import type { GrowthMetricView, GrowthRemixOutputView } from '../../../shared/growth'
 import './growth-ai.css'
 import { useAsyncEffect } from '../lib/useAsyncEffect'
+import { toolCnName } from '../../../shared/types'
 
 interface TaskView {
   id: number
@@ -914,16 +915,20 @@ export default function GrowthAiWorkbench({
                   <ToolTimeline
                     key={'tl-' + String(run.rows[0].id)}
                     items={toolItemsOfMessages(run.rows.map((r) => r.msg))}
+                    size="roomy"
                   />
                 ) : (
                   <ChatMessage key={run.row.msg.id} m={run.row.msg} />
                 )
               )}
-              {toolLog.length > 0 && <ToolTimeline items={toolLog.map(toolItemOf)} />}
+              {toolLog.length > 0 && <ToolTimeline items={toolLog.map(toolItemOf)} size="roomy" />}
               {streaming ? <StreamBubble text={streaming} /> : null}
               {approval ? (
                 <div className="gai-approval">
-                  <span>需要确认: {approval.tool}</span>
+                  {/* 审批条也要中文名：这里原来直接把 growth_gen_image 这种标识摆给用户看 */}
+                  <span title={'工具名:' + approval.tool}>
+                    需要确认: {toolCnName(approval.tool)}
+                  </span>
                   <span className="gai-approval-text">{approval.text}</span>
                   <button
                     className="ui-btn is-primary gth-btn sm"

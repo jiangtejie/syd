@@ -381,6 +381,95 @@
   scrollbar-width: thin;
 }
 
+/* ── 宽松档（营销工作台用：.wb-tl.is-roomy）──
+ * 同一份结构、同一套规则，只把间距与字号提一档。
+ * 为什么需要它：compact 那套是按「一屏塞很多轮对话」调的（节点间距 1px、行内边距 1px），
+ * 放到营销工作台（一次任务只有几步工具调用、要看清每步在干什么）就显得挤成一团。
+ * 只动间距/字号，不动颜色与结构 —— 两边的视觉语言必须保持一致。 */
+.wb-tl.is-roomy {
+  margin: 0;
+  font-size: 12px;
+}
+
+.wb-tl.is-roomy .wb-tl-head {
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.wb-tl.is-roomy .wb-tl-kind,
+.wb-tl.is-roomy .wb-tl-meta {
+  font-size: 11px;
+}
+
+.wb-tl.is-roomy .wb-tl-step {
+  padding-left: 16px;
+}
+
+.wb-tl.is-roomy .wb-tl-step::before {
+  left: 3px;
+  top: 7px;
+}
+
+.wb-tl.is-roomy .wb-tl-step:last-child::before {
+  height: 15px;
+}
+
+.wb-tl.is-roomy .wb-tl-node + .wb-tl-node {
+  margin-top: 5px;
+}
+
+.wb-tl.is-roomy .wb-tl-step.is-parallel .wb-tl-node + .wb-tl-node {
+  padding-left: 12px;
+}
+
+.wb-tl.is-roomy .wb-tl-line {
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.wb-tl.is-roomy .wb-tl-dot {
+  top: 7px;
+  width: 8px;
+  height: 8px;
+}
+
+.wb-tl.is-roomy .wb-tl-name {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.wb-tl.is-roomy .wb-tl-state,
+.wb-tl.is-roomy .wb-tl-dur {
+  font-size: 11px;
+}
+
+.wb-tl.is-roomy .wb-tl-caret {
+  font-size: 10px;
+}
+
+.wb-tl.is-roomy .wb-tl-tag {
+  margin: 4px 0 2px;
+  font-size: 10.5px;
+  padding: 1px 8px;
+  border-radius: 9px;
+}
+
+.wb-tl.is-roomy .wb-tl-detail {
+  gap: 8px;
+  padding: 4px 0 8px;
+}
+
+.wb-tl.is-roomy .wb-toolcard-detail-title {
+  font-size: 10.5px;
+  margin-bottom: 2px;
+}
+
+.wb-tl.is-roomy .wb-toolcard-detail-pre {
+  font-size: 11.5px;
+  line-height: 1.7;
+  max-height: 220px;
+}
+
 /* 审批条(输入区上方,琥珀警示) */
 .wb-approvals {
   flex: none;

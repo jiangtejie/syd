@@ -656,7 +656,22 @@ export const TOOL_CN_NAMES: Record<string, string> = {
   csv_append: 'CSV 追加',
   xlsx_preview: 'Excel 预览',
   xlsx_write: '生成 Excel',
-  site_scaffold: '建站脚手架'
+  site_scaffold: '建站脚手架',
+  // 营销域（growth/ai/toolMeta.ts 的 12 个能力）。此前这里没有它们，营销工作台的对话里
+  // 显示的是 growth_gen_image 这种英文标识 —— 运营看不懂，也不知道 AI 这步在干什么。
+  // 新增工具时**必须**在这里补一行：scripts/tool-registry-selftest.mjs 会断言覆盖率。
+  growth_read_material: '读取素材',
+  growth_get_store: '门店档案',
+  growth_read_lark_base: '飞书表格',
+  growth_gen_image: '生成配图',
+  growth_make_cover: '合成封面',
+  growth_rewrite_title: '改写标题',
+  growth_rewrite_copy: '改写正文',
+  growth_update_output: '采用产出',
+  growth_replace_image: '替换配图',
+  growth_save_store_fact: '写入档案',
+  growth_export_package: '导出发布包',
+  growth_record_publish: '登记发布'
 }
 
 export function toolCnName(name: string): string {

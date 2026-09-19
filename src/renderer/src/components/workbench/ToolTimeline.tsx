@@ -20,10 +20,17 @@ import {
  */
 export function ToolTimeline({
   items,
-  title = '工具调用'
+  title = '工具调用',
+  size = 'compact'
 }: {
   items: TimelineItem[]
   title?: string
+  /**
+   * compact = 客服工作台的密度（一屏要塞很多轮，保持原样）；
+   * roomy = 营销工作台的密度（一次任务只有几步，读得清比塞得多重要）。
+   * 差别只在间距/字号，规则与结构完全共用。
+   */
+  size?: 'compact' | 'roomy'
 }): React.JSX.Element | null {
   const [openId, setOpenId] = useState<string | null>(null)
   /** 耗时基准：渲染期不许读时钟（react-hooks/purity），所以由 effect 写入、定时器刷新 */
@@ -68,7 +75,11 @@ export function ToolTimeline({
   }
 
   return (
-    <div className={`wb-tl${sum.running > 0 ? ' is-running' : ''}`}>
+    <div
+      className={
+        'wb-tl' + (sum.running > 0 ? ' is-running' : '') + (size === 'roomy' ? ' is-roomy' : '')
+      }
+    >
       <div className="wb-tl-head">
         <span className="wb-tl-kind">{title}</span>
         <span className="wb-tl-meta">{meta}</span>

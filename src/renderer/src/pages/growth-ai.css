@@ -240,7 +240,9 @@
  * 一次调用一行、看不到先后与并行；时间线的样式在 pages/workbench-chat/messages.css 的 .wb-tl*。 */
 .gai-chat .wb-tl {
   align-self: stretch;
-  padding: 2px 2px 4px;
+  /* 时间线在对话流里是「一块过程」，上下各留一点，别和前后消息贴在一起
+     （对话区本身还有 10px gap，这里只补内边距，不再加 margin，免得越叠越松） */
+  padding: 6px 2px 8px;
 }
 
 /* 任务行「执行中」标记：与工具时间线的进行中节点同一视觉语言（呼吸点） */
