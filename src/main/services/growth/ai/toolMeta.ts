@@ -203,7 +203,7 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
   },
   {
     name: 'growth_save_store_fact',
-    oneLine: '把已确认的门店事实写入门店档案（联网查到的事实必须先确认）',
+    oneLine: '把已确认的门店事实写入门店档案（用户口头给出的事实，先确认再写）',
     when: '用户确认了一条门店事实（地址/电话/营业时间等）后',
     confirm: true,
     needsStore: true,
@@ -223,29 +223,8 @@ export const GROWTH_TOOL_META: GrowthToolMeta[] = [
       outputIds: { type: 'number_array', desc: '要导出的产出 id 列表（不传=全部）' },
       contentId: { type: 'number', desc: '素材 id（不传用当前任务素材）' }
     }
-  },
-  {
-    name: 'growth_record_publish',
-    oneLine: '登记发布与效果回填(渠道/点赞/关注/线索/金额)，用于素材分与 ROI',
-    when: '用户说某条内容已经发布、或要回填效果数据时',
-    confirm: true,
-    needsContent: true,
-    params: {
-      // 这里刻意用 string 而不是 enum：渠道是「渠道名」，原实现允许任意取值（如 weibo），
-      // 收成 enum 会让历史用法/新渠道直接报参数错误；把可选值写在说明里即可。
-      channel: {
-        type: 'string',
-        required: true,
-        desc: '发布渠道：wxMoments | wxGroup | wxChat | douyin | xhs | other'
-      },
-      outputId: { type: 'number', desc: '归因的产出 id（可空）' },
-      likes: { type: 'number', desc: '点赞数' },
-      follows: { type: 'number', desc: '新增关注' },
-      leads: { type: 'number', desc: '线索数' },
-      amount: { type: 'number', desc: '成交金额' },
-      contentId: { type: 'number', desc: '素材 id（不传用当前任务素材）' }
-    }
   }
+  // 注: growth_record_publish（登记发布）已随该功能整体下线删除，能力数 12 → 11。
 ]
 
 export function findGrowthToolMeta(name: string): GrowthToolMeta | undefined {

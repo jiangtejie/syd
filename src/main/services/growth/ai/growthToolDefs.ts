@@ -13,7 +13,7 @@
 import type { ToolDef } from '../../ai/chat/skills'
 import { GROWTH_TOOL_META, type GrowthToolMeta } from './toolMeta'
 /**
- * 营销 AI 工作台工具组: 只读(素材/门店/搜索) + 写入(改写/生图/产出/导出/回填, 需审批)。
+ * 营销 AI 工作台工具组: 只读(素材/门店/飞书表格) + 写入(改写/生图/封面/产出/导出, 需审批)。
  * 工具是模型与产品能力的唯一接口; 写操作一律经 requestToolApproval。
  */
 
@@ -64,7 +64,6 @@ import {
 } from './imageStrategy'
 import { getImageConfig } from './config'
 import { exportPublishPackage } from '../publisher/exporter'
-import { recordPublish } from '../remix/service'
 import { checkComplianceBatch } from '../remix/compliance'
 
 export interface GrowthToolCtx {
@@ -945,43 +944,9 @@ export function growthToolDefs(defaults: GrowthToolDefaults = {}): ToolDef[] {
           ? '已导出到: ' + String(res.dir) + ' (' + String(res.files) + ' 个文件)'
           : '导出失败: ' + String(res.error)
       }
-    },
-    {
-      name: 'growth_record_publish',
-      kind: 'builtin',
-      needsWx: false,
-      confirm: true,
-      params: metaOf('growth_record_publish').params,
-      description: '登记发布与效果回填(渠道/点赞/新增关注/线索/金额), 用于素材分与 ROI 统计。',
-      run: async (_ctx, argsIn) => {
-        const args = argsIn as {
-          channel: 'wxMoments' | 'wxGroup' | 'wxChat' | 'douyin' | 'xhs' | 'other'
-          outputId?: number
-          likes?: number
-          follows?: number
-          leads?: number
-          amount?: number
-          contentId?: number
-        }
-        const miss = needContentGuard(args)
-        if (miss) return miss
-        try {
-          const r = recordPublish(contentIdOf(args), {
-            channel: args.channel,
-            likes: args.likes ?? 0,
-            collects: 0,
-            comments: 0,
-            shares: 0,
-            follows: args.follows ?? 0,
-            leads: args.leads ?? 0,
-            amount: args.amount ?? 0,
-            outputId: args.outputId ?? null
-          })
-          return '已登记发布, 素材分更新为 ' + String(r.score) + '。'
-        } catch (e) {
-          return '登记失败: ' + (e instanceof Error ? e.message : String(e))
-        }
-      }
     }
+    // 注: growth_record_publish（登记发布与效果回填）已按用户决定下线 —— 那一步是纯手工录数字，
+    // 录进来的金额/线索只在看板上绕一圈，运营不会真的去填。相关工具、表单、IPC 与指标表写入一并删除，
+    // 历史行仍留在老库的 growth_metric_snapshot 里（见 db/schema/growth.ts 的说明）。
   ]
 }

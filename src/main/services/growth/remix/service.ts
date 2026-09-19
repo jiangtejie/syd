@@ -1,26 +1,21 @@
 /**
- * AI 拆解 / 发布回填 服务: 复用客服 AI 通道(services/ai provider, 同 baseUrl/key/model)。
- * - 拆解: 爆款 → 结构化拆解卡(落 growth_decomp);
- * - 回填: 发布登记 → growth_metric_snapshot, 素材分自动更新。
+ * AI 拆解服务: 复用客服 AI 通道(services/ai provider, 同 baseUrl/key/model)。
+ * 爆款 → 结构化拆解卡(结构维度 + 视觉维度, 落 growth_decomp), 供爆改与图生图使用。
  *
- * 历史说明: 这里原有 `remixContent`(一键爆改: 拆解 → 标题x5 + 正文x2 → 落 remix_job/remix_output)。
- * 该链路已由「营销 → AI 工作台」的工具承接(growth_rewrite_title/copy + growth_update_output), 且无任何调用方,
- * 故删除以免两份实现漂移; 如需恢复, 见 git 历史(提交 f650c4e 之前)。
+ * 历史说明:
+ * - 原有 `remixContent`(一键爆改: 拆解 → 标题x5 + 正文x2 → 落 remix_job/remix_output)已由
+ *   「营销 → AI 工作台」的工具承接(growth_rewrite_title/copy + growth_update_output), 且无任何调用方,
+ *   故删除以免两份实现漂移; 如需恢复, 见 git 历史(提交 f650c4e 之前)。
+ * - 原有 `recordPublish`(发布登记 + 效果回填 → growth_metric_snapshot + 重算素材分)已按用户决定
+ *   整体下线: 那一步是纯手工录数字, 运营不会真的去填。历史行仍在老库的 growth_metric_snapshot 里。
  */
 
 import { createAiProvider } from '../../ai/provider'
 import { describeModelError } from '../../ai/modelErrors'
-import {
-  getContentItem,
-  setDecomp,
-  interactionScoreOf,
-  updateContentFields
-} from '../../../db/repos/growthRepo'
-import { insertMetricSnapshot, listMetricViews } from '../../../db/repos/growthOpsRepo'
+import { getContentItem, setDecomp } from '../../../db/repos/growthRepo'
 import { buildAnalyzePrompt, parseModelJson } from './prompts'
 import { hasVisualFacts, readVisualFacts } from '../ai/imageStrategy'
 import { createLogger } from '../../logging'
-import type { GrowthMetricView } from '../../../../shared/growth'
 
 const remixLog = createLogger('growth-remix')
 
@@ -95,34 +90,4 @@ export async function analyzeContent(contentId: number): Promise<string> {
     commentTopics: (structure as { commentTopics: string[] }).commentTopics
   })
   return JSON.stringify(hasVisualFacts(visual) ? { ...structure, visual } : structure, null, 2)
-}
-
-/**
- * 发布登记 + 效果回填: 写 metric 快照并把回流贡献并入素材分。
- * score = 基础互动分 + 回流(赞) + 新增关注 x2 + 线索 x30 + 金额。
- */
-export function recordPublish(
-  contentId: number,
-  input: {
-    channel: string
-    likes: number
-    collects: number
-    comments: number
-    shares: number
-    follows: number
-    leads: number
-    amount: number
-    /** 归因: 采用的爆改产出(可空) */
-    outputId?: number | null
-  }
-): { score: number; metric: GrowthMetricView } {
-  const item = getContentItem(contentId)
-  if (!item) throw new Error('素材不存在')
-  insertMetricSnapshot(contentId, { ...input, outputId: input.outputId ?? null })
-  const base = interactionScoreOf(item.interactions)
-  const score = Math.round(base + input.likes + input.follows * 2 + input.leads * 30 + input.amount)
-  updateContentFields(contentId, { score })
-  const metric = listMetricViews(contentId, 1)[0]
-  if (!metric) throw new Error('回填失败')
-  return { score, metric }
 }

@@ -313,6 +313,8 @@ growth_remix_output   爆改成品(多版本): 文案/资产/质检结果/原创
 growth_publish_task   发布任务: 渠道/门店/排期/承接配置/状态
 growth_publish_result 发布回执: remote_id/url/时间/错误
 growth_metric_snapshot 回流快照: 目标(内容/账号)/渠道/互动/新客/核销/金额/时间
+                      ↑ 这一层与「发布登记」入口已按用户决定下线（手工录数字没人填）；
+                        渠道 ROI 要重新设计的话从这里重来，老库历史行仍在
 growth_setting        growth 域 KV(与 app_config 并列的域配置,敏感值走 secrets)
 ```
 

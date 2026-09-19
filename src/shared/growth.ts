@@ -1,6 +1,6 @@
 /**
  * 营销增长(growth)域共享类型 —— 主进程 / preload / 渲染端 IPC 契约。
- * 素材入库(粘贴链接 / 本地导入) / AI 拆解与爆改 / 发布包导出 / 效果回填 / 舆情。
+ * 素材入库(粘贴链接 / 本地导入) / AI 拆解与爆改 / 发布包导出 / 舆情。
  * 注：「第三方采集订阅 + 调度」链路已整体下线，相关类型一并删除。
  */
 
@@ -98,9 +98,11 @@ export interface GrowthStats {
   assetCount: number
 }
 
-// ── AI 拆解 / 爆改 / 发布回填(落地批 A/B) ──
+// ── AI 拆解 / 爆改(落地批 A/B) ──
 
 // 注: 原有一键爆改的 GrowthRemixStyle 已随该链路删除(改由 AI 工作台工具承接)；
+// 注: 发布登记/效果回填相关类型(GrowthMetricView / GrowthPublishInput)已随该功能整体下线删除 ——
+// 那一步是纯手工录数字，运营不会真的去填；老库里的历史行仍在，但已无界面消费。
 
 /** 一次爆改产出的一个输出块(titles 用换行分隔多标题; copy 为单篇正文) */
 export interface GrowthRemixOutputView {
@@ -114,59 +116,20 @@ export interface GrowthRemixOutputView {
   createdAt: number
 }
 
-/** 发布回填快照(growth_metric_snapshot) */
-export interface GrowthMetricView {
-  id: number
-  channel: string
-  /** 归因: 本次发布采用的爆改产出(可空) */
-  outputId: number | null
-  likes: number
-  collects: number
-  comments: number
-  shares: number
-  follows: number
-  leads: number
-  amount: number
-  capturedAt: number
-}
-
-/** 发布登记输入(渠道/链接/互动回填) */
-export interface GrowthPublishInput {
-  channel: string
-  /** 采用哪一版爆改产出(归因用, 可空) */
-  outputId?: number | null
-  url?: string
-  likes?: number
-  collects?: number
-  comments?: number
-  shares?: number
-  follows?: number
-  leads?: number
-  amount?: number
-}
-
-/** 素材详情(含拆解/爆改产出/回填快照, getContent 返回) */
+/** 素材详情(含拆解/爆改产出, getContent 返回) */
 export interface GrowthContentDetailView extends GrowthContentDetail {
   remixOutputs: GrowthRemixOutputView[]
-  metrics: GrowthMetricView[]
 }
 
 // ── 营销概览(看板/统计) ──
 
+/** 素材规模三件套（看板「营销素材」卡用；回填相关字段随登记发布下线删除） */
 export interface GrowthOverview {
   contentCount: number
   /** 已 AI 拆解数量 */
   decompCount: number
   /** 已爆改产出数量 */
   remixOutputCount: number
-  /** 有发布登记记录的素材数 */
-  publishedContentCount: number
-  /** 回填累计新客线索 */
-  totalLeads: number
-  /** 回填累计金额(元) */
-  totalAmount: number
-  /** 最近发布登记 */
-  recentMetrics: Array<GrowthMetricView & { contentTitle: string }>
 }
 
 // ── 舆情监控(buzz) ──

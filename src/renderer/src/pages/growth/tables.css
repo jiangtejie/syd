@@ -206,7 +206,7 @@
   font-size: 13px;
 }
 
-/* ── AI 创作台 / 发布登记 ── */
+/* ── AI 产出（标题行 / 正文块）── */
 .gth-title-line {
   display: flex;
   align-items: center;

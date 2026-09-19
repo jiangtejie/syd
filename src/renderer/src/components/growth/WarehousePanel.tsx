@@ -6,7 +6,6 @@ import SkeletonRows from './SkeletonRows'
 import { growthApi } from './meta'
 import { Badge, SearchInput, EmptyState, ErrBar } from './common'
 import { MediaGallery } from './MediaGallery'
-import PublishRecordForm from './PublishRecordForm'
 import DecompCard from './DecompCard'
 import { remoteImageUrlsOf, remoteVideoUrlOf } from './meta'
 import type { GrowthContentDetailView, GrowthContentItem } from '../../../../shared/growth'
@@ -166,7 +165,7 @@ export function WarehousePanel({
       const res = await growthApi.getContent(id)
       if (res.ok && res.item) {
         const item = res.item as GrowthContentDetailView
-        setDetail({ ...item, remixOutputs: item.remixOutputs ?? [], metrics: item.metrics ?? [] })
+        setDetail({ ...item, remixOutputs: item.remixOutputs ?? [] })
         setNoteDraft(item.note ?? '')
       }
     } catch {
@@ -193,9 +192,9 @@ export function WarehousePanel({
         return
       }
       if (res.item) {
-        // 防御: 兼容旧主进程返回(可能缺 remixOutputs/metrics 字段)
+        // 防御: 兼容旧主进程返回(可能缺 remixOutputs 字段)
         const item = res.item as GrowthContentDetailView
-        setDetail({ ...item, remixOutputs: item.remixOutputs ?? [], metrics: item.metrics ?? [] })
+        setDetail({ ...item, remixOutputs: item.remixOutputs ?? [] })
         setNoteDraft(item.note ?? '')
       }
     } catch (e) {
@@ -617,7 +616,7 @@ export function WarehousePanel({
               steps={[
                 '粘贴小红书/抖音分享链接或口令, 或点「上传本地素材」导入门店实拍',
                 '到「AI 工作台」点「+ 新建」选这条素材, 与 AI 对话逐项爆改成品牌文案',
-                '在产出面板点「采用」收下满意的版本, 再用「导出发布包」送出、用「登记发布」把效果回填'
+                '在产出面板点「采用」收下满意的版本, 再用「导出发布包」把物料送出去'
               ]}
               extra={
                 <button
@@ -920,13 +919,7 @@ export function WarehousePanel({
             {/* 拆解卡：AI 从这条爆款里读出了什么（结构 + 视觉），此前只有一枚徽标 */}
             <DecompCard decomp={detail.decomp} />
 
-            {/* 发布登记 + 效果历史：看板空态一直指引的这个入口，此前并不存在 */}
-            <PublishRecordForm
-              contentId={detail.id}
-              metrics={detail.metrics ?? []}
-              outputs={detail.remixOutputs ?? []}
-              onSaved={() => refreshDetail(detail.id)}
-            />
+            {/* 注: 「发布登记 + 效果历史」表单已按用户决定整体下线（纯手工录数字，运营不会去填） */}
           </div>
         </div>
       ) : null}

@@ -764,7 +764,7 @@
   animation: gth-pop var(--m-2) var(--ease-spring) both;
 }
 
-/* ── 产出面板的出口条：导出发布包 / 登记发布 / 回素材仓库 ──
+/* ── 产出面板的出口条：导出发布包 / 回素材仓库 ──
  * 面板本身窄（约 300px），三个按钮横排会挤成一团 —— 允许换行，宁可占两行也别做成省略号。
  * 标题与按钮同排（原 .gai-out-head 只是一行文字），保证「采用完就能送出去」在视口内。 */
 /* 只有带动作的「产出」头需要 flex（另一处「候选」头是纯文字，别被 space-between 拆开） */
@@ -780,17 +780,4 @@
   gap: 6px;
   flex-wrap: wrap;
 }
-.gai-pub {
-  width: min(880px, 94vw);
-}
-.gai-pub-body {
-  padding: 12px 14px;
-  overflow-y: auto;
-}
-/* 表单在素材详情里是接在「效果历史」下面的，自带分隔线；在弹窗里它是第一个元素，
-   那条虚线和上边距反而像没画完的框，这里去掉。 */
-.gai-pub .gth-ops {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
-}
+/* 注: 这里原有 .gai-pub / .gai-pub-body（登记发布弹窗内的发布登记表单）—— 该功能已下线删除。 */

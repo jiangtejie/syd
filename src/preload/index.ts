@@ -1036,21 +1036,6 @@ const api: PreloadApi = {
         skipped?: string[]
         error?: string
       }> => ipcRenderer.invoke('cs:growth:uploadLocal'),
-      recordPublish: (
-        id: number,
-        input: {
-          channel?: string
-          likes?: number | string
-          collects?: number | string
-          comments?: number | string
-          shares?: number | string
-          follows?: number | string
-          leads?: number | string
-          amount?: number | string
-          outputId?: number | null
-        }
-      ): Promise<{ ok: boolean; score?: number; error?: string }> =>
-        ipcRenderer.invoke('cs:growth:recordPublish', id, input),
       exportPackage: (
         id: number,
         outputIds?: number[]

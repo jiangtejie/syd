@@ -130,7 +130,12 @@ growth_brand_profile   -- 品牌定位 / 人设 / 语气 / 卖点 / 禁忌词 / 
 | `growth_replace_image` | 写入 | 用候选图/门店实拍图替换产出中的某张图 | outputAssetId, newAssetId | 产出图集更新 | **需确认** |
 | `growth_save_store_fact` | 写入 | 把对话中确认的门店事实写入门店档案 | 字段键值 | 档案更新 | **需确认** |
 | `growth_export_package` | 写入 | 导出发布包（文案+图集+视频链接） | taskId | 导出目录 | **需确认** |
-| `growth_record_publish` | 写入 | 发布登记与效果回填 | taskId, 渠道, 数据 | 分数更新 | **需确认** |
+| ~~`growth_record_publish`~~ | ~~写入~~ | ~~发布登记与效果回填~~ | — | — | **已下线（2026-09-19）** |
+
+> **状态（2026-09-19）**：上表最后一行 `growth_record_publish` 已按用户决定下线（那一步是纯手工录数字，
+> 运营不会真的去填），连同 IPC、素材详情表单、`publisher/publishMetrics.ts` 与其自检一并删除，
+> 营销域能力 12 → 11；`growth_metric_snapshot` 不再建表也不读写（老库历史行保留）。
+> 搜索能力（`growth_search_*`）同样已下线，见 §6.1 的状态说明。
 
 ### 4.2 典型对话剧本（验收用例）
 

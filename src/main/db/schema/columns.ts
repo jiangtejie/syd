@@ -169,12 +169,6 @@ export const COLUMN_MIGRATIONS: ColumnMigration[] = [
     note: '解析媒体源信息，如 remoteMedia'
   },
   {
-    table: 'growth_metric_snapshot',
-    column: 'output_id',
-    ddl: 'INTEGER',
-    note: '发布归因：采用的爆改产出'
-  },
-  {
     table: 'growth_remix_output',
     column: 'task_id',
     ddl: 'INTEGER',

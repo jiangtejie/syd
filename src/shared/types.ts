@@ -670,8 +670,7 @@ export const TOOL_CN_NAMES: Record<string, string> = {
   growth_update_output: '采用产出',
   growth_replace_image: '替换配图',
   growth_save_store_fact: '写入档案',
-  growth_export_package: '导出发布包',
-  growth_record_publish: '登记发布'
+  growth_export_package: '导出发布包'
 }
 
 export function toolCnName(name: string): string {

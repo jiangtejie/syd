@@ -62,131 +62,24 @@ export function listRemixOutputViews(
   }))
 }
 
-// ── 发布登记 / 效果回填 ──
+// 注: 这里原有 insertMetricSnapshot / listMetricViews（发布登记与效果回填的读写）——
+// 登记发布功能已按用户决定下线，写入点与读取点一起删除。老库的 growth_metric_snapshot 行原样留着。
 
-export function insertMetricSnapshot(
-  contentId: number,
-  input: {
-    channel: string
-    likes: number
-    collects: number
-    comments: number
-    shares: number
-    follows: number
-    leads: number
-    amount: number
-    outputId?: number | null
-  }
-): number {
-  const res = getDb()
-    .prepare(
-      'INSERT INTO growth_metric_snapshot (target_type, target_id, channel, output_id, likes, collects, comments, shares, follows, leads, amount, captured_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    )
-    .run(
-      'content',
-      contentId,
-      input.channel,
-      input.outputId ?? null,
-      input.likes,
-      input.collects,
-      input.comments,
-      input.shares,
-      input.follows,
-      input.leads,
-      input.amount,
-      Date.now()
-    )
-  return Number(res.lastInsertRowid)
-}
-
-export function listMetricViews(
-  contentId: number,
-  limit = 10
-): import('../../../shared/growth').GrowthMetricView[] {
-  const rows = getDb()
-    .prepare(
-      'SELECT * FROM growth_metric_snapshot WHERE target_type = ? AND target_id = ? ORDER BY id DESC LIMIT ?'
-    )
-    .all('content', contentId, Math.min(Math.max(limit, 1), 100)) as unknown as Array<{
-    id: number
-    channel: string
-    output_id: number | null
-    likes: number
-    collects: number
-    comments: number
-    shares: number
-    follows: number
-    leads: number
-    amount: number
-    captured_at: number
-  }>
-  return rows.map((r) => ({
-    id: r.id,
-    channel: r.channel,
-    outputId: r.output_id ?? null,
-    likes: r.likes,
-    collects: r.collects,
-    comments: r.comments,
-    shares: r.shares,
-    follows: r.follows,
-    leads: r.leads,
-    amount: r.amount,
-    capturedAt: r.captured_at
-  }))
-}
-
-/** 营销概览(看板用): 素材/拆解/爆改/发布/线索与最近发布登记 */
+/**
+ * 营销概览(看板用): 素材规模三件套。
+ *
+ * 注: 这里原本还查 growth_metric_snapshot 的已发布素材数 / 线索 / 金额 / 最近登记 ——
+ * 登记发布功能下线后那几个字段没有来源了，一并删除（老数据仍在库里，只是不再有任何界面消费它）。
+ */
 export function growthOverview(): import('../../../shared/growth').GrowthOverview {
   const db = getDb()
   const one = (sql: string): number => {
     const row = db.prepare(sql).get() as { n: number }
     return row.n
   }
-  const sum = db
-    .prepare(
-      'SELECT COALESCE(SUM(leads),0) AS leads, COALESCE(SUM(amount),0) AS amount FROM growth_metric_snapshot'
-    )
-    .get() as { leads: number; amount: number }
-  const recent = db
-    .prepare(
-      `SELECT m.*, c.title AS content_title FROM growth_metric_snapshot m
-       LEFT JOIN growth_content c ON c.id = m.target_id
-       ORDER BY m.id DESC LIMIT 6`
-    )
-    .all() as unknown as Array<{
-    id: number
-    channel: string
-    output_id: number | null
-    likes: number
-    collects: number
-    comments: number
-    shares: number
-    follows: number
-    leads: number
-    amount: number
-    captured_at: number
-    content_title: string | null
-  }>
   return {
     contentCount: one('SELECT COUNT(*) AS n FROM growth_content'),
     decompCount: one('SELECT COUNT(DISTINCT content_id) AS n FROM growth_decomp'),
-    remixOutputCount: one('SELECT COUNT(*) AS n FROM growth_remix_output'),
-    publishedContentCount: one('SELECT COUNT(DISTINCT target_id) AS n FROM growth_metric_snapshot'),
-    totalLeads: sum.leads,
-    totalAmount: sum.amount,
-    recentMetrics: recent.map((r) => ({
-      id: r.id,
-      channel: r.channel,
-      outputId: r.output_id ?? null,
-      likes: r.likes,
-      collects: r.collects,
-      comments: r.comments,
-      shares: r.shares,
-      follows: r.follows,
-      leads: r.leads,
-      amount: r.amount,
-      capturedAt: r.captured_at,
-      contentTitle: r.content_title ?? ''
-    }))
+    remixOutputCount: one('SELECT COUNT(*) AS n FROM growth_remix_output')
   }
 }

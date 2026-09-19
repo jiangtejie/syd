@@ -350,7 +350,7 @@ function DashboardPage(): React.JSX.Element {
   const [range, setRange] = useState<7 | 30>(7)
   /** 当前时间（mount 时异步测量，避免渲染期调用 Date.now） */
   const [nowMs, setNowMs] = useState<number>(0)
-  /** 营销板块概览(素材/拆解/爆改/发布回填) */
+  /** 营销板块概览(素材/拆解/爆改产出) */
   const [growthOv, setGrowthOv] = useState<GrowthOverview | null>(null)
 
   useEffect(() => {
@@ -568,12 +568,13 @@ function DashboardPage(): React.JSX.Element {
       </div>
 
       {growthOv ? (
+        // 注: 这张卡原本叫「营销内容效果」，主体是发布登记回填出来的线索/金额与登记历史。
+        // 登记发布功能下线后那些数字没有来源，卡片收敛为「素材规模 + 一步跳过去」。
         <div className="page-card db-panel">
           <div className="db-panel-title">
-            营销内容效果
+            营销素材
             <span className="db-panel-hint">营销板块</span>
-            {/* 看板只读汇总，看到数字想动手时必须能一步跳过去；
-                落在「素材仓库」是因为那里能看到素材与产出全貌（工作台也有登记发布入口）。 */}
+            {/* 看板只读汇总，看到数字想动手时必须能一步跳过去 */}
             <button
               className="db-panel-act"
               type="button"
@@ -587,43 +588,11 @@ function DashboardPage(): React.JSX.Element {
           </div>
           <div className="db-panel-sub">
             素材 {growthOv.contentCount} · 已拆解 {growthOv.decompCount} · 爆改产出{' '}
-            {growthOv.remixOutputCount} · 已发布素材 {growthOv.publishedContentCount} · 新客线索{' '}
-            {growthOv.totalLeads} · 回填金额 ¥{growthOv.totalAmount}
+            {growthOv.remixOutputCount}
           </div>
-          {growthOv.recentMetrics.length > 0 ? (
-            <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text-2)' }}>
-              {growthOv.recentMetrics.slice(0, 5).map((m) => (
-                <div
-                  key={m.id}
-                  style={{ display: 'flex', gap: 12, padding: '4px 0', alignItems: 'baseline' }}
-                >
-                  <span style={{ color: 'var(--text-3)', fontSize: 12, flex: 'none' }}>
-                    {fmtStamp(m.capturedAt)}（{fmtAge(nowMs, m.capturedAt)}）
-                  </span>
-                  <span style={{ flex: 'none' }}>{m.channel}</span>
-                  <span
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {m.contentTitle || '(素材已删除)'}
-                  </span>
-                  <span style={{ flex: 'none' }}>
-                    线索 {m.leads} · ¥{m.amount}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="db-panel-sub">
-              还没有发布登记; 在「营销 → AI
-              工作台」产出面板或素材仓库详情里点「登记发布」后会出现在这里
-            </div>
-          )}
+          <div className="db-panel-sub">
+            素材仓库负责入库与检索，AI 工作台负责爆改与配图，产出可直接导出发布包
+          </div>
         </div>
       ) : null}
 

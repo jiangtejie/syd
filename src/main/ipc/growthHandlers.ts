@@ -9,10 +9,8 @@ import { growthStats } from '../db/repos/growthOpsRepo'
 import { deleteContent } from '../db/repos/growthRepo'
 import { importLocalMaterials } from '../services/growth/collector/localImport'
 import { exportPublishPackage } from '../services/growth/publisher/exporter'
-import { parsePublishMetrics } from '../services/growth/publisher/publishMetrics'
-import { recordPublish } from '../services/growth/remix/service'
 import { redownloadMissingMedia } from '../services/growth/collector/media/redownload'
-import { listMetricViews, listRemixOutputViews } from '../db/repos/growthOpsRepo'
+import { listRemixOutputViews } from '../db/repos/growthOpsRepo'
 import { batchDeleteContents, batchPatchContents } from '../db/repos/growthRepo'
 import { growthOverview } from '../db/repos/growthOpsRepo'
 import { existsSync } from 'node:fs'
@@ -56,11 +54,7 @@ export function registerGrowthHandlers(): void {
     if (!cid) return err('非法素材 ID')
     const detail = queryContentDetail(cid)
     if (!detail) return err('素材不存在')
-    const view = {
-      ...detail,
-      remixOutputs: listRemixOutputViews(cid, 12),
-      metrics: listMetricViews(cid, 6)
-    }
+    const view = { ...detail, remixOutputs: listRemixOutputViews(cid, 12) }
     return ok({ item: view })
   })
 
@@ -157,28 +151,8 @@ export function registerGrowthHandlers(): void {
     }
   })
 
-  /**
-   * 登记发布与效果回填。
-   *
-   * 为什么必须有这个入口：在此之前**只有 AI 对话工具**能写 growth_metric_snapshot，
-   * 而看板空态却指引用户「在素材详情里点登记发布」—— 那个按钮根本不存在（DashboardPage:609）。
-   * 结果是营销漏斗永远没有数据。校验规则见 publishMetrics.parsePublishMetrics（纯函数，有自检）。
-   */
-  ipcMain.handle(
-    'cs:growth:recordPublish',
-    async (_e, id: unknown, input: Record<string, unknown>) => {
-      const cid = clampInt(id, 0, 1, Number.MAX_SAFE_INTEGER)
-      if (!cid) return err('非法素材 ID')
-      const parsed = parsePublishMetrics(input ?? {})
-      if (!parsed.ok) return err(parsed.error)
-      try {
-        const r = recordPublish(cid, parsed.value)
-        return ok({ score: r.score, metric: r.metric })
-      } catch (e) {
-        return err(e instanceof Error ? e.message : '登记失败')
-      }
-    }
-  )
+  // 注: cs:growth:recordPublish（登记发布与效果回填）已按用户决定整体下线，连带删除的还有
+  // publisher/publishMetrics.ts 与 growth_metric_snapshot 的读写。历史行仍在老库里，只是不再被消费。
 
   ipcMain.handle('cs:growth:exportPackage', async (_e, id: unknown, outputIds: unknown) => {
     const cid = clampInt(id, 0, 1, Number.MAX_SAFE_INTEGER)

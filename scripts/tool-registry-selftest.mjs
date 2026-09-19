@@ -8,7 +8,7 @@
  * 所以这里把「声明层的规矩」钉死：目录行必须齐、写类必须标 confirm、参数必须有说明、
  * 枚举必须有可选项、上下文依赖必须声明清楚。
  *
- * 覆盖范围：营销域 12 个工具（growth/ai/toolMeta.ts）。飞书/软件/工作区三组是纯数组常量，
+ * 覆盖范围：营销域 11 个工具（growth/ai/toolMeta.ts）。飞书/软件/工作区三组是纯数组常量，
  * 结构更简单（name + oneLine + when），同样在下面按同一套规矩校验。
  */
 import { GROWTH_TOOL_META } from '../src/main/services/growth/ai/toolMeta.ts'
@@ -29,7 +29,7 @@ const log = (ok, name, detail) => {
 
 const tools = GROWTH_TOOL_META
 console.log('\n[1] 营销域能力元数据')
-log(tools.length === 12, '登记 12 个工具', String(tools.length))
+log(tools.length === 11, '登记 11 个工具', String(tools.length))
 const names = tools.map((t) => t.name)
 log(new Set(names).size === names.length, '能力名唯一')
 log(names.every((n) => /^growth_[a-z0-9_]+$/.test(n)), '命名一致(growth_snake_case)')
@@ -60,14 +60,13 @@ const expectWrites = [
   'growth_update_output',
   'growth_replace_image',
   'growth_save_store_fact',
-  'growth_export_package',
-  'growth_record_publish'
+  'growth_export_package'
 ]
-log(writes.length === expectWrites.length, '写类工具 9 个', writes.join(','))
+log(writes.length === expectWrites.length, '写类工具 8 个', writes.join(','))
 log(expectWrites.every((n) => writes.includes(n)), '写类清单与预期一致')
 const reads = tools.filter((t) => !t.confirm).map((t) => t.name)
 log(
-  reads.every((n) => !/^(growth_gen_image|growth_update_output|growth_record_publish)$/.test(n)),
+  reads.every((n) => !/^(growth_gen_image|growth_update_output)$/.test(n)),
   '只要改数据/花钱的能力都不在只读组'
 )
 

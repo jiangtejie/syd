@@ -87,23 +87,9 @@ export const GROWTH_TABLES: string[] = [
     created_at INTEGER NOT NULL
   )`,
   // 注: growth_publish_task / growth_publish_result（Phase 2「半自动发布」预留）已删除 ——
-  // 除了这两段 DDL 与它们的索引，全仓从无一行代码读写过它们。发布回流走的是
-  // growth_metric_snapshot（见 publisher/publishMetrics.ts），与这两张表无关。
-  `CREATE TABLE IF NOT EXISTS growth_metric_snapshot (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    target_type TEXT NOT NULL DEFAULT 'content',
-    target_id INTEGER NOT NULL,
-    channel TEXT NOT NULL DEFAULT '',
-    likes INTEGER NOT NULL DEFAULT 0,
-    collects INTEGER NOT NULL DEFAULT 0,
-    comments INTEGER NOT NULL DEFAULT 0,
-    shares INTEGER NOT NULL DEFAULT 0,
-    follows INTEGER NOT NULL DEFAULT 0,
-    leads INTEGER NOT NULL DEFAULT 0,
-    amount REAL NOT NULL DEFAULT 0,
-    output_id INTEGER,
-    captured_at INTEGER NOT NULL
-  )`,
+  // 除了这两段 DDL 与它们的索引，全仓从无一行代码读写过它们。
+  // 注: growth_metric_snapshot（发布登记回填：渠道/互动/线索/金额）也已随「登记发布」功能整体下线删除 ——
+  // 那一步是纯手工录数字，运营不会真的去填。老库里那张表与历史行原样留着（不影响使用），新装库不再建。
   // 营销 AI 工作台：任务
   `CREATE TABLE IF NOT EXISTS growth_ai_task (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,8 +161,6 @@ export const GROWTH_INDEXES: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_growth_content_created ON growth_content (created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_growth_asset_content ON growth_asset (content_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_growth_decomp_content ON growth_decomp (content_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_growth_metric_target
-    ON growth_metric_snapshot (target_type, target_id, captured_at)`,
   `CREATE INDEX IF NOT EXISTS idx_growth_task_status ON growth_ai_task (status, updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_growth_out_asset ON growth_output_asset (output_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_growth_buzz_dedupe

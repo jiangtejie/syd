@@ -12,9 +12,7 @@ import { ToolTimeline } from '../components/workbench/ToolTimeline'
 import { Lightbox, type LightboxItem } from '../components/growth/MediaGallery'
 import { splitToolRuns, type TimelineItem } from '../lib/toolTimeline'
 import { growthApi } from '../components/growth/meta'
-import PublishRecordForm from '../components/growth/PublishRecordForm'
 import { useWorkbenchStore } from '../stores/workbench'
-import type { GrowthMetricView, GrowthRemixOutputView } from '../../../shared/growth'
 import './growth-ai.css'
 import { useAsyncEffect } from '../lib/useAsyncEffect'
 import { toolCnName } from '../../../shared/types'
@@ -399,10 +397,7 @@ export default function GrowthAiWorkbench({
   const [pickGoal, setPickGoal] = useState('image_text')
   const [creating, setCreating] = useState(0)
 
-  // 出口：把「采用」的结果送出工作台（导出发布包 / 登记发布 / 回仓库）
-  const [pubOpen, setPubOpen] = useState(false)
-  const [pubMetrics, setPubMetrics] = useState<GrowthMetricView[]>([])
-  const [pubOutputs, setPubOutputs] = useState<GrowthRemixOutputView[]>([])
+  // 出口：把「采用」的结果送出工作台（导出发布包 / 回仓库）
   const [exporting, setExporting] = useState(false)
 
   const loadTasks = useCallback(async (): Promise<void> => {
@@ -431,35 +426,6 @@ export default function GrowthAiWorkbench({
   const closePick = useCallback((): void => setPickOpen(false), [])
 
   useEscape(pickOpen, closePick)
-
-  /**
-   * 打开「登记发布」。
-   *
-   * 为什么要现拉一次 getContent 而不是用手上的 outputs：这个表单要展示「效果登记历史」，
-   * 那是素材级的数据(growth_metric_snapshot)，本页只加载了任务级产出，攒不出来。
-   */
-  const openPublish = useCallback(async (contentId: number): Promise<void> => {
-    if (!growthApi?.getContent) {
-      toast.error('通道未就绪（改到主进程/preload 后需完全重启应用）')
-      return
-    }
-    const res = await growthApi.getContent(contentId)
-    if (!res.ok) {
-      toast.error(res.error || '读取素材详情失败')
-      return
-    }
-    if (!res.item) {
-      toast.error('素材不存在（可能已被删除）')
-      return
-    }
-    setPubMetrics(res.item.metrics ?? [])
-    setPubOutputs(res.item.remixOutputs ?? [])
-    setPubOpen(true)
-  }, [])
-
-  const closePublish = useCallback((): void => setPubOpen(false), [])
-
-  useEscape(pubOpen, closePublish)
 
   /**
    * 导出发布包：只带**本任务已采用**的产出 id，避免把同一素材下别的任务的产出一起塞进包。
@@ -992,7 +958,7 @@ export default function GrowthAiWorkbench({
 
       <aside className="gai-output">
         {/* 产出面板就是这条素材的终点站：采用之后必须能直接送出工作台。
-            此前导出发布包与登记发布只在「素材仓库」的详情里有入口，用户得自己记住
+            此前导出发布包只在「素材仓库」的详情里有入口，用户得自己记住
             「先去仓库找这条素材」——闭环在最后一跳断掉。 */}
         <div className="gai-out-head is-acts">
           <span>产出</span>
@@ -1010,14 +976,6 @@ export default function GrowthAiWorkbench({
                 onClick={() => void exportPkg()}
               >
                 {exporting ? '导出中…' : '导出发布包'}
-              </button>
-              <button
-                className="ui-btn gth-btn sm"
-                type="button"
-                title="登记发布渠道与互动数据，回填后素材分与看板立即更新"
-                onClick={() => void openPublish(task.contentId)}
-              >
-                登记发布
               </button>
               <button
                 className="ui-btn gth-btn sm"
@@ -1234,42 +1192,6 @@ export default function GrowthAiWorkbench({
             ) : null
           }
         />
-      ) : null}
-      {pubOpen && task ? (
-        <div className="gai-pick-mask" onClick={closePublish}>
-          <div
-            className="gai-pick gai-pub"
-            role="dialog"
-            aria-modal="true"
-            aria-label="登记发布"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="gai-pick-head">
-              <span className="t">
-                登记发布 · {task.contentTitle || task.title || '未命名素材'}
-              </span>
-              <span className="s">
-                渠道与互动数据回填后，素材分会重算，看板「营销内容效果」立即更新
-              </span>
-              <button className="ui-btn gth-btn sm" type="button" onClick={closePublish}>
-                关闭
-              </button>
-            </div>
-            <div className="gai-pub-body">
-              <PublishRecordForm
-                contentId={task.contentId}
-                metrics={pubMetrics}
-                outputs={pubOutputs}
-                onSaved={async (): Promise<void> => {
-                  // 重新拉一次，让「效果登记历史」把刚填的这条显示出来
-                  const res = await growthApi?.getContent(task.contentId)
-                  if (res?.ok && res.item) setPubMetrics(res.item.metrics ?? [])
-                  onChanged()
-                }}
-              />
-            </div>
-          </div>
-        </div>
       ) : null}
       {pickOpen ? (
         <div className="gai-pick-mask" onClick={() => setPickOpen(false)}>

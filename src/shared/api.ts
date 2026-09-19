@@ -1089,21 +1089,6 @@ export interface CsApi {
     ) => Promise<Result<{ updated?: number }>>
     batchRemove: (ids: number[]) => Promise<Result<{ removed?: number }>>
     uploadLocal: () => Promise<Result<{ added?: number; contentId?: number; skipped?: string[] }>>
-    /** 登记发布与效果回填（渠道/互动/关注/线索/金额）→ 写 growth_metric_snapshot 并重算素材分 */
-    recordPublish: (
-      id: number,
-      input: {
-        channel?: string
-        likes?: number | string
-        collects?: number | string
-        comments?: number | string
-        shares?: number | string
-        follows?: number | string
-        leads?: number | string
-        amount?: number | string
-        outputId?: number | null
-      }
-    ) => Promise<Result<{ score?: number }>>
     exportPackage: (
       id: number,
       outputIds?: number[]
