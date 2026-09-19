@@ -53,13 +53,13 @@
   margin-right: auto;
 }
 .gai-tasks-hint {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   padding: 0 4px 8px;
   line-height: 1.6;
 }
 .gai-group {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   padding: 8px 4px 4px;
 }
@@ -95,7 +95,7 @@
   display: block;
 }
 .gai-task-cover-empty {
-  font-size: 20px;
+  font-size: var(--fs-xl);
   color: var(--text-4);
   font-weight: 600;
 }
@@ -107,7 +107,7 @@
   gap: 3px;
 }
 .gai-task-meta {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -135,7 +135,7 @@
   border-left-color: var(--brand);
 }
 .gai-task-title {
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-1);
   display: flex;
   align-items: center;
@@ -152,14 +152,14 @@
   flex: none;
 }
 .gai-task-sub {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .gai-empty {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-4);
   padding: 10px 6px;
 }
@@ -169,7 +169,7 @@
   align-items: center;
   justify-content: center;
   color: var(--text-3);
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 /* ── 中: 对话 ── */
@@ -197,7 +197,7 @@
   flex: none;
 }
 .gai-head-title {
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-1);
   flex: 1;
@@ -215,12 +215,14 @@
   gap: 10px;
   background: var(--bg);
 }
+/* 气泡：AI 侧改成「无边框浅底」——原来两侧都有描边，一屏十几个气泡就是十几圈线；
+ * 现在只靠底色与对齐区分（AI 左浅底、用户右品牌色），圆角统一 r-lg、行高 1.7。 */
 .gai-msg {
-  max-width: 86%;
-  border-radius: var(--r-md);
-  padding: 8px 12px;
-  font-size: 13px;
-  line-height: 1.75;
+  max-width: 80%;
+  border-radius: var(--r-lg);
+  padding: 9px 13px;
+  font-size: var(--fs-md);
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -232,8 +234,8 @@
 .gai-msg.is-ai {
   align-self: flex-start;
   background: var(--bg-panel);
-  border: 1px solid var(--border-light);
   color: var(--text-1);
+  box-shadow: var(--shadow-card);
 }
 .gai-msg.is-error {
   align-self: stretch;
@@ -275,7 +277,7 @@
 }
 
 .gai-approval-hint {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
 }
 .gai-approval {
@@ -288,7 +290,7 @@
   border: 1px solid var(--warn-line);
   border-radius: var(--r-md);
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--warn-text);
 }
 .gai-approval-text {
@@ -309,7 +311,7 @@
 .gai-input {
   flex: 1;
   resize: none;
-  font-size: 13px;
+  font-size: var(--fs-md);
   line-height: 1.6;
   padding: 8px 10px;
   border-radius: var(--r-lg);
@@ -336,29 +338,42 @@
   min-width: 0;
 }
 .gai-out-head {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-2);
   padding: 6px 4px;
 }
+/* 产出卡：与候选块用**底色**区分，不再一个实线一个虚线（一屏里两种线型是纯噪音） */
 .gai-out-card {
   border: 1px solid var(--border-light);
-  border-radius: var(--r-md);
-  padding: 8px;
-  margin-bottom: 8px;
+  border-radius: var(--r-lg);
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  margin-bottom: var(--sp-2);
   background: var(--bg-panel);
 }
 .gai-out-card.is-candidate {
-  border-style: dashed;
+  border-color: transparent;
   background: var(--bg-hover);
 }
 .gai-out-variant {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
-  color: var(--text-3);
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  letter-spacing: 0.02em;
   margin-bottom: 6px;
+}
+/* 卡内动作（回退等）常态是「文字」，hover 才显形为按钮 —— 一屏十几张卡时按钮墙很吵 */
+.gai-out-card .ui-btn.sm {
+  border-color: transparent;
+  color: var(--text-3);
+  background: transparent;
+}
+.gai-out-card .ui-btn.sm:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--bg-panel);
 }
 /* 候选/产出图：3:4 竖版卡片（生图默认就是竖版，正方形缩略图会把构图裁掉）。
    图片用 contain：宁可留白也不要裁掉画面，否则用户没法判断封面对不对。 */
@@ -405,7 +420,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 /* 角标与导出包同一口径（封面 / 图2 / 图3），用户一眼知道哪张会被命名成封面 */
@@ -413,7 +428,7 @@
   position: absolute;
   top: 4px;
   left: 4px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1;
   padding: 3px 6px;
   border-radius: var(--r-pill);
@@ -428,7 +443,7 @@
   right: 4px;
   bottom: 4px;
   padding: 3px 0;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   border: 0;
   border-radius: var(--r-sm);
   background: var(--brand);
@@ -443,7 +458,7 @@
 }
 /* 生图策略回显: 模板/平台/比例/张数, 让用户看得出这张图是按什么生成的 */
 .gai-out-strategy {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1.6;
   color: var(--text-3);
   margin-bottom: 6px;
@@ -453,7 +468,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-1);
   padding: 3px 0;
   border-bottom: 1px dashed var(--border-light);
@@ -491,7 +506,7 @@
   margin-top: 2px;
 }
 .gai-task-del {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   cursor: pointer;
   padding: 0 4px;
@@ -531,13 +546,13 @@
   border-bottom: 1px solid var(--border-light);
 }
 .gai-pick-head .t {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text-1);
   flex: none;
 }
 .gai-pick-head .s {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   flex: 1;
   min-width: 0;
@@ -601,7 +616,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: var(--fs-lg);
   font-weight: 600;
 }
 .gai-pick-body {
@@ -612,14 +627,14 @@
   gap: 3px;
 }
 .gai-pick-title {
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .gai-pick-sub {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -627,7 +642,7 @@
 }
 .gai-pick-go {
   flex: none;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--brand);
   font-weight: 500;
 }

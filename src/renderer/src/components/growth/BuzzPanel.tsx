@@ -380,37 +380,57 @@ export default function BuzzPanel({
 
   return (
     <div className={'gth-buzz'}>
-      {/* 概览 */}
-      <div className={'gth-buzz-stats'}>
-        <div className={'gth-buzz-stat'}>
-          <span className={'v'}>{overview?.total ?? 0}</span>
-          <span className={'k'}>监控总量</span>
-        </div>
-        <div className={'gth-buzz-stat pos'}>
-          <span className={'v'}>{overview?.positive ?? 0}</span>
-          <span className={'k'}>积极</span>
-        </div>
-        <div className={'gth-buzz-stat neu'}>
-          <span className={'v'}>{overview?.neutral ?? 0}</span>
-          <span className={'k'}>中性</span>
-        </div>
-        <div className={'gth-buzz-stat neg'}>
-          <span className={'v'}>{overview?.negative ?? 0}</span>
-          <span className={'k'}>消极</span>
-        </div>
-        <div className={'gth-buzz-stat neg'}>
-          <span className={'v'}>{overview?.highRisk ?? 0}</span>
-          <span className={'k'}>高风险</span>
-        </div>
-        <div className={'gth-buzz-stat'}>
-          <span className={'v'}>{overview?.avgScore ?? 0}</span>
-          <span className={'k'}>平均分</span>
-        </div>
-        <div className={'gth-buzz-stat warn'}>
-          <span className={'v'}>{overview?.pending ?? 0}</span>
-          <span className={'k'}>待处理</span>
-        </div>
-      </div>
+      {/* 概览：7 张数字卡 → 一条情绪分布条。
+          七个并列数字（积极/中性/消极/高风险/平均分/待处理）读起来是清单不是结论；
+          堆叠条能一眼看出「口碑偏哪边 + 消极占多大比例」，数字只在旁边做注脚。 */}
+      {(() => {
+        const pos = overview?.positive ?? 0
+        const neu = overview?.neutral ?? 0
+        const neg = overview?.negative ?? 0
+        const sum = Math.max(pos + neu + neg, 1)
+        const pct = (n: number): string => (n / sum) * 100 + '%'
+        const unknown = Math.max((overview?.total ?? 0) - pos - neu - neg, 0)
+        return (
+          <div className={'gth-buzz-stats'}>
+            <div className={'gth-buzz-total'}>
+              <span className={'v'}>{overview?.total ?? 0}</span>
+              <span className={'k'}>条监控</span>
+            </div>
+            <div className={'gth-buzz-bar'}>
+              <span
+                className={'seg pos'}
+                style={{ width: pct(pos) }}
+                title={'积极 ' + String(pos)}
+              />
+              <span
+                className={'seg neu'}
+                style={{ width: pct(neu) }}
+                title={'中性 ' + String(neu)}
+              />
+              <span
+                className={'seg neg'}
+                style={{ width: pct(neg) }}
+                title={'消极 ' + String(neg)}
+              />
+            </div>
+            <div className={'gth-buzz-legend'}>
+              <span className={'pos'}>积极 {pos}</span>
+              <span className={'neu'}>中性 {neu}</span>
+              <span className={'neg'}>消极 {neg}</span>
+              {unknown > 0 ? <span className={'unk'}>待诊断 {unknown}</span> : null}
+            </div>
+            <div className={'gth-buzz-chips'}>
+              <span className={'chip'}>平均分 {overview?.avgScore ?? 0}</span>
+              {(overview?.highRisk ?? 0) > 0 ? (
+                <span className={'chip red'}>高风险 {overview?.highRisk ?? 0}</span>
+              ) : null}
+              {(overview?.pending ?? 0) > 0 ? (
+                <span className={'chip amber'}>待处理 {overview?.pending ?? 0}</span>
+              ) : null}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 筛选栏 */}
       <div className={'gth-buzz-filters'}>
@@ -605,8 +625,11 @@ export default function BuzzPanel({
           {items.map((m, i) => (
             <div
               key={m.id}
-              className={'gth-buzz-row' + (detail?.mention.id === m.id ? ' is-active' : '')}
+              className={
+                'gth-buzz-row clickable' + (detail?.mention.id === m.id ? ' is-active' : '')
+              }
               style={{ '--i': i } as React.CSSProperties}
+              onClick={() => void openDetail(m.id)}
             >
               <span className={'cover'}>
                 {m.assets[0] ? (
@@ -625,14 +648,12 @@ export default function BuzzPanel({
                   <span className={'txt'} title={m.title}>
                     {m.title || '(无标题)'}
                   </span>
+                  {/* 平台与形态合成一个徽标（原来是两个并排徽标 + 门店，三个徽标挤在标题后） */}
                   <span className={'gth-badge gray'}>
-                    {PLATFORM_LABEL[m.platform] ?? m.platform}
+                    {(PLATFORM_LABEL[m.platform] ?? m.platform) +
+                      ' · ' +
+                      (m.kind === 'video' ? '视频' : '图文')}
                   </span>
-                  {m.kind === 'video' ? (
-                    <span className={'gth-badge gray'}>视频</span>
-                  ) : (
-                    <span className={'gth-badge gray'}>图文</span>
-                  )}
                   {m.storeName ? <span className={'gth-badge'}>{m.storeName}</span> : null}
                 </span>
                 <span className={'s'}>
@@ -671,25 +692,24 @@ export default function BuzzPanel({
               >
                 {RISK_LABEL[m.riskLevel] ?? '未评级'}
               </span>
-              <span className={'num'}>
-                {String(m.commentCount)}
-                <br />
-                高赞 {String(m.highCommentCount)}
+              {/* 评论与高赞并成一行：原来上下两行把这一列撑到 40px 宽还读不出主次 */}
+              <span className={'num cmt'}>
+                评 {String(m.commentCount)}
+                {m.highCommentCount > 0 ? (
+                  <em className={'hot'}>高赞 {String(m.highCommentCount)}</em>
+                ) : null}
               </span>
               <span className={'gth-badge gray'}>{STATUS_LABEL[m.status] ?? m.status}</span>
               <span className={'gth-actions'}>
-                <button
-                  className={'ui-btn gth-btn sm'}
-                  type={'button'}
-                  onClick={() => void openDetail(m.id)}
-                >
-                  详情
-                </button>
+                {/* 行本身可点开详情（与素材仓库一致），这里只留「诊断」与「原帖」 */}
                 <button
                   className={'ui-btn gth-btn sm'}
                   type={'button'}
                   disabled={busy === m.id}
-                  onClick={() => void runDiagnose(m.id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void runDiagnose(m.id)
+                  }}
                 >
                   {busy === m.id ? '…' : '诊断'}
                 </button>
@@ -697,7 +717,11 @@ export default function BuzzPanel({
                   className={'ui-btn gth-btn sm'}
                   type={'button'}
                   disabled={!m.url}
-                  onClick={() => void openUrl(m.url)}
+                  title={'打开原帖'}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void openUrl(m.url)
+                  }}
                 >
                   原帖
                 </button>

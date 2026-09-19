@@ -9,7 +9,7 @@
   border-radius: var(--r-md);
   padding: 6px 10px;
   margin-bottom: 10px;
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-1);
 }
 .gth-chip {
@@ -19,7 +19,7 @@
   border: 1px solid var(--border);
   background: var(--bg-panel);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   white-space: nowrap;
   transition:
@@ -90,7 +90,7 @@
   border-radius: var(--r-md);
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
-  font-size: 26px;
+  font-size: var(--fs-kpi);
   line-height: 1;
   cursor: pointer;
 }
@@ -109,7 +109,7 @@
   left: 50%;
   transform: translateX(-50%);
   color: #fff;
-  font-size: 13px;
+  font-size: var(--fs-md);
   background: rgba(0, 0, 0, 0.5);
   padding: 2px 12px;
   border-radius: var(--r-pill);
@@ -132,12 +132,12 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: rgba(255, 255, 255, 0.92);
 }
 .gth-lightbox-badge {
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   padding: 3px 8px;
   border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.92);
@@ -186,19 +186,19 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-2);
   margin-bottom: 8px;
 }
 .gth-decomp-h .v {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 400;
   color: var(--text-4);
 }
 .gth-decomp-row {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.8;
   color: var(--text-2);
   word-break: break-word;
@@ -218,13 +218,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-2);
   margin-bottom: 6px;
 }
 .gth-decomp-vis-h .tag {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 400;
   color: var(--brand);
   background: var(--brand-soft);
@@ -236,7 +236,7 @@
   background: var(--bg-panel);
 }
 .gth-decomp-empty {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.8;
   color: var(--text-4);
 }

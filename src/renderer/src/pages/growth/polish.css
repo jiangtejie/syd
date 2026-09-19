@@ -519,7 +519,7 @@
   color: var(--text-2);
 }
 .gth-empty > div:first-child {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text-1);
 }
@@ -533,7 +533,7 @@
   white-space: nowrap;
 }
 .gth-metric.tone-amber .gth-metric-num {
-  font-size: 19px;
+  font-size: var(--fs-xl);
 }
 .gth-buzz-drawer .body {
   gap: 16px;
@@ -569,7 +569,7 @@
   min-width: 0;
 }
 .gth-ops-fld .lb {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   padding-left: 2px;
 }
@@ -584,7 +584,7 @@
   min-height: 30px;
 }
 .gth-ops-hint {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   line-height: 1.7;
 }

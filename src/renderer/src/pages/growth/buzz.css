@@ -6,45 +6,122 @@
   gap: 12px;
 }
 
+/* 概览：一条情绪分布条（替代七张数字卡）
+ * 布局：总量 → 堆叠条（积极/中性/消极按比例）→ 图例 → 右侧 chips（平均分/高风险/待处理）。
+ * 一条线读完「口碑偏哪边」，占高约 44px（原七张卡约 62px 且会换行）。 */
 .gth-buzz-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 8px;
-}
-
-.gth-buzz-stat {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-lg);
   background: var(--bg-panel);
+  box-shadow: var(--shadow-card);
 }
 
-.gth-buzz-stat .v {
-  font-size: 20px;
+.gth-buzz-total {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex: none;
+}
+
+.gth-buzz-total .v {
+  font-size: var(--fs-kpi);
   font-weight: 600;
   color: var(--text-1);
-  line-height: 1.2;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 
-.gth-buzz-stat .k {
-  font-size: 12px;
+.gth-buzz-total .k {
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
-.gth-buzz-stat.pos .v {
-  color: var(--success);
+/* 堆叠条：宽度按比例给，最小 2px 保证「有但极少」也看得见 */
+.gth-buzz-bar {
+  flex: 1 1 160px;
+  min-width: 120px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  display: flex;
+  background: var(--bg-hover);
 }
-.gth-buzz-stat.neg .v {
-  color: var(--danger);
+
+.gth-buzz-bar .seg {
+  min-width: 2px;
+  height: 100%;
 }
-.gth-buzz-stat.warn .v {
-  color: var(--warn);
+
+.gth-buzz-bar .seg.pos {
+  background: var(--success);
 }
-.gth-buzz-stat.neu .v {
+.gth-buzz-bar .seg.neu {
+  background: var(--text-4);
+}
+.gth-buzz-bar .seg.neg {
+  background: var(--danger);
+}
+
+.gth-buzz-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.gth-buzz-legend > span::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 5px;
+  background: var(--text-4);
+  vertical-align: middle;
+}
+
+.gth-buzz-legend .pos::before {
+  background: var(--success);
+}
+.gth-buzz-legend .neg::before {
+  background: var(--danger);
+}
+.gth-buzz-legend .unk::before {
+  background: var(--border);
+}
+
+.gth-buzz-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  margin-left: auto;
+}
+
+.gth-buzz-chips .chip {
+  font-size: var(--fs-xs);
   color: var(--text-2);
+  background: var(--bg-hover);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gth-buzz-chips .chip.red {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.gth-buzz-chips .chip.amber {
+  color: var(--warn-text);
+  background: var(--warn-soft);
 }
 
 .gth-buzz-filters {
@@ -72,7 +149,7 @@
 }
 
 .gth-buzz-filters .fld .lb {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
   padding-left: 2px;
   letter-spacing: 0.02em;
@@ -117,7 +194,7 @@
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   cursor: pointer;
   transition:
@@ -130,7 +207,7 @@
 }
 
 .gth-buzz-seg .seg b {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   opacity: 0.7;
 }
@@ -183,7 +260,7 @@
   border-radius: 50%;
   background: var(--bg-hover);
   color: var(--text-3);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1;
   cursor: pointer;
 }
@@ -201,7 +278,7 @@
   padding: 8px 12px;
   border-top: 1px solid var(--border-light);
   background: var(--bg-hover);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 
@@ -216,7 +293,7 @@
   border-radius: var(--r-pill);
   background: var(--bg-panel);
   color: var(--text-2);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .gth-buzz-filters .summary .lnk {
@@ -224,7 +301,7 @@
   background: none;
   padding: 0;
   color: var(--brand);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 
@@ -260,30 +337,36 @@
   align-items: center;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-2);
 }
 
 .gth-buzz-row:last-child {
   border-bottom: none;
 }
-.gth-buzz-row:hover {
+/* 行本身可点开详情（与素材仓库同一口径），hover 给一条左侧色条而不是整行变色 */
+.gth-buzz-row.clickable {
+  cursor: pointer;
+}
+.gth-buzz-row.clickable:hover {
   background: var(--bg-hover);
+  box-shadow: inset 3px 0 0 var(--brand);
 }
 .gth-buzz-row.is-active {
   background: var(--brand-soft);
+  box-shadow: inset 3px 0 0 var(--brand);
 }
 
 .gth-buzz-row.is-head {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   background: var(--bg-hover);
   font-weight: 500;
 }
 
 .gth-buzz-row .cover {
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--r-sm);
   overflow: hidden;
   background: var(--bg-hover);
@@ -301,8 +384,11 @@
 }
 
 .gth-buzz-row .cover .ph {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
+}
+.gth-buzz-list {
+  border-radius: var(--r-lg);
 }
 
 .gth-buzz-row .main {
@@ -329,7 +415,7 @@
 }
 
 .gth-buzz-row .main .s {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -338,17 +424,33 @@
 }
 
 .gth-buzz-row .num {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 评论 + 高赞同行：主数字在前、高赞做浅色注脚（原来上下两行） */
+.gth-buzz-row .num.cmt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.gth-buzz-row .num.cmt .hot {
+  font-style: normal;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
 }
 
 .gth-buzz-row .score {
   display: block;
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .gth-buzz-row .score.neg {
@@ -408,7 +510,7 @@
 }
 
 .gth-buzz-drawer .head .title {
-  font-size: 15px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text-1);
 }
@@ -439,7 +541,7 @@
 .gth-buzz-src .kv > div {
   display: flex;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-md);
   min-width: 0;
 }
 
@@ -465,7 +567,7 @@
 }
 
 .gth-buzz-src .links .url {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -483,13 +585,13 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-1);
 }
 
 .gth-buzz-sec .text {
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-2);
   line-height: 1.7;
   white-space: pre-wrap;
@@ -497,7 +599,7 @@
 }
 
 .gth-buzz-sec .hint {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   line-height: 1.7;
 }
@@ -513,19 +615,19 @@
 
 .gth-buzz-diag.empty {
   color: var(--text-3);
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .gth-buzz-diag .summary {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-lg);
   color: var(--text-1);
   line-height: 1.6;
   font-weight: 500;
 }
 
 .gth-buzz-diag .redline {
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--danger);
   background: var(--danger-soft);
   border-radius: var(--r-sm);
@@ -537,7 +639,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px 16px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 
@@ -569,7 +671,7 @@
 
 .gth-buzz-diag h5 {
   margin: 0 0 4px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   font-weight: 500;
 }
@@ -577,13 +679,13 @@
 .gth-buzz-diag ul {
   margin: 0;
   padding-left: 16px;
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-2);
   line-height: 1.7;
 }
 
 .gth-buzz-diag .spread {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 
@@ -603,7 +705,7 @@
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .gth-buzz-cmt.is-high {
@@ -615,7 +717,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   min-width: 0;
 }

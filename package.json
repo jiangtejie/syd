@@ -11,6 +11,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "ui:preview": "electron-vite build && node scripts/ui-preview/make-preview.mjs && node scripts/ui-preview/serve.mjs",
     "test:similarity": "node --experimental-strip-types scripts/issue-similarity-selftest.mjs",
     "test:schema": "node scripts/schema-migration-selftest.mjs",
     "test:matcher": "node scripts/reply-matcher-selftest.mjs",

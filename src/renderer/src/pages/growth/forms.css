@@ -12,7 +12,7 @@
   min-width: 0;
 }
 .gth-card-title {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text-1);
   display: inline-flex;
@@ -22,12 +22,12 @@
 }
 .gth-card-sub {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   white-space: nowrap;
 }
 .gth-card-note {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   margin-top: 12px;
   line-height: 1.7;
@@ -51,7 +51,7 @@
   gap: 4px;
   height: 20px;
   padding: 0 9px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   border-radius: var(--r-pill);
   white-space: nowrap;
   background: var(--brand-soft);
@@ -90,7 +90,7 @@
 .gth-btn.sm {
   height: 26px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   border-radius: var(--r-sm);
 }
 .gth-page .ui-btn {
@@ -152,14 +152,14 @@
   min-width: 0;
 }
 .gth-field-label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 .gth-field-label .req {
   color: var(--danger);
 }
 .gth-field-hint {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-4);
 }
 /* 外观来自全局 ui-input / ui-select；这里只留营销页的密度与聚焦光晕 */
@@ -220,7 +220,7 @@ textarea.gth-input,
   top: 3px;
   height: 24px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
   border: 0;
   background: transparent;
@@ -238,7 +238,7 @@ textarea.gth-input,
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-2);
   user-select: none;
   min-height: 22px;
