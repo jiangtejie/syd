@@ -206,7 +206,7 @@
   .wb-side-ops {
     display: flex;
   }
-  .wb-bubble-copy,
+  /* 复制按钮（.md-copy）的粗指针常显规则在 components/chat/rich.css */
   .wb-msg-edit {
     opacity: 0.85;
   }

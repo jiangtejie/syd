@@ -1,6 +1,9 @@
 node_modules
 dist
 out
+# 另构建一份产物给 UI 预览（dev 模式在跑时 out/renderer 是空的）：
+# npx electron-vite build --outDir out-preview && node scripts/ui-preview/make-preview.mjs out-preview/renderer
+out-preview
 
 # 随包 ffmpeg 二进制：体积大（最小构建 10-20MB、全量构建 200MB+）且可重新获取，
 # 不进版本库。用 npm run ffmpeg:prepare 放进来，校验值记在 resources/bin/NOTICE.md。

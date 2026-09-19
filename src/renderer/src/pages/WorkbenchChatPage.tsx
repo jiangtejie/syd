@@ -1,5 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
 import type { ChatMsgItem } from '../../../shared/types'
 import { toolCnName } from '../../../shared/types'
 import {
@@ -14,7 +13,24 @@ import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
 import { ChannelFileTray } from '../components/workbench/ChannelFileTray'
 import { ToolTimeline } from '../components/workbench/ToolTimeline'
-import { MD_REMARK_PLUGINS } from '../components/workbench/mdPlugins'
+import {
+  EvidenceChips,
+  FeedbackBar,
+  LiveReason,
+  MsgCopyButton,
+  ReasonFold,
+  RichText,
+  TokenLine
+} from '../components/chat/RichText'
+import {
+  copyToClipboard,
+  evidenceOf,
+  parseMsgMeta,
+  reasoningOf,
+  tokensOf,
+  useWaitElapsed,
+  type EvItem
+} from '../components/chat/msgMeta'
 import './workbench-chat.css'
 import './workbench-chat/layout.css'
 import './workbench-chat/messages.css'
@@ -40,78 +56,6 @@ function snippet(content: string, width = 84): string {
   const one = content.replace(/\s+/g, ' ').trim()
   if (one.length <= width) return one
   return `…${one.slice(0, width)}…`
-}
-
-/** 链接:外部打开(主进程对 window.open 统一走系统浏览器),不在应用内导航 */
-function MdLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element {
-  const { href, children, ...rest } = props
-  return (
-    <a {...rest} href={href} target="_blank" rel="noreferrer noopener">
-      {children}
-    </a>
-  )
-}
-
-/** 图片:限高防撑爆气泡;加载失败就地隐藏;URL 流式成型时 src 变化自动复位 */
-function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement>): React.JSX.Element | null {
-  const [failed, setFailed] = useState(false)
-  const src = props.src
-  // 流式中图片 URL 是逐步成型的:URL 变化时复位失败态,避免残缺 URL 404 后永久隐藏
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 源变化复位失败标记(全仓同款模式)
-    setFailed(false)
-  }, [src])
-  if (failed || !src) return null
-  return (
-    <img
-      {...props}
-      alt={props.alt ?? ''}
-      referrerPolicy="no-referrer"
-      loading="lazy"
-      onError={() => setFailed(true)}
-    />
-  )
-}
-
-/** 固定组件映射(模块级稳定引用):最终消息与流式缓冲共用同一套渲染语义 */
-const MD_COMPONENTS = {
-  a: MdLink,
-  img: MdImg
-}
-
-/** 复制到剪贴板(navigator.clipboard 失败时回退 execCommand) */
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    /* fallthrough */
-  }
-  try {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.style.position = 'fixed'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    const ok = document.execCommand('copy')
-    ta.remove()
-    return ok
-  } catch {
-    return false
-  }
-}
-
-/** 耗时(ms)→ 人类可读(秒/分) */
-function fmtDur(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s} 秒`
-  return `${Math.floor(s / 60)} 分 ${s % 60} 秒`
-}
-
-/** 数字 → 千分位(大数值更易读) */
-function fmtThousand(n: number): string {
-  return Math.round(n).toLocaleString('zh-CN')
 }
 
 /**
@@ -151,30 +95,6 @@ const WB_PRESETS: Array<{ label: string; text: string; hint: string }> = [
   }
 ]
 
-/** 等待态计时(思考/等待首字期间):active 变 true 起计时,false 复位 */
-function useWaitElapsed(active: boolean): number {
-  const [sec, setSec] = useState(0)
-  const startRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (!active) {
-      startRef.current = null
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 等待结束复位秒数(全仓同款模式)
-      setSec(0)
-      return
-    }
-    if (startRef.current === null) startRef.current = Date.now()
-    const tick = (): void => {
-      if (startRef.current !== null) {
-        setSec(Math.floor((Date.now() - startRef.current) / 1000))
-      }
-    }
-    tick()
-    const timer = window.setInterval(tick, 1000)
-    return () => window.clearInterval(timer)
-  }, [active])
-  return sec
-}
-
 /** 上下文压缩标记:分隔线样式,点击展开摘要(历史被压缩的透明提示) */
 function CompactionMarker({ text }: { text: string }): React.JSX.Element {
   const [open, setOpen] = useState(false)
@@ -196,146 +116,18 @@ function CompactionMarker({ text }: { text: string }): React.JSX.Element {
   )
 }
 
-/** 引用来源条目(meta.evidence 快照:编号 + 工具名 + 行原文) */
-interface WbEvItem {
-  n: number
-  tool: string
-  line: string
-}
-
-/** 引用来源快照区(证据溯源):回答中的 [编号] 标注 → 该编号的工具行快照,可展开查看 */
-function WbEvidenceSources({ items }: { items: WbEvItem[] }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="wb-ev">
-      <button
-        type="button"
-        className="wb-ev-toggle"
-        aria-expanded={open}
-        title="展开查看本段回答引用的工具结果原文行"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="wb-ev-icon">◇</span>
-        引用来源 · {items.length} 处
-        <span className={`wb-ev-caret${open ? ' is-open' : ''}`}>▸</span>
-      </button>
-      {open && (
-        <div className="wb-ev-list">
-          {items.map((it) => (
-            <div className="wb-ev-item" key={it.n}>
-              <span className="wb-ev-n">{it.n}</span>
-              <span className="wb-ev-tool" title={`工具名:${it.tool}`}>
-                {toolCnName(it.tool)}
-              </span>
-              <span className="wb-ev-line">{it.line}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** 回答反馈:有用/没用(再次点击同一按钮=取消;落库供后续优化参考) */
-function WbFeedback({
-  sessionId,
-  messageId
-}: {
-  sessionId: number
-  messageId: number
-}): React.JSX.Element {
-  const [val, setVal] = useState<1 | -1 | null>(null)
-  const pick = (v: 1 | -1): void => {
-    const next = val === v ? null : v
-    setVal(next)
-    if (next === null) return
-    void window.api?.cs?.wb
-      ?.feedback({ sessionId, messageId, value: v })
-      .then((r) => {
-        if (!r?.ok) {
-          toast.error(r?.error || '反馈提交失败')
-          setVal(null)
-        }
-      })
-      .catch(() => {
-        toast.error('反馈提交失败')
-        setVal(null)
-      })
-  }
-  return (
-    <div className="wb-feedback">
-      <button
-        type="button"
-        className={`wb-fb-btn${val === 1 ? ' is-on' : ''}`}
-        title={val === 1 ? '取消反馈' : '这个回答有用'}
-        onClick={() => pick(1)}
-      >
-        👍 {val === 1 ? '已记' : '有用'}
-      </button>
-      <button
-        type="button"
-        className={`wb-fb-btn${val === -1 ? ' is-on no' : ''}`}
-        title={val === -1 ? '取消反馈' : '这个回答没帮助'}
-        onClick={() => pick(-1)}
-      >
-        👎 {val === -1 ? '已记' : '没用'}
-      </button>
-    </div>
-  )
-}
-
 function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   const isUser = msg.role === 'user'
   const isError = msg.kind === 'error'
-  const [reasonOpen, setReasonOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
   const content = useMemo(() => cleanStreamText(msg.content), [msg.content])
-  const meta = useMemo(() => {
-    if (!msg.meta) return null
-    try {
-      const p = JSON.parse(msg.meta) as unknown
-      return p && typeof p === 'object' ? (p as Record<string, unknown>) : null
-    } catch {
-      return null
-    }
-  }, [msg.meta])
-  const reasoningText =
-    !isUser && !isError && typeof meta?.reasoning === 'string' ? meta.reasoning : ''
-  const reasoningMs =
-    !isUser && !isError && typeof meta?.reasoningMs === 'number' ? meta.reasoningMs : undefined
-  const t = meta?.tokens as { input?: number; output?: number } | undefined
-  const hasTokens = !!t && (typeof t.input === 'number' || typeof t.output === 'number')
-  /** 引用来源快照(meta.evidence → 校验后的条目列表) */
-  const evItems = useMemo(() => {
-    const raw = meta?.evidence
-    if (!Array.isArray(raw)) return []
-    const out: WbEvItem[] = []
-    for (const it of raw) {
-      if (out.length >= 12) break
-      if (!it || typeof it !== 'object') continue
-      const r = it as Record<string, unknown>
-      if (
-        typeof r.n === 'number' &&
-        typeof r.tool === 'string' &&
-        r.tool.length > 0 &&
-        typeof r.line === 'string' &&
-        r.line.length > 0
-      ) {
-        out.push({ n: r.n, tool: r.tool, line: r.line })
-      }
-    }
-    return out
-  }, [meta])
-
-  const onCopy = (): void => {
-    if (copied) return
-    void copyToClipboard(content).then((ok) => {
-      if (ok) {
-        setCopied(true)
-        window.setTimeout(() => setCopied(false), 1600)
-      }
-    })
-  }
+  const meta = useMemo(() => parseMsgMeta(msg.meta), [msg.meta])
+  // 思考过程/Token/引用来源都只挂在 AI 的正文回复上（用户消息与错误行没有这些 meta）
+  const { text: reasoningText, ms: reasoningMs } = reasoningOf(!isUser && !isError ? meta : null)
+  const tokens = tokensOf(!isUser && !isError ? meta : null)
+  const evItems: EvItem[] = useMemo(
+    () => (!isUser && !isError ? evidenceOf(meta) : []),
+    [meta, isUser, isError]
+  )
   // 历史行:上下文压缩标记(持久化展示,不再只存在于本轮内存)
   if (!isUser && msg.kind === 'compact') {
     return (
@@ -374,49 +166,19 @@ function WbMessageInner({ msg }: { msg: ChatMsgItem }): React.JSX.Element {
   }
   return (
     <div className={`wb-row${isUser ? ' is-user' : ''}${isError ? ' is-error' : ''}`}>
-      <div className="wb-bubble">
-        <button
-          type="button"
-          className={`wb-bubble-copy${copied ? ' is-copied' : ''}`}
-          title={copied ? '已复制' : '复制内容'}
-          aria-label={copied ? '已复制' : '复制内容'}
-          onClick={onCopy}
-        >
-          {copied ? '✓' : '⧉'}
-        </button>
+      <div className="wb-bubble md-host">
+        <MsgCopyButton text={content} />
         {isError ? (
           <span className="wb-error-text">{content}</span>
         ) : isUser ? (
           <div className="wb-plain">{content}</div>
         ) : (
           <>
-            {reasoningText && (
-              <div className="wb-reason">
-                <button
-                  type="button"
-                  className="wb-reason-toggle"
-                  aria-expanded={reasonOpen}
-                  onClick={() => setReasonOpen((o) => !o)}
-                >
-                  <span className={`wb-reason-caret${reasonOpen ? ' is-open' : ''}`}>▸</span>
-                  思考过程 · {reasoningText.length} 字
-                  {reasoningMs !== undefined ? ` · ${fmtDur(reasoningMs)}` : ''}
-                </button>
-                {reasonOpen && <pre className="wb-reason-static">{reasoningText}</pre>}
-              </div>
-            )}
-            <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
-              {content}
-            </ReactMarkdown>
-            {evItems.length > 0 && <WbEvidenceSources items={evItems} />}
-            {hasTokens && (
-              <div className="wb-tokens-line" title="本段模型 Token 用量">
-                输入 {fmtThousand(t.input ?? 0)}
-                {typeof t.input === 'number' && typeof t.output === 'number' ? ' · ' : ''}
-                {typeof t.output === 'number' ? `输出 ${fmtThousand(t.output)}` : ''}
-              </div>
-            )}
-            <WbFeedback sessionId={msg.sessionId} messageId={msg.id} />
+            <ReasonFold text={reasoningText} ms={reasoningMs} />
+            <RichText text={content} />
+            <EvidenceChips items={evItems} />
+            <TokenLine tokens={tokens} />
+            <FeedbackBar sessionId={msg.sessionId} messageId={msg.id} />
           </>
         )}
       </div>
@@ -436,29 +198,6 @@ const WbMessage = memo(WbMessageInner, (prev, next) => {
     a.meta === b.meta // reasoning/tokens/evidence 也在 meta 里
   )
 })
-
-/** 实时推理块:默认收起,生成中只显示「思考中…」,点击展开流式思考内容 */
-function WbLiveReason({ text, waitSec }: { text: string; waitSec: number }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="wb-bubble wb-reason-live">
-      <button
-        type="button"
-        className="wb-reason-live-head"
-        aria-expanded={open}
-        title={open ? '收起思考过程' : '展开实时思考过程'}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="wb-reason-live-label">
-          {open ? '💭 思考过程' : '💭 思考中'}
-          {!open && waitSec > 0 ? ` ${waitSec}s` : ''}
-        </span>
-        <span className={`wb-reason-live-caret${open ? ' is-open' : ''}`}>▸</span>
-      </button>
-      {open && <pre className="wb-reason-text">{text || (waitSec > 0 ? '正在整理思路…' : '')}</pre>}
-    </div>
-  )
-}
 
 /** 块 → 时间线条目（纯映射，组件只负责画） */
 function toolItemsOf(blocks: WbTurnBlock[]): TimelineItem[] {
@@ -601,20 +340,12 @@ export default function WorkbenchChatPage(): React.JSX.Element {
         .replace(/\u00a0/g, ' ')
         .trim()
       if (txt.length < 2) return
-      let node: Node | null = sel.anchorNode
-      let inBubble = false
-      for (let i = 0; i < 5 && node; i++) {
-        if (node instanceof Element) {
-          if (node.classList.contains('wb-bubble')) {
-            inBubble = true
-            break
-          }
-          node = node.parentElement
-        } else {
-          node = node.parentElement
-        }
-      }
-      if (!inBubble) return
+      // 选区必须落在某条消息里才弹快捷条。原来手写「向上找 5 层 .wb-bubble」——
+      // 回复正文多包了一层 .md-body（Markdown 容器），表格/嵌套列表里选词就会超层而失灵，
+      // 换成 closest：层数不再和 DOM 结构耦合。
+      const anchorEl =
+        sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement
+      if (!anchorEl?.closest('.wb-bubble')) return
       const rect = sel.getRangeAt(0).getBoundingClientRect()
       if (!rect || (rect.width <= 0 && rect.height <= 0)) return
       const cx = Math.min(Math.max(rect.left + rect.width / 2, 80), window.innerWidth - 80)
@@ -1404,7 +1135,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           {/* 乐观回显:本轮用户消息(引擎已落库,整轮结束刷新后被正式列表替换) */}
           {pendingText !== undefined && (
             <div className="wb-row is-user">
-              <div className="wb-bubble">
+              <div className="wb-bubble md-host">
                 <div className="wb-plain">{pendingText}</div>
               </div>
             </div>
@@ -1441,10 +1172,13 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             if (b.kind === 'reason') {
               return (
                 <div key={b.id} className="wb-row">
-                  <WbLiveReason
-                    text={b.text ?? ''}
-                    waitSec={!hasLiveText && waitSec > 0 ? waitSec : 0}
-                  />
+                  {/* is-reason-live：思考卡用面板底色（普通气泡是页面底色），与正文气泡区分开 */}
+                  <div className="wb-bubble md-host is-reason-live">
+                    <LiveReason
+                      text={b.text ?? ''}
+                      waitSec={!hasLiveText && waitSec > 0 ? waitSec : 0}
+                    />
+                  </div>
                 </div>
               )
             }
@@ -1455,16 +1189,14 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             // 生成中先用纯文本上屏,块结束后再交给 Markdown 渲染。
             return (
               <div key={b.id} className="wb-row">
-                <div className="wb-bubble">
+                <div className="wb-bubble md-host">
                   {isTail ? (
                     <div className="wb-plain">
                       {text}
-                      <span className="wb-caret" />
+                      <span className="md-caret" />
                     </div>
                   ) : (
-                    <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
-                      {text}
-                    </ReactMarkdown>
+                    <RichText text={text} />
                   )}
                 </div>
               </div>

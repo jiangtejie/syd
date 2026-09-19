@@ -1,12 +1,13 @@
-/** 静态服务 out/renderer（UI 预览用）：node scripts/ui-preview/serve.mjs [port] */
+/** 静态服务构建产物（UI 预览用）：node scripts/ui-preview/serve.mjs [port] [dir] */
 import { createServer } from 'http'
 import { readFile, stat } from 'fs/promises'
-import { join, extname, normalize } from 'path'
+import { join, extname, normalize, resolve } from 'path'
 import { dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const rootDir = join(here, '..', '..', 'out', 'renderer')
+// dir 默认 out/renderer：另建一份产物（如 out-preview/renderer）时可以指定，端口也换一个，别和默认预览抢
+const rootDir = process.argv[3] ? resolve(process.argv[3]) : join(here, '..', '..', 'out', 'renderer')
 const port = Number(process.argv[2] || 5199)
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json' }
 

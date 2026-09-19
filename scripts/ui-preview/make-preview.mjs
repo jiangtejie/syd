@@ -8,12 +8,14 @@
  *     「是否已连接真实账号」，不换的话「数据 / 监控」页只会显示「尚未连接微信」，看不到真实排版。
  */
 import { readFileSync, writeFileSync, copyFileSync, existsSync, readdirSync } from 'fs'
-import { join, dirname } from 'path'
+import { join, dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
-const outDir = join(root, 'out', 'renderer')
+// 可选入参：构建产物目录（默认 out/renderer）。
+// 用途：dev 模式在跑时 out/renderer 是空的，可以另构建一份到 out-preview 再生成预览，不打扰正在跑的实例。
+const outDir = process.argv[2] ? resolve(process.argv[2]) : join(root, 'out', 'renderer')
 const index = join(outDir, 'index.html')
 if (!existsSync(index)) {
   console.error('缺少构建产物：先跑 npx electron-vite build')

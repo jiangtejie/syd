@@ -17,6 +17,22 @@ import './growth-ai.css'
 import { useAsyncEffect } from '../lib/useAsyncEffect'
 import { toolCnName } from '../../../shared/types'
 import { Modal } from '../components/ui/Modal'
+import {
+  EvidenceChips,
+  FeedbackBar,
+  LiveReason,
+  MsgCopyButton,
+  ReasonFold,
+  RichText,
+  TokenLine
+} from '../components/chat/RichText'
+import {
+  evidenceOf,
+  parseMsgMeta,
+  reasoningOf,
+  tokensOf,
+  useWaitElapsed
+} from '../components/chat/msgMeta'
 
 interface TaskView {
   id: number
@@ -90,7 +106,8 @@ interface ChatRow {
   role: string
   kind: string
   content: string
-  meta?: Record<string, unknown> | null
+  /** 仓储层原样返回：多数情况是 JSON 字符串，老行可能是对象 → 一律走 parseMsgMeta */
+  meta?: unknown
   createdAt: number
 }
 
@@ -163,15 +180,45 @@ function parseToolMeta(
   }
 }
 
-/** 单条消息(memo: 流式刷新时不重渲染历史消息) */
-const ChatMessage = memo(function ChatMessage({ m }: { m: ChatRow }): React.JSX.Element | null {
+/**
+ * 单条消息(memo: 流式刷新时不重渲染历史消息)。
+ * 渲染技能与「AI 工作台」完全一致：Markdown 正文 + 思考过程 + 引用来源 + Token 脚注 + 反馈，
+ * 复制按钮 hover 出现在气泡右上角（两条链路的实现都在 components/chat/RichText）。
+ */
+const ChatMessage = memo(function ChatMessage({
+  m,
+  sessionId
+}: {
+  m: ChatRow
+  sessionId: number | null
+}): React.JSX.Element | null {
+  const meta = useMemo(() => parseMsgMeta(m.meta), [m.meta])
   if (m.kind === 'error') {
-    return <div className="gai-msg is-error">{m.content}</div>
+    return (
+      <div className="gai-msg is-error md-host">
+        <MsgCopyButton text={m.content} />
+        <span className="gai-msg-text">{m.content}</span>
+      </div>
+    )
   }
   if (m.kind !== 'text') return null
+  if (m.role === 'user') {
+    return (
+      <div className="gai-msg is-user md-host">
+        <MsgCopyButton text={m.content} />
+        <div className="gai-msg-text">{m.content}</div>
+      </div>
+    )
+  }
+  const { text: reasoning, ms: reasoningMs } = reasoningOf(meta)
   return (
-    <div className={'gai-msg ' + (m.role === 'user' ? 'is-user' : 'is-ai')}>
-      <div className="gai-msg-text">{m.content}</div>
+    <div className="gai-msg is-ai md-host">
+      <MsgCopyButton text={m.content} />
+      <ReasonFold text={reasoning} ms={reasoningMs} />
+      <RichText text={m.content} />
+      <EvidenceChips items={evidenceOf(meta)} />
+      <TokenLine tokens={tokensOf(meta)} />
+      {sessionId ? <FeedbackBar sessionId={sessionId} messageId={m.id} /> : null}
     </div>
   )
 })
@@ -366,11 +413,18 @@ const TaskCard = memo(function TaskCard({
   )
 })
 
-/** 流式气泡:父组件每帧 setState,这里单独 memo 让重渲染范围最小 */
+/**
+ * 流式气泡:父组件每帧 setState,这里单独 memo 让重渲染范围最小。
+ * 与 AI 工作台同一策略——生成中先纯文本上屏（Markdown 每帧全量重解析是 O(n²)），
+ * 结束后落库、由 ChatMessage 富文本重渲染，所以终稿一定有表格/清单/代码块的排版。
+ */
 const StreamBubble = memo(function StreamBubble({ text }: { text: string }): React.JSX.Element {
   return (
-    <div className="gai-msg is-ai">
-      <div className="gai-msg-text">{text}</div>
+    <div className="gai-msg is-ai md-host">
+      <div className="gai-msg-text">
+        {text}
+        <span className="md-caret" />
+      </div>
     </div>
   )
 })
@@ -417,6 +471,8 @@ export default function GrowthAiWorkbench({
     [messages]
   )
   const [streaming, setStreaming] = useState('')
+  /** 生成中的思考内容（reasoner 会先流一段推理；与 AI 工作台的实时思考卡同一套渲染） */
+  const [reasonLive, setReasonLive] = useState('')
   const [toolLog, setToolLog] = useState<ToolRow[]>([])
   const [approval, setApproval] = useState<ApprovalRow | null>(null)
   const [input, setInput] = useState('')
@@ -425,6 +481,7 @@ export default function GrowthAiWorkbench({
   const sessionRef = useRef<number | null>(null)
   /** 流式 token 缓冲: 按帧合并 setState, 避免每个 token 都重渲染整个工作台 */
   const streamBufRef = useRef('')
+  const reasonBufRef = useRef('')
   const streamRafRef = useRef<number | null>(null)
   /** 聊天区是否吸底(用户向上翻阅时不打断) */
   const stickRef = useRef(true)
@@ -531,10 +588,11 @@ export default function GrowthAiWorkbench({
     [pickStoreId, pickGoal, loadTasks, onChanged]
   )
 
-  /** 把缓冲的流式文本按帧刷进 state */
+  /** 把缓冲的流式文本/思考按帧刷进 state（推理与正文共用一帧，避免两套定时器打架） */
   const flushStream = useCallback((): void => {
     streamRafRef.current = null
     setStreaming(streamBufRef.current)
+    setReasonLive(reasonBufRef.current)
   }, [])
 
   const resetStream = useCallback((): void => {
@@ -543,7 +601,9 @@ export default function GrowthAiWorkbench({
       streamRafRef.current = null
     }
     streamBufRef.current = ''
+    reasonBufRef.current = ''
     setStreaming('')
+    setReasonLive('')
   }, [])
 
   const loadBundle = useCallback(async (taskId: number): Promise<void> => {
@@ -611,9 +671,16 @@ export default function GrowthAiWorkbench({
         approvalText?: string
         text?: string
       }
+      // 事件类型：delta(正文增量) / reasoning(思考增量) / tool / approval / done / error / status
       if (!e.sessionId || e.sessionId !== sessionRef.current) return
       if (e.type === 'delta' && e.token) {
         streamBufRef.current += e.token
+        if (streamRafRef.current === null) {
+          streamRafRef.current = requestAnimationFrame(flushStream)
+        }
+      } else if (e.type === 'reasoning' && e.token) {
+        // reasoner 的思考流：先攒着按帧上屏（与正文同一个 rAF，别为它单开一个定时器）
+        reasonBufRef.current += e.token
         if (streamRafRef.current === null) {
           streamRafRef.current = requestAnimationFrame(flushStream)
         }
@@ -679,6 +746,9 @@ export default function GrowthAiWorkbench({
     if (!el) return
     stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
   }, [])
+
+  /** 等待首字/首推理的秒数（思考中的等待要让人看到在动，而不是干等） */
+  const waitSec = useWaitElapsed(sending && !streaming && !reasonLive)
 
   const send = async (): Promise<void> => {
     if (!growthaiApi || !activeId) return
@@ -925,10 +995,15 @@ export default function GrowthAiWorkbench({
                     size="roomy"
                   />
                 ) : (
-                  <ChatMessage key={run.row.msg.id} m={run.row.msg} />
+                  <ChatMessage key={run.row.msg.id} m={run.row.msg} sessionId={task.sessionId} />
                 )
               )}
               {toolLog.length > 0 && <ToolTimeline items={toolLog.map(toolItemOf)} size="roomy" />}
+              {reasonLive ? (
+                <div className="gai-msg is-ai gai-reason-live">
+                  <LiveReason text={reasonLive} waitSec={waitSec} />
+                </div>
+              ) : null}
               {streaming ? <StreamBubble text={streaming} /> : null}
               {approval ? (
                 <div className="gai-approval">
@@ -956,8 +1031,13 @@ export default function GrowthAiWorkbench({
                   </span>
                 </div>
               ) : null}
-              {sending && !streaming && toolLog.length === 0 ? (
-                <div className="gai-msg is-ai gai-thinking">思考中…</div>
+              {sending && !streaming && !reasonLive && toolLog.length === 0 ? (
+                <div className="gai-msg is-ai gai-thinking">
+                  <i />
+                  <i />
+                  <i />
+                  思考中{waitSec > 0 ? ' ' + String(waitSec) + 's' : ''}…
+                </div>
               ) : null}
             </div>
 
@@ -1247,76 +1327,74 @@ export default function GrowthAiWorkbench({
         desc={'选一条爆款素材, AI 先拆解结构, 再按你的要求爆改'}
       >
         <div className="gai-pick-filters">
-              <input
-                autoFocus
-                className="ui-input gth-input"
-                placeholder="搜索素材标题 / 作者"
-                value={pickKeyword}
-                onChange={(e) => setPickKeyword(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void loadMaterials(pickKeyword)
-                }}
-              />
+          <input
+            autoFocus
+            className="ui-input gth-input"
+            placeholder="搜索素材标题 / 作者"
+            value={pickKeyword}
+            onChange={(e) => setPickKeyword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void loadMaterials(pickKeyword)
+            }}
+          />
+          <button
+            className="ui-btn gth-btn sm"
+            type="button"
+            onClick={() => void loadMaterials(pickKeyword)}
+          >
+            搜索
+          </button>
+          <select
+            className="ui-select gth-select"
+            value={pickStoreId}
+            onChange={(e) => setPickStoreId(Number(e.target.value))}
+          >
+            <option value={0}>默认门店</option>
+            {stores.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name || s.brandName || '门店 ' + String(s.id)}
+              </option>
+            ))}
+          </select>
+          <select
+            className="ui-select gth-select"
+            value={pickGoal}
+            onChange={(e) => setPickGoal(e.target.value)}
+          >
+            {GOAL_OPTIONS.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="gai-pick-list">
+          {pickLoading ? (
+            <div className="gai-empty">加载中…</div>
+          ) : pickItems.length === 0 ? (
+            <div className="gai-empty">没有匹配的素材, 先到「素材仓库」粘贴链接入库</div>
+          ) : (
+            pickItems.map((m) => (
               <button
-                className="ui-btn gth-btn sm"
+                key={m.id}
+                className="gai-pick-row"
                 type="button"
-                onClick={() => void loadMaterials(pickKeyword)}
+                disabled={creating === m.id}
+                onClick={() => void createFromMaterial(m)}
               >
-                搜索
+                <span className="gai-pick-cover">{(m.title || '素')[0]}</span>
+                <span className="gai-pick-body">
+                  <span className="gai-pick-title">{m.title || '(无标题)'}</span>
+                  <span className="gai-pick-sub">
+                    {ORIGIN_LABEL[m.origin] ?? m.origin} ·{KIND_LABEL[m.kind] ?? m.kind} ·
+                    {m.authorName || '未知作者'} · 赞{fmtNum(m.interactions?.likes ?? 0)} · 分
+                    {m.score > 0 ? m.score : '—'}
+                  </span>
+                </span>
+                <span className="gai-pick-go">{creating === m.id ? '创建中…' : '创建任务'}</span>
               </button>
-              <select
-                className="ui-select gth-select"
-                value={pickStoreId}
-                onChange={(e) => setPickStoreId(Number(e.target.value))}
-              >
-                <option value={0}>默认门店</option>
-                {stores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name || s.brandName || '门店 ' + String(s.id)}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="ui-select gth-select"
-                value={pickGoal}
-                onChange={(e) => setPickGoal(e.target.value)}
-              >
-                {GOAL_OPTIONS.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="gai-pick-list">
-              {pickLoading ? (
-                <div className="gai-empty">加载中…</div>
-              ) : pickItems.length === 0 ? (
-                <div className="gai-empty">没有匹配的素材, 先到「素材仓库」粘贴链接入库</div>
-              ) : (
-                pickItems.map((m) => (
-                  <button
-                    key={m.id}
-                    className="gai-pick-row"
-                    type="button"
-                    disabled={creating === m.id}
-                    onClick={() => void createFromMaterial(m)}
-                  >
-                    <span className="gai-pick-cover">{(m.title || '素')[0]}</span>
-                    <span className="gai-pick-body">
-                      <span className="gai-pick-title">{m.title || '(无标题)'}</span>
-                      <span className="gai-pick-sub">
-                        {ORIGIN_LABEL[m.origin] ?? m.origin} ·{KIND_LABEL[m.kind] ?? m.kind} ·
-                        {m.authorName || '未知作者'} · 赞{fmtNum(m.interactions?.likes ?? 0)} · 分
-                        {m.score > 0 ? m.score : '—'}
-                      </span>
-                    </span>
-                    <span className="gai-pick-go">
-                      {creating === m.id ? '创建中…' : '创建任务'}
-                    </span>
-                  </button>
-                ))
-              )}
+            ))
+          )}
         </div>
       </Modal>
     </div>

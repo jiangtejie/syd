@@ -223,8 +223,11 @@
   padding: 9px 13px;
   font-size: var(--fs-md);
   line-height: 1.7;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+/* 纯文本才保留换行：AI 回复走 Markdown（公共 .md-body），pre-wrap 会把块级排版顶散 */
+.gai-msg-text {
+  white-space: pre-wrap;
 }
 .gai-msg.is-user {
   align-self: flex-end;
@@ -245,7 +248,13 @@
 }
 .gai-thinking {
   color: var(--text-3);
+  font-size: var(--fs-sm);
 }
+/* 实时思考卡（reasoner）：气泡里只放一张可展开的「思考中」条，别抢正文位置 */
+.gai-reason-live {
+  padding: 7px 11px;
+}
+
 /* 工具步骤改用共享时间线组件(components/workbench/ToolTimeline) —— 原来这里是平铺的 .gai-tool 行，
  * 一次调用一行、看不到先后与并行；时间线的样式在 pages/workbench-chat/messages.css 的 .wb-tl*。 */
 .gai-chat .wb-tl {

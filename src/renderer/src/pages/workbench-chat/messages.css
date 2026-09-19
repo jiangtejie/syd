@@ -91,77 +91,10 @@
   white-space: pre-wrap;
 }
 
-.wb-bubble p {
-  margin: 0 0 6px;
-}
+/* Markdown 正文（p/h1-h3/ul/pre/code/blockquote 等）与流式光标已下沉到
+   公共渲染层 components/chat/rich.css（.md-body / .md-caret），AI 工作台与营销 AI 工作台共用 */
 
-.wb-bubble p:last-child {
-  margin-bottom: 0;
-}
 
-.wb-bubble h1,
-.wb-bubble h2,
-.wb-bubble h3 {
-  font-size: var(--fs-lg);
-  margin: 8px 0 4px;
-}
-
-.wb-bubble ul,
-.wb-bubble ol {
-  padding-left: 20px;
-  margin: 4px 0;
-}
-
-.wb-bubble code {
-  background: var(--bg-hover);
-  border: 1px solid var(--border-light);
-  border-radius: 4px;
-  padding: 1px 4px;
-  font-size: var(--fs-sm);
-  color: var(--text-1);
-}
-
-/* 代码块:浅色主题(与工作台浅色一致;reason 内容有自己的提示卡样式) */
-.wb-bubble pre {
-  background: var(--bg-hover);
-  color: var(--text-1);
-  border: 1px solid var(--border-light);
-  padding: 10px 12px;
-  border-radius: var(--r-sm);
-  overflow-x: auto;
-  margin: 6px 0;
-}
-
-.wb-bubble pre code {
-  background: transparent;
-  border: none;
-  padding: 0;
-  color: inherit;
-}
-
-.wb-bubble blockquote {
-  border-left: 3px solid var(--border);
-  margin: 4px 0;
-  padding: 2px 12px;
-  color: var(--text-2);
-  background: transparent;
-}
-
-.wb-caret {
-  display: inline-block;
-  width: 2px;
-  height: 15px;
-  background: var(--brand);
-  vertical-align: -2px;
-  margin-left: 2px;
-  animation: wb-blink 1s steps(2) infinite;
-}
-
-@keyframes wb-blink {
-  50% {
-    opacity: 0;
-  }
-}
 
 /* ── 工具调用时间线(竖轴 + 节点;顺序/并行一眼可辨) ──
  * 结构:.wb-tl > .wb-tl-head(标题 + 统计) + .wb-tl-body > .wb-tl-step × N > .wb-tl-node × M
