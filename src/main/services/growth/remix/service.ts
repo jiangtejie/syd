@@ -10,7 +10,12 @@
  *   整体下线: 那一步是纯手工录数字, 运营不会真的去填。历史行仍在老库的 growth_metric_snapshot 里。
  */
 
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { nativeImage } from 'electron'
 import { createAiProvider } from '../../ai/provider'
+import { getContentDetail } from '../../../db/repos/growthRepo'
+import { getGrowthMediaDir } from '../../paths'
 import { describeModelError } from '../../ai/modelErrors'
 import { getContentItem, setDecomp } from '../../../db/repos/growthRepo'
 import { buildAnalyzePrompt, parseModelJson } from './prompts'
@@ -37,12 +42,16 @@ function llmFail(e: unknown): never {
   throw new Error(e instanceof Error ? e.message : String(e))
 }
 
-/** 一次 JSON 生成(输出失败给可读错误) */
-async function generateJson(system: string, user: string): Promise<Record<string, unknown>> {
+/** 一次 JSON 生成(输出失败给可读错误)。images 传 data URI 时按多模态发出（拆画面必须看得见图） */
+async function generateJson(
+  system: string,
+  user: string,
+  images?: string[]
+): Promise<Record<string, unknown>> {
   const provider = requireProvider()
   let raw = ''
   try {
-    raw = await provider.complete(system, user, { maxTokens: 1600 })
+    raw = await provider.complete(system, user, { maxTokens: 1600, images })
   } catch (e) {
     llmFail(e)
   }
@@ -61,12 +70,65 @@ async function generateJson(system: string, user: string): Promise<Record<string
  */
 export const ANALYZE_VER = 'analyze-v2'
 
+/**
+ * 取素材的一张本地图 → data URI（给拆解当视觉输入）。
+ *
+ * 选图顺序：先本店实拍（self:*），再 AI 生成图，最后外部参考图 —— 拆解要拆的是**这条爆款的画面**，
+ * 所以参考图（<平台>:ref）本来就是主要目标；但本店图在前更符合"我们自己的画面"的语义。
+ * 尺寸压到 1024 宽、JPEG 质量 78：vision 模型够用，base64 也不会把请求撑爆。
+ */
+async function loadReferenceImage(contentId: number): Promise<string | null> {
+  const detail = getContentDetail(contentId)
+  const list = detail?.assets ?? []
+  const pick =
+    list.find((a) => a.sourceMark?.startsWith('self:') && a.relPath) ??
+    list.find((a) => a.sourceMark?.startsWith('gen:') && a.relPath) ??
+    list.find((a) => !!a.relPath)
+  if (!pick?.relPath) return null
+  try {
+    const buf = await readFile(join(getGrowthMediaDir(), pick.relPath))
+    if (buf.length === 0) return null
+    const img = nativeImage.createFromBuffer(buf)
+    if (!img.isEmpty()) {
+      const { width, height } = img.getSize()
+      const scaled =
+        width > 1024
+          ? img.resize({ width: 1024, height: Math.round((height * 1024) / width) })
+          : img
+      return 'data:image/jpeg;base64,' + scaled.toJPEG(78).toString('base64')
+    }
+    const mime = pick.mime || 'image/png'
+    return 'data:' + mime + ';base64,' + buf.toString('base64')
+  } catch (e) {
+    remixLog.warn('load reference image failed: ' + (e instanceof Error ? e.message : String(e)))
+    return null
+  }
+}
+
 /** 素材 id → 拆解卡落库(growth_decomp); 返回 structure 文本供爆改用 */
 export async function analyzeContent(contentId: number): Promise<string> {
   const item = getContentItem(contentId)
   if (!item) throw new Error('素材不存在')
-  const { system, user } = buildAnalyzePrompt(item)
-  const parsed = await generateJson(system, user)
+  /**
+   * 参考图 → data URI。**这是「拆画面」能不能成立的前提**：
+   * 此前 analyzeContent 只把标题/正文文本发给模型，却要求它输出构图/机位/光线 ——
+   * 模型从没看到过那张图，按 prompt 里"没有图片就留空"照办，于是 visual_json 永远是空的
+   * （实测：素材 #9 是 analyze-v2 的卡，visual 仍是 {}），图生图的「保持」也就永远退回通用口径。
+   */
+  const image = await loadReferenceImage(contentId)
+  const { system, user } = buildAnalyzePrompt(item, !!image)
+  let parsed: Record<string, unknown>
+  try {
+    parsed = await generateJson(system, user, image ? [image] : undefined)
+  } catch (e) {
+    // 通道/模型不支持图片输入时不硬失败：退回纯文本拆解（结构维度照旧），并说清视觉维度为什么空
+    if (!image) throw e
+    remixLog.warn(
+      'analyze with image failed, retry text-only: ' + (e instanceof Error ? e.message : String(e))
+    )
+    const textOnly = buildAnalyzePrompt(item, false)
+    parsed = await generateJson(textOnly.system, textOnly.user)
+  }
   const structure = {
     hook: typeof parsed['hook'] === 'string' ? parsed['hook'] : '',
     structure: typeof parsed['structure'] === 'string' ? parsed['structure'] : '',

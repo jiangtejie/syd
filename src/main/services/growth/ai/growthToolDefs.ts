@@ -66,7 +66,7 @@ import {
 import { getImageConfig } from './config'
 import { exportPublishPackage } from '../publisher/exporter'
 import { checkComplianceBatch } from '../remix/compliance'
-import { isSelfOwned, NO_SELF_IMAGE_HINT, sourceLabel } from './imageSources'
+import { isSelfOwned, NO_SELF_IMAGE_HINT, sourceLabel } from '../../../../shared/imageSource'
 
 export interface GrowthToolCtx {
   sessionId: number

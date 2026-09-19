@@ -747,6 +747,13 @@
   border-radius: var(--r-md);
   animation: gth-pop var(--m-2) var(--ease-spring) both;
 }
+/* 待确认可能同时有多条（一轮里并发发起多个写操作）：纵向排开，别互相覆盖 */
+.gai-approvals {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: stretch;
+}
 
 /* ── 产出面板的出口条：导出发布包 / 回素材仓库 ──
  * 面板本身窄（约 300px），三个按钮横排会挤成一团 —— 允许换行，宁可占两行也别做成省略号。

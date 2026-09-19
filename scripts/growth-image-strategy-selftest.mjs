@@ -37,7 +37,7 @@ try {
   })
   // 图片来源判定（纯函数，无依赖）：与策略层一样独立打包断言
   buildSync({
-    entryPoints: [join(root, 'src/main/services/growth/ai/imageSources.ts')],
+    entryPoints: [join(root, 'src/shared/imageSource.ts')],
     bundle: true,
     platform: 'node',
     format: 'cjs',

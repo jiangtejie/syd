@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from '../../stores/toast'
 import { growthApi } from './meta'
 import type { GrowthAsset } from '../../../../shared/growth'
+import { isSelfOwned, sourceLabel } from '../../../../shared/imageSource'
 
 /** 详情封面预览(本地已下载媒体, 经 ct-growth:// 协议加载; 失败自动隐藏) */
 
@@ -153,6 +154,14 @@ export function MediaGallery({
 
   const localVideo = assets.find((a) => a.kind === 'video' && a.relPath) ?? null
 
+  /**
+   * 这张图是谁的：素材库里混着「同行的爆款原图」与「本店自己的图」，而界面此前只写「N 张」——
+   * 实测就出过「把我们的标题压在同行原图上」的封面（用户看到的反应是「图片不对劲」）。
+   * 判定口径与主进程同一份（shared/imageSource），不允许各写一套。
+   */
+  const srcLabel = (a: GrowthAsset): string =>
+    isSelfOwned(a.sourceMark) ? sourceLabel(a.sourceMark) : '同行原图 · 只可作结构参考'
+
   async function copyRemoteVideo(): Promise<void> {
     if (!growthApi || !remoteVideoUrl) return
     const res = await growthApi.copyClipboard({ text: remoteVideoUrl })
@@ -201,6 +210,15 @@ export function MediaGallery({
   return (
     <div className="gth-gallery">
       <div className="gth-gallery-stage">
+        {/* 来源角标：一眼看出这张是自家的还是同行的（同行原图不能当底图/成品图） */}
+        {cur ? (
+          <span
+            className={'gth-gallery-src' + (isSelfOwned(cur.sourceMark) ? ' is-self' : '')}
+            title={sourceLabel(cur.sourceMark)}
+          >
+            {srcLabel(cur)}
+          </span>
+        ) : null}
         {cur && !failed ? (
           <img
             className="gth-gallery-img clickable"
@@ -248,7 +266,8 @@ export function MediaGallery({
               loading={'lazy'}
               decoding={'async'}
               src={'ct-growth://media/' + a.relPath}
-              alt="缩略图"
+              alt={'缩略图 · ' + srcLabel(a)}
+              title={srcLabel(a)}
               onClick={() => {
                 setIdx(i)
                 setFailed(false)
@@ -267,7 +286,7 @@ export function MediaGallery({
       </button>
       {zoom ? (
         <Lightbox
-          items={imgs.map((a) => ({ relPath: a.relPath }))}
+          items={imgs.map((a) => ({ relPath: a.relPath, note: srcLabel(a) }))}
           index={showIdx}
           onClose={() => setZoom(false)}
           onIndex={(i) => {

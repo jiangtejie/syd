@@ -136,13 +136,6 @@
   gap: 6px;
 }
 
-
-
-
-
-
-
-
 /* ── 素材入库动作条 ── */
 .gth-ingest {
   display: flex;
@@ -375,6 +368,21 @@
   color: var(--text-4);
   font-size: var(--fs-md);
   padding: 60px 12px;
+}
+/* 来源角标：素材库里混着同行原图与本店图，角标让"这张是谁的"一眼可见 */
+.gth-gallery-src {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 2;
+  font-size: var(--fs-xs);
+  color: var(--on-brand);
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: var(--r-pill);
+  padding: 1px 8px;
+}
+.gth-gallery-src.is-self {
+  background: var(--brand);
 }
 .gth-gallery-count {
   position: absolute;

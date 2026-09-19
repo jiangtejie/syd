@@ -73,10 +73,38 @@ try {
   )
   ok(system.includes('"visual"'), 'visual 是独立子对象（与 structure 分开存库）')
   ok(/不要编造|真的看得见/.test(system), '明确禁止编造看不见的画面细节')
-  ok(!system.includes(FENCE) && /只输出一个 JSON 对象/.test(system), '要求纯 JSON 输出（不要 Markdown 围栏）')
+
+  /**
+   * 有没有附图是两种 prompt —— 这一条是真实事故的补丁：
+   * 拆解请求此前**从不附参考图**（provider.complete 只收文本），却要求模型输出构图/机位/光线；
+   * 模型照着"看不清就留空"办，visual_json 永远是空的（素材 #9 是 analyze-v2 的卡，visual 仍是 {}），
+   * 于是图生图的「保持」和「照结构生成」的骨架永远退回通用口径。
+   */
+  console.log('附图 / 不附图两种 prompt：')
+  const noImg = buildAnalyzePrompt(item, false)
+  ok(noImg.system.includes('"visual": {}'), '不附图 → visual 固定空对象')
+  ok(
+    /没有附图/.test(noImg.system) && !noImg.system.includes('"composition"'),
+    '不附图 → 不再索要画面字段（免得模型瞎猜）'
+  )
+  ok(
+    VISUAL.every((k) => !noImg.system.includes('"' + k + '"')),
+    '不附图时 8 个画面键一个都不出现'
+  )
+  ok(
+    KEYS.every((k) => noImg.system.includes('"' + k + '"')),
+    '文字维度不受影响（没有图也能拆结构）'
+  )
+  ok(
+    !system.includes(FENCE) && /只输出一个 JSON 对象/.test(system),
+    '要求纯 JSON 输出（不要 Markdown 围栏）'
+  )
   ok(user.includes('小红书') && user.includes('标题: 成都人自己的火锅'), 'user 侧带上平台与标题')
   ok(user.includes('赞1200'), 'user 侧带上互动数据（判断为什么火要用）')
-  ok(describeItem({ ...item, text: 'x'.repeat(3000) }).length < 2000, '正文超长时截断（不把 prompt 撑爆）')
+  ok(
+    describeItem({ ...item, text: 'x'.repeat(3000) }).length < 2000,
+    '正文超长时截断（不把 prompt 撑爆）'
+  )
 
   console.log('模型输出解析（容忍围栏/杂文）：')
   const fenced =

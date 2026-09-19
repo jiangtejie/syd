@@ -41,15 +41,18 @@ export function buildGrowthToolSet(ctx: GrowthToolCtx): ToolSet {
       execute: async (args) => {
         const input = (args ?? {}) as Record<string, unknown>
         if (def.confirm) {
-          const ok = await requestToolApproval(
+          const outcome = await requestToolApproval(
             ctx.sessionId,
             def.name,
             JSON.stringify(input).slice(0, 500),
             120_000,
             ctx.signal
           )
-          if (ctx.signal?.aborted) return '已取消：用户停止了本轮生成，本次没有产生任何产出。'
-          if (!ok) return '用户拒绝了本次操作, 请说明原因或换一种方式。'
+          if (outcome === 'aborted') return '已取消：用户停止了本轮生成，本次没有产生任何产出。'
+          if (outcome === 'timeout') {
+            return '审批超时（120 秒内没有人确认），本次未执行 —— 不要当成用户拒绝，也不要反复换写法重试；把这一步要做什么、为什么需要写清楚，等用户回来确认。'
+          }
+          if (outcome === 'deny') return '用户拒绝了本次操作, 请说明原因或换一种方式。'
         }
         // 已经取消就别再动手了（模型可能在同一轮里连续发好几个工具调用）
         if (ctx.signal?.aborted) return '已取消：用户停止了本轮生成，本次没有产生任何产出。'

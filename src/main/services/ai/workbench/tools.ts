@@ -89,24 +89,26 @@ function toolFromDef(
           if (!sendApproveEnabled()) {
             // 直通:不询问(仍走频控/审计)
           } else {
-            const ok = await requestToolApproval(
+            const outcome = await requestToolApproval(
               sessionId,
               name,
               JSON.stringify(input).slice(0, 300),
               approvalTimeoutMs,
               signal
             )
-            if (!ok) return `工具 ${name} 未获确认(超时或被拒绝),已跳过。`
+            if (outcome === 'timeout') return `工具 ${name} 审批超时,已跳过(与人是否拒绝无关)。`
+            if (outcome !== 'allow') return `工具 ${name} 未获确认(被拒绝或被取消),已跳过。`
           }
         } else {
-          const ok = await requestToolApproval(
+          const outcome = await requestToolApproval(
             sessionId,
             name,
             JSON.stringify(input).slice(0, 300),
             approvalTimeoutMs,
             signal
           )
-          if (!ok) return `工具 ${name} 未获确认(超时或被拒绝),已跳过。`
+          if (outcome === 'timeout') return `工具 ${name} 审批超时,已跳过(与人是否拒绝无关)。`
+          if (outcome !== 'allow') return `工具 ${name} 未获确认(被拒绝或被取消),已跳过。`
         }
       }
       // 用户点了停止：别再动手（模型可能在同一轮里连着发好几个调用）

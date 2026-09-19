@@ -480,7 +480,14 @@ export default function GrowthAiWorkbench({
   const [stopped, setStopped] = useState(false)
   const stoppedRef = useRef(false)
   const [toolLog, setToolLog] = useState<ToolRow[]>([])
-  const [approval, setApproval] = useState<ApprovalRow | null>(null)
+  /**
+   * 待确认的工具调用：**多张**，不是一张。
+   *
+   * 引擎一轮里可能并发发起多个写操作（实测：一次「继续」里同时有 rewrite_title / rewrite_copy /
+   * save_store_fact 在等确认）。此前界面只留一张卡，后来的事件把前一张覆盖掉 —— 用户只答得了最后一张，
+   * 其余全部等到 120 秒超时，回执还写着「用户拒绝了本次操作」，模型据此以为被驳回、反复换写法重试。
+   */
+  const [approvals, setApprovals] = useState<ApprovalRow[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const chatRef = useRef<HTMLDivElement | null>(null)
@@ -658,7 +665,7 @@ export default function GrowthAiWorkbench({
     void loadBundle(activeId)
     resetStream()
     setToolLog([])
-    setApproval(null)
+    setApprovals([])
   }, [activeId, loadBundle, resetStream])
 
   // 订阅引擎事件(按会话过滤)
@@ -717,7 +724,10 @@ export default function GrowthAiWorkbench({
           return next
         })
       } else if (e.type === 'approval') {
-        setApproval({ runId: e.runId ?? '', tool: e.tool ?? '', text: e.approvalText ?? '' })
+        const row = { runId: e.runId ?? '', tool: e.tool ?? '', text: e.approvalText ?? '' }
+        setApprovals((prev) =>
+          !row.runId || prev.some((a) => a.runId === row.runId) ? prev : [...prev, row]
+        )
       } else if (e.type === 'done') {
         stoppedRef.current = false
         setStopped(false)
@@ -802,7 +812,7 @@ export default function GrowthAiWorkbench({
     setStopped(true)
     resetStream()
     setToolLog([])
-    setApproval(null)
+    setApprovals([])
     setSending(false)
     // 兜底：中止事件万一丢了（引擎卡在某个不可中断的调用里），也要把落库状态读回来
     if (taskId) {
@@ -812,10 +822,24 @@ export default function GrowthAiWorkbench({
     }
   }
 
-  const resolveApproval = async (ok: boolean): Promise<void> => {
-    if (!approval || !wbApi?.approve) return
-    await wbApi.approve(approval.runId, ok)
-    setApproval(null)
+  /** 单张卡的允许/拒绝：只摘掉这一张，其余待审的继续留着（引擎侧本来就按 runId 各自等待） */
+  const resolveApproval = async (runId: string, ok: boolean): Promise<void> => {
+    if (!wbApi?.approve) return
+    await wbApi.approve(runId, ok)
+    setApprovals((prev) => prev.filter((a) => a.runId !== runId))
+  }
+
+  /** 本轮允许这类工具（后面同名的调用不再打扰）—— 客服工作台早有这个按钮，营销这边一直缺 */
+  const trustApproval = async (
+    runId: string,
+    tool: string,
+    scope: 'session' | 'global'
+  ): Promise<void> => {
+    const sid = sessionRef.current
+    if (!sid || !wbApi?.trustTool) return
+    await wbApi.trustTool(sid, tool, scope).catch(() => null)
+    await wbApi.approve(runId, true).catch(() => null)
+    setApprovals((prev) => prev.filter((a) => a.runId !== runId))
   }
 
   /** 图的角标：导出包按顺序命名「封面 / 图2 / 图3」，界面用同一套口径，避免两边对不上 */
@@ -1048,30 +1072,43 @@ export default function GrowthAiWorkbench({
               {stopped && !sending ? (
                 <div className="gai-msg is-ai gai-stopped">已停止生成</div>
               ) : null}
-              {approval ? (
-                <div className="gai-approval">
-                  {/* 审批条也要中文名：这里原来直接把 growth_gen_image 这种标识摆给用户看 */}
-                  <span title={'工具名:' + approval.tool}>
-                    需要确认: {toolCnName(approval.tool)}
-                  </span>
-                  <span className="gai-approval-text">{approval.text}</span>
-                  <button
-                    className="ui-btn is-primary gth-btn sm"
-                    type="button"
-                    onClick={() => void resolveApproval(true)}
-                  >
-                    允许
-                  </button>
-                  <button
-                    className="ui-btn gth-btn sm"
-                    type="button"
-                    onClick={() => void resolveApproval(false)}
-                  >
-                    拒绝
-                  </button>
-                  <span className="gai-approval-hint" title="引擎侧等待上限 120 秒">
-                    120 秒内答复，超时按「拒绝」处理
-                  </span>
+              {approvals.length > 0 ? (
+                <div className="gai-approvals">
+                  {approvals.map((a) => (
+                    <div className="gai-approval" key={a.runId}>
+                      {/* 审批条也要中文名：这里原来直接把 growth_gen_image 这种标识摆给用户看 */}
+                      <span title={'工具名:' + a.tool}>需要确认: {toolCnName(a.tool)}</span>
+                      <span className="gai-approval-text">{a.text}</span>
+                      <button
+                        className="ui-btn is-primary gth-btn sm"
+                        type="button"
+                        onClick={() => void resolveApproval(a.runId, true)}
+                      >
+                        允许
+                      </button>
+                      <button
+                        className="ui-btn gth-btn sm"
+                        type="button"
+                        onClick={() => void resolveApproval(a.runId, false)}
+                      >
+                        拒绝
+                      </button>
+                      {/* 一轮里可能出现同一工具的多次确认（排查过的实况：一次「继续」三个写操作并发），
+                          老是点「允许」很累 —— 给一个"这类工具本轮别再问" */}
+                      <button
+                        className="ui-btn gth-btn sm"
+                        type="button"
+                        title="本会话内不再询问这个工具（可在设置 → AI 助手的审批名单里撤销）"
+                        onClick={() => void trustApproval(a.runId, a.tool, 'session')}
+                      >
+                        本轮都允许
+                      </button>
+                      <span className="gai-approval-hint" title="引擎侧等待上限 120 秒">
+                        {approvals.length > 1 ? String(approvals.length) + ' 项待确认；' : ''}
+                        120 秒不答复按「超时」处理（不会记成你拒绝）
+                      </span>
+                    </div>
+                  ))}
                 </div>
               ) : null}
               {sending && !streaming && !reasonLive && toolLog.length === 0 ? (

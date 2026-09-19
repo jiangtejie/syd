@@ -61,11 +61,14 @@ export type WireMsg =
   | { role: 'tool'; tool_call_id: string; content: string }
 
 export interface AiProvider {
-  /** 系统 + 用户消息，返回模型输出文本（signal 可中断：用户点停止时子调用也要立刻收手） */
+  /**
+   * 系统 + 用户消息，返回模型输出文本（signal 可中断：用户点停止时子调用也要立刻收手）。
+   * images = data URI 数组，作为多模态输入附在用户消息上（营销侧的「拆画面」必须真的能看到图）。
+   */
   complete(
     system: string,
     user: string,
-    opts?: { maxTokens?: number; signal?: AbortSignal }
+    opts?: { maxTokens?: number; signal?: AbortSignal; images?: string[] }
   ): Promise<string>
   /** 多轮流式对话（AI 助手用）：SSE 逐 token 回调，signal 可中断 */
   streamChat(
@@ -252,12 +255,21 @@ class OpenAiCompatProvider implements AiProvider {
   async complete(
     system: string,
     user: string,
-    opts?: { maxTokens?: number; signal?: AbortSignal }
+    opts?: { maxTokens?: number; signal?: AbortSignal; images?: string[] }
   ): Promise<string> {
     const model = this.cfg.model
+    const imgs = (opts?.images ?? []).filter((u) => typeof u === 'string' && u.startsWith('data:'))
+    // 有图就走 OpenAI 兼容的多模态 content 数组；没图保持原来的纯文本（老通道/纯文本模型不受影响）
+    const userContent: unknown =
+      imgs.length > 0
+        ? [
+            { type: 'text', text: user },
+            ...imgs.slice(0, 2).map((url) => ({ type: 'image_url', image_url: { url } }))
+          ]
+        : user
     const messages = [
       { role: 'system', content: system },
-      { role: 'user', content: user }
+      { role: 'user', content: userContent }
     ]
     // 思考型模型的 reasoning 会占用输出预算：预算统一走 services/ai/outputBudget.ts
     // （设置里的 ai.maxOutputTokens > 模块默认；思考型模型第一轮就抬到下限），

@@ -17,8 +17,11 @@ const CFG_MODE = 'wb.approval.mode'
 const CFG_ALLOW = 'wb.approval.allow'
 const CFG_DENY = 'wb.approval.deny'
 
+/** 审批结果：把「超时」与「明确拒绝」分开 —— 两者都等于不执行，但对用户/模型的解释完全不同 */
+export type ApprovalOutcome = 'allow' | 'deny' | 'timeout' | 'aborted'
+
 interface Pending {
-  resolve: (ok: boolean) => void
+  resolve: (outcome: ApprovalOutcome) => void
   timer: NodeJS.Timeout
 }
 
@@ -101,16 +104,18 @@ export function requestToolApproval(
   argsClip: string,
   timeoutMs = 60_000,
   signal?: AbortSignal
-): Promise<boolean> {
+): Promise<ApprovalOutcome> {
   const decision = toolDecision(sessionId, toolName)
-  if (decision === 'allow') return Promise.resolve(true) // 偏好直通:不打扰
-  if (decision === 'deny') return Promise.resolve(false) // 偏好拒绝:直接跳过
+  if (decision === 'allow') return Promise.resolve('allow') // 偏好直通:不打扰
+  if (decision === 'deny') return Promise.resolve('deny') // 偏好拒绝:直接跳过
 
   const runId = `wb-ap-${++seq}`
-  return new Promise<boolean>((resolve) => {
+  return new Promise<ApprovalOutcome>((resolve) => {
     const timer = setTimeout(() => {
       pending.delete(runId)
-      resolve(false)
+      // 超时 ≠ 用户拒绝：以前两者都回「用户拒绝了本次操作」，于是「没人看审批卡」被
+      // 读成「用户在驳回」，模型据此反复换写法（实测任务 5 里连刷 6 次「用户拒绝」）
+      resolve('timeout')
     }, timeoutMs)
     // 用户点了停止：审批卡不再有意义，立刻按「未获确认」收尾（否则要干等到超时，
     // 表现就是「点了停止还挂着」）
@@ -118,11 +123,11 @@ export function requestToolApproval(
       const onAbort = (): void => {
         clearTimeout(timer)
         pending.delete(runId)
-        resolve(false)
+        resolve('aborted')
       }
       if (signal.aborted) {
         clearTimeout(timer)
-        resolve(false)
+        resolve('aborted')
         return
       }
       signal.addEventListener('abort', onAbort, { once: true })
@@ -145,6 +150,6 @@ export function resolveToolApproval(runId: string, ok: boolean): boolean {
   if (!entry) return false
   clearTimeout(entry.timer)
   pending.delete(runId)
-  entry.resolve(ok)
+  entry.resolve(ok ? 'allow' : 'deny')
   return true
 }

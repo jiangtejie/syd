@@ -113,6 +113,8 @@ export async function generateImages(input: {
    */
   dryRun?: boolean
   cfg?: ImageConfig
+  /** 用户取消信号（点「停止」）：与内建 120s 超时串起来，任一触发都中断请求 */
+  signal?: AbortSignal
 }): Promise<GenerateResult> {
   const cfg = input.cfg ?? getImageConfig()
   if (!cfg.enabled)
@@ -139,6 +141,10 @@ export async function generateImages(input: {
 
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 120_000)
+  // 用户的取消要能立刻打断这次请求：两个来源共用一个控制器，谁先来都算
+  const onAbort = (): void => ctrl.abort()
+  if (input.signal?.aborted) onAbort()
+  else input.signal?.addEventListener('abort', onAbort, { once: true })
   try {
     const doRequest = async (
       payload: Record<string, unknown>
@@ -267,8 +273,13 @@ export async function generateImages(input: {
         (input.dryRun ? ' (dryRun)' : '')
     )
     return { images: out, usedReference, referenceCount: usedReference ? refs.length : 0, warning }
+  } catch (e) {
+    // 用户取消不要伪装成「生图失败 HTTP …」：上层据此回「已取消」，而不是让模型去排查通道
+    if (input.signal?.aborted) throw new Error('已取消（用户停止了本轮生成）')
+    throw e
   } finally {
     clearTimeout(timer)
+    input.signal?.removeEventListener('abort', onAbort)
   }
 }
 
