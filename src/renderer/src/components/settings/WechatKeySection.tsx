@@ -374,13 +374,14 @@ function WechatKeySection(): React.JSX.Element {
       </label>
 
       <label className="st-row">
-        <span className="st-label">数据库密钥（64 位十六进制）</span>
+        {/* 标签只写「是什么」，格式细节放占位符 —— 标签折成两行会把整行的控件高度带偏 */}
+        <span className="st-label">数据库密钥</span>
         <input
           className="st-input"
           type={showKey ? 'text' : 'password'}
           value={keyHex}
           onChange={(e) => setKeyHex(e.target.value)}
-          placeholder="外部工具导出后粘贴到此处"
+          placeholder="64 位十六进制，外部工具导出后粘贴到此处"
         />
         <button
           type="button"

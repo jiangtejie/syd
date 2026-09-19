@@ -1,5 +1,22 @@
 /* 客户页 */
 
+/* 页头一行：标题 + 规模统计（此前统计单独占一行，与下面筛选胶囊上的数字重复） */
+.cu-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.cu-head .page-title {
+  margin: 0;
+}
+
+.cu-head-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
 .cu-toolbar {
   display: flex;
   align-items: center;
@@ -69,10 +86,18 @@
 
 .cu-row {
   display: grid;
-  grid-template-columns: 26px 1.5fr 0.5fr 1.5fr 1.4fr 1fr 0.5fr 74px;
+  /* 列宽重分配。原来「类型 / 未读」各占 0.5fr（66px）只装两个字，「最近活跃」占 1fr（133px）
+     只装一个时间戳 —— 这些空出来的宽度全部还给真正需要空间的列。
+     注意：**每一行都是独立的 grid 容器**，所以轨道只能用定宽或 fr；用 auto/max-content
+     会各算各的，列与列之间对不齐。
+     定宽列的依据：类型「群聊/个人」2 字 ≈ 24px；最近活跃最坏是跨年的「2026/9/11 13:19:11」≈ 112px；
+     未读是个圆点数字；数字员工是一个「开/关」胶囊。 */
+  grid-template-columns:
+    26px minmax(0, 1.6fr) 48px minmax(0, 1.1fr) minmax(0, 1.5fr) 118px 40px 68px;
   align-items: center;
   gap: 10px;
-  padding: 10px 16px;
+  /* 密度：行高 53 → 43（头像 32→28、上下内边距 10→7）——一屏多出 4 行 */
+  padding: 7px 14px;
   font-size: var(--fs-md);
   color: var(--text-1);
   cursor: pointer;
@@ -102,11 +127,11 @@
 }
 
 .cu-avatar {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   color: var(--on-brand);
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -389,14 +414,25 @@
 /* ── 数字员工：群级自动回复批量管理 ── */
 .cu-agentbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px 10px;
-  padding: 10px 14px;
-  margin-bottom: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-lg);
   background: var(--bg-panel);
+  box-shadow: var(--shadow-card);
+}
+
+/* 窄屏才允许折行（此时省略号让位给完整信息） */
+@media (max-width: 900px) {
+  .cu-agentbar {
+    flex-wrap: wrap;
+  }
+  .cu-agent-meta {
+    white-space: normal;
+  }
 }
 
 .cu-agent-title {
@@ -409,7 +445,12 @@
   font-size: var(--fs-xs);
   color: var(--text-3);
   flex: 1;
-  min-width: 220px;
+  /* 单行省略：状态是「全局默认/模式/群数/覆盖数」四段拼接，窄屏折行会把工具栏撑高一倍；
+     完整口径在 title 里（鼠标悬停可看全） */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cu-agent-filters {

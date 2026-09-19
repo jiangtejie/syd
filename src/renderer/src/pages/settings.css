@@ -84,18 +84,29 @@
   border-top: 1px dashed var(--border-light);
 }
 
+/* 表单行（2026-09 收口）
+ * 此前：标签列 170px（长标签会折成两行），输入框 flex:1 在宽屏上被拉成 1000+px ——
+ * 一行里左半边是短标签、右半边是超长空框，视线要走很远才找到值。
+ * 现在：标签列 140px 且不折行，输入框最宽 460px（文本域除外，它是多行内容）。 */
 .st-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   padding: 6px 0;
   font-size: var(--fs-md);
 }
 
 .st-label {
-  width: 170px;
+  width: 140px;
   flex-shrink: 0;
   color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.st-row .st-input:not(textarea) {
+  max-width: 460px;
 }
 
 .st-input {
@@ -243,7 +254,7 @@ select.st-input {
   font-weight: 600;
 }
 
-/* AI 娴嬭瘯杩炴帴缁撴灉琛?*/
+/* AI：测试连接的结果表 */
 .st-ai-test {
   min-height: 18px;
   margin-top: 8px;
@@ -264,7 +275,7 @@ select.st-input {
   flex: 1;
 }
 
-/* AI 鑾峰彇妯″瀷缁撴灉琛?*/
+/* AI：拉取到的模型列表 */
 .st-model-msg {
   min-height: 18px;
   margin-top: 2px;
@@ -366,7 +377,7 @@ select.st-input {
   max-width: 380px;
 }
 
-/* 瑙ｅ瘑灞傛彁绀?*/
+/* 解密层提示（长文案，单独成块） */
 .st-decrypt-note {
   margin-top: 12px;
   font-size: var(--fs-sm);

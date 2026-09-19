@@ -470,7 +470,8 @@ function CustomersPage(): React.JSX.Element {
     setJumpValue('')
   }
 
-  const replyCount = tagCounts.get('待回复') ?? 0
+  // 注: 原 replyCount（待回复人数）只被页头那行统计用过；统计已并进筛选胶囊，
+  // 胶囊上的数字由 tagCounts 直接渲染，这里不再需要一份中间变量。
   /** 当前页可选中的群（批量操作的候选） */
   const groupItems = useMemo(() => pageItems.filter((c) => c.isGroup), [pageItems])
   const pickedOnPage = groupItems.filter((c) => pickedGroups.includes(c.wxid)).length
@@ -484,9 +485,13 @@ function CustomersPage(): React.JSX.Element {
 
   return (
     <div className="page-scroll">
-      <h2 className="page-title">客户</h2>
-      <div className="page-subtitle">
-        共 {customers.length} 位客户 · 待回复 {replyCount} 位 · 标签为微信数据实时判断
+      {/* 统计并进页头右侧：原来单独占一行「共 24 位客户 · 待回复 7 位」，而下面筛选胶囊上
+          本来就带 待回复 7 / 超时未回 5 / 今日互动 24 这些数字 —— 同一批数字说两遍，白占 24px。 */}
+      <div className={'cu-head'}>
+        <h2 className="page-title">客户</h2>
+        <span className={'cu-head-meta'}>
+          共 {customers.length} 位客户 · 标签由微信数据实时判断
+        </span>
       </div>
 
       <div className="cu-toolbar">
@@ -532,10 +537,25 @@ function CustomersPage(): React.JSX.Element {
       {/* 数字员工：群级自动回复的「批量」管理入口（总开关/话术/决策记录在「值班」页，两处是同一份状态） */}
       <div className="cu-agentbar">
         <span className="cu-agent-title">数字员工</span>
-        <span className="cu-agent-meta">
-          全局默认 {defaultOn ? '开' : '关'} ·{' '}
-          {defaultMode === 'shadow' ? '影子模式（只记录不发送）' : '正式模式'} · 群 {groupCount}{' '}
-          个（已开 {agentOnCount}）· 单独设置 {overrideCount} 个
+        {/* 状态压成一行：原来在窄屏折成两行，把整条工具栏撑高一半；完整口径放 title */}
+        <span
+          className="cu-agent-meta"
+          title={
+            '全局默认 ' +
+            (defaultOn ? '开' : '关') +
+            ' · ' +
+            (defaultMode === 'shadow' ? '影子模式（只记录不发送）' : '正式模式') +
+            ' · 群 ' +
+            String(groupCount) +
+            ' 个（已开 ' +
+            String(agentOnCount) +
+            '）· 单独设置 ' +
+            String(overrideCount) +
+            ' 个'
+          }
+        >
+          全局默认 {defaultOn ? '开' : '关'} · {defaultMode === 'shadow' ? '影子模式' : '正式模式'}{' '}
+          · 群 {groupCount} 个（已开 {agentOnCount}）· 单独设置 {overrideCount} 个
         </span>
         <button
           type="button"
