@@ -195,74 +195,80 @@ export function MarketingAiSettings(): React.JSX.Element {
           checked={boolVal(form['growth.image.enabled'])}
           onChange={(v) => setNow('growth.image.enabled', boolStr(v))}
         />
-        {/* 卡内二级分区：通道 vs 策略（.st-subtitle 就是为这种分区准备的） */}
+        {/* 卡内二级分区：通道 vs 策略。字段走两列网格（label 在上、控件在下），
+            一列竖排十来行既难扫也浪费横向空间。 */}
         <div className="st-subtitle">生图通道</div>
-        <FieldRow label="接口地址(Base URL)">
-          <input
-            className="st-input"
-            placeholder="https://中转站域名/v1"
-            {...field('growth.image.baseUrl')}
-          />
-        </FieldRow>
-        <FieldRow label="API Key">
-          <input
-            className="st-input"
-            type="password"
-            placeholder="中转站密钥(本地加密存储)"
-            {...field('growth.image.apiKey')}
-          />
-        </FieldRow>
-        <FieldRow label="模型名">
-          <input className="st-input" placeholder="gptimage2" {...field('growth.image.model')} />
-        </FieldRow>
+        <div className="gth-form-grid">
+          <FieldRow label="接口地址(Base URL)">
+            <input
+              className="st-input"
+              placeholder="https://中转站域名/v1"
+              {...field('growth.image.baseUrl')}
+            />
+          </FieldRow>
+          <FieldRow label="API Key">
+            <input
+              className="st-input"
+              type="password"
+              placeholder="中转站密钥(本地加密存储)"
+              {...field('growth.image.apiKey')}
+            />
+          </FieldRow>
+          <FieldRow label="模型名">
+            <input className="st-input" placeholder="gptimage2" {...field('growth.image.model')} />
+          </FieldRow>
+        </div>
         <div className="st-subtitle">生图策略</div>
-        <FieldRow label="默认平台">
-          <select
-            className="st-input"
-            value={form['growth.image.platform'] ?? 'xhs'}
-            onChange={(e) => setNow('growth.image.platform', e.target.value)}
+        <div className="gth-form-grid">
+          <FieldRow label="默认平台">
+            <select
+              className="st-input"
+              value={form['growth.image.platform'] ?? 'xhs'}
+              onChange={(e) => setNow('growth.image.platform', e.target.value)}
+            >
+              <option value="xhs">小红书(竖版 2:3)</option>
+              <option value="douyin">抖音(竖版 2:3)</option>
+              <option value="moments">朋友圈(方版 1:1)</option>
+              <option value="group">客户群群发(方版 1:1)</option>
+            </select>
+          </FieldRow>
+          <FieldRow
+            label="尺寸"
+            hint="留空 = 按平台自动(小红书/抖音竖版 1024x1536、朋友圈方版 1024x1024);填了就一律以它为准"
           >
-            <option value="xhs">小红书(竖版 2:3)</option>
-            <option value="douyin">抖音(竖版 2:3)</option>
-            <option value="moments">朋友圈(方版 1:1)</option>
-            <option value="group">客户群群发(方版 1:1)</option>
-          </select>
-        </FieldRow>
-        <FieldRow
-          label="尺寸"
-          hint="留空 = 按平台自动(小红书/抖音竖版 1024x1536、朋友圈方版 1024x1024);填了就一律以它为准"
-        >
-          <input
-            className="st-input"
-            placeholder="留空 = 按平台自动"
-            {...field('growth.image.size')}
-          />
-        </FieldRow>
-        <FieldRow label="每次张数" hint="单次生成上限(1~4)且是默认张数">
-          <input
-            className="st-input"
-            type="number"
-            min={1}
-            max={4}
-            {...field('growth.image.count')}
-          />
-        </FieldRow>
-        <FieldRow
-          label="每月张数上限"
-          hint="按自然月统计已生成的 AI 图张数;用尽后生图会被拦下并提示,不会静默失败。0 = 不限"
-        >
-          <input
-            className="st-input"
-            type="number"
-            min={0}
-            max={100000}
-            {...field('growth.image.monthlyLimit')}
-          />
-        </FieldRow>
+            <input
+              className="st-input"
+              placeholder="留空 = 按平台自动"
+              {...field('growth.image.size')}
+            />
+          </FieldRow>
+          <FieldRow label="每次张数" hint="单次生成上限(1~4)且是默认张数">
+            <input
+              className="st-input"
+              type="number"
+              min={1}
+              max={4}
+              {...field('growth.image.count')}
+            />
+          </FieldRow>
+          <FieldRow
+            label="每月张数上限"
+            hint="按自然月统计已生成的 AI 图张数;用尽后生图会被拦下并提示,不会静默失败。0 = 不限"
+          >
+            <input
+              className="st-input"
+              type="number"
+              min={0}
+              max={100000}
+              {...field('growth.image.monthlyLimit')}
+            />
+          </FieldRow>
+        </div>
+        {/* 模板库是 JSON 文本域，两列里放不下 —— 独立一行 */}
         <FieldRow label="模板库">
           <textarea
             className="st-input"
-            rows={4}
+            rows={3}
             placeholder='留空 = 内置模板(菜品特写/门店环境/封面氛围/人物场景)。可只改其中一个，如 [{"id":"dish","scene":"本店红油锅底特写，辣椒翻滚"}]'
             {...field('growth.image.templates')}
           />

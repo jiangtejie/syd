@@ -21,15 +21,19 @@ const STRUCT_FIELDS: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'whyWorks', label: '为什么能火' }
 ]
 
-const VISUAL_FIELDS: ReadonlyArray<{ key: string; label: string }> = [
+/**
+ * 视觉维度。前 6 项都是短值（"90 度俯拍"这种），走两列网格；后 2 项（元素清单、图上原文）
+ * 可能很长，占满一行 —— 原来是 8 行竖排，详情卡本来就窄，一路排下来把整卡撑得很长。
+ */
+const VISUAL_FIELDS: ReadonlyArray<{ key: string; label: string; wide?: boolean }> = [
   { key: 'composition', label: '构图' },
   { key: 'camera', label: '机位' },
   { key: 'lighting', label: '光线' },
   { key: 'colorTone', label: '色调' },
   { key: 'layout', label: '版式留白' },
   { key: 'subjectRatio', label: '主体占比' },
-  { key: 'elements', label: '画面元素' },
-  { key: 'textInImage', label: '图上文字' }
+  { key: 'elements', label: '画面元素', wide: true },
+  { key: 'textInImage', label: '图上文字', wide: true }
 ]
 
 /** 值可能是字符串/数组（模型两种都给过），统一成一行可读文本；空值返回 '' */
@@ -59,12 +63,14 @@ function Rows({
   if (rows.length === 0) return <div className={'gth-decomp-empty'}>（本版本没有这部分内容）</div>
   return (
     <>
-      {rows.map((r) => (
-        <div className={'gth-decomp-row'} key={r.label}>
-          <span className={'k'}>{r.label}</span>
-          {r.text}
-        </div>
-      ))}
+      <div className={'gth-decomp-list'}>
+        {rows.map((r) => (
+          <div className={'gth-decomp-row'} key={r.label}>
+            <span className={'k'}>{r.label}</span>
+            <span className={'v'}>{r.text}</span>
+          </div>
+        ))}
+      </div>
     </>
   )
 }
@@ -102,7 +108,22 @@ export function DecompCard({ decomp }: { decomp: GrowthDecompSummary | null }): 
           )}
         </div>
         {visualOk ? (
-          <Rows source={visual} fields={VISUAL_FIELDS} />
+          <div className={'gth-decomp-grid'}>
+            {VISUAL_FIELDS.map((f) => {
+              const text = asLine(visual?.[f.key])
+              if (!text) return null
+              return (
+                <div
+                  className={'gth-decomp-cell' + (f.wide ? ' wide' : '')}
+                  key={f.key}
+                  title={text}
+                >
+                  <span className={'k'}>{f.label}</span>
+                  <span className={'v'}>{text}</span>
+                </div>
+              )
+            })}
+          </div>
         ) : (
           <div className={'gth-decomp-empty'}>
             没有画面维度时，图生图的「保持」只能用通用口径（构图/机位/光线不具体），

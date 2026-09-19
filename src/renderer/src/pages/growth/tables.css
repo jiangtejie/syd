@@ -217,31 +217,146 @@
   margin-top: 12px;
 }
 
-.gth-kv {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 7px 12px;
-  font-size: var(--fs-md);
-  align-items: baseline;
+/* 详情卡（2026-09 重排）
+ * 原来是一张「素材详情」标题 + 5 个等重按钮 + 9 行 dt/dd 键值表：标题字段埋在表里、
+ * 正文与链接和"作者/来源"一样重，扫不出主次。现在按「标题 → 元信息 → 数字 → 正文 → 脚注」分层。 */
+.gth-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.gth-detail-title {
   min-width: 0;
+  flex: 1;
 }
-.gth-kv dt {
-  color: var(--text-3);
-  font-size: var(--fs-sm);
-}
-.gth-kv dd {
-  margin: 0;
+
+.gth-detail-title .tt {
+  margin: 0 0 6px;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.45;
   color: var(--text-1);
-  word-break: break-all;
-  min-width: 0;
-  line-height: 1.6;
+  /* 长标题最多两行，超出省略（详情卡窄，放任换行会把下面全推下去） */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.gth-kv dd .link {
+
+.gth-detail-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.gth-detail-meta .tag {
+  color: var(--brand);
+  background: var(--brand-soft);
+  border-radius: var(--r-sm);
+  padding: 1px 6px;
+}
+
+/* 互动四格：数字是主角，标签是小注脚 */
+.gth-detail-eng {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-bottom: var(--sp-3);
+  background: var(--border-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.gth-detail-eng .cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-panel);
+}
+
+.gth-detail-eng .k {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+}
+
+.gth-detail-eng .v {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.gth-detail-text {
+  margin-bottom: var(--sp-3);
+}
+
+.gth-detail-text p {
+  margin: 0 0 6px;
+  font-size: var(--fs-md);
+  line-height: 1.7;
+  color: var(--text-2);
+  word-break: break-word;
+}
+
+.gth-detail-text .acts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.gth-detail-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--border-light);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.gth-detail-foot .link {
   color: var(--brand);
   text-decoration: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.gth-kv dd .link:hover {
+.gth-detail-foot .link:hover {
   text-decoration: underline;
+}
+
+/* 短枚举用胶囊切换（详情里的用途/状态） */
+.gth-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* 次要按钮：常态是文字，hover 才显出边界 —— 详情头五个按钮一样重会互相抢 */
+.ui-btn.is-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-3);
+}
+.ui-btn.is-quiet:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--bg-panel);
+  color: var(--text-1);
+}
+.ui-btn.is-quiet.is-danger:hover:not(:disabled) {
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger-hover);
 }
 .gth-detail-loading {
   padding: 24px 12px;

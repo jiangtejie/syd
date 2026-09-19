@@ -17,6 +17,19 @@ const KIND_LABEL: Record<string, string> = {
   unknown: '未知'
 }
 
+/** 详情里的两个短枚举（与 USAGE_LABEL / 状态文案同源，别处再写第二份） */
+const USAGE_OPTIONS: ReadonlyArray<{ value: string; label: string; hint: string }> = [
+  { value: 'ref', label: '内部参考', hint: '只用于学习分析，对外发布前必须原创化' },
+  { value: 'own', label: '自有素材', hint: '本店实拍，可直接使用' },
+  { value: 'licensed', label: '已授权', hint: '已获得授权，可用于对外发布' }
+]
+const STATUS_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'new', label: '新入库' },
+  { value: 'ready', label: '可爆改' },
+  { value: 'used', label: '已爆改/已用' },
+  { value: 'archived', label: '已归档' }
+]
+
 export interface WarehousePanelProps {
   onChanged: () => void
   /** 「用 AI 爆改」：交回页面去「找到或创建该素材的 AI 任务 + 切到 AI 工作台」 */
@@ -93,6 +106,8 @@ export function WarehousePanel({
   const [detailLoading, setDetailLoading] = useState(false)
   const [patchBusy, setPatchBusy] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
+  /** 正文展开态：默认截断（长正文会把整个详情卡撑得很长，挡住下面的拆解卡） */
+  const [textOpen, setTextOpen] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState<number | null>(null)
   const reqRef = useRef(0)
   /** 已加载列表的同步镜像: 供分页游标使用, 避免把 items.length 放进 load 依赖导致重置循环 */
@@ -173,6 +188,14 @@ export function WarehousePanel({
     }
   }
 
+  /** 复制正文（与素材列表的复制同一条 IPC 通道，不要在渲染端直接碰 navigator.clipboard） */
+  const copyTextRow = async (text: string): Promise<void> => {
+    if (!text.trim()) return
+    const res = await growthApi?.copyClipboard?.({ text })
+    if (res?.ok) toast.success('正文已复制')
+    else toast.error(res?.error || '复制失败')
+  }
+
   const hasMore = items.length < total
 
   const openDetail = async (id: number): Promise<void> => {
@@ -184,6 +207,7 @@ export function WarehousePanel({
     }
     setDetailId(id)
     setDetail(null)
+    setTextOpen(false)
     setDetailLoading(true)
     try {
       const res = await growthApi.getContent(id)
@@ -753,9 +777,29 @@ export function WarehousePanel({
             />
           </div>
           <div className={'page-card gth-card gth-kv-card'}>
-            <div className={'gth-card-head'}>
-              <span className={'gth-card-title'}>素材详情</span>
-              <span className={'gth-card-sub'}>#{detail.id}</span>
+            {/* 详情头：标题当标题（原来标题是 dl 里的一行，头上写着「素材详情」），
+                平台/作者/时间/ID 压成一行 meta，动作按钮按主次分三档。 */}
+            <div className={'gth-detail-head'}>
+              <div className={'gth-detail-title'}>
+                <h3 className={'tt'} title={detail.title || '(无标题)'}>
+                  {detail.title || '(无标题)'}
+                </h3>
+                <div className={'gth-detail-meta'}>
+                  <Badge>
+                    {ORIGIN_LABEL[detail.origin] ?? detail.origin} ·{' '}
+                    {KIND_LABEL[detail.kind] ?? detail.kind}
+                  </Badge>
+                  {detail.authorName ? <span>{detail.authorName}</span> : null}
+                  <span title={'入库时间'}>{fmt(detail.createdAt)} 入库</span>
+                  {detail.platformItemId ? <span>ID {detail.platformItemId}</span> : null}
+                  <span>#{detail.id}</span>
+                  {detail.tags.length > 0 ? (
+                    <span className={'tag'} title={'由系统写入（例如舆情入库会自动标记「舆情」）'}>
+                      {detail.tags.join(' · ')}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
               <span className={'gth-detail-btns'}>
                 {/* 跨到 AI 工作台：这条素材若已有任务就直接切过去，没有就建一个（一个素材一个任务） */}
                 {onOpenWorkbench ? (
@@ -776,8 +820,9 @@ export function WarehousePanel({
                 >
                   导出发布包
                 </button>
+                {/* 次要动作用 is-quiet：常态是文字，hover 才显出按钮边界（原来五个按钮一样重） */}
                 <button
-                  className={'ui-btn gth-btn sm'}
+                  className={'ui-btn gth-btn sm is-quiet'}
                   type={'button'}
                   disabled={patchBusy}
                   title={'本地图片缺失时按源链接重新下载'}
@@ -787,7 +832,8 @@ export function WarehousePanel({
                 </button>
                 <button
                   className={
-                    'ui-btn is-danger gth-btn sm' + (confirmRemove === detail.id ? ' is-solid' : '')
+                    'ui-btn is-danger gth-btn sm is-quiet' +
+                    (confirmRemove === detail.id ? ' is-solid' : '')
                   }
                   type={'button'}
                   disabled={patchBusy}
@@ -796,7 +842,7 @@ export function WarehousePanel({
                   {confirmRemove === detail.id ? '确认删除?' : '删除'}
                 </button>
                 <button
-                  className={'ui-btn gth-btn sm'}
+                  className={'ui-btn gth-btn sm is-quiet'}
                   type={'button'}
                   title={'收起详情'}
                   onClick={() => {
@@ -808,104 +854,98 @@ export function WarehousePanel({
                 </button>
               </span>
             </div>
-            <dl className={'gth-kv'}>
-              <dt>来源</dt>
-              <dd>
-                <Badge>
-                  {ORIGIN_LABEL[detail.origin] ?? detail.origin} ·{' '}
-                  {KIND_LABEL[detail.kind] ?? detail.kind}
-                </Badge>
-                {detail.platformItemId ? (
-                  <span className={'gth-num'}> ID {detail.platformItemId}</span>
-                ) : null}
-              </dd>
-              <dt>标题</dt>
-              <dd>{detail.title || '(无)'}</dd>
-              {detail.text ? (
-                <>
-                  <dt>正文</dt>
-                  <dd>
-                    {detail.text.slice(0, 240)}
-                    {detail.text.length > 240 ? '…' : ''}
-                  </dd>
-                </>
-              ) : null}
-              {detail.authorName ? (
-                <>
-                  <dt>作者</dt>
-                  <dd>
-                    {detail.authorName}
-                    {detail.authorId ? ' (' + detail.authorId + ')' : null}
-                  </dd>
-                </>
-              ) : null}
+            {/* 互动四格：原来是一行「赞 1200 · 藏 210 · 评 33 · 转 12」，扫数字要逐字读 */}
+            <div className={'gth-detail-eng'}>
+              {(
+                [
+                  ['赞', detail.interactions.likes],
+                  ['藏', detail.interactions.collects],
+                  ['评', detail.interactions.comments],
+                  ['转', detail.interactions.shares]
+                ] as Array<[string, number]>
+              ).map(([label, n]) => (
+                <div className={'cell'} key={label}>
+                  <span className={'k'}>{label}</span>
+                  <span className={'v'}>{fmtNum(n)}</span>
+                </div>
+              ))}
+            </div>
+
+            {detail.text ? (
+              <div className={'gth-detail-text'}>
+                <p className={textOpen ? '' : 'is-clamp'}>
+                  {textOpen ? detail.text : detail.text.slice(0, 160)}
+                </p>
+                <div className={'acts'}>
+                  {detail.text.length > 160 ? (
+                    <button
+                      className={'ui-link'}
+                      type={'button'}
+                      onClick={() => setTextOpen((v) => !v)}
+                    >
+                      {textOpen ? '收起正文' : '展开全文'}
+                    </button>
+                  ) : null}
+                  <button
+                    className={'ui-link'}
+                    type={'button'}
+                    onClick={() => void copyTextRow(detail.text)}
+                  >
+                    复制正文
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className={'gth-detail-foot'}>
               {detail.link ? (
-                <>
-                  <dt>链接</dt>
-                  <dd>
-                    <a className={'link'} href={detail.link} target={'_blank'} rel={'noreferrer'}>
-                      {detail.link}
-                    </a>
-                  </dd>
-                </>
-              ) : null}
-              <dt>入库 / 发布</dt>
-              <dd>
-                {fmt(detail.createdAt)}
-                {detail.publishedAt ? ' · 发布 ' + fmt(detail.publishedAt) : ' · 未获取发布时间'}
-              </dd>
-              <dt>互动</dt>
-              <dd className={'gth-num'}>
-                赞 {fmtNum(detail.interactions.likes)} · 藏 {fmtNum(detail.interactions.collects)} ·
-                评 {fmtNum(detail.interactions.comments)} · 转 {fmtNum(detail.interactions.shares)}
-              </dd>
-              {detail.tags.length > 0 ? (
-                <>
-                  <dt>系统标记</dt>
-                  <dd title={'由系统写入（例如舆情入库会自动标记「舆情」）'}>
-                    {detail.tags.join(', ')}
-                  </dd>
-                </>
-              ) : null}
-              <dt>媒体 / 拆解</dt>
-              <dd>
-                {detail.assets.length} 个文件 ·{' '}
-                {detail.decomp ? (
-                  <Badge tone={'green'}>已拆解</Badge>
-                ) : (
-                  <Badge tone={'gray'}>待拆解</Badge>
-                )}
-              </dd>
-            </dl>
+                <a className={'link'} href={detail.link} target={'_blank'} rel={'noreferrer'}>
+                  {detail.link}
+                </a>
+              ) : (
+                <span className={'muted'}>无原链接</span>
+              )}
+              <span className={'muted'}>
+                {detail.assets.length} 个文件 · {detail.decomp ? '已拆解' : '待拆解'}
+                {detail.publishedAt ? ' · 发布 ' + fmt(detail.publishedAt) : ''}
+              </span>
+            </div>
             <div className={'gth-ops'}>
+              {/* 用途/状态改成胶囊切换：两个各 3~4 项的短枚举，用下拉要多一次点击还看不到可选项 */}
               <div className={'gth-ops-row'}>
-                <label className={'gth-ops-fld'}>
+                <span className={'gth-ops-fld'}>
                   <span className={'lb'}>用途</span>
-                  <select
-                    className={'ui-select gth-select'}
-                    value={detail.usage}
-                    disabled={patchBusy}
-                    onChange={(e) => void patch(detail.id, { usage: e.target.value })}
-                  >
-                    <option value={'ref'}>内部参考</option>
-                    <option value={'own'}>自有素材</option>
-                    <option value={'licensed'}>已授权</option>
-                  </select>
-                </label>
-                <label className={'gth-ops-fld'}>
+                  <span className={'gth-pills'}>
+                    {USAGE_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        className={'ui-pill' + (detail.usage === opt.value ? ' is-on' : '')}
+                        type={'button'}
+                        disabled={patchBusy}
+                        title={opt.hint}
+                        onClick={() => void patch(detail.id, { usage: opt.value })}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </span>
+                </span>
+                <span className={'gth-ops-fld'}>
                   <span className={'lb'}>状态</span>
-                  <select
-                    className={'ui-select gth-select'}
-                    value={detail.status}
-                    disabled={patchBusy}
-                    onChange={(e) => void patch(detail.id, { status: e.target.value })}
-                  >
-                    <option value={'new'}>新入库</option>
-                    <option value={'ready'}>可爆改</option>
-                    <option value={'used'}>已爆改/已用</option>
-                    <option value={'archived'}>已归档</option>
-                  </select>
-                </label>
+                  <span className={'gth-pills'}>
+                    {STATUS_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        className={'ui-pill' + (detail.status === opt.value ? ' is-on' : '')}
+                        type={'button'}
+                        disabled={patchBusy}
+                        onClick={() => void patch(detail.id, { status: opt.value })}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </span>
+                </span>
               </div>
               <div className={'gth-ops-row'}>
                 <label className={'gth-ops-fld grow'}>

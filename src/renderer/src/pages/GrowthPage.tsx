@@ -165,11 +165,14 @@ export default function GrowthPage(): React.JSX.Element {
           AI 工作台省下的高度还给对话区(见 growth-ai.css 的 .gai-page)。 */}
       {tab === 'provider' || tab === 'warehouse' ? <StatsBar stats={stats} /> : null}
       {tab === 'provider' ? (
-        <>
+        /* 设置屏两栏：左「门店与品牌」（AI 的事实来源），右「AI 生图通道与策略」。
+           此前是三个整宽卡片竖排，宽屏上每张卡的输入框都拉成 1000+px 一条，
+           右侧一大片留白、纵向还得滚三轮才看完。 */
+        <div className={'gth-set-grid'}>
           <StoresCard />
           {/* 营销 AI 的通道与策略：和门店/品牌档案同屏 —— 它们共同决定"内容怎么生成" */}
           <MarketingAiSettings />
-        </>
+        </div>
       ) : null}
       {tab === 'warehouse' ? (
         <WarehousePanel

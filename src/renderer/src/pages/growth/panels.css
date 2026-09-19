@@ -197,15 +197,63 @@
   font-weight: 400;
   color: var(--text-4);
 }
+/* 结构维度：标签定宽一列、值一列 —— 值多行时不会顶着标签跑（原来是行内 margin-right） */
+.gth-decomp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
 .gth-decomp-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: var(--sp-2);
   font-size: var(--fs-sm);
-  line-height: 1.8;
+  line-height: 1.65;
   color: var(--text-2);
   word-break: break-word;
 }
+
 .gth-decomp-row .k {
   color: var(--text-4);
-  margin-right: 6px;
+}
+
+/* 视觉维度：短值两列网格 + 长值整行（原来 8 行竖排把详情卡撑得很长） */
+.gth-decomp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px var(--sp-3);
+}
+
+.gth-decomp-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-1);
+}
+
+.gth-decomp-cell.wide {
+  grid-column: 1 / -1;
+}
+
+.gth-decomp-cell .k {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+}
+
+.gth-decomp-cell .v {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gth-decomp-cell.wide .v {
+  white-space: normal;
 }
 /* 视觉维度单独一块底色：它是图生图「保持」的来源，值得和文字维度区分开 */
 .gth-decomp-vis {
@@ -238,6 +286,60 @@
 .gth-decomp-empty {
   font-size: var(--fs-sm);
   line-height: 1.8;
+  color: var(--text-4);
+}
+
+/* ── 设置屏：两栏 + 卡内两列表单（2026-09） ──
+ * 此前三张整宽卡片竖排：宽屏上输入框被拉成 1000+px，右侧全空，纵向要滚三轮。
+ * 现在左栏「门店与品牌」、右栏「AI 生图」，卡内字段两列（label 在上、控件在下）。 */
+.gth-set-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.05fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+@media (max-width: 1180px) {
+  .gth-set-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.gth-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2) var(--sp-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .gth-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 两列里的字段改成「标签在上」：横排的 170px 标签列会把控件挤到只剩一半宽 */
+.gth-page .gth-form-grid .st-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 0;
+}
+
+.gth-page .gth-form-grid .st-label {
+  width: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.gth-page .gth-form-grid .st-hint-inline {
+  margin-left: 0;
+}
+
+/* 卡片说明压成细字（营销设置页的说明偏长，12px 正文级字号太抢） */
+.gth-page .sf-card-desc {
+  font-size: var(--fs-xs);
+  line-height: 1.65;
   color: var(--text-4);
 }
 
