@@ -51,7 +51,7 @@
 
 ## C. 需要产品决策（不是排期问题）
 
-1. **出站通道**：发送是 UI 自动化（`wechat/injector.ts:9-12`），锁屏直接失败（`ARCHITECTURE.md:342`）、
+1. **出站通道**：发送是 UI 自动化（`wechat/injector.ts:9-12`），锁屏直接失败（`ARCHITECTURE.md:375`）、
    队列 20、日限 200、全局串行。**任何「群发/召回/朋友圈 SOP」在此架构下无法规模化。**
    三选一：① 只做「生成 + 复制/深链，人工发」；② 把已在用的官方 iLink 通道
    （`im/wechatClawService.ts:18-25`，目前只承载 AI 会话）接进客户/议题闭环；③ 接受不做主动触达。
@@ -115,5 +115,5 @@
 ## 附录 · 方法与素材
 
 - 审计方法：读实现而非 README；每条带 `file:line`；未验证的推断显式标注。
-- 私域闭环完整评审稿：`scripts/_tmp/review-private-domain-loop.md`（317 行，未纳入版本管理的临时件，
-  需要长期留存请移入 `docs/`）。
+- 私域闭环完整评审稿（317 行）原为 `scripts/_tmp/review-private-domain-loop.md`，**已不在仓库与工作区中**
+  （当时未纳入版本管理，无法找回）。留这一行是为了别再去找它。
