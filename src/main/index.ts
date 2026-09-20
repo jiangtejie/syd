@@ -18,7 +18,7 @@ import { createReadStream, existsSync, statSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getDb, closeDb, getLastMigrateResult } from './db/database'
-import { getGrowthMediaDir, getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
+import { getMediaRootDir, migrateLegacyCacheLayout } from './services/paths'
 import { mimeForMediaFile, parseMediaPath, parseRangeHeader } from './services/media/mediaProtocol'
 import { migrateStoredSecretPrefixes, migrateStoredSecrets } from './services/secrets'
 import {
@@ -57,9 +57,6 @@ import { registerWorkbenchHandlers } from './ipc/workbenchHandlers'
 import { registerLogHandlers } from './ipc/logsHandlers'
 import { registerChannelFileHandlers } from './ipc/channelFileHandlers'
 import { registerReportHandlers } from './ipc/reportHandlers'
-import { registerGrowthHandlers } from './ipc/growthHandlers'
-import { registerGrowthAiHandlers } from './ipc/growthAiHandlers'
-import { registerGrowthBuzzHandlers } from './ipc/growthBuzzHandlers'
 import { registerLarkHandlers } from './ipc/larkHandlers'
 import { migrateLegacyImAudit } from './db/repos/imAuditRepo'
 import { registerFeishuNotifyHandlers } from './ipc/feishuNotifyHandlers'
@@ -181,38 +178,6 @@ function registerMediaProtocol(): void {
         return new Response('Not found', { status: 404 })
       }
       return await serveMediaFile(file, request.headers.get('range'))
-    } catch {
-      return new Response('Bad request', { status: 400 })
-    }
-  })
-}
-
-const growthProtoLog = createLogger('growth-proto')
-
-/**
- * 自定义 growth 媒体协议: 把 <cache>/growth/media 下已下载的素材图以
- * ct-growth://<sub>/<file> 暴露给渲染层(校验与 ct-media 同规格: 路径强白名单)。
- */
-function registerGrowthMediaProtocol(): void {
-  protocol.handle('ct-growth', (request) => {
-    const { pathname } = new URL(request.url)
-    // 每张素材图一次请求:降到 debug(打包环境不写),否则滚动列表会刷爆日志
-    growthProtoLog.debug('ct-growth 请求: ' + pathname)
-    try {
-      const seg = pathname.split('/').filter(Boolean)
-      if (seg.length !== 2) return new Response('Not found', { status: 404 })
-      const sub = decodeURIComponent(seg[0])
-      const name = decodeURIComponent(seg[1])
-      if (!/^[0-9a-f]{2}$/.test(sub)) return new Response('Forbidden', { status: 403 })
-      if (!/^[0-9a-f]{40}\.(jpe?g|png|webp|gif|mp4|mov|webm|m4v)$/i.test(name)) {
-        return new Response('Forbidden', { status: 403 })
-      }
-      const base = getGrowthMediaDir()
-      const file = resolve(base, sub, name)
-      if (!file.startsWith(base + sep) || !existsSync(file)) {
-        return new Response('Not found', { status: 404 })
-      }
-      return net.fetch(pathToFileURL(file).toString())
     } catch {
       return new Response('Bad request', { status: 400 })
     }
@@ -386,10 +351,6 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'ct-media',
     privileges: { secure: true, bypassCSP: true, stream: true }
-  },
-  {
-    scheme: 'ct-growth',
-    privileges: { secure: true, bypassCSP: true, stream: true }
   }
 ])
 
@@ -473,14 +434,10 @@ if (!app.requestSingleInstanceLock()) {
     registerLogHandlers()
     registerChannelFileHandlers()
     registerReportHandlers()
-    registerGrowthHandlers()
-    registerGrowthAiHandlers()
-    registerGrowthBuzzHandlers()
     registerLarkHandlers()
     registerFeishuNotifyHandlers()
     migrateLegacyImAudit()
     registerMediaProtocol()
-    registerGrowthMediaProtocol()
 
     // IM 渠道(飞书等):恢复上次启用状态的账号连接
     void bootImAccounts()
