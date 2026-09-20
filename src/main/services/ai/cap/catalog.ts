@@ -7,11 +7,10 @@
  * 注册表只负责把元数据与「可执行 def」拼起来。
  */
 
-export type CapGroup = 'core' | 'wechat' | 'software' | 'cloud' | 'workspace' | 'growth'
+export type CapGroup = 'core' | 'wechat' | 'software' | 'cloud' | 'workspace'
 
 /** 分组展示名（目录、工作台菜单共用） */
 export const GROUP_TEXT: Record<CapGroup, string> = {
-  growth: '营销能力',
   core: '核心',
   wechat: '微信业务',
   software: '软件能力',

@@ -42,7 +42,7 @@ export function workbenchToolNames(): string[] {
 
 /** 分组菜单(给 system 的固定说明):按注册表分组聚合,新增能力自动出现 */
 export function workbenchToolGroups(): WbToolGroup[] {
-  const order: CapGroup[] = ['wechat', 'software', 'workspace', 'cloud', 'growth']
+  const order: CapGroup[] = ['wechat', 'software', 'workspace', 'cloud']
   const caps = listCaps().filter((c) => c.tier > 0 && !c.disabled)
   const out: WbToolGroup[] = []
   for (const g of order) {
