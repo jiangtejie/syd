@@ -1,6 +1,5 @@
 import type Database from 'better-sqlite3-multiple-ciphers'
 import { CORE_INDEXES, CORE_TABLES } from './schema/base'
-import { GROWTH_INDEXES, GROWTH_TABLES } from './schema/growth'
 import { AI_INDEXES, AI_TABLES } from './schema/ai'
 import { CUSTOMER_INDEXES, CUSTOMER_TABLES } from './schema/customer'
 import { COLUMN_MIGRATIONS } from './schema/columns'
@@ -11,7 +10,7 @@ import { DATA_MIGRATIONS, SCHEMA_VERSION } from './schema/migrations'
  * 消息本体存微信 DB，本地只存密钥、决策与审计数据。
  *
  * 三层结构（改表时先想清楚属于哪一层）：
- * 1. 幂等形状 DDL —— schema/base.ts + schema/growth.ts：新装库由此建成，老库靠
+ * 1. 幂等形状 DDL —— schema/base.ts：新装库由此建成，老库靠
  *    CREATE ... IF NOT EXISTS 补齐新增的表与索引；
  * 2. 幂等补列 —— schema/columns.ts：CREATE TABLE IF NOT EXISTS 不会给既有表加列；
  * 3. 一次性数据迁移 —— schema/migrations.ts：改形状 / 搬数据 / 清旧表，按 user_version
@@ -41,11 +40,9 @@ export function migrate(db: Database.Database): MigrateResult {
   db.transaction(() => {
     for (const sql of [
       ...CORE_TABLES,
-      ...GROWTH_TABLES,
       ...AI_TABLES,
       ...CUSTOMER_TABLES,
       ...CORE_INDEXES,
-      ...GROWTH_INDEXES,
       ...AI_INDEXES,
       ...CUSTOMER_INDEXES
     ]) {

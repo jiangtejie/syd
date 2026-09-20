@@ -1,4 +1,6 @@
 import type Database from 'better-sqlite3-multiple-ciphers'
+import { mkdirSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
 import { LEGACY_TABLES } from './reserved'
 
 /**
@@ -76,6 +78,25 @@ function relaxNotNull(db: Database.Database, table: string, relax: string[]): bo
   db.exec('DROP TABLE "' + table + '"')
   db.exec('ALTER TABLE "' + tmp + '" RENAME TO "' + table + '"')
   return true
+}
+
+/**
+ * 删表前把每张表的全量行导一份 JSON，落到库文件旁边（`growth-purge-<tag>.json`）。
+ *
+ * 为什么留这一步：素材记录与产出正文**不可再生**（图还在磁盘上，索引没了就再也找不回来），
+ * 而删表是不可逆的。快照失败不阻断删除 —— 库形状的一致性是启动的前置条件，
+ * 不能因为写不了一个备份文件就让应用起不来。
+ */
+function dumpRowsBeforeDrop(db: Database.Database, tables: string[], tag: string): void {
+  try {
+    const payload: Record<string, unknown[]> = {}
+    for (const t of tables) payload[t] = db.prepare(`SELECT * FROM "${t}"`).all()
+    const dir = dirname(String(db.name) || '.')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `growth-purge-${tag}.json`), JSON.stringify(payload), 'utf8')
+  } catch {
+    /* 备份失败不阻断删除；理由见上方注释 */
+  }
 }
 
 export const DATA_MIGRATIONS: DataMigration[] = [
@@ -299,6 +320,42 @@ export const DATA_MIGRATIONS: DataMigration[] = [
       db.exec('DROP INDEX IF EXISTS idx_growth_remix_out_job')
       relaxNotNull(db, 'growth_remix_output', ['job_id'])
       relaxNotNull(db, 'growth_output_asset', ['updated_at'])
+    }
+  },
+  {
+    id: 8,
+    name: 'drop-growth-module',
+    /**
+     * 营销板块整体下线（按用户决定，2026-09）：素材仓库 / 舆情 / AI 工作台 / 门店品牌档案
+     * 四条链路连同渲染端页面、IPC 契约、AI 能力注册与建表 DDL 一并删除，本地库不再保留
+     * 任何 growth 数据。
+     *
+     * 为什么按「表名发现」而不是写死表名：这批表跨了四个阶段（Phase 0 建表 → 采集订阅下线
+     * → 一键爆改下线 → 登记发布下线），装过这台应用的库里最多可能有 16 张不同的 growth_*
+     * （现役 10 张 + 已下线链路遗留 6 张），写死必漏 —— `sqlite_master` 是唯一的真源。
+     *
+     * 先快照后删：素材记录与产出正文不可再生，删表前把每张表全量导一份 JSON 落到库文件旁
+     * （见 dumpRowsBeforeDrop）。库该干净就干净，但真删错了还能捞回来。
+     *
+     * 幂等：这些表不存在时查询结果为空，什么都不做；版本门控保证只跑一次。
+     */
+    run: (db) => {
+      const tables = (
+        db
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name GLOB 'growth_*'")
+          .all() as Array<{ name: string }>
+      ).map((r) => r.name)
+      if (tables.length > 0) dumpRowsBeforeDrop(db, tables, 'v8')
+      for (const t of tables) db.exec(`DROP TABLE IF EXISTS "${t}"`)
+      // 索引随表一起消失；这里只兜底清掉可能残留的孤儿索引
+      const indexes = (
+        db
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name GLOB 'idx_growth_*'")
+          .all() as Array<{ name: string }>
+      ).map((r) => r.name)
+      for (const i of indexes) db.exec(`DROP INDEX IF EXISTS "${i}"`)
+      // 配置：营销的四组键（生图通道与策略、门店启用开关、两条已下线链路的键）
+      db.prepare("DELETE FROM app_config WHERE key LIKE 'growth.%'").run()
     }
   }
 ]

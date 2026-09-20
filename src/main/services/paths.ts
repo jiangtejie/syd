@@ -152,16 +152,6 @@ export function getExportDir(): string {
  * 明文副本由「源库路径 + key」即时再生，可直接并入；
  * 目标已存在时旧目录整体删除避免残留双份敏感明文。失败静默，下次启动重试。
  */
-/** 营销增长(growth)素材根目录:<cache>/growth */
-export function getGrowthRootDir(): string {
-  return getCacheSubPath('growth')
-}
-
-/** 营销增长(growth)已下载媒体(封面/图集)目录:<cache>/growth/media */
-export function getGrowthMediaDir(): string {
-  return join(getCacheSubPath('growth'), 'media')
-}
-
 export function migrateLegacyCacheLayout(): void {
   const root = getCachePath()
   const legacy = join(root, LEGACY_PLAIN_DIR)
