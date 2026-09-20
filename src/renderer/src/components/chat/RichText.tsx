@@ -1,9 +1,9 @@
 /**
- * 对话回复的公共渲染组件：AI 工作台（客服）与 营销 AI 工作台 共用同一套「渲染技能」——
+ * 对话回复的公共渲染组件：AI 工作台（客服）与 AI 助手共用同一套「渲染技能」——
  * Markdown 正文（表格 / 任务清单 / 告警块 / 代码块）、hover 复制、思考过程（终稿折叠 + 生成中实时）、
  * 引用来源、Token 脚注、回答反馈、流式光标。
  *
- * 之所以抽出来：两边原来各写一套，营销侧只渲染纯文本，回复一多样式就单薄（能力还会持续分叉）。
+ * 之所以抽出来：两处原来各写一套，其中一处只渲染纯文本，回复一多样式就单薄（能力还会持续分叉）。
  * 页面只负责外层的行列布局与气泡底色（气泡记得带 .md-host），回复内部一律用这里；
  * 纯逻辑在 ./msgMeta，样式在 ./rich.css（.md-* 前缀）。
  */
@@ -60,12 +60,15 @@ function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement>): React.JSX.Elem
 const MD_COMPONENTS = { a: MdLink, img: MdImg }
 
 /**
- * 放行应用内的自定义协议：ct-growth://（素材/生图本地文件）与 ct-media://（解密后的聊天媒体）。
+ * 放行应用内的自定义协议：ct-media://（解密后的聊天媒体，见 media/mediaProtocol.ts）。
  * react-markdown 默认只认 http(s)/mailto 等，命中不了就把整条 URL 抹成空串——
- * 结果是回复里的 ![](ct-growth://...) 凭空消失（预览里实测复现，图片那一段只剩空 <p>）。
+ * 结果是回复里的 ![](ct-media://...) 凭空消失（预览里实测复现，图片那一段只剩空 <p>）。
  * 其余一律交回默认实现，不让 javascript: 之类的协议漏进来。
+ *
+ * 注：营销模块曾有一条 ct-growth://（素材/生图本地文件），随该模块 2026-09 下线一并撤掉 ——
+ * 协议不再注册，放行它只会让失效 URL 变成请求失败的空图。
  */
-const APP_PROTOCOL = /^(ct-growth|ct-media):/i
+const APP_PROTOCOL = /^ct-media:/i
 const mdUrlTransform: UrlTransform = (url) =>
   APP_PROTOCOL.test(url) ? url : defaultUrlTransform(url)
 

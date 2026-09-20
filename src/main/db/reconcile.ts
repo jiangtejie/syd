@@ -39,7 +39,5 @@ export function reconcileInterruptedTasks(db: Database, processStartedAt: number
        WHERE started_at < ? AND status = 'running'`
     )
     .run(INTERRUPTED, INTERRUPTED_NOTE, now, processStartedAt).changes
-  // 注: 这里原本还有一段 growth_crawl_task 的改判。采集订阅链路整体下线后那张表不再被写入，
-  // 对账段一并删除；老库里遗留的 running 行没有消费者，不影响任何界面。
   return out
 }

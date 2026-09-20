@@ -28,7 +28,7 @@ const APP_DIR_NAME = 'wechat-cs-desktop'
 const LEGACY_PLAIN_DIR = 'wx-plain'
 
 /** 缓存目录顶层分区（新增用途前先在此登记，保证结构统一） */
-export const CACHE_SUB_DIRS = ['db', 'media', 'files', 'tmp', 'export', 'growth'] as const
+export const CACHE_SUB_DIRS = ['db', 'media', 'files', 'tmp', 'export'] as const
 export type CacheSubDir = (typeof CACHE_SUB_DIRS)[number]
 
 /** 探测第一个可用的非系统盘根目录（如 D:\），不可用返回 null */

@@ -12,7 +12,7 @@
  * 为一个自检脚本动锁会带出上千行无关变更（实测 npm 顺带裁掉了 760 行历史依赖）。
  */
 import Database from 'better-sqlite3-multiple-ciphers'
-import { mkdtempSync, rmSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -123,8 +123,10 @@ try {
   putAgent.run('builtin-default', '微信私域智能客服')
   putAgent.run('mine', '微信私域智能客服')
 
-  // 营销产出表的**老形状**（取自真实老库）：一键爆改时代的 job_id NOT NULL 无默认，
-  // 而现在的 createOutput() 根本不写它 —— 线上每次生成标题/正文/配图都撞这个约束。
+  // 营销模块（2026-09 整体下线）的**老形状**，取自真实老库：一键爆改时代的 job_id
+  // NOT NULL 无默认，当年每次生成标题/正文/配图都撞这个约束。
+  // 留着它是为了验证迁移 8 —— 那种「跨了四个阶段、最多 16 张 growth_*」的库，
+  // 正是它要按表名发现并整批删掉的输入。
   db.exec(`CREATE TABLE growth_remix_output (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER NOT NULL,
@@ -158,7 +160,35 @@ try {
     "INSERT INTO growth_output_asset (id, output_id, asset_id, role, created_at, updated_at)" +
       " VALUES (5, 7, 42, 'cover', 1700000000001, 1700000000001)"
   )
+  // 营销模块写过的配置：生图通道与月度上限、门店启用开关、两条已下线链路的键
+  put.run('growth.image.apiKey', 'sk-legacy-image')
+  put.run('growth.image.monthlyLimit', '80')
+  put.run('growth.enabled', 'true')
+  put.run('growth.search.apiKey', 'legacy-search')
 
+  // 营销 AI 工作台的会话：建任务时 setChatScope(sessionId, 'growth') 打的标记。
+  // 会话列表（chatRepo.listSessions）按 wxid 取全部、不按 scope 过滤 —— 所以它必须被迁移 8
+  // 清掉，否则客服工作台会列出一串点开即报错的死会话。
+  db.exec(`CREATE TABLE chat_session (
+    id INTEGER PRIMARY KEY,
+    wxid TEXT DEFAULT '',
+    title TEXT NOT NULL,
+    agent_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    scope TEXT NOT NULL DEFAULT ''
+  )`)
+  db.exec(`CREATE TABLE chat_message (
+    id INTEGER PRIMARY KEY,
+    session_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  )`)
+  db.exec("INSERT INTO chat_session (id, wxid, title, created_at, updated_at, scope) VALUES (1, 'wxid_a', '爆改：老素材', 1, 1, 'growth')")
+  db.exec("INSERT INTO chat_session (id, wxid, title, created_at, updated_at, scope) VALUES (2, 'wxid_a', '客服会话', 1, 1, '')")
+  db.exec("INSERT INTO chat_message (id, session_id, role, content, created_at) VALUES (1, 1, 'user', '营销会话的消息', 1)")
+  db.exec("INSERT INTO chat_message (id, session_id, role, content, created_at) VALUES (2, 2, 'user', '客服会话的消息', 1)")
   db.exec(`INSERT INTO issue_feedback (id, key, wxid, group_username, status) VALUES (1, 'k1', 'wxid_a', '111@chatroom', 'open')`)
   // 故意留 2 条重复证据：迁移要去重并建唯一索引
   const putMsg = db.prepare('INSERT INTO issue_feedback_msg (id, issue_id, seq) VALUES (?, ?, ?)')
@@ -170,13 +200,13 @@ try {
   console.log('迁移结果:', JSON.stringify(res))
 
   console.log('\n一次性迁移:')
-  ok(res.applied.length === 5, '五条数据迁移都跑了（未被老版本号 2 跳过）', res.applied.join(', '))
+  ok(res.applied.length === 6, '六条数据迁移都跑了（未被老版本号 2 跳过）', res.applied.join(', '))
   ok(
     res.columnsAdded.includes('issue_feedback.assignee') && res.columnsAdded.includes('issue_feedback_msg.is_team'),
     '老库缺列被补齐',
     res.columnsAdded.length + ' 列'
   )
-  ok(res.from === 2 && res.to === 7, '版本号从 2 对齐到最新', res.from + ' → ' + res.to)
+  ok(res.from === 2 && res.to === 8, '版本号从 2 对齐到最新', res.from + ' → ' + res.to)
 
   console.log('\n产品改名（迁移 6）：')
   const agentName = (id) => db.prepare('SELECT name FROM ai_agent WHERE id = ?').get(id)?.name
@@ -222,48 +252,50 @@ try {
   }
   ok(db.prepare('SELECT COUNT(*) c FROM issue_feedback_msg').get().c === 2, '重复证据行被去重（3 → 2）')
 
-  console.log('\n老库遗留 NOT NULL 列（迁移 7）:')
-  const outCols = db.prepare('PRAGMA table_info(growth_remix_output)').all()
-  const jobCol = outCols.find((c) => c.name === 'job_id')
-  ok(!!jobCol, 'job_id 列仍在（放宽约束而不是删列，老数据留着）')
-  ok(!!jobCol && jobCol.notnull === 0, '★ job_id 已放宽为可空：当前代码不写它也不再撞约束', jobCol ? 'notnull=' + jobCol.notnull : '缺列')
-  const legacyOut = db.prepare('SELECT * FROM growth_remix_output WHERE id = 7').get()
+  console.log('\n营销模块整表下线（迁移 8）:')
+  const after = listTables(db)
   ok(
-    legacyOut?.title === '老产出标题' && legacyOut?.copy_text === '老产出正文' && legacyOut?.status === 'selected' && legacyOut?.job_id === 3,
-    '★ 老产出行连数据一起保留（含 job_id 的原值）',
-    JSON.stringify({ title: legacyOut?.title, status: legacyOut?.status, job_id: legacyOut?.job_id })
+    after.every((t) => !t.startsWith('growth_')),
+    '★ growth_* 表全部删除（现役 10 张 + 四条已下线链路遗留的，一律按表名发现）',
+    after.filter((t) => t.startsWith('growth_')).join(',') || '无残留'
   )
-  ok(outCols.some((c) => c.name === 'task_id') && outCols.some((c) => c.name === 'meta_json'), '缺列仍由补列补齐（task_id / meta_json）')
-  // 线上失败的就是这一条：createOutput() 的列清单里没有 job_id
-  let outInsert = null
-  try {
-    db.exec(
-      "INSERT INTO growth_remix_output (variant, title, copy_text, content_id, task_id, compliance_json, meta_json, status, created_at)" +
-        " VALUES ('chat:title', '新候选标题', '', 11, 9, '[]', '{}', 'candidate', 1700000000002)"
-    )
-  } catch (e) {
-    outInsert = e.message
-  }
-  ok(outInsert === null, '★ 当前代码形状的 INSERT 成功（正是线上失败的那条写入）', outInsert ?? '')
-  const assetCols = db.prepare('PRAGMA table_info(growth_output_asset)').all()
-  const upCol = assetCols.find((c) => c.name === 'updated_at')
-  ok(!!upCol && upCol.notnull === 0, '★ growth_output_asset.updated_at 同样放宽为可空')
-  const legacyAsset = db.prepare('SELECT * FROM growth_output_asset WHERE id = 5').get()
-  ok(legacyAsset?.output_id === 7 && legacyAsset?.asset_id === 42 && legacyAsset?.updated_at === 1700000000001, '★ 老图片勾稽行保留（updated_at 原值还在）', JSON.stringify(legacyAsset))
-  let assetInsert = null
-  try {
-    db.exec(
-      "INSERT INTO growth_output_asset (output_id, asset_id, role, source, prompt, note, created_at)" +
-        " VALUES (7, 43, 'image', 'gen', '俯拍锅底', '', 1700000000003)"
-    )
-  } catch (e) {
-    assetInsert = e.message
-  }
-  ok(assetInsert === null, '★ 挂图 INSERT 成功（生图 / 换封面 / 换配图都走这条）', assetInsert ?? '')
   ok(
-    !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_growth_remix_out_job'").get(),
-    '一键爆改时代的索引已清（列留着，索引没人查了）'
+    !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name GLOB 'idx_growth_*'").get(),
+    '★ growth 的索引一并清掉'
   )
+  ok(
+    db.prepare("SELECT COUNT(*) c FROM app_config WHERE key LIKE 'growth.%'").get().c === 0,
+    '★ 营销的配置键已清空（生图通道 / 月度上限 / 门店开关 / 两条已下线链路）'
+  )
+  ok(
+    db.prepare("SELECT value FROM app_config WHERE key = 'ai.model'").get()?.value === 'deepseek-chat',
+    '非营销配置未被动'
+  )
+  // 删表前落了快照：素材记录与产出正文不可再生，这是唯一的退路
+  const snapFile = join(work, 'growth-purge-v8.json')
+  ok(existsSync(snapFile), '★ 删表前落了 JSON 快照（growth-purge-v8.json）')
+  ok(
+    !db.prepare("SELECT 1 FROM chat_session WHERE scope = 'growth'").get(),
+    '★ 营销 AI 工作台的会话已清（会话列表不按 scope 过滤，留着就是死会话）'
+  )
+  ok(
+    !db.prepare('SELECT 1 FROM chat_message WHERE session_id = 1').get(),
+    '★ 营销会话的消息一并清掉（不依赖 foreign_keys 级联）'
+  )
+  ok(!!db.prepare('SELECT 1 FROM chat_session WHERE id = 2').get(), '客服会话不受影响')
+  ok(!!db.prepare('SELECT 1 FROM chat_message WHERE session_id = 2').get(), '客服会话的消息保留')
+  if (existsSync(snapFile)) {
+    const snap = JSON.parse(readFileSync(snapFile, 'utf8'))
+    ok(
+      Array.isArray(snap.growth_remix_output) &&
+        snap.growth_remix_output.some((r) => r.title === '老产出标题'),
+      '★ 快照里留着老产出的正文（真删错了还能捞回来）'
+    )
+    ok(
+      Array.isArray(snap.growth_output_asset) && snap.growth_output_asset.length === 1,
+      '★ 快照覆盖到每一张被删的表（不只产出一张）'
+    )
+  }
 
   console.log('\n幂等:')
   const res2 = migrate(db)

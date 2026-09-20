@@ -458,8 +458,6 @@ if (!app.requestSingleInstanceLock()) {
     startDbHousekeeping()
 
     // 数据上报·定时任务:恢复启用的任务调度
-    // 注: 营销的「采集订阅」调度(startGrowthScheduler)已随该链路下线删除 —— 第三方数据服务
-    // 适配器从未接入，订阅注定失败，留着只是空转心跳。
     startReportScheduler()
 
     // 微信库变更 → 新消息提醒（节流 + 聚焦抑制）

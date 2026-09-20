@@ -356,6 +356,15 @@ export const DATA_MIGRATIONS: DataMigration[] = [
       for (const i of indexes) db.exec(`DROP INDEX IF EXISTS "${i}"`)
       // 配置：营销的四组键（生图通道与策略、门店启用开关、两条已下线链路的键）
       db.prepare("DELETE FROM app_config WHERE key LIKE 'growth.%'").run()
+      // 营销 AI 工作台的会话（scope='growth'）一并走：会话列表是「按 wxid 取全部、不按 scope
+      // 过滤」（chatRepo.listSessions），留着就会在客服工作台的会话列表里冒出一串
+      // 「点开即报错」的死会话。
+      // 消息显式删而不是指望 ON DELETE CASCADE：级联要 foreign_keys 打开才生效，而那是
+      // database.ts 设的，迁移自己不该依赖别处的 pragma（自检里就是裸库跑 migrate）。
+      db.prepare(
+        "DELETE FROM chat_message WHERE session_id IN (SELECT id FROM chat_session WHERE scope = 'growth')"
+      ).run()
+      db.prepare("DELETE FROM chat_session WHERE scope = 'growth'").run()
     }
   }
 ]

@@ -45,10 +45,12 @@ try {
   ok(resolveInitialPage('settings') === 'settings', '设置页也能被记住')
 
   console.log('页面键校验：')
-  ok(isValidPage('chat') === true && isValidPage('growth') === true, '合法键')
+  ok(isValidPage('chat') === true && isValidPage('export') === true, '合法键')
+  ok(isValidPage('growth') === false, '★ 营销页已下线，不再是合法页面键')
+  ok(resolveInitialPage('growth') === 'chat', '★ 老用户记住的 growth 回落「对话」（不白屏）')
   ok(isValidPage('dashboard') === false, 'dashboard 是别名不是页面键')
   ok(isValidPage('') === false && isValidPage(null) === false && isValidPage(123) === false, '空值/非字符串安全')
-  ok(Array.isArray(PAGE_IDS) && PAGE_IDS.length >= 8, '页面键清单非空', String(PAGE_IDS.length))
+  ok(Array.isArray(PAGE_IDS) && PAGE_IDS.length >= 7, '页面键清单非空', String(PAGE_IDS.length))
 
   console.log('首启向导该不该弹：')
   const done = firstRunState({ done: true, accountCount: 0, keyCount: 0 })

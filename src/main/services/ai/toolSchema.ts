@@ -4,9 +4,9 @@ import type { ToolParamDecl } from './chat/skills'
 /**
  * 工具参数声明（ToolParamDecl）→ zod schema。
  *
- * 为什么单独成文件：能力注册表的声明是**唯一真源**，而「给 AI SDK 的 zod 形态」在两个地方要用到
- * （工作台 tools.ts、营销域 growthTools.ts）。此前只写在工作台里，营销域只能自己再声明一遍 zod，
- * 于是同一能力两套参数；现在统一走这里。
+ * 为什么单独成文件：能力注册表的声明是**唯一真源**，而「给 AI SDK 的 zod 形态」要在多处用到
+ * （工作台 tools.ts、能力展开 expandMounted 等）。此前各自声明一遍 zod，于是同一能力两套参数；
+ * 现在统一走这里。
  */
 export function zodFromParams(
   params: Record<string, ToolParamDecl> | undefined

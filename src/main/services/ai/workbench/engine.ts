@@ -349,7 +349,7 @@ export async function sendWorkbenchMessage(
       onEvidenceRow: (row) => {
         if (evPool.length < 200) evPool.push(row)
       },
-      // 与营销工作台同一套：点「停止」时工具层也立刻收手，而不是等它自己跑完
+      // 点「停止」时工具层也立刻收手，而不是等它自己跑完（慢工具要把 signal 传进实现内部）
       signal
     })
 

@@ -6,13 +6,14 @@
  *   老库里那一列还在（常常还是 NOT NULL 无默认值），于是当前代码的 INSERT 不带它就必然撞
  *   NOT NULL constraint failed。用户侧的观感是「功能偶尔坏掉 / AI 在胡说」，
  *   而 AI 那边只会收到一句「工具执行失败:NOT NULL constraint failed: 表.列」——
- *   实测就是这句话被模型讲成了「后端任务没落库，请用户手工建产出块」（营销生图，任务 5）。
+ *   实测就是这句话被模型讲成了「后端任务没落库，请用户手工建产出块」（营销生图，任务 5；
+ *   该模块已于 2026-09 整体下线，这条是它留下的判例）。
  *
  * 用法：
  *   node scripts/db-shape-audit.mjs <cs.db 路径> [数据库密钥(64 位十六进制)]
  *   密钥：设置 → 偏好与数据 → 数据库密钥（也可用 cs.db 副本，副本不改动原库）
  *
- * 期望的形状直接取自 src/main/db/schema/（四组表 DDL + 补列清单），不另抄一份，
+ * 期望的形状直接取自 src/main/db/schema/（三组表 DDL + 补列清单），不另抄一份，
  * 所以它永远对着「当前代码」判断，而不是对着某个历史快照。
  */
 import Database from 'better-sqlite3-multiple-ciphers'
@@ -33,12 +34,11 @@ if (!dbPath) {
 }
 
 const work = mkdtempSync(join(tmpdir(), 'db-shape-audit-'))
-// 四组表 DDL 分散在 schema/{base,growth,ai,customer}.ts（schema.ts 只 import 不 re-export），
+// 三组表 DDL 分散在 schema/{base,ai,customer}.ts（schema.ts 只 import 不 re-export），
 // 连同补列清单一起打成 CJS 再读 —— 这样期望形状永远等于当前代码，而不是我抄的一份快照。
 buildSync({
   entryPoints: [
     join(root, 'src/main/db/schema/base.ts'),
-    join(root, 'src/main/db/schema/growth.ts'),
     join(root, 'src/main/db/schema/ai.ts'),
     join(root, 'src/main/db/schema/customer.ts'),
     join(root, 'src/main/db/schema/columns.ts')
@@ -52,7 +52,6 @@ buildSync({
 })
 const load = (n) => require(join(work, 'schema', n + '.cjs'))
 const baseSchema = load('base')
-const growthSchema = load('growth')
 const aiSchema = load('ai')
 const customerSchema = load('customer')
 const { COLUMN_MIGRATIONS } = load('columns')
@@ -76,7 +75,6 @@ function colsOf(ddl) {
 const expected = new Map()
 for (const ddl of [
   ...baseSchema.CORE_TABLES,
-  ...growthSchema.GROWTH_TABLES,
   ...aiSchema.AI_TABLES,
   ...customerSchema.CUSTOMER_TABLES
 ]) {

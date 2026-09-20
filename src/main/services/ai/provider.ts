@@ -63,7 +63,7 @@ export type WireMsg =
 export interface AiProvider {
   /**
    * 系统 + 用户消息，返回模型输出文本（signal 可中断：用户点停止时子调用也要立刻收手）。
-   * images = data URI 数组，作为多模态输入附在用户消息上（营销侧的「拆画面」必须真的能看到图）。
+   * images = data URI 数组，作为多模态输入附在用户消息上（「看懂这张图」的调用点必须真能拿到图）。
    */
   complete(
     system: string,
@@ -119,7 +119,7 @@ export function readProviderConfig(): ProviderConfig {
 }
 
 /**
- * 全局并发闸门。为什么要它：群问题提取、数字员工值班、AI 工作台、营销爆改可以同时打上去，
+ * 全局并发闸门。为什么要它：群问题提取、数字员工值班、AI 工作台可以同时打上去，
  * 以前没有任何并发控制 —— 撞上限流就是一批一起失败。4 是保守值：够用，且不会把上游打爆。
  */
 const aiLimiter = createLimiter(4)

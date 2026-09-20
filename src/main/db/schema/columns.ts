@@ -160,19 +160,7 @@ export const COLUMN_MIGRATIONS: ColumnMigration[] = [
     table: 'chat_session',
     column: 'scope',
     ddl: "TEXT NOT NULL DEFAULT ''",
-    note: '会话域：空=客服工作台，growth=营销 AI 工作台'
-  },
-  {
-    table: 'growth_content',
-    column: 'extra_json',
-    ddl: "TEXT NOT NULL DEFAULT '{}'",
-    note: '解析媒体源信息，如 remoteMedia'
-  },
-  {
-    table: 'growth_remix_output',
-    column: 'task_id',
-    ddl: 'INTEGER',
-    note: '候选/产出归属营销任务'
+    note: '会话域：空=客服工作台（营销 AI 工作台曾用 growth，该模块已下线，迁移 8 清掉了它的会话）'
   },
   {
     table: 'lark_sync_map',
@@ -203,12 +191,6 @@ export const COLUMN_MIGRATIONS: ColumnMigration[] = [
     column: 'pulled_at',
     ddl: 'INTEGER',
     note: '最近一次从 Base 拉取（应用同事改动）的时间'
-  },
-  {
-    table: 'growth_remix_output',
-    column: 'meta_json',
-    ddl: "TEXT NOT NULL DEFAULT '{}'",
-    note: '产出元信息'
   },
   {
     table: 'lark_media_map',

@@ -1,6 +1,6 @@
 # 私域运营助手 · wechat-cs-desktop
 
-本机运行的**私域运营助手**：直接读取你本机的微信数据，把「客户消息 → 问题提取 → 跟进 → 收尾」做成可追踪的闭环，并把 AI 用在回复建议、群问题提炼、复盘与营销内容上。
+本机运行的**私域运营助手**：直接读取你本机的微信数据，把「客户消息 → 问题提取 → 跟进 → 收尾」做成可追踪的闭环，并把 AI 用在回复建议、群问题提炼与复盘上。
 
 - **本地优先**：没有自建后端、没有遥测；聊天内容只在本机处理。只有你主动开启的能力才会把内容送出去 —— AI 提交流向你配置的大模型通道，数据上报流向你自己配置的 PostgreSQL。
 - **对外发送有闸门**：默认需要人工确认（可配审批策略），并带日限额、熔断与发送审计；发送结果会回查微信库做「闭环校验」。
@@ -39,7 +39,6 @@
 | **看板** | 私域运营指标：消息量/收发比/群私聊分布/24h 分布、**跟进队列**（有未读且最后一条是客户的会话，越久越靠前）、沉睡召回、发送质量（闭环校验通过率、失败原因 Top） |
 | **AI** | AI 工作台（对话式）：绑定工作的智能体、技能包、工具调用卡片、工作区读写；内置快捷问题（今日待跟进清单、群复盘等） |
 | **客户** | 客户档案：按会话聚合标签（群/个人/公众号、活跃度、待办）、备注与历史问题 |
-| **营销** | 营销增长模块：内容采集（抖音/小红书）、素材仓库、爆款分析、舆情监控（门店相关评论/提及）、AI 二创与合规检查、发布导出 |
 | **数据** | 会话导出（TXT / HTML / JSON，含附件引用）、业务报表、媒体归档 |
 | **设置** | 微信数据与密钥、AI 通道与智能体、发送策略、飞书（通知/机器人/云文档）、定时任务与数据上报、问题监控口径、日志、缓存与数据管理 |
 
@@ -200,7 +199,7 @@
 src/
 ├─ main/                        主进程（全部业务逻辑与本地数据）
 │  ├─ db/                       本地库（cs.db）：schema/迁移 + repos
-│  ├─ ipc/                      IPC handler（cs:key/wx/ai/send/issue/team/im/lark/report/growth/wb/…）
+│  ├─ ipc/                      IPC handler（cs:key/wx/ai/send/issue/team/im/lark/report/wb/…）
 │  └─ services/
 │     ├─ wechat/                微信库定位/解密/读取/监控/media
 │     ├─ feedback/              群问题闭环：analyzer(编排) · shared · ruleExtract · llmExtract · reconcile · duplicates · issueSimilarity
@@ -209,12 +208,11 @@ src/
 │     ├─ report/                定时任务·数据上报（→ PostgreSQL）
 │     ├─ lark/                  飞书（长连接/消息/联系人与云文档工具）
 │     ├─ im/                    外部 IM 渠道（飞书/微信 ClawBot 等）
-│     ├─ growth/                营销增长（采集/仓库/舆情/二创/发布/导出）
 │     ├─ export/  media/        导出、媒体与文件
 │     └─ logging.ts  paths.ts  统一日志、路径与缓存分区
 ├─ preload/                     contextBridge 桥（接口真源在 src/shared/api.ts，实现与声明双向校验）
 ├─ renderer/                    React 界面（pages / components / stores / lib）
-└─ shared/                      两端共享：types、growth、monitorMetrics、api(桥接口)
+└─ shared/                      两端共享：types、monitorMetrics、api(桥接口)
 ```
 
 **进程与数据流**：渲染端只通过 `window.api.cs.*` 调 IPC；主进程独占本地库与微信库访问；微信库变更由 WAL 监听触发事件广播（`cs:wx:dbChanged` / `cs:issue:changed` / `cs:issue:progress` 等），页面据此增量刷新。
@@ -311,7 +309,7 @@ npm run test:win         # 仅微信窗口识别 + 搜索结果行/会话标题�
 | --- | --- |
 | 应用本地库（问题/会话索引/配置/审计） | `%APPDATA%\wechat-cs-desktop\cs.db`（SQLite，WAL）。审计表（IM 审计 / 飞书发送 / 发送日志）按 `db.retentionDays` 保留，默认 90 天 |
 | 日志 | `%APPDATA%\wechat-cs-desktop\logs\app-YYYY-MM-DD.log`（默认保留 7 天，可配） |
-| 缓存分区 | 非系统盘优先：`<盘>:\wechat-cs-desktop\cache\{db,media,files,tmp,export,growth}`，可在设置里改 |
+| 缓存分区 | 非系统盘优先：`<盘>:\wechat-cs-desktop\cache\{db,media,files,tmp,export}`，可在设置里改 |
 | 解密后的微信明文库副本 | `<cache>\db`（源库路径 + 密钥相同则复用同名文件；按 `plainCacheMaxMB/Files` 自动收敛，可随时清理） |
 | 媒体解密产物 | `<cache>\media\<wxid>\`（图片/视频）与 `\voices\`（语音 WAV），经 `ct-media://` 协议只读暴露；按 `wechat.mediaCacheKeepDays`（默认 180 天）/ `MaxMB`（默认 8GB）自动回收 |
 | 上报媒体归档 | `<cache>\media\<wxid>\archive\`（数据上报的 `media_path` 指向这里；**不参与**缓存淘汰，只显示占用） |
@@ -388,8 +386,6 @@ KPI/趋势按全量统计，明细为控制传输量只回传最近 1000 条。�
 | [docs/report-tasks-design.md](docs/report-tasks-design.md) | 定时任务 · 数据上报（→ PostgreSQL） |
 | [docs/feishu-cloud-doc-design.md](docs/feishu-cloud-doc-design.md) | 飞书云文档读取能力 |
 | [docs/lark-cli-integration-assessment.md](docs/lark-cli-integration-assessment.md) | lark-cli 集成评估 |
-| [BUZZ_MONITORING_DESIGN.zh.md](BUZZ_MONITORING_DESIGN.zh.md) | 舆情监控机制 |
-| [MARKETING_AI_WORKBENCH_DESIGN.zh.md](MARKETING_AI_WORKBENCH_DESIGN.zh.md) · [PRIVATE_AI_WORKBENCH_PLAN.zh.md](PRIVATE_AI_WORKBENCH_PLAN.zh.md) | 营销 / 私域 AI 工作台方案 |
 | [docs/performance-audit.md](docs/performance-audit.md) | 性能与冗余代码审计（含已修项） |
 
 ---

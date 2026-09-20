@@ -32,8 +32,10 @@ const MODULE_LABEL: Record<string, string> = {
   duty: '数字员工',
   intent: '意图识别',
   buzz: '舆情分析',
-  'growth-ai': '营销 AI',
-  'growth-remix': '爆改'
+  // 营销模块 2026-09 已整体下线：这几个 domain 不会再产生新记录，但 ai_run 的历史行还在，
+  // 标签留着才不会把老记录显示成一串裸英文 domain。
+  'growth-ai': '营销 AI（已下线）',
+  'growth-remix': '爆改（已下线）'
 }
 
 /**

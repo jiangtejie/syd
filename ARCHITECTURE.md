@@ -6,7 +6,7 @@
 
 ## 1. 定位与技术栈
 
-Electron 桌面应用：读本机微信数据 → 本地库与工作台 → AI 辅助（建议 / 提炼 / 复盘 / 营销内容）→ 人工闸门后发送。
+Electron 桌面应用：读本机微信数据 → 本地库与工作台 → AI 辅助（建议 / 提炼 / 复盘）→ 人工闸门后发送。
 
 | 层 | 技术 | 说明 |
 | --- | --- | --- |
@@ -51,8 +51,8 @@ src/
 │  │  ├─ database.ts             cs.db 单例（WAL、busy_timeout、mmap）
 │  │  ├─ schema.ts               建表 + 增量列迁移（ensureColumn）+ 索引
 │  │  └─ repos/                  数据访问：config / keyStore / issueRepo / teamRepo / chatRepo /
-│  │                             imRepo / imFileRepo / imAuditRepo / growthRepo / reportRepo / sendLog …
-│  ├─ ipc/                       按域注册 handler（21 命名空间 / 149 通道，见 §12）
+│  │                             imRepo / imFileRepo / imAuditRepo / reportRepo / sendLog …
+│  ├─ ipc/                       按域注册 handler（18 命名空间 / 104 通道，见 §11）
 │  └─ services/
 │     ├─ wechat/                 解密/定位/读库/监控/注入/企微（见 §4）
 │     ├─ feedback/               群问题闭环引擎（见 §5）
@@ -75,7 +75,6 @@ src/
 │     ├─ report/                 定时任务 · 数据上报（chat_sync → PostgreSQL）
 │     ├─ lark/                   飞书：client/api/im/contact/notify/tools
 │     ├─ im/                     外部 IM 渠道（飞书长连接、微信 ClawBot）+ 渠道文件
-│     ├─ growth/                 营销增长：collector / warehouse / buzz / remix / publisher / ai
 │     ├─ media/                  图片 .dat 解密、表情、视频缓存、语音 SILK→WAV、密钥推导
 │     ├─ export/                 会话/业务导出
 │     ├─ logging.ts  paths.ts    统一日志、缓存分区与路径策略
@@ -83,11 +82,11 @@ src/
 ├─ preload/                      contextBridge（index.ts 实现 + 15 行 index.d.ts）
 ├─ renderer/src/
 │  ├─ App.tsx                    外壳：标题栏 + 左导航 + 页面区 + ToastHost/ConfirmHost/ErrorBoundary
-│  ├─ pages/                     对话(Workbench) / AI(WorkbenchChat) / 监控 / 看板 / 客户 / 营销 / 数据 / 设置
-│  ├─ components/                workbench(消息面板/群问题面板/建议面板/文件托盘) · monitor(抽屉/方案条/KPI) · settings · growth
+│  ├─ pages/                     对话(Workbench) / AI(WorkbenchChat) / 监控 / 看板 / 客户 / 数据 / 设置
+│  ├─ components/                workbench(消息面板/群问题面板/建议面板/文件托盘) · monitor(抽屉/方案条/KPI) · settings
 │  ├─ stores/                    workbench / workbenchChat / toast / confirmDialog
 │  └─ lib/                       customers / monitorMetrics(已迁 shared) / monitorChips / teamNames / ui / useCountUp
-└─ shared/                       types.ts（领域类型）· api.ts（桥接口真源）· monitorMetrics.ts（BI 纯函数）· growth.ts
+└─ shared/                       types.ts（领域类型）· api.ts（桥接口真源）· monitorMetrics.ts（BI 纯函数）
 ```
 
 ---
@@ -108,7 +107,7 @@ src/
 - **明文副本**：落 `<cache>/db/<name>_<hash>.db`（以「源库路径 + key」的 md5 命名复用；历史目录 `wx-plain` 启动自动并入），只读打开、用完即关；写入前后有 `prunePlainDbCache` 按 `wechat.plainCacheMaxMB=3072` / `plainCacheMaxFiles=20` 收敛（防「解密副本把磁盘吃满」）。
 
 缓存分区由 `paths.ts` 统一管理（**禁止硬编码子目录**）：
-`db/` 明文库副本 · `media/<wxid>/` 附件解码产物（ct-media 映射根）· `files/` 渠道接收文件 · `tmp/` 一次性临时 · `export/` 导出产物 · `growth/` 营销素材。
+`db/` 明文库副本 · `media/<wxid>/` 附件解码产物（ct-media 映射根）· `files/` 渠道接收文件 · `tmp/` 一次性临时 · `export/` 导出产物。
 
 库定位 `dbLocator.ts` 兼容 `<root>/db_storage`、`<root>/<wxid>/db_storage`、`<root>/<wxid>_xxx/db_storage`，递归扫描 `msg_*.db / message_*.db`，加权定位 `session.db / contact.db / head_image.db`。
 
@@ -170,7 +169,7 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
   并注意模块真实路径在版本子目录下（`...\Weixin\4.1.13.7\Weixin.dll`），不是 exe 同级。
 
 > 另一条历史结论仍然成立：**自己写一套「盲扫内存取 key」不可行** —— 页 1 校验对每个候选都要一次
-> `PBKDF2-SHA512(256000)`（实测 70ms/次），而派生 AES key 不在内存、原始密钥虽在但无可锚定结构（详见 §18）。
+> `PBKDF2-SHA512(256000)`（实测 70ms/次），而派生 AES key 不在内存、原始密钥虽在但无可锚定结构（详见 §17）。
 
 **图片密钥（另一套密钥）**：图片 .dat 的 V2 用 aes-128-ecb、V3 用整文件 XOR，与库密钥无关，历史上只能手填。`media/imageKeys.ts` 现在能从本机自动推导：扫 `*_t.dat` 缩略图模板（深度 ≤8、最多 64 个）反解 XOR 低字节（自校验 `y == x ^ 0xd9` + 多模板投票），再用 V2 模板密文做一次 AES 试探（解密后必须像图片）确认 AES key。入口 `cs:wx:deriveImageKeys`，设置页「自动推导图片密钥」一键回填；推导失败仍可手填。
 
@@ -267,9 +266,9 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 未配置或调用失败时，各功能按自己的降级策略处理（建议 → 空并对 UI 报错；群问题提取 → 规则兜底；工作台 → 报错提示）。
 
 **输出预算策略（`ai/outputBudget.ts`，纯函数 + 自检 `scripts/ai-budget-selftest.mjs`）**：
-思考型模型（DeepSeek Reasoner、Qwen 思考模式、GLM-Z、o 系列…）的**思考过程也算进 `maxOutputTokens`**。调用点原本各自写死一个数（工作台 2400、营销 3000、JSON 路径 600），思考一长就把预算吃光、一个字正文都不写，报出来还是「模型未返回内容(预算或通道问题)」——用户既不知道原因也不知道改什么。现在收敛成一条规则：
+思考型模型（DeepSeek Reasoner、Qwen 思考模式、GLM-Z、o 系列…）的**思考过程也算进 `maxOutputTokens`**。调用点原本各自写死一个数（工作台 2400、JSON 路径 600），思考一长就把预算吃光、一个字正文都不写，报出来还是「模型未返回内容(预算或通道问题)」——用户既不知道原因也不知道改什么。现在收敛成一条规则：
 - `planOutputBudget`：设置里的 `ai.maxOutputTokens`（>0）优先；否则用调用点默认值，**模型名看着像思考型就抬到 8192 下限**（避免必然白跑一次）；上一轮预算用完后按 **4 倍递增**，硬上限 32768。
-- **两个流式引擎（`workbench/engine.ts`、`growth/ai/growthEngine.ts`）在「没有正文 + 没有跑过工具」时自动放大预算整轮重试一次**，并在事件流里明说「思考过长已耗尽输出预算，放大到 N 重试…」。跑过工具就不重试 —— 重试会重复副作用与重复审批。
+- **流式引擎（`workbench/engine.ts`）在「没有正文 + 没有跑过工具」时自动放大预算整轮重试一次**，并在事件流里明说「思考过长已耗尽输出预算，放大到 N 重试…」。跑过工具就不重试 —— 重试会重复副作用与重复审批。
 - 仍然失败时给出**带真实数字**的诊断（本次输出 M tokens、其中思考 K tokens、预算上限 N）与下一步（去设置调高预算 / 换非思考模型），而不是一句「返回为空」。
 - 「思考吃光预算」与「通道/结构异常」必须分开：只有**有思考或接口明说 `finish_reason=length`** 才判定为预算问题（`looksBudgetExhausted`）；后者放大预算也没用。
 
@@ -461,50 +460,7 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 
 ---
 
-## 9. 营销增长模块（`growth/*`）
-
-入库（粘贴抖音/小红书链接或口令解析 + 本地导入）→ 仓库（去重/评分/标签）→ 拆解（`remix`：结构 + **视觉**拆解卡）→ AI 工作台（任务化爆改 / 生图策略 / 封面合成）→ 采用 → 导出发布包（`publisher/exporter`）；另有独立的舆情通道（`buzz`：门店相关评论/提及与诊断）。
-
-**第三方采集订阅已整体下线**（2026-09-19，按用户决定）：`collector/` 的 vendor 适配器注册表**从来没有过调用方**，`runCrawl` 必然失败、调度器只是空转心跳，界面却摆着「采集源」页让人配数据服务商。现在数据来源只有三条人工路径（粘贴链接入库 / 本地导入 / 媒体重下），`growth_subscription` / `growth_crawl_task` / `growth_remix_job` / `growth_publish_task` / `growth_publish_result` 五张无写入点的表不再新建（老库原样留着），`cs:growth:progress` 事件通道（只发过 crawl 一种 kind）与 `cs:growthai:configGet/configSet` 一并删除。
-
-**联网搜索也已下线（2026-09-19，待重新设计）**：`growth_search_web` / `growth_search_images` 两个工具、`ai/searchProvider.ts`（bocha/tavily/serper 三家适配）与设置里的「联网搜索」卡片全部删除，营销域工具从 14 个收敛到 12 个（`scripts/tool-registry-selftest.mjs` 同步）。原因是这条链路解决的是「查门店地址/电话/口碑」这种**零散公开信息**，而运营真正要的是「这个商家/这道菜到底什么样」——下次按「商家综合信息 + 菜品信息」重新设计，先把位置空出来。当前缺事实只能追问用户或用占位符（`buildGrowthSystem` 的工作方式第 4 条已改写）。
-
-**生图策略层（`growth/ai/imageStrategy.ts`，纯函数 + 自检 `scripts/growth-image-strategy-selftest.mjs`）**：
-`imageProvider` 只是「通道」（把 prompt 发给 `/images/generations`），策略必须单独一层，否则同一家店两次生图可以毫无共同点。策略输入（平台 / 角色 / 模板 / 门店档案 / 品牌资料包 / 素材线索）→ 输出 prompt、negative、size、count 与给人看的 `notes`：
-
-- **平台比例**：小红书与抖音给竖版 1024x1536、朋友圈与客户群给方版 1024x1024。此前只有一个全局尺寸且默认 1024x1024，竖版封面一律被生成成方图（设置里显式填了尺寸仍以填的为准，留空 = 按平台）。
-- **画面模板**：内置 菜品特写/门店环境/封面氛围/人物场景 四个模板（`growth.image.templates` 可覆盖同 id 的字段或追加新模板）；不指定时按 prompt 关键词与角色自动选。
-- **事实与调性**：门店招牌菜/套餐/禁用词、品牌资料包（定位/语气/主视觉色调）都拼进 prompt，禁用词进负向词。品牌资料包（`growth_brand_profile`）此前只被 UI 读写、AI 侧从未读过——现在同时进入 `buildGrowthSystem`、`growth_get_store` 与生图策略。
-- **负向词**：接口不保证都支持 `negative_prompt`，统一以「【避免出现】…」拼进 prompt 文本（`composeFinalPrompt`），并固定带上「不要文字/水印/logo/可辨认人脸」。
-- **张数与成本**：单次张数受设置里「每次张数」约束、硬上限 4；另有**每月张数上限**（`growth.image.monthlyLimit`，按自然月统计 `growth_asset.source_mark='gen:image'` 的行数，0 = 不限）——额度用尽时策略层在**发起请求前**就把 `blocked` 置位，调用方不得生成，并给出「到哪里调额度」的原话。张数被单次上限或月度额度压过时，都会在策略说明里如实写出（不静默少给、不静默失败）。
-
-**配置入口在营销页**（`营销 → 设置`）：门店与品牌档案 / AI 生图同屏 —— 它们共同决定「这条内容是怎么生成的」，此前生图在 设置→AI 助手、门店品牌在营销页，排查「生成的图和门店对不上」要跨两个页面。设置页的「AI 助手」只留一行指路（可点击跳转，`stores/workbench.ts` 的 `growthTab` + `setPage`，与「监控」的 `monitorTab` 同口径）。
-
-配置读写只有一条路径：`cs:config:getAll/set`（app_config 真源）。此前 `cs:growthai:configGet/configSet` + `GrowthAiConfigField` 白名单是同一配置的第二条写路径，渲染端从无调用者（配置面板一直走 `cs:growth`），已删除。
-
-**封面模板引擎（`growth/cover/`）**：小红书图文的封面价值大半在「实拍图 + 大字标题」的排版上，而此前只能把裸图当封面（刚爆改出来的标题落不到图上）。实现路子是**不引任何图像库**：
-- `cover/templates.ts`（纯函数 + 自检 `scripts/growth-cover-selftest.mjs`）产出一份**自包含 HTML**（底图走 `data:` URI、无外链）；
-- `cover/renderer.ts` 用 **Electron 离屏窗口**（`offscreen: true` + `capturePage`）把 HTML 截成 PNG —— 排版直接用 CSS、中文字体用系统字体，`sharp`/`canvas` 那类原生依赖一律不需要跟着 Electron 重编译。
-- 字号一律按**画布宽度的百分比换算成 px**，绝不用 `vw`：`vw` 跟视口走，离屏窗口尺寸一旦不是正好等于画布（边框/缩放/预览环境），整张封面的字就会放大到溢出画面（实测 480px 画布 + 1256px 视口时一行标题渲染成 1013px 高）。折行按**每个模板自己的标题框宽度**算（`titleWidthPct`），否则行会超出框宽被 CSS 二次折行。
-- 封面合成是**本地渲染**，不调生图接口，因此不计入月度张数（资产 `source_mark='cover:composite'`）。
-
-**图生图（参考图）**：`growth_gen_image` 支持 `referenceAssetId`（结构模板）+ `contentAssetId`（本店实拍），先试 `/images/edits`（multipart，多张 = **重复 `image` 字段**）生成「同构但原创」的画面；通道不支持时**回退纯文本并在回执里说明**（`isEditUnsupported` 只把 404/405/501 与"端点不支持"判为不支持，限流/参数错误照实抛出，避免用户误以为"参考图不生效"）。素材本地图的 assetId 会随 `growth_read_material` 一起给出，否则模型只能瞎猜。
-
-- **两种模式**：给了参考图就是 `mode=edit`，prompt 三段固定 —— 【保持】（构图/机位/光线/留白，两张图时指向「图1」）、【替换为本店真实信息】、【禁止】（不带出图1 的文字/Logo/水印，不照抄摆盘人物）。生成式说"画什么"，改写式说"什么不变、什么换成我家的"，两者 prompt 结构不能混用（自检钉死）。
-- **多图的分工必须写进 prompt**：图1 = 结构模板（只借构图），图2 = 本店实拍（内容以它为准）；不写清模型会把两张混着用。
-- **「产物到底改没改」检测**（`ai/imageSimilarity.ts` + 自检）：图生图有一种隐蔽失败 —— 接口 200、返回的图却与参考图几乎一样（模型没接受改写，或通道把输入原样回传）。产物与结构参考图各取 16×16 灰度签名比 MAD，疑似就写进工具回执（措辞是「疑似」；阈值 4/255，两头都有自检：几乎一致要抓到、正常改写不能误报）。
-- **能力探测**（`ai/imageProbe.ts`）：中转站的可用能力取决于密钥所属分组，只能实测。营销 → 设置里一键探测：默认档**不产生生图调用**（`/v1/models` + 一次故意缺参数的 `/images/edits` —— 400 = 分组开放、404 = 没开该接口），勾选后才真发 generations / edits / 多图 / mask 各一次，并如实报出计费次数。
-- **视觉拆解驱动「保持」**（`remix/prompts.ts` + 自检 `scripts/growth-analyze-prompt-selftest.mjs`）：拆解卡除文字维度外还产出 `visual`（构图/机位/光线/色调/版式留白/主体占比/画面元素/图上文字），落 `growth_decomp.visual_json` —— 这一列此前**恒为 null**（拆解只写给文字看）。图生图时策略层的 `readVisualFacts` 把它变成逐项「保持」清单（`【保持】参考图的构图：居中对称；机位与视角：90 度俯拍；…`），并把参考图上的原文字点名禁带出；没有视觉拆解（旧卡/没拆过）就退回通用口径，并在 `notes` 与工具回执里如实说明（`visualLocked` 标记，不谎报"已锁定"）。拆解卡版本 `ANALYZE_VER` 升级后，建任务时会自动重拆一次（老卡不会自己变新）；素材详情里也把拆解卡（结构 + 视觉）显示出来，此前界面上只有一枚「已拆解」徽标。
-
-**闭环的出口长在工作台里**：产出一旦「采用」，用户必须能**直接送出去** —— 产出面板头部两个动作：导出发布包（`exportPackage`，只带本任务已采用的产出 id）与回素材仓库（切 `growthTab`）。此前导出只在素材仓库详情里有入口，用户得自己记住「回仓库找这条素材」，闭环在最后一跳断掉。看板的营销面板同理加了「去营销板块」直达：看板只读汇总，看到数字想动手就得能一步跳过去。
-
-**发布登记与效果回填已整体下线**（2026-09-19，按用户决定）：`growth_record_publish` 工具、`cs:growth:recordPublish`、素材详情与工作台产出面板里的 `PublishRecordForm`、`publisher/publishMetrics.ts` 与其自检一并删除，营销域工具 12 → 11。判断依据：这一步是**纯手工录数字**（渠道/点赞/关注/线索/金额），运营不会真的去填，而它撑起来的是看板上的线索与 ROI —— 与其摆一个没人填的表单，不如把位置空出来。随之收敛的还有：素材分回到「原始互动分」这一层（不再叠加回填的线索/金额），看板那张卡从「营销内容效果」改成「营销素材」（素材/已拆解/爆改产出 + 一步跳过去），`growth_metric_snapshot` 不再建表也不再读写（老库的历史行原样留着，只是没有界面消费它）。
-
-配套的两处收敛：**候选图按张采用**（`resolveCandidate` 的 `pick` 动作，一次生图 N 张落在同一产出块里，点「用这张」只保留选中的那张，此前是整块一起采用）与**换图按 role 真替换**（`removeOutputAssetsByRole`，此前 `growth_replace_image` 只 append，换三次就攒出三张封面）。
-
----
-
-## 10. 媒体与文件
+## 9. 媒体与文件
 
 - **图片**：`mediaService` + `datDecrypt` —— 定位 `msg/attach` 下 `<md5>.dat`；V1/V2（15B 头 + AES-128-ECB + XOR）、V3（整文件 XOR）；解密后处理 wxgf（HEVC 容器）：优先内嵌 JPEG/PNG，纯 HEVC 交外部 ffmpeg 转首帧；结果写 `media/<wxid>/`，经自定义 `ct-media://` 协议暴露（含路径与文件名强校验）。
 - **wxgf（HEVC）多图分段（`media/datDecrypt.ts` + 自检 `scripts/wxgf-nal-selftest.mjs`）**：
@@ -569,13 +525,13 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 
 ---
 
-## 11. 本地数据模型（cs.db）
+## 10. 本地数据模型（cs.db）
 
 只存「索引、状态、配置、审计」，消息本体在微信库。
 
 schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 
-1. **幂等形状 DDL**（`schema/base.ts` + `schema/growth.ts`）：每次启动对齐表与索引，新装库由此建成；
+1. **幂等形状 DDL**（`schema/base.ts`）：每次启动对齐表与索引，新装库由此建成；
 2. **幂等补列**（`schema/columns.ts`）：`CREATE TABLE IF NOT EXISTS` 不会给既有表加列，缺列则 `ALTER`；
 3. **一次性数据迁移**（`schema/migrations.ts`）：改形状 / 搬数据 / 清旧表，按 `PRAGMA user_version` 门控只跑一次。
    编号从 3 起（历史版本把 user_version 写成 2 却从未读过，老库停在 2，新迁移必须大于它）。
@@ -583,7 +539,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 
 | 表 | 状态 | 用途 |
 | --- | --- | --- |
-| `app_config` | 在用 | 全局 KV 配置（见 §13）。**只放配置，不放状态**：分析水位/节流戳曾以 `issue.wm:*` 之类的 JSON 串塞在这里，已迁至下面两张状态表 |
+| `app_config` | 在用 | 全局 KV 配置（见 §12）。**只放配置，不放状态**：分析水位/节流戳曾以 `issue.wm:*` 之类的 JSON 串塞在这里，已迁至下面两张状态表 |
 | `issue_group_state` | 在用 | 每账号每群一行：增量水位（msg_time + sort_seq）+ 自动分析节流戳 + 覆盖度 |
 | `reply_script` | 在用 | 话术库（数字员工的口径）：意图 + 触发模式（关键词/正则）+ 回复模板 + 风险等级 A/B/C |
 | `group_autoreply` | 在用 | 群级自动回复开关与模式（shadow/live）；未建行 = 继承全局默认 |
@@ -599,7 +555,6 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | `im_channel_account` / `im_chat_map` / `im_audit` / `im_file_record` | 在用 | 外部 IM 渠道、会话映射、审计、接收文件索引 |
 | `feishu_send_log` | 在用 | 飞书通知审计（目标/内容/结果/幂等） |
 | `report_job` / `report_run` / `report_cursor` | 在用 | 定时上报任务、运行历史、增量游标 |
-| `growth_*` | 在用 | 营销：门店/品牌档案、内容与素材、任务、舆情评论与提及、二创与产出 |
 | `customer` / `session` / `tier_rule` / `knowledge_item` / `reply_decision` | 预留（**不再建表**） | 客户库、门控/转人工、条件规则、知识库、决策状态机。DDL 留在 `schema/reserved.ts`，接入时再搬进 `base.ts` —— 此前每次新建库都建出这 5 张空表，导致「库里有的表 ≠ 代码在用的表」 |
 | `phrase_book` / `skill_package` / `agent_memory` / `ai_custom_tool` / `ai_mcp_server` | 已下线 | 老库残留，由数据迁移一次性删除（`schema/reserved.ts` 的 `LEGACY_TABLES`） |
 
@@ -609,9 +564,9 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 
 ---
 
-## 12. IPC 一览
+## 11. IPC 一览
 
-渲染端只经 `window.api.cs.<域>.<方法>` 调用；**21 个命名空间 / 149 个通道**，按域注册在 `src/main/ipc/*.ts`：
+渲染端只经 `window.api.cs.<域>.<方法>` 调用；**18 个命名空间 / 104 个通道**，按域注册在 `src/main/ipc/*.ts`：
 
 | 域 | 代表通道 | 说明 |
 | --- | --- | --- |
@@ -629,7 +584,6 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | `im` | `list/save/remove/toggle/clawQrPoll` | 外部 IM 渠道 |
 | `feishu` `lark` | `notify/audit/contact/status/test` | 飞书通知与云文档 |
 | `report` | `list/save/remove/setEnabled/runNow/cancel/history/testConn` | 定时上报 |
-| `growth` `growthai` `growthbuzz` | 素材仓库/二创/舆情/任务 | 营销增长 |
 | `export` | `chat/business/openFolder/writeFile` | 导出 |
 | `config` `app` `dialog` `logs` | 配置 KV、应用信息、目录选择、日志 | 通用 |
 
@@ -637,7 +591,7 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 
 ---
 
-## 13. app_config 配置键
+## 12. app_config 配置键
 
 | 分组 | 键 |
 | --- | --- |
@@ -646,7 +600,6 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | 群问题 | `issue.autoScan.enabled`、`issue.escalate.enabled`、`issue.escalateUrgentHours`、`issue.escalateUnassignedHours`、`issue.escalateAssignedHours`、`issue.autoMergeDuplicates`、`monitor.followUpHours`、`monitor.backlogHours`、`monitor.autoCloseHours`、`monitor.alertSound` |
 | 飞书 | `lark.appId`、`lark.appSecret`、`lark.defaultUrl`、`feishu.notify.enabled/targets/events/dailyLimit` |
 | 上报 | `report.*`（任务本体存 `report_job`） |
-| 营销 | `growth.image.*`（在用）；`growth.enabled/provider/providerApiKey`、`growth.search.*` 是两条已下线链路留下的键（老库可能仍有明文，仍在 `SECRET_CONFIG_KEYS` 名单里） |
 | 通用 | `cache.path`、`logs.keepDays`、`logs.ringMax`、`notify.enabled`、`media.ffmpegPath`、`imFiles.autoClean/keepDays/maxBytes`、`wb.defaultWorkspace` |
 | 密钥/媒体 | `img:{wxid}:xorKey`、`img:{wxid}:aesKey`、`key:{wxid}:error` |
 | 解密/缓存 | `wechat.decrypt.verifyPages`（默认 true：逐页 HMAC 校验）、`wechat.plainCacheMaxMB`（3072）、`wechat.plainCacheMaxFiles`（20）、`wechat.voiceCacheMaxMB`（256）、`wechat.voiceCacheMaxFiles`（500） |
@@ -655,13 +608,13 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 
 ---
 
-## 14. 桌面体验
+## 13. 桌面体验
 
 单实例锁（二次启动聚焦已有窗口）· 自定义标题栏（`titleBarStyle: hidden` + 自绘 36px 拖拽区）· 关闭最小化到托盘 · 未聚焦时桌面通知 + 任务栏闪烁（节流）· 窗口背景色与渲染端一致防白闪 · `ct-media://` 统一 dev/生产子资源加载 · 渲染端错误边界（崩了给兜底页而不是白屏）。
 
 ---
 
-## 15. 质量与验证
+## 14. 质量与验证
 
 ```bash
 npm run typecheck     # tsc --noEmit（主进程 + 渲染端）
@@ -683,14 +636,14 @@ npm run build         # typecheck + electron-vite 三端构建
 ```
 
 - **纯函数优先**：判据、归属、指标聚合都做成无 IO 的纯函数（`issueSimilarity` / `replyAttribution` / `shared/monitorMetrics`），既能两端复用，也能用真实样本做回归断言。
-- **schema 三层分离**（见 §11）：幂等形状 DDL / 幂等补列 / 按 `user_version` 门控的一次性迁移，各自包事务 —— 事故教训是老库 `user_version` 早被写成 2 却不读版本号，新迁移差点被整段跳过（第一次在真实库副本上演练才发现）。
+- **schema 三层分离**（见 §10）：幂等形状 DDL / 幂等补列 / 按 `user_version` 门控的一次性迁移，各自包事务 —— 事故教训是老库 `user_version` 早被写成 2 却不读版本号，新迁移差点被整段跳过（第一次在真实库副本上演练才发现）。
 - **状态进状态表，配置进 app_config**：水位、节流戳这类会随群增长的运行态不放 KV（`app_config` 里塞状态会带来「不可查询 + 用空值当删除 + 群删了键还在」三重问题）。
 - **阈值留证据**：判据阈值、窗口、上限写成模块级常量并注明标定依据；调参先看自检与线上样本。
 - **事故驱动的加固**（都已沉淀为代码约束）：桥接口唯一真源（防类型漂移）、渲染端降级 + 版本提示（防主进程/渲染错位）、确认框「单回调」契约（`ConfirmDialog` 只回传一次用户选择，宿主 `onResolve` 负责 close —— 防「确认」被先到的 `onClose` 结算成「取消」，那会让所有确认类按钮点了没反应；合并重复的页内确认条是同一事故的兜底）、`skipEnrich` + 批量 enrich（防逐页开库）。
 
 ---
 
-## 16. 数字员工（值班自动应答）
+## 15. 数字员工（值班自动应答）
 
 定位：这套东西**不只是监看台**，还要作为「数字员工」部署在闲置电脑上替人值班。
 当前阶段 = **一期影子模式**：判定照跑、结果只记录不发送，用来校准话术与风险分级。
@@ -715,7 +668,7 @@ npm run build         # typecheck + electron-vite 三端构建
 非文本转人工 41 条、纯应答或通知跳过 37 条、需 LLM 兜底 147 条 —— 兜底占比偏高说明话术还没覆盖「系统下单异常」
 这类真实高频场景（已补模板），也说明图片/语音理解是二期必须补的能力。
 
-## 17. 飞书协作面（议题同步）
+## 16. 飞书协作面（议题同步）
 
 定位：把单机看板变成「同事也能看、也能处理」的协作面。选择飞书多维表格而不是自建 Web，
 理由是可验证性优先 —— 先用最低成本验证「同事到底会不会用」，再决定要不要上控制面/数据面架构。
@@ -743,14 +696,13 @@ npm run build         # typecheck + electron-vite 三端构建
 
 **未做**：卡片交互（采纳/驳回/审批）、飞书侧改动「人工反馈」回写本地。
 
-## 18. 待完善与已知边界
+## 17. 待完善与已知边界
 
 - **预留表未接入**：`customer`（客户档案，当前客户页由会话+问题派生）、`session`（门控/转人工）、`tier_rule`、`knowledge_item`、`reply_decision` —— DDL 在 `schema/reserved.ts`，**不再建表**，接入功能时搬回 `base.ts`。
 - **密钥存储两种策略**：微信 DB 密钥走 `key_store` + safeStorage，图片解密密钥（`img:<wxid>:aesKey/xorKey`）仍是 `app_config` 明文，敏感度不同但应统一。
 - **数字员工只到影子模式**：发送通道（live）未开；图片/语音不理解；单聊不管；话术匹配是关键词/正则，没有语义召回。
 - **数字员工的前置条件**：「我方同事」名单不全时会去回同事的话 —— 上线前必须把名单标全（群问题面板的「同事标记」可批量补）。
-- **growth 域无外键/级联**：父子表（素材/拆解/产出/发布结果）目前靠应用层保证，删除路径需自行清理。
-- **约束偏松**：核心表 `NOT NULL` 覆盖率低（靠代码纪律保证），布尔/枚举列无 `CHECK`；`AUTOINCREMENT` 用法不统一（growth 域与审计表用，核心表不用）。
+- **约束偏松**：核心表 `NOT NULL` 覆盖率低（靠代码纪律保证），布尔/枚举列无 `CHECK`；`AUTOINCREMENT` 用法不统一（审计表用，核心表不用）。
 - **密钥自动探测**：`registry` 来源尚未实现，目前靠手动导入（图片密钥可从本机模板推导，见 §4.2）。
 - **语音转写走云侧**：需要腾讯云凭据（`SecretId/SecretKey`）与开通「语音识别」服务；未配置时语音只播放不转写。
 - **64 位 `svr_id` 的精度坑（已修）**：`VoiceInfo.svr_id` 是 19 位 INTEGER，经 better-sqlite3 读进 JS 会按 double 舍入
