@@ -1,11 +1,20 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { extname, join } from 'node:path'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
+import { dirname, extname, join } from 'node:path'
 import { getMediaCacheDir } from '../paths'
 import { getConfig } from '../../db/repos/config'
 import * as keyRepo from '../../db/repos/keyStore'
 import { createLogger } from '../logging'
 import { openSecret } from '../secrets'
-import { pickFfmpegPath } from './ffmpegPath'
+import { describeFfmpeg, pickFfmpegPath, type FfmpegCandidates } from './ffmpegPath'
+import type { FfmpegStatus } from '../../../shared/ffmpeg'
 import { app } from 'electron'
 import {
   decryptDatFile,
@@ -159,16 +168,12 @@ export function bundledFfmpegPath(): string {
     : join(app.getAppPath(), 'resources', 'bin', FFMPEG_BIN)
 }
 
-/**
- * 解析外部 ffmpeg：app_config(media.ffmpegPath) > 环境变量 WECHAT_CS_FFMPEG > **随包** > PATH。
- * 找不到可用二进制时返回 'ffmpeg'（交给 spawn 报 ENOENT 自然失败）。
- * 判定逻辑在 media/ffmpegPath.ts（纯函数，有自检）。
- */
-export function resolveFfmpeg(): string {
+/** 收集四个候选（只做存在性探测；体积/版本这类只有设置页才需要的 IO 不在这里做） */
+function ffmpegCandidates(): FfmpegCandidates {
   const configured = getConfig('media.ffmpegPath')?.trim() ?? ''
   const envPath = process.env.WECHAT_CS_FFMPEG?.trim() ?? ''
   const bundled = bundledFfmpegPath()
-  return pickFfmpegPath({
+  return {
     configured,
     // 显式配置即使失效也如实尝试（便于用户发现填错），所以这里的存在性只用于日志语义
     configuredExists: !!configured && existsSync(configured),
@@ -176,7 +181,63 @@ export function resolveFfmpeg(): string {
     envExists: !!envPath && existsSync(envPath),
     bundled,
     bundledExists: existsSync(bundled)
-  })
+  }
+}
+
+/**
+ * 解析外部 ffmpeg：app_config(media.ffmpegPath) > 环境变量 WECHAT_CS_FFMPEG > **随包** > PATH。
+ * 找不到可用二进制时返回 'ffmpeg'（交给 spawn 报 ENOENT 自然失败）。
+ * 判定逻辑在 media/ffmpegPath.ts（纯函数，有自检）。
+ */
+export function resolveFfmpeg(): string {
+  return pickFfmpegPath(ffmpegCandidates())
+}
+
+/** 随包 ffmpeg 的版本：从 prepare-ffmpeg.mjs 生成的 NOTICE.md 里读，读不到就当不知道 */
+function bundledFfmpegVersion(): string | null {
+  try {
+    const txt = readFileSync(join(dirname(bundledFfmpegPath()), 'NOTICE.md'), 'utf8')
+    const row = txt.match(/^\|\s*版本\s*\|\s*(.+?)\s*\|\s*$/m)
+    if (!row) return null
+    // "ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) …" → 只留版本号
+    const v = row[1].match(/ffmpeg version (\S+)/)
+    return v ? v[1] : row[1].slice(0, 60)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * ffmpeg 的解析现状（设置页用）。
+ *
+ * 与 resolveFfmpeg 分开：那个在每次图片解密的热路径上，只该做最便宜的判定；
+ * 这里会读文件体积与 NOTICE.md，只在打开设置页 / 保存覆盖路径后才调。
+ */
+export function ffmpegStatus(): FfmpegStatus {
+  const c = ffmpegCandidates()
+  const pick = describeFfmpeg(c)
+  let sizeMb: number | null = null
+  if (c.bundledExists) {
+    try {
+      sizeMb = Math.round((statSync(c.bundled).size / 1024 / 1024) * 10) / 10
+    } catch {
+      sizeMb = null
+    }
+  }
+  return {
+    path: pick.path,
+    source: pick.source,
+    bundled: {
+      path: c.bundled,
+      exists: c.bundledExists,
+      sizeMb,
+      version: c.bundledExists ? bundledFfmpegVersion() : null
+    },
+    configured: c.configured,
+    configuredExists: c.configuredExists,
+    envPath: c.envPath,
+    envExists: c.envExists
+  }
 }
 
 /** 定位 attach 根目录：<wxid>/msg/attach 或 <dbPath>/msg/attach */

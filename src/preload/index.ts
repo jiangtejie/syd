@@ -8,6 +8,7 @@ import type {
   WarmupReport
 } from '../shared/api'
 import type { ImageDegradedReason, ImageKind, ImageTier } from '../shared/imageTier'
+import type { FfmpegStatus } from '../shared/ffmpeg'
 import type { AiRunSummaryView } from '../shared/api'
 import type { CustomerStored } from '../shared/customerProfile'
 import type {
@@ -292,6 +293,9 @@ const api: PreloadApi = {
         degradedReason?: ImageDegradedReason
         error?: string
       }> => ipcRenderer.invoke('cs:media:testImageDecrypt', wxid, dbPath),
+      // ffmpeg 解析现状：设置页据此说清「随包已就绪，你不用填」还是「正在回退」
+      ffmpegStatus: (): Promise<{ ok: boolean; status?: FfmpegStatus; error?: string }> =>
+        ipcRenderer.invoke('cs:media:ffmpegStatus'),
       resolveEmoji: (
         wxid: string,
         input: { md5?: string; productId?: string; cdnUrl?: string }

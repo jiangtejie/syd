@@ -2,6 +2,7 @@ import type { ImageDegradedReason, ImageKind, ImageTier } from './imageTier'
 import type { MonitorData } from './monitorMetrics'
 import type { DeriveImageKeysResult } from './types'
 import type { CustomerStored } from './customerProfile'
+import type { FfmpegStatus } from './ffmpeg'
 import type {
   LarkBaseStatus,
   LarkBaseVerify,
@@ -394,6 +395,8 @@ export interface CsApi {
       degradedReason?: ImageDegradedReason
       error?: string
     }>
+    /** ffmpeg 解析现状（随包 / 配置 / 环境变量 / PATH 各自是否命中） */
+    ffmpegStatus: () => Promise<{ ok: boolean; status?: FfmpegStatus; error?: string }>
     resolveEmoji: (
       wxid: string,
       input: { md5?: string; productId?: string; cdnUrl?: string }

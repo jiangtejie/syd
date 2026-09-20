@@ -11,6 +11,8 @@
  * - 全都取不到才交给 spawn 报 ENOENT。
  */
 
+import type { FfmpegSource } from '../../../shared/ffmpeg'
+
 export interface FfmpegCandidates {
   /** 用户在设置里填的路径（app_config: media.ffmpegPath） */
   configured: string
@@ -26,12 +28,25 @@ export interface FfmpegCandidates {
 /** PATH 上的兜底名（交给 spawn 自己解析） */
 export const FFMPEG_FALLBACK = 'ffmpeg'
 
-export function pickFfmpegPath(c: FfmpegCandidates): string {
+export interface FfmpegPick {
+  /** 实际要执行的路径 */
+  path: string
+  /** 这一条哪来的（设置页据此决定说「你不用管」还是「请你动手」） */
+  source: FfmpegSource
+}
+
+/** 判定同上，但连**来源**一起给出 —— 设置页的状态行靠它，不再自己猜一遍 */
+export function describeFfmpeg(c: FfmpegCandidates): FfmpegPick {
   const configured = (c.configured ?? '').trim()
-  if (configured) return configured
+  if (configured) return { path: configured, source: 'configured' }
   const envPath = (c.envPath ?? '').trim()
-  if (envPath && c.envExists) return envPath
+  if (envPath && c.envExists) return { path: envPath, source: 'env' }
   const bundled = (c.bundled ?? '').trim()
-  if (bundled && c.bundledExists) return bundled
-  return FFMPEG_FALLBACK
+  if (bundled && c.bundledExists) return { path: bundled, source: 'bundled' }
+  return { path: FFMPEG_FALLBACK, source: 'path' }
+}
+
+/** 只要路径（解密热路径用它，少算一点） */
+export function pickFfmpegPath(c: FfmpegCandidates): string {
+  return describeFfmpeg(c).path
 }

@@ -31,7 +31,16 @@ try {
     entryPoints: [join(root, 'src/main/services/media/ffmpegPath.ts')],
     bundle: true, platform: 'node', format: 'cjs', outfile: bundle
   })
-  const { pickFfmpegPath, FFMPEG_FALLBACK } = require(bundle)
+  const { pickFfmpegPath, describeFfmpeg, FFMPEG_FALLBACK } = require(bundle)
+
+  // 设置页的状态文案必须与判定**同源**（判定说在用随包、文案却说没找到，是最糟的界面），
+  // 所以把 shared/ffmpeg.ts 一起打进来测。
+  const sharedBundle = join(work, 'ffmpegShared.cjs')
+  buildSync({
+    entryPoints: [join(root, 'src/shared/ffmpeg.ts')],
+    bundle: true, platform: 'node', format: 'cjs', outfile: sharedBundle
+  })
+  const { ffmpegSummary } = require(sharedBundle)
 
   const input = (over) =>
     Object.assign(
@@ -88,6 +97,59 @@ try {
     '随包路径两侧空白被去掉'
   )
   ok(pickFfmpegPath({}) === FFMPEG_FALLBACK, '入参缺字段不炸')
+
+  console.log('来源判定（设置页据此说「你不用填」还是「请你动手」）：')
+  ok(
+    describeFfmpeg(input({ configured: 'C:/my/ffmpeg.exe' })).source === 'configured',
+    '显式配置 → configured'
+  )
+  ok(
+    describeFfmpeg(input({ envPath: 'C:/env/ffmpeg.exe', envExists: true })).source === 'env',
+    '环境变量命中 → env'
+  )
+  ok(
+    describeFfmpeg(input({ bundled: 'C:/app/bin/ffmpeg.exe', bundledExists: true })).source === 'bundled',
+    '★ 随包命中 → bundled（正常安装的用户就是这一档，不用填任何东西）'
+  )
+  ok(describeFfmpeg(input()).source === 'path', '都没有 → path（回退系统 PATH）')
+  ok(
+    describeFfmpeg(
+      input({ envPath: 'C:/env/missing.exe', envExists: false, bundled: 'C:/b/ffmpeg.exe', bundledExists: true })
+    ).source === 'bundled',
+    '★ 环境变量指向不存在的文件时，来源如实报 bundled 而不是 env'
+  )
+
+  console.log('设置页文案（与判定同源，不许自相矛盾）：')
+  const st = (over) =>
+    Object.assign(
+      {
+        path: 'C:/app/bin/ffmpeg.exe',
+        source: 'bundled',
+        bundled: { path: 'C:/app/bin/ffmpeg.exe', exists: true, sizeMb: 211.9, version: '9.0.1' },
+        configured: '',
+        configuredExists: false,
+        envPath: '',
+        envExists: false
+      },
+      over
+    )
+  const bundledText = ffmpegSummary(st({})).text
+  ok(ffmpegSummary(st({})).tone === 'ok', '随包就绪 → ok（不打扰用户）')
+  ok(/无需配置/.test(bundledText), '★ 随包就绪的文案明说「无需配置」', bundledText)
+  ok(bundledText.includes('9.0.1'), '带上版本号', bundledText)
+  ok(bundledText.includes('211.9 MB'), '带上体积')
+  ok(
+    ffmpegSummary(st({ source: 'configured', configured: 'C:/x.exe', configuredExists: true })).tone === 'info',
+    '自定义路径存在 → info（在用，但不催人动手）'
+  )
+  ok(
+    ffmpegSummary(st({ source: 'configured', configured: 'C:/typo.exe', configuredExists: false })).tone === 'warn',
+    '★ 自定义路径不存在 → warn（这条会真的解不出图，必须提示）'
+  )
+  ok(ffmpegSummary(st({ source: 'env' })).tone === 'info', '环境变量命中 → info')
+  ok(ffmpegSummary(st({ source: 'path' })).tone === 'warn', '★ 回退 PATH → warn（不保证存在）')
+  ok(ffmpegSummary(null).tone === 'info', '还没读到状态时给「正在读取」而不是空白')
+  ok(ffmpegSummary(undefined).text.length > 0, 'undefined 也不炸')
 } finally {
   try { rmSync(work, { recursive: true, force: true }) } catch { /* Windows 偶发占用 */ }
 }

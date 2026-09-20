@@ -3,6 +3,7 @@ import { useWorkbenchStore } from '../../stores/workbench'
 import { toast } from '../../stores/toast'
 import { SettingsCard } from './ui'
 import type { KeyAccountInfo, KeyStatusInfo } from '../../../../shared/types'
+import { ffmpegSummary, type FfmpegStatus } from '../../../../shared/ffmpeg'
 import { useAsyncEffect } from '../../lib/useAsyncEffect'
 
 /**
@@ -67,6 +68,10 @@ function WechatKeySection(): React.JSX.Element {
   const [showXor, setShowXor] = useState(false)
   const [showAes, setShowAes] = useState(false)
   const [ffmpegPath, setFfmpegPath] = useState('')
+  /** ffmpeg 解析现状：随包在包里时就该告诉用户「不用填」，而不是摆一个空输入框让他猜 */
+  const [ffmpegSt, setFfmpegSt] = useState<FfmpegStatus | null>(null)
+  /** 「高级：覆盖 ffmpeg 路径」的展开态；配置了不存在的路径时自动展开，免得用户找不到地方改 */
+  const [ffmpegOpen, setFfmpegOpen] = useState(false)
   // 语音转写：腾讯云一句话识别（SILK 直传）；SecretKey 由主进程 safeStorage 加密，渲染端只提交新值
   const [tcSecretId, setTcSecretId] = useState('')
   const [tcSecretKey, setTcSecretKey] = useState('')
@@ -116,6 +121,16 @@ function WechatKeySection(): React.JSX.Element {
   }, [])
 
   useAsyncEffect(loadAccounts, [loadAccounts])
+
+  /** 读一次 ffmpeg 现状（随包/配置/环境变量各自是否命中） */
+  const loadFfmpeg = useCallback(async (): Promise<void> => {
+    const r = await mediaApi?.ffmpegStatus?.().catch(() => null)
+    const st = r?.ok ? (r.status ?? null) : null
+    setFfmpegSt(st)
+    if (ffmpegSummary(st).tone === 'warn') setFfmpegOpen(true)
+  }, [])
+
+  useAsyncEffect(loadFfmpeg, [loadFfmpeg])
 
   const browse = async (): Promise<void> => {
     const r = await dialogApi?.pickDirectory('选择微信数据根路径（db_storage 上级目录）')
@@ -237,6 +252,19 @@ function WechatKeySection(): React.JSX.Element {
   }
 
   /**
+   * 保存/清除「高级」里的 ffmpeg 覆盖路径。
+   * 留空 = 清除覆盖，回到「随包 → 环境变量 → PATH」的默认链（这是绝大多数用户该有的状态）。
+   */
+  const saveFfmpegPath = async (value?: string): Promise<void> => {
+    const v = (value ?? ffmpegPath).trim()
+    await configApi?.set('media.ffmpegPath', v)
+    // 「清除覆盖」也是走这条：传空串进来，同时把输入框一并清掉
+    if (value !== undefined) setFfmpegPath(v)
+    await loadFfmpeg()
+    toast.success(v ? '已保存 ffmpeg 覆盖路径' : '已清除覆盖，回到随包 ffmpeg')
+  }
+
+  /**
    * 从账号目录的 *_t.dat 模板**本地推导**图片 XOR 密钥，并用模板探测段校验 AES。
    * 不依赖任何原生组件（不读内存、不调 DLL）；推导成功直接填进输入框，用户只需点保存。
    */
@@ -320,6 +348,7 @@ function WechatKeySection(): React.JSX.Element {
   }
 
   const keyReady = !!status?.hasKey
+  const ffmpegInfo = ffmpegSummary(ffmpegSt)
 
   return (
     <div className={'st-grid'}>
@@ -536,15 +565,48 @@ function WechatKeySection(): React.JSX.Element {
             {showAes ? '隐藏' : '显示'}
           </button>
         </label>
-        <label className="st-row">
-          <span className="st-label">ffmpeg 路径（HEVC 原图转码）</span>
-          <input
-            className="st-input"
-            value={ffmpegPath}
-            onChange={(e) => setFfmpegPath(e.target.value)}
-            placeholder="留空则按 WECHAT_CS_FFMPEG 环境变量 / PATH 查找"
-          />
-        </label>
+        {/* ffmpeg：随包二进制已经在包里（见 resources/bin/NOTICE.md），正常用户**不需要填任何东西**。
+            这里先把「当前用哪一份、要不要你管」说清楚，输入框收进「高级」——
+            此前摆一个空输入框，用户不知道不填会怎样，反而容易随手填个路径把好的随包二进制盖掉。 */}
+        <div className="st-row is-status">
+          <span className="st-label">ffmpeg（HEVC 原图转码）</span>
+          <span className={'st-status' + (ffmpegInfo.tone === 'warn' ? ' is-warn' : '')}>
+            {ffmpegInfo.text}
+          </span>
+        </div>
+        <details className="sf-adv" open={ffmpegOpen}>
+          <summary
+            onClick={(e) => {
+              // 受控 <details>：浏览器默认的开合会与 React 的 open 打架，这里自己接管
+              e.preventDefault()
+              setFfmpegOpen((v) => !v)
+            }}
+          >
+            高级：覆盖 ffmpeg 路径
+          </summary>
+          <div className="sf-adv-body">
+            <input
+              className="st-input"
+              value={ffmpegPath}
+              onChange={(e) => setFfmpegPath(e.target.value)}
+              placeholder="留空 = 用随包；也可填自己那份 ffmpeg 的全路径"
+            />
+            <div className="sf-actions-split">
+              <button type="button" className="ui-btn is-sm" onClick={() => void saveFfmpegPath()}>
+                保存覆盖路径
+              </button>
+              {ffmpegPath.trim() !== '' && (
+                <button
+                  type="button"
+                  className="ui-btn is-sm is-end"
+                  onClick={() => void saveFfmpegPath('')}
+                >
+                  清除覆盖
+                </button>
+              )}
+            </div>
+          </div>
+        </details>
 
         <div className="st-actions">
           <button

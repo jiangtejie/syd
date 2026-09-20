@@ -1,5 +1,10 @@
 import { ipcMain } from 'electron'
-import { decryptImage, decryptVideo, testImageDecrypt } from '../services/media/mediaService'
+import {
+  decryptImage,
+  decryptVideo,
+  ffmpegStatus,
+  testImageDecrypt
+} from '../services/media/mediaService'
 import type { DecryptImageOptions, DecryptVideoOptions } from '../services/media/mediaService'
 import { resolveEmojiLocal, type ResolveEmojiInput } from '../services/media/emojiService'
 import { getVoiceWav } from '../services/media/voice'
@@ -18,6 +23,14 @@ export function registerMediaHandlers(): void {
   ipcMain.handle('cs:media:decryptVideo', (_e, opts: DecryptVideoOptions) => {
     try {
       return decryptVideo(opts || {})
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+  // ffmpeg 解析现状：设置页据此说清「随包已就绪，你不用填」还是「正在回退」
+  ipcMain.handle('cs:media:ffmpegStatus', () => {
+    try {
+      return { ok: true, status: ffmpegStatus() }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }

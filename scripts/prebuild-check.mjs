@@ -32,7 +32,7 @@ const binName = isWin ? 'ffmpeg.exe' : 'ffmpeg'
 const ffmpeg = join(root, 'resources', 'bin', binName)
 if (!existsSync(ffmpeg)) {
   problems.push(
-    '随包 ffmpeg 缺失：' + ffmpeg + '\n     修复：npm run ffmpeg:prepare -- "<ffmpeg.exe 路径>"'
+    '随包 ffmpeg 缺失：' + ffmpeg + '\n     修复：npm run ffmpeg:prepare -- "<" + binName + " 路径>"'
   )
 } else {
   const mb = (readFileSync(ffmpeg).length / 1024 / 1024).toFixed(1)

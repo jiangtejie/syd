@@ -154,6 +154,24 @@ select.st-input {
   color: var(--text-3);
 }
 
+/* 只读状态行（如 ffmpeg 现状）：与 st-row 同一栅格，但第二列是可换行的说明文字而不是输入框 ——
+ * 直接塞进 .st-row 会顶出不换行的一长条（flex 子项默认 min-width:auto）。 */
+.st-row.is-status {
+  align-items: flex-start;
+}
+
+.st-row.is-status > .st-status {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.st-row.is-status > .st-status.is-warn {
+  color: var(--warn-text);
+}
+
 .st-saved {
   color: var(--success);
   margin-left: 8px;

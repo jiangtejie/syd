@@ -132,6 +132,27 @@
     },
     // onboarding.done=1：别让首启向导挡住评审
     'config.getAll': function () { return Promise.resolve({ 'onboarding.done': '1', 'export.folder': 'D:\\\\导出\\\\私域运营' }) },
+    // ffmpeg 现状：形状必须齐 —— 设置页按 source 分支说「无需配置」还是「正在回退」，
+    // 少字段会渲染成「正在读取 ffmpeg 状态…」，看不出这行到底对不对
+    'media.ffmpegStatus': function () {
+      return Promise.resolve({
+        ok: true,
+        status: {
+          path: 'C:/Program Files/私域运营助手/resources/bin/ffmpeg.exe',
+          source: 'bundled',
+          bundled: {
+            path: 'C:/Program Files/私域运营助手/resources/bin/ffmpeg.exe',
+            exists: true,
+            sizeMb: 211.9,
+            version: '9.0.1-full_build-www.gyan.dev'
+          },
+          configured: '',
+          configuredExists: false,
+          envPath: '',
+          envExists: false
+        }
+      })
+    },
     'export.chat': function () { return Promise.resolve({ ok: true, files: 128 }) },
     'export.business': function () { return Promise.resolve({ ok: true, files: 12 }) },
     'app.version': function () { return Promise.resolve('1.0.0') },
