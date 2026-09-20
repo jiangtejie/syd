@@ -44,15 +44,16 @@ export function upsertEntries(
 export function getEntries(wxid: string): DbKeyMapRow[] {
   if (!wxid) return []
   return getDb()
-    .prepare('SELECT label, key_encrypted AS keyEncrypted FROM db_key_map WHERE wxid = ? ORDER BY label')
+    .prepare(
+      'SELECT label, key_encrypted AS keyEncrypted FROM db_key_map WHERE wxid = ? ORDER BY label'
+    )
     .all(wxid) as DbKeyMapRow[]
 }
 
 export function countEntries(wxid: string): number {
   if (!wxid) return 0
-  const row = getDb()
-    .prepare('SELECT COUNT(*) AS n FROM db_key_map WHERE wxid = ?')
-    .get(wxid) as { n?: number } | undefined
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM db_key_map WHERE wxid = ?').get(wxid) as
+    { n?: number } | undefined
   return row?.n ?? 0
 }
 

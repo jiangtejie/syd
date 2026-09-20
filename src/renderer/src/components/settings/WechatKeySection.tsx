@@ -698,7 +698,6 @@ function WechatKeySection(): React.JSX.Element {
           </button>
           <span className="st-hint">保存后从当前账号的 msg/attach 中取一张图验证密钥</span>
         </div>
-
       </SettingsCard>
     </div>
   )

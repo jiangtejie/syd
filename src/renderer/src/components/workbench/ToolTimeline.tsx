@@ -68,9 +68,7 @@ export function ToolTimeline({
   }
 
   return (
-    <div
-      className={'wb-tl' + (sum.running > 0 ? ' is-running' : '')}
-    >
+    <div className={'wb-tl' + (sum.running > 0 ? ' is-running' : '')}>
       <div className="wb-tl-head">
         <span className="wb-tl-kind">{title}</span>
         <span className="wb-tl-meta">{meta}</span>

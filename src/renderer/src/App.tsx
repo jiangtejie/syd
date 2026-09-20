@@ -32,8 +32,7 @@ import './pages/shell.css'
  * 对话页（Workbench）始终保持挂载（隐藏不卸载），切页不丢滚动位置与输入状态。
  */
 
-type NavIconName =
-  'workbench' | 'monitor' | 'chat' | 'customers' | 'duty' | 'export' | 'settings'
+type NavIconName = 'workbench' | 'monitor' | 'chat' | 'customers' | 'duty' | 'export' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {

@@ -350,7 +350,9 @@ export const DATA_MIGRATIONS: DataMigration[] = [
       // 索引随表一起消失；这里只兜底清掉可能残留的孤儿索引
       const indexes = (
         db
-          .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name GLOB 'idx_growth_*'")
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name GLOB 'idx_growth_*'"
+          )
           .all() as Array<{ name: string }>
       ).map((r) => r.name)
       for (const i of indexes) db.exec(`DROP INDEX IF EXISTS "${i}"`)

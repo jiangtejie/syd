@@ -236,12 +236,7 @@ export function catalogText(opts: {
 
 /** 能力名(单工具能力)解析为 ToolDef */
 export function resolveCapDef(name: string): ToolDef | undefined {
-  return (
-    findTool(name) ??
-    findSoftwareTool(name) ??
-    findLarkTool(name) ??
-    findWsTool(name)
-  )
+  return findTool(name) ?? findSoftwareTool(name) ?? findLarkTool(name) ?? findWsTool(name)
 }
 
 /** 能力是否为写操作(供审批判定;工作区写类工具历史上由 isWsWriteTool 标记) */

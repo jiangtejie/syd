@@ -142,15 +142,12 @@ export function resolveKeyForFile(wxid: string, filePath: string): string | null
  * 这正是 4.1.11+ 默认扫描能拿到的全部东西（口令要 hook，通常还需管理员权限），
  * 所以即使没有口令也要能用。
  */
-export function importKeyFile(
-  wxid: string,
-  filePath: string,
-  dbPath = ''
-): KeyFileImportResult {
+export function importKeyFile(wxid: string, filePath: string, dbPath = ''): KeyFileImportResult {
   const id = (wxid || '').trim()
   const empty = { importedPassphrase: false, importedDbKeys: 0, keyRingSize: 0, skipped: 0 }
   if (!id) return { success: false, error: '请先填写当前微信账号 wxid', ...empty }
-  if (!existsSync(filePath)) return { success: false, error: `密钥文件不存在：${filePath}`, ...empty }
+  if (!existsSync(filePath))
+    return { success: false, error: `密钥文件不存在：${filePath}`, ...empty }
   if (!safeStorage.isEncryptionAvailable()) {
     return { success: false, error: '系统加密不可用，无法安全保存密钥', ...empty }
   }
@@ -324,10 +321,7 @@ function testKeyRingOnly(wxid: string): KeyActionResult {
     return { success: true }
   }
   const paths = locateWeChatDbs(dbPath, wxid)
-  const files = [
-    ...(paths.sessionDbFile ? [paths.sessionDbFile] : []),
-    ...paths.msgDbFiles
-  ]
+  const files = [...(paths.sessionDbFile ? [paths.sessionDbFile] : []), ...paths.msgDbFiles]
   let opened = 0
   let failed = 0
   for (const file of files) {

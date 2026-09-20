@@ -339,7 +339,12 @@ export function warmupAccount(wxid: string, limit = 3): WarmupReport {
     const started = Date.now()
     const key = resolveKeyForFile(id, file)
     if (!key) {
-      items.push({ name: basename(file), ok: false, ms: 0, error: '该库没有对应的密钥（密钥环未覆盖）' })
+      items.push({
+        name: basename(file),
+        ok: false,
+        ms: 0,
+        error: '该库没有对应的密钥（密钥环未覆盖）'
+      })
       continue
     }
     const out = getPlainDbPath(file, key)
@@ -468,7 +473,8 @@ export async function onboardAccount(opts: {
           '请在设置里重新「导入密钥文件」，或粘贴账号口令'
       }
     } else {
-      keyDetail = '未导入密钥：请粘贴 64 位十六进制账号口令，或在设置里「导入密钥文件」（自动获取已停用）'
+      keyDetail =
+        '未导入密钥：请粘贴 64 位十六进制账号口令，或在设置里「导入密钥文件」（自动获取已停用）'
     }
   }
   steps.push({
