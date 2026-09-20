@@ -15,3 +15,6 @@ resources/bin/
 
 # 开发期临时明文库（解密微信 DB 测试产物，勿提交）
 scripts/.tmp-plain/
+
+# 开发期临时脚本与探针（一次性排查用，需要留存请移入 docs/ 或 scripts/ 正式脚本）
+scripts/_tmp/
