@@ -16,8 +16,7 @@ export const PAGE_IDS = [
   'customers',
   'duty',
   'settings',
-  'export',
-  'growth'
+  'export'
 ] as const
 
 export type PageId = (typeof PAGE_IDS)[number]

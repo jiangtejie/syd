@@ -11,7 +11,6 @@ const MonitorShell = lazy(() => import('./pages/MonitorShell'))
 const CustomersPage = lazy(() => import('./pages/CustomersPage'))
 const DutyPage = lazy(() => import('./pages/DutyPage'))
 const ExportPage = lazy(() => import('./pages/ExportPage'))
-const GrowthPage = lazy(() => import('./pages/GrowthPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
 /** 懒加载页面的占位(与页面区同底色,避免闪白) */
@@ -34,7 +33,7 @@ import './pages/shell.css'
  */
 
 type NavIconName =
-  'workbench' | 'monitor' | 'chat' | 'customers' | 'duty' | 'export' | 'growth' | 'settings'
+  'workbench' | 'monitor' | 'chat' | 'customers' | 'duty' | 'export' | 'settings'
 
 /** 线性描边图标（feather/lucide 风格，跟随 currentColor），替代 Emoji 更贴近桌面工具质感 */
 function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
@@ -90,13 +89,6 @@ function NavIcon({ name }: { name: NavIconName }): React.JSX.Element {
           <circle cx="15" cy="13" r="1" />
         </svg>
       )
-    case 'growth':
-      return (
-        <svg {...attrs}>
-          <polyline points="3 17 8.5 11.5 12.5 15.5 21 7" />
-          <polyline points="15 7 21 7 21 13" />
-        </svg>
-      )
     case 'settings':
       return (
         <svg {...attrs}>
@@ -122,7 +114,6 @@ const NAV_ITEMS: Array<{ key: WorkbenchPage; icon: NavIconName; label: string }>
   { key: 'chat', icon: 'chat', label: '对话' },
   { key: 'customers', icon: 'customers', label: '客户' },
   { key: 'duty', icon: 'duty', label: '值班' },
-  { key: 'growth', icon: 'growth', label: '营销' },
   { key: 'export', icon: 'export', label: '数据' }
 ]
 
@@ -316,13 +307,6 @@ function App(): React.JSX.Element {
               <div className="app-page">
                 <Suspense fallback={<PageLoading />}>
                   <MonitorShell />
-                </Suspense>
-              </div>
-            )}
-            {page === 'growth' && (
-              <div className="app-page">
-                <Suspense fallback={<PageLoading />}>
-                  <GrowthPage />
                 </Suspense>
               </div>
             )}

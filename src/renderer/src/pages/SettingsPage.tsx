@@ -26,7 +26,6 @@ import {
 import { ImSection } from './ImPage'
 import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
-import { useWorkbenchStore } from '../stores/workbench'
 import { setIssueAlertPref } from '../lib/issueAlert'
 import { readThemeMode, setThemeMode } from '../lib/appearance'
 import type { ThemeMode } from '../../../shared/theme'
@@ -191,8 +190,6 @@ const SETTINGS_TAB_KEYS: readonly SettingsTab[] = [
 const SETTINGS_TAB_KEY = 'cs.settingsTab'
 
 function SettingsPage(): React.JSX.Element {
-  const setPage = useWorkbenchStore((s) => s.setPage)
-  const setGrowthTab = useWorkbenchStore((s) => s.setGrowthTab)
   /** 外观主题：真源在 lib/appearance（localStorage），这里留一份 state 只为了让按钮选中态刷新 */
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => readThemeMode())
   const [tab, setTab] = useState<SettingsTab>(() => {
@@ -489,12 +486,6 @@ function SettingsPage(): React.JSX.Element {
     flashSaved()
   }
 
-  /** 营销 AI（生图/搜索）已搬到营销页，这里只留一个入口，不再重复一份配置 */
-  const goMarketingAi = (): void => {
-    setGrowthTab('provider')
-    setPage('growth')
-  }
-
   /** 飞书凭证：失焦即存，同时刷新顶部状态胶囊（连接状态取决于两个字段，存完就重算） */
   const saveLarkField = (
     key: 'lark.appId' | 'lark.appSecret' | 'lark.defaultUrl',
@@ -689,15 +680,6 @@ function SettingsPage(): React.JSX.Element {
 
       {tab === 'ai' && (
         <div className="st-tab-panel">
-          {/* 指路：营销 AI 的通道与策略不在这里重复一份，去营销页和门店档案放一起配 */}
-          <div className="st-actions">
-            <span className="st-hint">
-              营销相关的 AI（AI 生图）已移到「营销 → 设置」，与门店/品牌档案同屏。
-            </span>
-            <button type="button" className="ui-btn is-sm" onClick={goMarketingAi}>
-              去设置
-            </button>
-          </div>
           {/* AI 通道(独占一行) */}
           <SettingsCard
             title="AI 通道配置(OpenAI 兼容)"

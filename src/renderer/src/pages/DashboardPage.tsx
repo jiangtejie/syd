@@ -14,7 +14,6 @@ import type {
   OpsHourPoint,
   OpsTypeCount
 } from '../../../shared/types'
-import type { GrowthOverview } from '../../../shared/growth'
 import './dashboard.css'
 
 /**
@@ -338,8 +337,6 @@ function DashboardPage(): React.JSX.Element {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const gotoSession = useWorkbenchStore((s) => s.gotoSession)
   const refreshSessions = useWorkbenchStore((s) => s.refreshSessions)
-  const setPage = useWorkbenchStore((s) => s.setPage)
-  const setGrowthTab = useWorkbenchStore((s) => s.setGrowthTab)
   const [sendStatus, setSendStatus] = useState<SendStatusInfo | null>(null)
   const [sendStats, setSendStats] = useState<DayStat[]>([])
   const [overview, setOverview] = useState<SendOverview | null>(null)
@@ -350,21 +347,6 @@ function DashboardPage(): React.JSX.Element {
   const [range, setRange] = useState<7 | 30>(7)
   /** 当前时间（mount 时异步测量，避免渲染期调用 Date.now） */
   const [nowMs, setNowMs] = useState<number>(0)
-  /** 营销板块概览(素材/拆解/爆改产出) */
-  const [growthOv, setGrowthOv] = useState<GrowthOverview | null>(null)
-
-  useEffect(() => {
-    const api = window.api?.cs?.growth
-    if (!api?.overview) return
-    let alive = true
-    void api.overview().then((res) => {
-      if (alive && res.ok && res.overview) setGrowthOv(res.overview)
-    })
-    return () => {
-      alive = false
-    }
-  }, [])
-
   useEffect(() => {
     const reply = window.api?.cs?.reply
     if (!reply) return
@@ -566,35 +548,6 @@ function DashboardPage(): React.JSX.Element {
           <div className="db-card-label">今日已发送</div>
         </div>
       </div>
-
-      {growthOv ? (
-        // 注: 这张卡原本叫「营销内容效果」，主体是发布登记回填出来的线索/金额与登记历史。
-        // 登记发布功能下线后那些数字没有来源，卡片收敛为「素材规模 + 一步跳过去」。
-        <div className="page-card db-panel">
-          <div className="db-panel-title">
-            营销素材
-            <span className="db-panel-hint">营销板块</span>
-            {/* 看板只读汇总，看到数字想动手时必须能一步跳过去 */}
-            <button
-              className="db-panel-act"
-              type="button"
-              onClick={() => {
-                setGrowthTab('warehouse')
-                setPage('growth')
-              }}
-            >
-              去营销板块
-            </button>
-          </div>
-          <div className="db-panel-sub">
-            素材 {growthOv.contentCount} · 已拆解 {growthOv.decompCount} · 爆改产出{' '}
-            {growthOv.remixOutputCount}
-          </div>
-          <div className="db-panel-sub">
-            素材仓库负责入库与检索，AI 工作台负责爆改与配图，产出可直接导出发布包
-          </div>
-        </div>
-      ) : null}
 
       <div className="page-card db-panel">
         <div className="db-panel-title">
