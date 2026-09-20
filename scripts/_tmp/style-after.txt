@@ -1,8 +1,0 @@
-.page-card {backgroundColor:rgb(255, 255, 255); color:rgb(0, 0, 0); borderTopColor:rgb(0, 0, 0); borderRadius:12px; boxShadow:rgba(31, 35, 41, 0.04) 0px 1px 2px 0px; fontSize:16px}
-.gth-hero {backgroundColor:rgb(255, 255, 255); color:rgb(0, 0, 0); borderTopColor:rgb(0, 0, 0); borderRadius:12px; boxShadow:none; fontSize:16px}
-.gth-row.is-head {backgroundColor:rgb(247, 249, 251); color:rgb(153, 153, 153); borderTopColor:rgb(153, 153, 153); borderRadius:0px; boxShadow:none; fontSize:11px}
-.gth-seg-btn.is-active {backgroundColor:rgb(255, 255, 255); color:rgb(7, 193, 96); borderTopColor:rgb(7, 193, 96); borderRadius:4px; boxShadow:rgba(31, 35, 41, 0.04) 0px 1px 2px 0px; fontSize:12px}
-.gth-metric {backgroundColor:rgb(255, 255, 255); color:rgb(0, 0, 0); borderTopColor:rgb(0, 0, 0); borderRadius:12px; boxShadow:rgba(31, 35, 41, 0.04) 0px 1px 2px 0px; fontSize:16px}
-.gth-badge {backgroundColor:rgba(7, 193, 96, 0.1); color:rgb(7, 193, 96); borderTopColor:rgb(7, 193, 96); borderRadius:999px; boxShadow:none; fontSize:11px}
-.ui-btn.is-primary {backgroundColor:rgba(0, 0, 0, 0); color:rgb(255, 255, 255); borderTopColor:rgba(0, 0, 0, 0); borderRadius:8px; boxShadow:rgba(7, 193, 96, 0.95) 0px 6px 16px -10px; fontSize:13px}
-.gth-eng {backgroundColor:rgba(0, 0, 0, 0); color:rgb(85, 85, 85); borderTopColor:rgb(85, 85, 85); borderRadius:0px; boxShadow:none; fontSize:12px}
