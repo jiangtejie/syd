@@ -98,6 +98,11 @@
  * （实测发送通道状态卡：3 行状态在顶、按钮吊在 460px 处、中间空 260px），比底部留白更刺眼。
  * 留白落在卡底则读起来是这张卡的内边距，不指向任何缺失的东西。 */
 
+/* 网格里只剩一张卡：占满整行 —— 否则右半列会空出一个与卡片等高的洞（发送页并卡后就只剩一张） */
+.st-grid:has(> .st-section:only-child) > .st-section {
+  grid-column: 1 / -1;
+}
+
 /* ③ 三张及以上：退掉栅格，交给多列装箱 */
 .st-grid:has(> .st-section:nth-child(3)) {
   display: block;
@@ -427,6 +432,48 @@ select.st-input {
 
 /* 次级按钮 */
 /* 密钥状态卡片 */
+/* ── 状态头条（发送页）──
+ * 铺在设置项之前：先看清现在什么状况，再决定改哪个参数。
+ * 沿用 .st-keystatus 的视觉语言（浅底 + 细边），但三个状态横向排开、动作按钮靠右。
+ * 为什么不做成独立一张卡：与设置卡并排时内容差 289px，而只有两张卡时列底必然留洞 ——
+ * 瀑布流救不了（两列各一张，没东西可流），等高也只是把洞从卡间挪进卡里。 */
+.st-statbar {
+  margin-bottom: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-hover);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+/* .st-kv 的 max-width:320px 是给窄列设计的，横排时放开，否则三组会挤在一起 */
+.st-statbar .st-status {
+  flex-direction: row;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.st-statbar .st-kv {
+  max-width: none;
+  gap: 8px;
+}
+
+.st-statbar > .ui-btn {
+  margin-left: auto;
+}
+
+/* 这张卡是全宽的，数字输入必须定宽，右侧说明才对得成一列。
+ * 不写的话：.st-row .st-input:not(textarea) 的 max-width:460px 特异性高于 .st-input.sm 的
+ * 120px，加上 .st-input 的 flex:1，输入框会按「行宽 − 标签 − 说明」伸缩 ——
+ * 三行说明长短不同，输入框宽度就不同，说明的左边缘跟着参差（窄卡时看不出来，全宽就显形）。 */
+.st-section:has(> .sf-card-body > .st-statbar) .st-row .st-input {
+  flex: 0 0 120px;
+  max-width: 120px;
+}
+
 .st-keystatus {
   margin-top: 14px;
   border: 1px solid var(--border-light);

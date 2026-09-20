@@ -1002,6 +1002,40 @@ function SettingsPage(): React.JSX.Element {
           <div className="st-grid">
             {/* 发送频控 */}
             <SettingsCard title="发送与频控">
+              {/* 状态头条：熔断/今日/队列铺在最前 —— 先看清现在什么状况，再决定改哪个参数。
+                  此前它是独立的一张卡，与设置卡并排时内容高度差 289px；只有两张卡时，
+                  瀑布流救不了（两列各一张，没东西可流），等高也只是把洞从卡间挪进卡里。
+                  并进来之后这个页签只剩一张卡，洞从根上没有了。 */}
+              <div className="st-statbar">
+                <div className="st-status">
+                  <div className="st-kv">
+                    <span>熔断状态</span>
+                    <span className={sendStatus?.halted ? 'st-bad' : 'st-ok'}>
+                      {sendStatus ? (sendStatus.halted ? '已熔断' : '正常') : '—'}
+                    </span>
+                  </div>
+                  <div className="st-kv">
+                    <span>今日已发送</span>
+                    <span>
+                      {sendStatus ? `${sendStatus.todayCount} / ${sendStatus.dailyLimit}` : '—'}
+                    </span>
+                  </div>
+                  <div className="st-kv">
+                    <span>队列等待</span>
+                    <span>{sendStatus?.queued ?? '—'}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="ui-btn is-danger is-solid"
+                  disabled={!sendStatus?.halted}
+                  title="连续 2 次发送校验失败会自动熔断，复位前请先排查原因"
+                  onClick={() => void resetCircuit()}
+                >
+                  复位熔断
+                </button>
+              </div>
+              <div className="st-subtitle">发送参数</div>
               <FieldRow label="每日发送上限">
                 <input
                   className="st-input sm"
@@ -1015,6 +1049,9 @@ function SettingsPage(): React.JSX.Element {
                     if (e.key === 'Enter') saveField('send.dailyLimit', e.currentTarget.value)
                   }}
                 />
+                <div className="st-hint">
+                  当天累计发到这个数后，新的发送会被拒绝（提示「今日发送已达上限」）。
+                </div>
               </FieldRow>
               <FieldRow label="同会话连发窗口(秒)">
                 <input
@@ -1035,7 +1072,9 @@ function SettingsPage(): React.JSX.Element {
                   (客户追问 / 补一条)不会被挡;0 = 关闭该限制。
                 </div>
               </FieldRow>
-              <FieldRow label="重复内容上限(会话数 / 24 小时)">
+              {/* 标签列固定 140px，带单位会被省略号截断成「重复内容上限(会话数 …」；
+                  单位本来也写在下面的说明里（24 小时），这里只留主名 */}
+              <FieldRow label="重复内容上限">
                 <input
                   className="st-input sm"
                   type="number"
@@ -1085,41 +1124,6 @@ function SettingsPage(): React.JSX.Element {
                   toast.success(v ? '已开启逐次审批' : '已关闭逐次审批(代发不再询问)')
                 }}
               />
-            </SettingsCard>
-
-            {/* 熔断状态 */}
-            <SettingsCard
-              title="发送通道状态"
-              desc="连续 2 次发送校验失败会自动熔断,复位前请先排查原因。"
-            >
-              <div className="st-status">
-                <div className="st-kv">
-                  <span>熔断状态</span>
-                  <span className={sendStatus?.halted ? 'st-bad' : 'st-ok'}>
-                    {sendStatus ? (sendStatus.halted ? '已熔断' : '正常') : '—'}
-                  </span>
-                </div>
-                <div className="st-kv">
-                  <span>今日已发送</span>
-                  <span>
-                    {sendStatus ? `${sendStatus.todayCount} / ${sendStatus.dailyLimit}` : '—'}
-                  </span>
-                </div>
-                <div className="st-kv">
-                  <span>队列等待</span>
-                  <span>{sendStatus?.queued ?? '—'}</span>
-                </div>
-              </div>
-              <div className="st-actions">
-                <button
-                  type="button"
-                  className="ui-btn is-danger is-solid"
-                  disabled={!sendStatus?.halted}
-                  onClick={() => void resetCircuit()}
-                >
-                  复位熔断
-                </button>
-              </div>
             </SettingsCard>
           </div>
         </div>
