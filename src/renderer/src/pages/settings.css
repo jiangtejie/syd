@@ -68,6 +68,57 @@
   max-width: none;
 }
 
+/* ── 卡片网格：不让矮卡在列底留一个洞 ──
+ * 实测（2026-09）：.st-grid 是固定两列 + align-items:start，卡片高度不等时矮的那列下方会空出
+ * 一大块 —— 微信数据 165px、发送与频控 289px、偏好与数据 350px。成因有两种，分开治：
+ *
+ * ① 两列各一张卡（不足一行）—— 横竖都是各占一列，瀑布流没有任何东西可以「流」过去，
+ *    唯一有效的是**等高**：把差的高度收进卡片内部，并让动作行贴底，于是底下那块空白读起来是
+ *    「这张卡就这么大」，而不是「这里少了一张卡」。
+ * ② 三张及以上 —— 改**瀑布流**（CSS 多列按高度装箱）。实测偏好与数据 350px → 约 140px。
+ *    多列是「先竖后横」的填充顺序，卡片顺序不变（第 1 张永远在最前）。
+ */
+.st-grid:has(> .st-section) {
+  align-items: stretch;
+}
+
+.st-grid:has(> .st-section) > .st-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.st-grid:has(> .st-section) > .st-section > .sf-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 多出来的高度一律留在**卡片底部**，不做「动作行贴底」——
+ * 试过 margin-top:auto 把按钮推到卡底：结果是空白被夹在内容与按钮之间，成了一条穿堂风
+ * （实测发送通道状态卡：3 行状态在顶、按钮吊在 460px 处、中间空 260px），比底部留白更刺眼。
+ * 留白落在卡底则读起来是这张卡的内边距，不指向任何缺失的东西。 */
+
+/* ③ 三张及以上：退掉栅格，交给多列装箱 */
+.st-grid:has(> .st-section:nth-child(3)) {
+  display: block;
+  column-count: 2;
+  column-gap: 14px;
+}
+
+.st-grid:has(> .st-section:nth-child(3)) > .st-section {
+  /* 多列里让卡片整块参与装箱，不被拆到下一列；width:100% 抵消 inline-block 的行内间隙 */
+  display: inline-block;
+  width: 100%;
+  break-inside: avoid;
+  margin-bottom: 14px; /* 多列模式没有 gap，用 margin 补出卡间距 */
+}
+
+@media (max-width: 860px) {
+  .st-grid:has(> .st-section:nth-child(3)) {
+    column-count: 1;
+  }
+}
+
 .st-title {
   font-size: var(--fs-lg);
   font-weight: 600;

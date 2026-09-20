@@ -352,9 +352,10 @@ function WechatKeySection(): React.JSX.Element {
 
   return (
     <div className={'st-grid'}>
-      {/* 拆成两张卡（2026-09）：此前是一张卡竖排 5 段 —— 账号/密钥、语音转写、图片解密、ffmpeg、
-          密钥状态，宽屏上右侧全空，纵向要滚三轮才看完。现在左「账号与密钥」（解密的入口与状态）、
-          右「语音转写与图片解密」（接入的附加能力），解密说明跟着它解释的对象留在左卡。 */}
+      {/* 两张卡（2026-09 拆过一次，本次再归位）：左「账号与密钥」= 解密的入口与它的状态，
+          右「语音转写与图片解密」= 两项可选能力。此前「密钥状态」挂在右卡尾部，但它报的是
+          **数据库密钥**的状态，和语音转写/图片密钥没有关系 —— 归到左卡之后左右高度也更接近
+          （470/635 → 约 520/590），配合 .st-grid 的等高规则就不再在列底留一个洞。 */}
       <SettingsCard title="账号与密钥">
         {/* 当前账号：已保存密钥的账号下拉选择；无已导入账号或手动输入其他账号时展开文本输入 */}
         {accounts.length > 0 && (
@@ -462,7 +463,65 @@ function WechatKeySection(): React.JSX.Element {
           </button>
         </div>
 
-        {/* 语音转写：腾讯云一句话识别（SILK 直传，不需要本地模型） */}
+        {/* 密钥状态卡片 */}
+        {wxid.trim() && (
+          <div className="st-keystatus">
+            {!status?.hasKey ? (
+              <div className="st-kv">
+                <span>密钥状态</span>
+                <span className="st-bad">未导入</span>
+              </div>
+            ) : (
+              <>
+                <div className="st-kv">
+                  <span>密钥状态</span>
+                  <span className={status.status === 'valid' ? 'st-ok' : 'st-bad'}>
+                    {STATUS_TEXT[status.status ?? 'pending'] ?? status.status}
+                  </span>
+                </div>
+                <div className="st-kv">
+                  <span>密钥层级</span>
+                  <span className={status.layer === 'none' ? 'st-bad' : 'st-ok'}>
+                    {LAYER_TEXT[status.layer ?? 'none']}
+                  </span>
+                </div>
+                {status.keyRingSize > 0 && (
+                  <div className="st-kv">
+                    <span>每库派生密钥</span>
+                    <span className="st-ok">
+                      {status.keyRingSize} 条
+                      <button
+                        type="button"
+                        className="ui-btn"
+                        style={{ marginLeft: 8 }}
+                        disabled={busy !== null}
+                        onClick={() => void doClearKeyRing()}
+                      >
+                        清除
+                      </button>
+                    </span>
+                  </div>
+                )}
+                <div className="st-kv">
+                  <span>密钥来源</span>
+                  <span>{SOURCE_TEXT[status.source ?? ''] ?? status.source ?? '—'}</span>
+                </div>
+                <div className="st-kv">
+                  <span>数据路径</span>
+                  <span className="st-path">{status.dbPath || '—'}</span>
+                </div>
+                {lastError && (
+                  <div className="st-kv">
+                    <span>最近错误</span>
+                    <span className="st-bad">{lastError}</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* 解密说明：解释上面那把密钥为什么「一个账号只有一把」—— 跟着它解释的对象留在左卡 */}
         <div className="st-decrypt-note">
           提示：微信 4.x（xwechat）是魔改 SQLCipher（页 4096、尾部 80B 保留区放 IV 与 HMAC-SHA512、
           AES-256-CBC），标准 SQLCipher 驱动无法直开；本应用自带完整解密层 —— 解密前先用页 1 的 HMAC
@@ -640,63 +699,6 @@ function WechatKeySection(): React.JSX.Element {
           <span className="st-hint">保存后从当前账号的 msg/attach 中取一张图验证密钥</span>
         </div>
 
-        {/* 密钥状态卡片 */}
-        {wxid.trim() && (
-          <div className="st-keystatus">
-            {!status?.hasKey ? (
-              <div className="st-kv">
-                <span>密钥状态</span>
-                <span className="st-bad">未导入</span>
-              </div>
-            ) : (
-              <>
-                <div className="st-kv">
-                  <span>密钥状态</span>
-                  <span className={status.status === 'valid' ? 'st-ok' : 'st-bad'}>
-                    {STATUS_TEXT[status.status ?? 'pending'] ?? status.status}
-                  </span>
-                </div>
-                <div className="st-kv">
-                  <span>密钥层级</span>
-                  <span className={status.layer === 'none' ? 'st-bad' : 'st-ok'}>
-                    {LAYER_TEXT[status.layer ?? 'none']}
-                  </span>
-                </div>
-                {status.keyRingSize > 0 && (
-                  <div className="st-kv">
-                    <span>每库派生密钥</span>
-                    <span className="st-ok">
-                      {status.keyRingSize} 条
-                      <button
-                        type="button"
-                        className="ui-btn"
-                        style={{ marginLeft: 8 }}
-                        disabled={busy !== null}
-                        onClick={() => void doClearKeyRing()}
-                      >
-                        清除
-                      </button>
-                    </span>
-                  </div>
-                )}
-                <div className="st-kv">
-                  <span>密钥来源</span>
-                  <span>{SOURCE_TEXT[status.source ?? ''] ?? status.source ?? '—'}</span>
-                </div>
-                <div className="st-kv">
-                  <span>数据路径</span>
-                  <span className="st-path">{status.dbPath || '—'}</span>
-                </div>
-                {lastError && (
-                  <div className="st-kv">
-                    <span>最近错误</span>
-                    <span className="st-bad">{lastError}</span>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
       </SettingsCard>
     </div>
   )
