@@ -6,12 +6,40 @@
 .workbench {
   position: relative;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 520px;
+  /* 三栏比例：**消息区必须是最宽的那一栏**。
+     此前右栏写死 520px、左栏写死 280px，默认窗口(1400)下消息区只剩 472px —— 比辅助面板还窄，
+     最小窗口(1240)下更是只剩 312px，一句话都放不下。
+     现在右栏改成有上下限的比例栏（30%，336~440），左栏微调 272px：
+       窗口 1240 → 消息区 551（原 312）· 1400 → 663（原 472）· 1920 → 1144（原 992）
+     336px 是「群问题」行不塌的下限（见 issues.css 的窄栏排版注释）；440px 上限防超宽屏把右栏拉成空长条。 */
+  --wb-col-list: 276px;
+  --wb-col-side: clamp(336px, 30%, 440px);
+  grid-template-columns: var(--wb-col-list) minmax(0, 1fr) var(--wb-col-side);
   height: 100%; /* 嵌入应用外壳页面区 */
   background: var(--bg);
   font-size: var(--fs-lg);
   color: var(--text-1);
   overflow: hidden;
+}
+
+/* 窄窗口：把两边的固定栏收一收，消息区优先。
+ * 分档依据是**窗口宽度**（渲染端视口 ≈ 窗口宽度），主进程 minWidth 为 1024：
+ *   窗口 1400 → 会话 276 | 消息 663 | 右栏 401（默认）
+ *   窗口 1180 → 会话 244 | 消息 545 | 右栏 335
+ *   窗口 1024 → 会话 220 | 消息 433 | 右栏 307
+ * 会话栏的收窄由 list.css 配套（头像同步缩到 32px），否则名字会被压掉。 */
+@media (max-width: 1180px) {
+  .workbench {
+    --wb-col-list: 244px;
+    --wb-col-side: clamp(300px, 30%, 400px);
+  }
+}
+
+@media (max-width: 1060px) {
+  .workbench {
+    --wb-col-list: 220px;
+    --wb-col-side: clamp(288px, 32%, 380px);
+  }
 }
 
 /* 分节样式由 pages/Workbench.tsx 按顺序 import(见该文件顶部的样式导入块)。

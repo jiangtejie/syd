@@ -461,7 +461,16 @@ function GroupIssuesPanel(): React.JSX.Element {
                   {(it.reopenCount ?? 0) > 0 && (
                     <em className="gip-sev is-reopen">复发×{it.reopenCount}</em>
                   )}
-                  {/* 默认跟进人：已指派显示人名；未指派但有人回复过 → 一键指派给回复人 */}
+                  {/* 标题给两行：右栏是窄栏（336~440px），单行省略会把「问题到底是什么」整个吃掉 */}
+                  <b>{it.title}</b>
+                </span>
+                <span className="gip-sub-line">
+                  <span className="gip-sub-text">
+                    首现 {fmtTime(it.occurAt)} · 证据 {it.msgCount} 条
+                    {it.method === 'llm' ? ' · AI 提炼' : ' · 规则'}
+                  </span>
+                  {/* 跟进人从标题行搬到这里：它和「首现/证据/提炼方式」同类（都是元信息），
+                      挤在标题行会按 40~60px 的代价吃掉标题宽度；一键指派按钮也比在标题行里好点得多 */}
                   {it.assignee ? (
                     <em className="gip-owner-tag" title={`跟进人：${nameOf(it.assignee)}`}>
                       {nameOf(it.assignee)}
@@ -481,12 +490,6 @@ function GroupIssuesPanel(): React.JSX.Element {
                   ) : (
                     <em className="gip-owner-none">未指派</em>
                   )}
-                  <b>{it.title}</b>
-                </span>
-                <span className="gip-sub-line">
-                  首现 {fmtTime(it.occurAt)} · 证据 {it.msgCount} 条
-                  {it.method === 'llm' ? ' · AI 提炼' : ' · 规则'}
-                  {it.assignee ? ` · 跟进 ${nameOf(it.assignee)}` : ''}
                 </span>
               </span>
               <span className="gip-cell-x gip-caret">{expanded ? '▾' : '▸'}</span>
@@ -612,11 +615,11 @@ function GroupIssuesPanel(): React.JSX.Element {
           <span
             className="gip-meta"
             title={
-              covMsgs !== null && coverage?.truncated
-                ? `本群消息超过单次扫描上限，本次只分析了最新的 ${covMsgs} 条：窗口内更早的消息未覆盖，可用「重新分析」缩小窗口或分批处理`
+              coverage?.truncated && covMsgs !== null
+                ? `本群消息超过单次扫描上限，本次只分析了最新的 ${String(covMsgs)} 条：窗口内更早的消息未覆盖，可用「重新分析」缩小窗口或分批处理`
                 : covMsgs !== null
                   ? '本次分析实际读取并参与提取的消息条数'
-                  : '本次分析的时间与覆盖情况'
+                  : '本次分析覆盖的情况（条数未知）'
             }
           >
             {analyzedAt ? `${fmtTime(analyzedAt)} · ` : ''}

@@ -33,19 +33,26 @@
   color: var(--info);
 }
 
+/* 分析窗口是「设置」，四个按钮是「动作」：设置留在左侧，动作整组靠右，装不下就折行。
+   这 5 个控件一共要 ~413px —— 右栏从写死的 520px 改成比例栏后（≤440px）会顶出横向滚动条。 */
 .gip-tools {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-wrap: wrap;
+  /* 6px 而不是 8px：1880px 以上的窗口右栏吃满 440px 上限时，5 个控件刚好一行放得下 */
+  gap: 6px;
+}
+
+.gip-tools > .gip-select {
+  margin-right: auto;
 }
 
 .gip-select {
   font-size: var(--fs-sm);
   padding: 4px 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--panel);
+  background: var(--bg-panel);
   color: inherit;
   outline: none;
 }
@@ -197,12 +204,17 @@
 
 .gip-cell-st {
   flex: none;
-  width: 52px;
+  /* 58px 是「跟进超时」四个字（--fs-xs 下 44px + 左右内边距 12px）不被压出来的下限 */
+  width: 58px;
 }
 
+/* 单元格竖排：标题行 / 元信息行各占一行，标题才有两行的余地 */
 .gip-cell-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .gip-cell-x {
@@ -264,17 +276,33 @@
 
 .gip-title-line {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   min-width: 0;
+  /* 窄栏（右栏 307~440px）下「物流 紧急 复发×2」这类徽标能吃掉标题一半宽度。
+     允许换行 + 标题 flex-basis 12em：装不下时标题整条落到下一行吃满宽度，
+     装得下就保持和徽标同一行 —— 不用分两套 DOM。 */
+  flex-wrap: wrap;
 }
 
+/* 徽标类元素一律不参与压缩，省下的宽度全给标题 */
+.gip-title-line > i,
+.gip-title-line > em {
+  flex: none;
+  margin-top: 1px;
+}
+
+/* 标题两行封顶：窄栏下「单行省略」等于把问题本身藏起来，只剩标签可看 */
 .gip-title-line b {
+  flex: 1 1 12em;
+  min-width: 0;
   font-size: var(--fs-md);
   font-weight: 500;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .gip-type {
@@ -309,10 +337,16 @@
 }
 
 .gip-sub-line {
-  display: block;
-  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: var(--fs-xs);
   color: var(--text-3);
+}
+
+.gip-sub-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

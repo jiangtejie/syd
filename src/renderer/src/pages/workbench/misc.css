@@ -26,13 +26,13 @@
   color: var(--text-3);
 }
 
-/* 会话列表「待办问题」徽标（群） */
+/* 会话列表「待办问题」徽标（群）：底行计数位，不参与压缩 */
 .wb-issue-badge {
+  flex: none;
   display: inline-block;
   font-size: var(--fs-xs);
   line-height: 14px;
   padding: 0 5px;
-  margin-left: 6px;
   border-radius: var(--r-pill);
   background: var(--danger-soft);
   color: var(--danger);
@@ -110,7 +110,7 @@
 
 .gip-senders-body {
   padding: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg);
   margin-top: 4px;
@@ -305,7 +305,7 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  border: 1px solid #d9dce1;
+  border: 1px solid var(--border-strong);
   border-radius: 50%;
   background: transparent;
   color: var(--text-2);

@@ -45,7 +45,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: repeating-conic-gradient(#f0f2f5 0% 25%, var(--bg-panel) 0% 50%) 0 0 / 20px 20px;
+  background: repeating-conic-gradient(var(--bg-hover) 0% 25%, var(--bg-panel) 0% 50%) 0 0 / 20px 20px;
   border-radius: 6px;
   cursor: zoom-in;
   user-select: none;
@@ -173,14 +173,14 @@
 }
 
 .wb-att-file-hint {
-  color: #b0b3b8;
+  color: var(--text-4);
   font-size: var(--fs-sm);
 }
 
 .wb-att-close {
   padding: 6px 20px;
   border-radius: 6px;
-  border: 1px solid #d9dce1;
+  border: 1px solid var(--border-strong);
   background: var(--bg-panel);
   cursor: pointer;
 }
@@ -221,5 +221,5 @@
 }
 
 .ctx-item:hover {
-  background: #f0f2f5;
+  background: var(--bg-hover);
 }

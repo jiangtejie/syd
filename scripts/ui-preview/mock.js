@@ -115,14 +115,36 @@
     ]
   })
 
-  var SESSIONS = [
-    { username: '1111@chatroom', displayName: '重庆观音桥门店群', isGroup: true, unreadCount: 3, lastTimestamp: now - 6 * MIN, lastMessage: '今天的鸭肠到货了吗', memberCount: 42, pinned: false, muted: false, tag: '' },
-    { username: 'wxid_huangqiao', displayName: '黄巧（物配客服）', isGroup: false, unreadCount: 1, lastTimestamp: now - 22 * MIN, lastMessage: '对账单发你了', memberCount: 0, pinned: true, muted: false, tag: '' },
-    { username: '2222@chatroom', displayName: '物配供应商群', isGroup: true, unreadCount: 0, lastTimestamp: now - 2 * HOUR, lastMessage: '明天排车 6 点', memberCount: 88, pinned: false, muted: false, tag: '' },
-    { username: 'wxid_chenxi', displayName: '陈西西', isGroup: false, unreadCount: 0, lastTimestamp: now - 5 * HOUR, lastMessage: '好的谢谢', memberCount: 0, pinned: false, muted: false, tag: '' },
-    { username: '3333@chatroom', displayName: '成都成华店群', isGroup: true, unreadCount: 0, lastTimestamp: now - DAY, lastMessage: '收到', memberCount: 31, pinned: false, muted: false, tag: '' },
-    { username: 'wxid_laoban', displayName: '江老板', isGroup: false, unreadCount: 0, lastTimestamp: now - 2 * DAY, lastMessage: '这周复盘一下', memberCount: 0, pinned: false, muted: false, tag: '' }
+  // 会话列表：给足行数（客户页直接由这份数据派生），才能看出列表密度与是否要分页
+  var NAME_POOL = [
+    ['重庆观音桥门店群', true, 42], ['黄巧（物配客服）', false, 0], ['物配供应商群', true, 88],
+    ['陈西西', false, 0], ['成都成华店群', true, 31], ['江老板', false, 0],
+    ['小龙坎旗舰店群', true, 126], ['李雪（前厅主管）', false, 0], ['火锅底料直采群', true, 54],
+    ['王强', false, 0], ['重庆大学城门店群', true, 27], ['周敏（财务）', false, 0],
+    ['美团运营对接群', true, 16], ['赵磊', false, 0], ['贵阳观山湖店群', true, 24],
+    ['孙倩', false, 0], ['餐具耗材采购群', true, 63], ['吴桐（加盟商）', false, 0],
+    ['昆明南亚店群', true, 38], ['郑好', false, 0], ['设备维修群', true, 9],
+    ['冯磊（店长）', false, 0], ['长沙解放西店群', true, 45], ['蒋文静', false, 0]
   ]
+  var LAST_MSG = [
+    '今天的鸭肠到货了吗', '对账单发你了', '明天排车 6 点', '好的谢谢', '收到', '这周复盘一下',
+    '周末的团购券核销了 18 张', '排班表我改好了', '这批底料辣度是不是调了', '在吗',
+    '店里空调坏了有人来看吗', '发票开好了发你', '下个月的投放预算定了吗', '晚点回你',
+    '门口修路客流掉了一半', '好的我转给采购', '牛油到货时间能提前吗', '加盟合同我看了',
+    '新菜单图片麻烦重拍', '收到，谢谢', '洗碗机又漏水了', '明天早会我请假',
+    '晚上的包间订满了', '辛苦了'
+  ]
+  var SESSIONS = NAME_POOL.map(function (p, i) {
+    return {
+      // 首个群沿用 1111@chatroom —— MESSAGES 的 sessionId 指向它，改了就看不到气泡
+      username: i === 0 ? '1111@chatroom' : p[1] ? 1000 + i + '@chatroom' : 'wxid_' + i,
+      displayName: p[0], isGroup: p[1],
+      unreadCount: [3, 1, 0, 0, 0, 0, 12, 2, 0, 0, 0, 1, 0, 0, 7, 0, 0, 0, 4, 0, 0, 0, 0, 0][i],
+      lastTimestamp: now - (i + 1) * 41 * MIN,
+      lastMessage: LAST_MSG[i], memberCount: p[2],
+      pinned: i === 1, muted: i % 7 === 3, tag: ''
+    }
+  })
   var MESSAGES = [0, 1, 2, 3, 4, 5, 6, 7].map(function (i) {
     return {
       id: 1000 + i, sessionId: '1111@chatroom', serverId: 's' + i, sortSeq: i,
@@ -173,12 +195,56 @@
     }
   })
 
+  // 群问题（右栏「群问题」视图）：形状必须齐 —— 面板按 status/severity/needConfirm/reopenCount 分支渲染
+  var GIP_ISSUES = [
+    { id: 1, key: 'k1', wxid: 'wxid_jiangyanjing', groupUsername: '1111@chatroom', groupName: '重庆观音桥门店群', type: '物流', title: '鸭肠今天没到货，中午高峰期断了三份单', summary: '客户 10:12 问鸭肠到货，11:40 又催了一次，至今无人回复。', occurAt: now - 5 * HOUR, status: 'open', method: 'llm', assignee: 'wxid_huangqiao', followUp: true, followUpAt: now - 14 * HOUR, followUpOverdue: true, severity: '紧急', customers: ['黄巧'], createdAt: now - 5 * HOUR, updatedAt: now - 40 * MIN, msgCount: 6 },
+    { id: 2, key: 'k2', wxid: 'wxid_jiangyanjing', groupUsername: '1111@chatroom', groupName: '重庆观音桥门店群', type: '客诉', title: '客人反映锅底有头发，要求免单', summary: '客人当场拍照并要求免单，店里先送了果盘安抚。', occurAt: now - DAY, status: 'open', method: 'llm', severity: '高', reopenCount: 2, reopenedFrom: 9, lastReplyBy: 'wxid_lixue', customers: ['李雪'], createdAt: now - DAY, updatedAt: now - 3 * HOUR, msgCount: 11 },
+    { id: 3, key: 'k3', wxid: 'wxid_jiangyanjing', groupUsername: '1111@chatroom', groupName: '重庆观音桥门店群', type: '价格', title: '牛油底料这批涨价 8%，要不要换供应商', summary: '', occurAt: now - 2 * DAY, status: 'open', method: 'rule', needConfirm: true, severity: '一般', customers: [], createdAt: now - 2 * DAY, updatedAt: now - 2 * DAY, msgCount: 3 },
+    { id: 4, key: 'k4', wxid: 'wxid_jiangyanjing', groupUsername: '1111@chatroom', groupName: '重庆观音桥门店群', type: '售后', title: '洗碗机漏水，维修师傅约到周四', summary: '已联系售后，周四上门。', occurAt: now - 3 * DAY, status: 'done', method: 'llm', assignee: 'wxid_huangqiao', autoDone: true, resolvedAt: now - 2 * DAY, severity: '一般', createdAt: now - 3 * DAY, updatedAt: now - 2 * DAY, msgCount: 8 },
+    { id: 5, key: 'k5', wxid: 'wxid_jiangyanjing', groupUsername: '1111@chatroom', groupName: '重庆观音桥门店群', type: '咨询', title: '新菜单图片要不要重拍', summary: '', occurAt: now - 4 * DAY, status: 'stalled', method: 'rule', severity: '一般', createdAt: now - 4 * DAY, updatedAt: now - 3 * DAY, msgCount: 2 },
+    { id: 6, key: 'k6', wxid: 'wxid_jiangyanjing', groupUsername: '1111@chatroom', groupName: '重庆观音桥门店群', type: '其他', title: '群里转发的团购券截图', summary: '', occurAt: now - 6 * DAY, status: 'archived', method: 'rule', archivedFrom: 'open', severity: '一般', createdAt: now - 6 * DAY, updatedAt: now - 6 * DAY, msgCount: 1 },
+    { id: 7, key: 'k7', wxid: 'wxid_jiangyanjing', groupUsername: '1111@chatroom', groupName: '重庆观音桥门店群', type: '建议', title: '门口修路，建议加做外卖满减', summary: '店长提议把堂食客流缺口用外卖补回来。', occurAt: now - 20 * HOUR, status: 'open', method: 'llm', severity: '一般', customers: ['冯磊'], createdAt: now - 20 * HOUR, updatedAt: now - 20 * HOUR, msgCount: 4 }
+  ]
+  var GIP_DETAIL = function (id) {
+    var base = GIP_ISSUES.filter(function (x) { return x.id === id })[0] || GIP_ISSUES[0]
+    return Object.assign({}, base, {
+      related: [
+        { time: base.occurAt, senderName: '黄巧', senderUsername: 'wxid_huangqiao', isSend: false, text: '今天的鸭肠到货了吗？中午要用', localType: 1 },
+        { time: base.occurAt + 40 * MIN, senderName: '我', isSend: true, senderIsTeam: true, text: '我问一下物配那边', localType: 1 },
+        { time: base.occurAt + 88 * MIN, senderName: '黄巧', senderUsername: 'wxid_huangqiao', isSend: false, text: '客人都催了两轮了，实在不行我先去菜市场补一点', localType: 1 }
+      ]
+    })
+  }
+
   /* ── 3. 覆盖表（其余一律 safeStub：调用返回 {ok:true}，on* 返回取消函数）── */
   var overrides = {
     'wx.getSessions': function () { return Promise.resolve({ ok: true, sessions: SESSIONS }) },
     'wx.getMessages': function () { return Promise.resolve({ ok: true, messages: MESSAGES }) },
     'wx.getMessagesSince': function () { return Promise.resolve({ ok: true, messages: [] }) },
     'wx.dbChanged': function () { return Promise.resolve({ ok: true }) },
+    // 团队成员：群问题面板的「跟进人」靠它把 username 换成中文名。
+    // 不给的话面板上会直接显示 wxid_huangqiao —— 那是桩数据的假象，不是真排版。
+    // 回复建议：给三条长短不一的候选，才能看出卡片在窄栏里的排版
+    'ai.generateReply': function () {
+      return Promise.resolve({
+        ok: true,
+        candidates: [
+          { text: '好的，我这边先跟物配确认到货时间，十分钟内回你。' },
+          { text: '鸭肠今天上午 9 点已经到库了。我先让后厨给你这边留 5 斤应急，剩下的下午 3 点前补齐，到时候我拍照给你确认。' },
+          { text: '抱歉让你久等了！' }
+        ]
+      })
+    },
+    'team.list': function () {
+      return Promise.resolve({
+        ok: true,
+        members: [
+          { username: 'wxid_huangqiao', label: '黄巧', addedAt: now - 30 * DAY },
+          { username: 'wxid_lixue', label: '李雪', addedAt: now - 20 * DAY },
+          { username: 'wxid_fenglei', label: '冯磊', addedAt: now - 10 * DAY }
+        ]
+      })
+    },
     // onboarding.done=1：别让首启向导挡住评审
     'config.getAll': function () { return Promise.resolve({ 'onboarding.done': '1', 'export.folder': 'D:\\\\导出\\\\私域运营' }) },
     'growth.stats': function () { return Promise.resolve({ ok: true, stats: { contentCount: 128, assetCount: 342 } }) },
@@ -209,8 +275,26 @@
     // 议题/看板：**形状必须给全**。给 {ok:true} 会让监控页在空数据上反复重算，主线程像卡死一样
     // （实测：整页 Runtime.evaluate 超时，只能关掉标签页重来）。
     'issue.list': function () {
-      return Promise.resolve({ ok: true, issues: [], total: 0 })
+      return Promise.resolve({ ok: true, issues: GIP_ISSUES, total: GIP_ISSUES.length })
     },
+    // 对话页右栏「群问题」视图
+    'issue.listGroup': function () {
+      return Promise.resolve({ ok: true, issues: GIP_ISSUES, excluded: false })
+    },
+    'issue.detail': function (id) { return Promise.resolve({ ok: true, issue: GIP_DETAIL(id) }) },
+    'issue.analyzeGroup': function () {
+      // coverage 的真实契约是 { msgs, truncated }（见 src/shared/api.ts analyzeGroup）；
+      // 这里原来写成 { from, to, messages, issues }，渲染端取 coverage.msgs 就成了 undefined
+      return Promise.resolve({
+        ok: true,
+        skipped: true,
+        method: 'llm',
+        lastAt: now - 42 * MIN,
+        coverage: { msgs: 428, truncated: false }
+      })
+    },
+    'issue.groupSenders': function () { return Promise.resolve({ ok: true, senders: [] }) },
+    'issue.groupBadges': function () { return Promise.resolve({ ok: true, badges: { '1111@chatroom': 4 } }) },
     'issue.overview': function () {
       return Promise.resolve({
         ok: true,

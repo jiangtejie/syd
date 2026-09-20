@@ -103,20 +103,24 @@ const SessionItem = memo(function SessionItem({
               </span>
             )}
             {session.isGroup && <span className="wb-group-tag">群</span>}
-            {name}
-            {issueOpen > 0 && (
-              <span
-                className="wb-issue-badge"
-                title={`${issueOpen} 个问题待运营处理（点击进入，右侧「群问题」查看）`}
-              >
-                {issueOpen > 99 ? '99+' : issueOpen} 待办
-              </span>
-            )}
+            {/* 名称单独一层：只有它允许被省略，群标记/待办徽标必须始终可见
+                （此前徽标和名称挤在同一个省略容器里，徽标被 overflow:hidden 整个裁掉，
+                 「本群有几个待办」在列表上根本看不到） */}
+            <span className="wb-session-name-text">{name}</span>
           </span>
           <span className="wb-session-time">{formatSessionTime(sessionTime)}</span>
         </div>
         <div className="wb-session-bottom">
           <span className="wb-session-summary">{summaryText || '暂无消息'}</span>
+          {/* 待办徽标挪到底行与未读并排：名称行腾出来给群名（8 个汉字的群名正好放得下） */}
+          {issueOpen > 0 && (
+            <span
+              className="wb-issue-badge"
+              title={`${issueOpen} 个问题待运营处理（点击进入，右侧「群问题」查看）`}
+            >
+              {issueOpen > 99 ? '99+' : issueOpen} 待办
+            </span>
+          )}
           {session.unreadCount > 0 && (
             <span className="wb-session-unread">
               {session.unreadCount > 99 ? '99+' : session.unreadCount}

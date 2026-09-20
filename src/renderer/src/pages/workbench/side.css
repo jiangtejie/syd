@@ -91,7 +91,7 @@
 
 .wb-suggest-agent-label {
   font-size: var(--fs-xs);
-  color: var(--muted);
+  color: var(--text-2);
   flex: none;
 }
 
@@ -104,9 +104,9 @@
   gap: 8px;
   font-size: var(--fs-sm);
   padding: 4px 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--panel);
+  background: var(--bg-panel);
   color: inherit;
   cursor: pointer;
   text-align: left;
@@ -194,7 +194,16 @@
 
 .wb-suggest-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 回复字数：与右端的动作按钮同一行，不额外占高度 */
+.wb-suggest-len {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .wb-suggest-btn {
@@ -232,7 +241,7 @@
   font-size: var(--fs-md);
   padding: 8px 0;
   border-radius: var(--r-md);
-  border: 1px solid #d9dce1;
+  border: 1px solid var(--border-strong);
   background: var(--bg-panel);
   color: var(--text-2);
   cursor: pointer;

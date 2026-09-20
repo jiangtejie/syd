@@ -2,7 +2,7 @@
 .wb-chat {
   display: flex;
   flex-direction: column;
-  background: #f2f3f5;
+  background: var(--bg-hover);
   min-width: 0;
   min-height: 0; /* 关键：grid 子元素可收缩 */
 }
@@ -36,8 +36,8 @@
   font-size: var(--fs-xs);
   padding: 1px 6px;
   border-radius: var(--r-sm);
-  background: #f1f3f5;
-  color: #57606e;
+  background: var(--bg-hover);
+  color: var(--text-2);
   font-weight: 400;
   flex-shrink: 0;
 }
@@ -89,7 +89,9 @@
 }
 
 .wb-msg-main {
-  max-width: 72%;
+  /* 百分比保证窄栏下气泡不顶满；520px 上限保证宽屏（消息区 1144px）下单行不会拉到 800px 宽 —— 
+     一行超过 30 来个字，眼睛回行就要找地方了 */
+  max-width: min(72%, 520px);
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -205,8 +207,8 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--r-sm);
-  background: #f2f4f7;
-  color: #b0b6bf;
+  background: var(--bg-hover);
+  color: var(--placeholder);
   font-size: var(--fs-sm);
   cursor: zoom-in;
   user-select: none;
@@ -574,7 +576,7 @@
 .wb-time-divider {
   text-align: center;
   font-size: var(--fs-sm);
-  color: #a8adb5;
+  color: var(--text-3);
   margin: 6px 0 2px;
   user-select: none;
 }
@@ -588,7 +590,7 @@
 
 .wb-msg-system-text {
   font-size: var(--fs-sm);
-  color: #a8adb5;
+  color: var(--text-3);
   max-width: 80%;
   text-align: center;
   line-height: 1.5;
@@ -601,8 +603,8 @@
   margin: 8px auto;
   padding: 4px 12px;
   font-size: var(--fs-sm);
-  color: #6b7280;
-  background: #f3f4f6;
+  color: var(--text-2);
+  background: var(--bg-hover);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   cursor: pointer;
@@ -610,7 +612,7 @@
 }
 
 .wb-load-older:hover:not(:disabled) {
-  background: #e5e7eb;
+  background: var(--border-light);
 }
 
 .wb-load-older:disabled {
@@ -636,7 +638,7 @@
 
 .wb-chat-empty-sub {
   font-size: var(--fs-md);
-  color: #aaa;
+  color: var(--text-3);
 }
 
 /* 底部输入区 */
@@ -656,7 +658,7 @@
   min-height: 64px;
   max-height: 140px;
   resize: none;
-  border: 1px solid #d9dce1;
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   padding: 8px 10px;
   font-size: var(--fs-md);

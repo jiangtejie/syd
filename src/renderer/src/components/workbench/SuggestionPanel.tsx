@@ -130,6 +130,8 @@ function SuggestionPanel(): React.JSX.Element {
               >
                 <div className="wb-suggest-text">{c.text}</div>
                 <div className="wb-suggest-actions">
+                  {/* 回复长度：发出去之前唯一能一眼判断「这条会不会太长」的依据 */}
+                  <span className="wb-suggest-len">{c.text.length} 字</span>
                   <button
                     type="button"
                     className="wb-suggest-btn"

@@ -2,7 +2,7 @@
 .wb-sessions {
   min-height: 0; /* 关键：允许 grid 子元素收缩出滚动区 */
   border-right: 1px solid var(--border);
-  background: #f7f8fa;
+  background: var(--bg-sunken);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -20,7 +20,7 @@
   color: var(--text-1);
   position: sticky;
   top: 0;
-  background: #f7f8fa;
+  background: var(--bg-sunken);
   z-index: 2;
 }
 
@@ -28,7 +28,7 @@
   position: sticky;
   top: 40px;
   padding: 0 12px 8px;
-  background: #f7f8fa;
+  background: var(--bg-sunken);
   z-index: 2;
 }
 
@@ -50,24 +50,24 @@
 
 .wb-session {
   display: flex;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 9px 10px;
   cursor: pointer;
   border-left: 3px solid transparent;
   transition: background 0.15s;
 }
 
 .wb-session:hover {
-  background: #eceef1;
+  background: var(--bg-hover);
 }
 
 /* 折叠夹虚拟项 */
 .wb-session-foldgroup {
-  background: #f7f8fa;
+  background: var(--bg-sunken);
 }
 
 .wb-session-foldicon {
-  background: #b0b7c3;
+  background: var(--text-4);
   font-size: var(--fs-xl);
 }
 
@@ -101,8 +101,8 @@
 }
 
 .wb-session-avatar {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 6px;
   color: var(--on-brand);
   display: flex;
@@ -142,11 +142,21 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
+/* 名称行 = [置顶][群标记] 名称（只有名称可省略）—— 靠 flex 让徽标类元素始终留在视野内，
+   不再像以前那样整行 overflow:hidden 把「N 待办」一起裁掉 */
 .wb-session-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   font-weight: 500;
+}
+
+.wb-session-name-text {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -166,7 +176,10 @@
   flex-shrink: 0;
 }
 
+/* 摘要吃剩余空间并省略；右侧的「N 待办 / 未读」是计数，必须完整可见 */
 .wb-session-summary {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-sm);
   color: var(--text-3);
   white-space: nowrap;
@@ -186,6 +199,19 @@
   justify-content: center;
   padding: 0 5px;
   flex-shrink: 0;
+}
+
+/* 窄窗口：会话栏只剩 220~244px，头像与内边距同步收，把宽度让给群名 */
+@media (max-width: 1180px) {
+  .wb-session-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: var(--fs-md);
+  }
+
+  .wb-session {
+    padding: 8px 9px;
+  }
 }
 
 /* 无会话占位（会话列表空态） */
