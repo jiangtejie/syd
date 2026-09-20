@@ -1,4 +1,4 @@
-# 私域运营 + 营销 · 改进与优化清单（审核版）
+# 私域运营 · 改进与优化清单（审核版）
 
 > 来源：2026-09 一轮代码级审计（4 个并行子代理 + 主审抽验），每条结论都有 `file:line` 证据。
 > 定位：**这份文件是排期用的唯一入口**，不要在别处再开第二份清单。
@@ -25,17 +25,12 @@
 | **A3** | **风险 B 独立成 `confirm`**                                           | `agent/matcher.ts`：B 不再与 A 共用一个 `action:'reply'`，改为 `confirm`。`duty.ts` 新增分支落 `queued`（需人工接手）。`shared/types` 的预演行 action 增加 `confirm`，值班页预演徽标显示「需确认」。**原自检里那条 `价格优惠 → reply` 的断言正是把坑固化下来的地方，已改正**                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `npm run test:matcher`                    |
 | **B8** | **首启向导 + 落地「对话」+ 统一空态**                                 | 新增 `shared/onboarding.ts`（纯判定，含自检）：① **落地页**改为「记住的页 / 首启默认**对话**」——以前固定停在导航第一项 AI 工作台，而对话排第三，客服装完先看到空聊天框；② **首启向导**（`components/onboarding/FirstRunWizard.tsx`）：三步条「找到账号 → 导入密钥 → 开始使用」，只在**确实缺东西**时弹（已有账号又有密钥就闭嘴，哪怕从没点过），允许「稍后再说」（落 `onboarding.done`）；③ **统一未连接空态** `ConnectGuide`（客户页从此是可点引导，不再是一句不可点的纯文本）；④ 页面记忆落 `cs.page`（`gotoSession` 也走 setPage，否则跳会话不落记忆）                                                                                                                                                                              | `npm run test:onboarding`                 |
 | **B1** | **客户档案落库**（战略地基）                                          | ① **修掉根因**：`migrations.ts` 的迁移 3 原本会把「预留且为空」的业务表 DROP（customer/session/…）——它**每次新装库都跑一遍**，于是客户表在任何一台新机器上都被建出来又删掉，客户资产永远是零；现只清真正下线的表。② 新增 `customer_profile` + `customer_tag`（表名不叫 customer：reserved.ts 里躺着旧形状 DDL，同名会撞 `IF NOT EXISTS` → 列对不上）。③ 新增 `shared/customerProfile.ts`（纯逻辑，两端一份口径：实时状态标签 + 合并语义）、`db/customerStore.ts`（SQL 层，db 由调用方传入故可自检）与仓储/仓库转发。④ IPC `cs:customers:sync/list/setTag/removeTag/setFields`。⑤ 客户页：会话（实时）叠档案（持久），抽屉新增「客户档案」区（来源/内部备注/人工标签/建档时间）。**硬规矩：会话同步只写微信侧事实，绝不碰用户填的字段** | `npm run test:customer`                   |
-| **B7** | **发布登记入口 + 指标渲染**（**已于 2026-09-19 按用户决定整体下线**） | 新增纯校验/合计模块 `publisher/publishMetrics.ts`、IPC `cs:growth:recordPublish`（走既有 `recordPublish`，登记即重算素材分）与素材详情内的「发布登记」表单：渠道 / 归因产出 / 点赞·收藏·评论·转发·关注·线索·金额，并**渲染已拉取却从未展示的 `metrics` 历史**（含历次合计）。此前唯一写库路径是 AI 对话工具，而看板空态指引的「登记发布」按钮**根本不存在** → 后按用户决定删除：那一步是纯手工录数字，运营不会真的去填（工具/IPC/表单/校验模块与自检一并移除，老库历史行保留）                                                                                                                                                                                                                                                         | 已删除（`test:publish-metrics` 同步移除） |
 | **B6** | **明文数据治理**                                                      | 新增 `securityPolicy.ts`（纯判定，含自检）与 `wechat/injectShots.ts`：① **注入截图纳入保留期**（默认 3 天 / 最多 20 张，启动清一轮 + 每 6h），且**退出即清**（默认开）—— 截图里是完整客户会话画面，不需要密钥就能看，此前无保留期无清理（实测常驻 6 张 4.8MB）；② **图片解密密钥加封**：`img:<wxid>:xorKey/aesKey` 此前**明文落库**（键名带账号、不在固定名单里，认不出来），现在读写两侧统一走 `sealSecret/openSecret`，并在启动时按前缀迁移存量明文；③ 新增 `clearPlainDbCache()` 与开关 `security.clearPlainCacheOnExit`                                                                                                                                                                                                            | `npm run test:security`                   |
 | **B4** | **AI 通道超时/重试/并发 + 计量**                                      | 新增 `ai/retryPolicy.ts`（纯判定：可重试状态、错误分类、指数退避+抖动、尊重 Retry-After）与 `ai/limit.ts`（并发闸门）。`provider.ts` 把 `complete`/`streamOnce` 统一收进 `withGate`：**全局并发 4**、非流式 60s 时限、流式 300s 硬上限 + **45s 空闲超时**（这才是「流挂死」的正解，固定总时限会误杀长回答）、429/5xx/网络/超时可重试（**用户取消绝不重试**）。新增 `ai_run` 表 + `aiRunRepo`：每次真实调用落一行（模块/模型/耗时/尝试次数/token/错误码），面板「AI 运行与成本」可见；11 个调用点全部打上模块标签；纳入保留期清理                                                                                                                                                                                                       | `npm run test:ai-retry`                   |
-| **B2** | **导出改造成安全出口**                                                | 新增 `publisher/exportPlan.ts`（纯决策层，含自检）与两档合规引擎：`compliance.ts` 升级为 **block/warn**（新增平台导流词规则）。① **硬门禁**：命中 block 级（广告法绝对化用语 / 普通食品功效宣称）**拒绝导出**并指出命中词，在弹目录之前就拦；② **图片取材以产出为准**（`growth_output_asset`），产出无图才退回素材图，且 `usage='ref'` 的素材图**一张都不打包**（并如实告知扣了几张）；③ **AI 生成图可识别**：文件名加 `AI生成示意图_` 前缀 + 文案头部声明；④ 文案头部新增合规块（AIGC 声明 / 联网图版权 / 来源 / 提示级命中）。门禁在**导出时**读当前文本，因此覆盖了「生成后改稿不重检」的洞                                                                                                                                         | `npm run test:growth-export`              |
 | **B3** | **统一微信库「变化」口径**                                            | 新增 `wechat/dbFileWatch.ts`（纯判定）：监控把 **`-wal` 也算变化**（主库 mtime 常不动），但对外只报**库文件本身**（报 -wal 会让下游按路径判 sessionChanged 的逻辑全部失配）；WAL 变化按 3s 冷却节流，主库变化立即放行。`decrypt.openWxDbFile` 增加**增量刷新**：主库没动、只有 WAL 追加时，把当前日志的帧合进已有明文副本（`quick_check` 通过才采用），不再整库重解；判据保守，任一不成立即回落原路径                                                                                                                                                                                                                                                                                                                                  | `npm run test:wx-watch`                   |
 | **B5** | **Base 同步键换全局 uid**（本轮提前做）                               | 新增 `issueUid(wxid, key)`（`baseMapping.ts`）与 Base 列 `议题UID`；`议题ID`（本地行号）保留只作展示。`lark_sync_map` 增 `remote_uid`，推送/拉取/认领三处一律**先按 uid 对齐**，认不出才退回行号；老映射命中后自动补写 uid。表里没有 `议题UID` 列时自动退化为原行为（不报错、不拒收记录）                                                                                                                                                                                                                                                                                                                                                                                                                                              | `npm run test:lark-uid`                   |
-| **A4** | **崩溃兜底 + 任务终态对账**                                           | `services/crashGuard.ts`（新）：`uncaughtException`/`unhandledRejection` 落 `logs/crash-<ts>.log` + 标记文件 + error 日志，**故意不退出进程**（常驻后台还跑着调度）。`db/reconcile.ts`（新）：启动时把「早于本次进程启动」的非终态任务改判 `interrupted`（im_audit / report_run / growth_crawl_task）。`main/index.ts`：尽早注册兜底 + 启动对账 + 读走崩溃标记并记 error                                                                                                                                                                                                                                                                                                                                                               | `npm run test:reconcile`                  |
+| **A4** | **崩溃兜底 + 任务终态对账**                                           | `services/crashGuard.ts`（新）：`uncaughtException`/`unhandledRejection` 落 `logs/crash-<ts>.log` + 标记文件 + error 日志，**故意不退出进程**（常驻后台还跑着调度）。`db/reconcile.ts`（新）：启动时把「早于本次进程启动」的非终态任务改判 `interrupted`（im_audit / report_run）。`main/index.ts`：尽早注册兜底 + 启动对账 + 读走崩溃标记并记 error                                                                                                                                                                                                                                                                                                                                                               | `npm run test:reconcile`                  |
 
-| **A5** | **营销生图链路收口**（2026-09-19，真机实测驱动） | 详见 `docs/growth-ai-tools.md`。① **老库遗留 NOT NULL 列**（`growth_remix_output.job_id`）让产出写入每次失败 —— 补迁移 7 放宽（不删数据），并提供 `npm run db:audit` 体检工具；② 审批**多卡**（此前单槽互相覆盖 → 用户只答一张，其余超时被写成"用户拒绝"）+ 超时/拒绝/取消三分；③ **拆解真的看图**（多模态 images + 预算截断自动抬档：日志实证 2400→9600 才写出完整 JSON）；④ 图片来源判定（`shared/imageSource.ts`：同行原图不得当底图/内容依据）；⑤ **高仿改写恢复为主线**（原图真的发进 /images/edits）+ 出图按原图长宽比 + 逐字文案 textLines；⑥ **回读校对 + 自动本地补字**（长文案被裁是提示词压不住的必然事件）；⑦ **纯文字排版图分流**到本地清单版式；⑧ `noText` + 本地压字；⑨ 素材图可删除（至少保留一张、挂在产出上的先拦下）；⑩ 慢操作统一加 Spinner 与分阶段文案；⑪ **封面离屏截图被工作区裁短**（竖版封面底部 9% 静默丢失，含历史产出）改走 CDP 整页截取 + 尺寸自检 | `test:growth-image` / `test:growth-cover` / `test:cover-size` / `test:growth-analyze` / `test:schema` / `db:audit` |
-
-三项新增自检已登记进 `package.json` 与 `test:all`。
 
 **为什么先做这四条**：A1 与 A2 分别对应「已付费的能力被丢弃」和「最难排查的事故」，
 各只值几十行；A3 是**会漏钱**的设计缺口；A4 是「出事时手上什么都没有」。
@@ -62,18 +57,10 @@
    （`im/wechatClawService.ts:18-25`，目前只承载 AI 会话）接进客户/议题闭环；③ 接受不做主动触达。
 2. **单聊**：三条引擎全部 `s.isGroup`（`feedback/passes/extract.ts:102`、`agent/duty.ts:117`、`feedback/analyzer.ts:627`）。
    私域成交主战场在闭环外 —— 要不要做「单聊轻闭环」？
-3. **营销采集**：ADR-2 定的「不做对抗式爬虫」与实际实现相反（vendor 爬虫 + 公共镜像），
-   且订阅 SPI 注册表为空（`collector/thirdparty.ts:41`）→ 订阅页 100% 必失败。
-   要么补一家真供应商，要么下线订阅入口只留链接入库。
 4. **数字员工 live**：`feedback/passes/reply.ts:32-33` 显示 live 只改轮询间隔；
    `services/agent/` 全目录发送与通知调用**均为 0**；`setReplyStatus` 零调用。
    要么接发送通道，要么把「正式模式」文案改掉 —— **不能让 UI 承诺一个不存在的能力**。
 5. **坐席/绩效**：`team_member` 只有 `(account_wxid, username, label)`，全仓无 user/role/seat 表。
-6. **生图要不要「只借结构、零原图像素」**：策略层已支持（`structureFromVisual`，有自检），但当前没有调用方 ——
-   有参考图就一定走图生图（借原图像素）。若要给用户一个"只借构图不借像素"的显式开关，需加 `noReference` 参数
-   （产品口径问题：借像素像原图但有版权敞口，不借像素干净但不像）。
-7. **清单版式要不要富格式**：`items` 现在是"名称 + 一栏说明"（`名称|说明`）；原图那种
-   "店名（品类/评分/人均）"多列排版需要把它升级成对象数组（`items: {name, meta, score}[]`）。
 
 ---
 
@@ -85,7 +72,6 @@
 | 按行数拆文件                                      | `docs/ui-architecture-audit.md:262`：已正式取消 ——「行数不是指标，接缝才是」                                                                             |
 | 为 `set-state-in-effect` 专门开一轮               | `docs/ui-architecture-audit.md:333`：收益不明确就不动                                                                                                    |
 | 现在就做多账号 / Web 端 / 复杂 RBAC               | 架构是单机单账号（注入需要前台独占）；**先修接缝**，别在断裂的地基上加层                                                                                 |
-| 把营销采集改成更激进的抓取                        | 与 ADR-2 冲突，且是发行期的合规敞口                                                                                                                      |
 
 ---
 
@@ -99,8 +85,6 @@
 | 客户 → 主数据 | `customer` 被迁移删除；Base 用本机行号当 ID                                                                                                                              | **B1 已修**（档案落库 + 迁移不再删表）+ **B5 已修**                                                                        |
 | 决策 → 审计   | AI 采纳记 manual；`send_log` 无 `agent_reply_id`；`setReplyStatus` 零调用                                                                                                | A3 局部；B4                                                                                                                |
 | 决策 → 播报   | `queued`（高风险/看不懂）没有消费者、也没有通知                                                                                                                          | 待排期（低成本）                                                                                                           |
-| 产出 → 交付   | 导出不读 `usage`/AIGC 备注；合规只是徽标                                                                                                                                 | **B2 已修**（生成期徽标 + 导出期硬门禁）                                                                                   |
-| 效果 → 回流   | 看板指引的「登记发布」按钮**不存在**；素材详情拉了 `metrics` 从不渲染                                                                                                    | B7 修过（表单 + 历史 + 合计），**后整体下线**（手工录数字没人填，见 ARCHITECTURE §9）                                      |
 | 反馈 → 聚合   | `wb_feedback` 读取函数零调用；`replyStats` 忽略 `feedback`                                                                                                               | 待排期                                                                                                                     |
 | 能力 → 计量   | token 只进单条消息 meta，全仓无聚合                                                                                                                                      | **B4 已修**（`ai_run` + 面板）                                                                                             |
 | 任务 → 终态   | `running` 行被清理逻辑排除，无启动对账                                                                                                                                   | **A4 已修**                                                                                                                |
@@ -122,7 +106,7 @@
 
 ## G. 三条主线
 
-1. **客户资产** —— `customer` 落库是私域运营的地基，也是营销归因的唯一落点。
+1. **客户资产** —— `customer` 落库是私域运营的地基，也是客户来源归因的唯一落点。
 2. **出站通道** —— 注入路径决定了产品只能做「识别 + 建议」，做不了「主动触达」。先决策。
 3. **度量** —— AI 采纳率、token 成本、内容回流，三个数字决定「值不值得继续投」。
 
