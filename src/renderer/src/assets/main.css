@@ -12,6 +12,11 @@ body,
   padding: 0;
 }
 
+/* 根节点也铺底色：窗口首帧/滚动回弹时不会露出浏览器默认白底 */
+html {
+  background: var(--bg);
+}
+
 body {
   overflow: hidden;
   user-select: none;

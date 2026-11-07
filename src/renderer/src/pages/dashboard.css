@@ -1,53 +1,162 @@
-/* 数据看板 */
+/* ══════════ 运营看板（pages/DashboardPage.tsx）══════════ */
 
-.db-alert {
-  background: var(--danger-soft);
-  border: 1px solid #f5c2c2;
-  color: var(--danger-text);
-  font-size: var(--fs-md);
-  border-radius: var(--r-md);
-  padding: 10px 14px;
-  margin-bottom: 14px;
-}
-
-/* 指标卡（2026-09 压扁：26px 数字 + 14px 内边距的"大卡"装一个数字，五张就吃掉近 100px；
- * 现在数字 17px、内边距 10px，高度约 56px，一屏多出一整块面板的位置） */
-.db-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-3);
-}
-
-.db-card {
-  text-align: left;
-  padding: var(--sp-2) var(--sp-3);
+.db-page {
   min-width: 0;
 }
 
-.db-card-num {
-  font-size: var(--fs-xl);
-  font-weight: 600;
-  color: var(--text-1);
-  line-height: 1.25;
-  font-variant-numeric: tabular-nums;
+/* 熔断等异常：淡红底 + 红描边，不做整块大红色块 */
+.db-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  color: var(--danger-text);
+  font-size: var(--fs-sm);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-4);
+  margin-bottom: var(--sp-3);
 }
 
-.db-card-num.warn {
+/* ── 顶部 HUD 读数带：一条连续的读数条，格间只用 1px 冷线分隔 ── */
+.db-hud {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  padding: 1px;
+  margin-bottom: var(--sp-3);
+  background: var(--border-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+@media (max-width: 1180px) {
+  .db-hud {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .db-hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.db-hud-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 78px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) calc(var(--sp-3) + 3px);
+  background: var(--bg-panel);
+  transition: background 0.16s ease;
+}
+
+/* 3px 左侧状态色条（与监控 KPI 同一语言） */
+.db-hud-cell::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: var(--sp-3);
+  bottom: var(--sp-3);
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--brand);
+}
+
+.db-hud-cell:hover {
+  background: var(--bg-hover);
+}
+
+.db-hud-cell.tone-warn::before {
+  background: var(--warn);
+}
+
+.db-hud-cell.tone-danger::before {
+  background: var(--danger);
+}
+
+/* 只在有值时染底：常态读数保持安静 */
+.db-hud-cell.tone-warn.is-hot {
+  background: color-mix(in srgb, var(--warn) 6%, var(--bg-panel));
+}
+
+.db-hud-cell.tone-danger.is-hot {
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg-panel));
+}
+
+.db-hud-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-hud-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.db-hud-cell.tone-warn .db-hud-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+
+.db-hud-cell.tone-danger .db-hud-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+.db-hud-value {
+  font-size: var(--fs-kpi);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+}
+
+/* 只有"有值"的警示读数才上状态色，0 保持中性 */
+.db-hud-cell.tone-warn.is-hot .db-hud-value {
+  color: var(--warn-text);
+}
+
+.db-hud-cell.tone-danger.is-hot .db-hud-value {
   color: var(--danger);
 }
 
-.db-card-label {
+.db-hud-hint {
   font-size: var(--fs-xs);
-  color: var(--text-3);
-  margin-top: 2px;
+  line-height: 1.4;
+  color: var(--text-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* 图表面板网格 */
+/* ── 卡片与标题行 ── */
 .db-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--sp-3);
+}
+
+@media (max-width: 1180px) {
+  .db-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .db-panel {
@@ -57,156 +166,112 @@
   flex-direction: column;
 }
 
-.db-panel-title {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  margin-bottom: 14px;
+.db-queue-panel {
+  margin-bottom: var(--sp-3);
+}
+
+.db-panel-head {
   display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.db-panel-hint {
-  font-size: var(--fs-xs);
-  font-weight: 400;
-  color: var(--warn-strong);
-  background: #fdf3d7;
-  padding: 1px 7px;
-  border-radius: var(--r-md);
-}
-
-/* 面板标题里的「跳去别的页面」按钮：靠右、比正文小一档，别抢标题的视线。
-   不直接用 ui-btn：它的 13px/6px14px 在标题行里会撑高整行。 */
-.db-panel-act {
-  margin-left: auto;
-  flex: none;
-  font-size: var(--fs-sm);
-  padding: 3px 10px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--bg-panel);
-  color: var(--text-2);
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-.db-panel-act:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-
-/* 会话构成附加说明（置顶/折叠） */
-.db-comp-note {
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-}
-
-/* 面板内空态 */
-.db-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--placeholder);
-  font-size: var(--fs-md);
-  min-height: 120px;
-}
-
-/* 面板内小节标题（失败原因 Top） */
-.db-panel-sub {
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  margin: 14px 0 4px;
-}
-
-/* 近 7 日发送结果拆解 chip */
-.db-send-breakdown {
-  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
+  margin-bottom: var(--sp-3);
 }
 
-/* 失败原因列表 */
-.db-reasons {
-  display: flex;
-  flex-direction: column;
-}
-
-.db-reason {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
+.db-panel-title {
   font-size: var(--fs-md);
-  color: var(--text-2);
-  padding: 6px 4px;
-  border-radius: 6px;
+  font-weight: 600;
+  color: var(--text-strong);
 }
 
-.db-reason:hover {
-  background: var(--bg-hover);
-}
-
-.db-reason-name {
-  flex: 1;
-  min-width: 0;
+/* 时间窗 / 口径说明：靠右，弱化到辅助文字 */
+.db-panel-note {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.db-reason-count {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--danger);
-}
-
-/* 跟进队列 */
-.db-count-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  margin-left: 8px;
-  border-radius: 9px;
-  background: var(--danger);
-  color: var(--on-brand);
+.db-panel-sub {
   font-size: var(--fs-xs);
-  font-weight: 600;
-  vertical-align: middle;
+  color: var(--text-3);
+  margin: var(--sp-3) 0 var(--sp-1);
 }
 
-.db-count-badge.is-sleep {
-  background: var(--brand);
+/* 连接数据源的门槛卡：让 ConnectGuide 撑满面板 */
+.db-panel-gate {
+  justify-content: center;
+  padding: var(--sp-2);
 }
 
+/* ── 面板内空态：统一 .ui-empty 结构，压到面板密度 ── */
+.db-empty {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 140px;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+}
+
+.db-empty .ui-empty-glyph {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-md);
+}
+
+.db-empty .ui-empty-title {
+  font-size: var(--fs-md);
+}
+
+.db-empty .ui-empty-desc {
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+.db-empty-line {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  padding: var(--sp-2) 0;
+}
+
+/* ── 待回复队列 ── */
 .db-q-scroll {
   display: flex;
   flex-direction: column;
   max-height: 330px;
   overflow-y: auto;
+  margin-right: calc(var(--sp-1) * -1);
+  padding-right: var(--sp-1);
 }
 
 .db-q-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 6px;
-  border-radius: var(--r-md);
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-1);
+  border-bottom: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
   cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.db-q-item:last-child {
+  border-bottom: none;
 }
 
 .db-q-item:hover {
   background: var(--bg-hover);
 }
 
+.db-q-item:focus-visible {
+  outline-offset: -2px;
+}
+
 .db-q-item .cu-avatar {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
   border-radius: var(--r-md);
   display: flex;
@@ -215,6 +280,7 @@
   color: var(--on-brand);
   font-size: var(--fs-lg);
   font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 22%, transparent);
 }
 
 .db-q-main {
@@ -225,12 +291,12 @@
 .db-q-name {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-1);
   min-width: 0;
 }
 
 .db-q-name-text {
-  color: var(--text-strong);
+  color: var(--text-1);
   font-weight: 500;
   font-size: var(--fs-md);
   white-space: nowrap;
@@ -243,12 +309,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 16px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 5px;
-  border-radius: var(--r-md);
-  background: var(--danger);
-  color: var(--on-brand);
+  border-radius: var(--r-pill);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  color: var(--danger-text);
   font-size: var(--fs-xs);
   font-weight: 600;
 }
@@ -265,93 +332,176 @@
 .db-q-time {
   flex-shrink: 0;
   font-size: var(--fs-xs);
-  color: var(--placeholder);
+  color: var(--text-4);
+  text-align: right;
 }
 
 .db-q-time.is-overdue {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
-.db-q-more {
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  padding: 8px 6px 4px;
+.db-q-age {
+  color: var(--text-4);
+  margin-left: 2px;
 }
 
-/* 发送频控 */
+.db-q-more {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  padding: var(--sp-2) var(--sp-1) var(--sp-1);
+}
+
+/* 会话构成附加说明（置顶/折叠） */
+.db-comp-note {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  margin-top: var(--sp-1);
+}
+
+/* ── 频控 / 质量进度条 ── */
 .db-freq {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-2);
+}
+
+.db-freq-narrow {
+  max-width: 560px;
 }
 
 .db-freq-row {
   display: flex;
   justify-content: space-between;
-  font-size: var(--fs-md);
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
   color: var(--text-2);
 }
 
+.db-freq-row > span:last-child {
+  flex: none;
+}
+
+.db-freq-row .ui-num {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
 .db-freq-bar {
-  height: 8px;
-  border-radius: var(--r-sm);
-  background: var(--border-light);
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-light);
   overflow: hidden;
 }
 
 .db-freq-fill {
   height: 100%;
-  border-radius: var(--r-sm);
-  background: linear-gradient(90deg, #34d17b, var(--brand));
+  border-radius: var(--r-pill);
+  background: var(--brand-gradient);
+  transition: width 0.3s ease;
 }
 
 .db-freq-fill.is-high {
-  background: linear-gradient(90deg, #f0b429, var(--danger));
+  background: var(--danger-gradient);
 }
 
 .db-freq-note {
-  font-size: var(--fs-sm);
-  color: var(--warn-strong);
+  font-size: var(--fs-xs);
+  color: var(--warn-text);
 }
 
-/* ── 消息运营洞察（L2/L3）── */
+/* 发送结果拆解 chip */
+.db-send-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
 
-.db-sec {
-  margin-top: 24px;
+/* 失败原因列表 */
+.db-reasons {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+}
+
+.db-reason {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  padding: var(--sp-2) var(--sp-1);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.db-reason:last-child {
+  border-bottom: none;
+}
+
+.db-reason:hover {
+  background: var(--bg-hover);
+}
+
+.db-reason-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-reason-name .ui-num {
+  color: var(--text-4);
+}
+
+.db-reason-count {
+  flex: none;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--danger-text);
+}
+
+/* ── 消息运营洞察（L2/L3） ── */
+.db-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 
 .db-sec-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
 }
 
-.db-sec-title {
-  margin-bottom: 0;
+.db-sec-spacer {
+  flex: 1;
 }
 
 .db-footnote {
   font-size: var(--fs-xs);
   font-weight: 400;
-  color: var(--text-3);
-  margin-left: 6px;
+  line-height: 1.7;
+  color: var(--text-4);
+  max-width: 120ch;
+  margin-top: var(--sp-2);
 }
 
 .db-text-warn {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
-/* 消息类型横向分布 */
+/* ── 消息类型横向分布 ── */
 .db-types {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: var(--sp-2);
   flex: 1;
   justify-content: center;
 }
@@ -359,7 +509,7 @@
 .db-type-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   font-size: var(--fs-sm);
   color: var(--text-2);
 }
@@ -375,9 +525,10 @@
 
 .db-type-bar {
   flex: 1;
-  height: 8px;
-  border-radius: var(--r-sm);
-  background: var(--border-light);
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-light);
   overflow: hidden;
   min-width: 0;
 }
@@ -385,7 +536,7 @@
 .db-type-bar i {
   display: block;
   height: 100%;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
   background: linear-gradient(90deg, var(--chart-blue), var(--brand));
 }
 
@@ -393,6 +544,6 @@
   width: 44px;
   flex-shrink: 0;
   text-align: left;
-  color: var(--text-strong);
+  color: var(--text-1);
   font-weight: 600;
 }

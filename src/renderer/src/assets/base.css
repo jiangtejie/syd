@@ -1,7 +1,13 @@
 /**
- * 全局设计 token（浅色主题）。
- * 统一品牌色 / 状态色 / 中性色 / 圆角 / 阴影。业务 CSS 一律引用这些变量，禁止再出现
- * 与 token 语义重复的硬编码（如 #3c82f6、#089f5c、var(--border-strong) 等）。
+ * 全局设计 token。
+ *
+ * 两套主题，一套语义令牌：
+ *  - 浅色（默认回退）：白纸 + 灰线 + 微信绿，保持原来的干净观感；
+ *  - 深色（本版主推的「赛博朋克 · 简约科技」）：深空蓝黑 + 霓虹青主色 + 紫/品红辅助，
+ *    层次靠「面板比底亮两档 + 1px 冷色描边 + 极轻的光晕」而不是重阴影；
+ *    背景有一层极淡的网格与双色辉光（--grid-line / --shell-glow-*），只在深色下可见。
+ *
+ * 业务 CSS 一律引用这些变量，禁止再出现与 token 语义重复的硬编码。
  */
 
 :root {
@@ -54,7 +60,7 @@
   --bg-sunken: #f7f8fa;
   --danger-text: #c92a2a;
   --warn-strong: #b8860b;
-  /* 悬停高光：浅色下是"再白一点"，深色下必须变成"再亮一点"，所以它必须是令牌 */
+  /* 悬停高光：浅色下是「再白一点」，深色下必须变成「再亮一点」，所以它必须是令牌 */
   --hover-sheen: rgba(255, 255, 255, 0.7);
   --badge-sheen: rgba(255, 255, 255, 0.5);
   --brand-2: #10d473;
@@ -70,7 +76,8 @@
   /* ── 字号阶梯 ──
    * 为什么补这一层：几个页面此前各自写死了 9.5/10/10.5/11/11.5/12/12.5/13/14/15/17/18/19/20/25/26px
    * 共 13 档字号、4 档字重 —— 没有阶梯就没有节奏，这是「看着不精致」的主因。
-   * 新代码一律只引用这 6 档（辅助 11 / 次要 12 / 正文 13 / 小标题 15 / 标题 17 / 关键数字 24）。 */
+   * 新代码一律只引用这 6 档（辅助 11 / 次要 12 / 正文 13 / 小标题 15 / 标题 17 / 关键数字 24）。
+   * 注意：scripts/source-hygiene-selftest.mjs 会拦「font-size 写死 px」，只放行 4 处图标字形。 */
   --fs-xs: 11px;
   --fs-sm: 12px;
   --fs-md: 13px;
@@ -101,6 +108,35 @@
   --sb-w: 8px;
   --sb-inset: 2px;
   --sb-thumb: #c9cdd4;
+
+  /* ── 字体：正文沿用系统栈；数字/编码/时间戳统一走等宽，科技感来自「对齐的数值」 ── */
+  --font-mono:
+    ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono',
+    monospace;
+
+  /* ══ 赛博朋克深色主题的层次/光效令牌 ══
+   * 浅色主题下这些值退化为「无装饰」，所以同一套业务 CSS 在浅色下仍是原来的干净界面。
+   * 深色覆盖见文件末尾的深色主题块（由 data-theme 属性触发）。 */
+  --glow-brand: 0 0 0 rgba(0, 0, 0, 0);
+  --glow-card: 0 0 0 rgba(0, 0, 0, 0);
+  --panel-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0));
+  --grid-line: transparent;
+  --shell-glow-a: transparent;
+  --shell-glow-b: transparent;
+  --field-bg: #fff;
+  --brand-gradient: linear-gradient(135deg, #07c160, #07a84f);
+  --danger-gradient: linear-gradient(135deg, #fa5151, #e5484d);
+  --nav-bg: #1f2329;
+  /* 导航条在两种主题下都是深色玻璃 —— 所以它的前景色不能跟 --text-* 走（浅色主题的 --text-1 是深灰，会看不见） */
+  --nav-fg: #8d99a6;
+  --nav-fg-strong: #e6e8eb;
+  /* 「已连接」指示灯：导航条恒为深色，所以这个在线绿不随主题变 */
+  --nav-online: #2ee584;
+  --nav-hover-bg: rgba(255, 255, 255, 0.07);
+  --nav-active-bg: rgba(7, 193, 96, 0.18);
+  --nav-active-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  --nav-active-line: #2ee584;
+  --titlebar-bg: #f5f6f7;
 }
 
 /* 键盘可达性：仅键盘触发时显示焦点环，避免鼠标点击后残留 */
@@ -108,6 +144,13 @@
   outline: 2px solid var(--brand);
   outline-offset: 1px;
   border-radius: var(--r-sm);
+  box-shadow: 0 0 0 4px var(--brand-soft);
+}
+
+/* 文字选区：深色下用霓虹青，浅色下维持系统观感 */
+::selection {
+  background: var(--brand-soft);
+  color: var(--text-strong);
 }
 
 /* ── 全局细滚动条（Firefox 走 scrollbar-width/color 双写） ── */
@@ -131,9 +174,12 @@
 
 /* ── 统一控件基元（ui-*）─────────────────────────────────────────────
  * 为什么要有这一层:审计发现全项目有 13 套页面自带的按钮/输入类族(exp-/mon-/dt-/gth-/st-/db-…),
- * 同一件事在不同页面长得不一样。这里给出**唯一一套**外观,页面只需要补布局(宽度/flex)。
- * 用法:`className="ui-btn is-primary"`、`className="ui-input exp-input"`(后者只放布局)。
+ * 同一件事在不同页面长得不一样。这里给出唯一一套外观,页面只需要补布局(宽度/flex)。
+ * 用法: className="ui-btn is-primary"、className="ui-input exp-input"(后者只放布局)。
  * 迁移方式:逐页替换,替换完删掉该页对应样式,别一次性重写全站。
+ *
+ * 2026-11 视觉升级（深色赛博朋克）：主按钮改为霓虹青渐变 + 深色字，次级按钮改描边式；
+ * 选中态统一为「品牌色描边 + 淡色底 + 一圈光晕」；浅色主题下光晕为空，观感不变。
  */
 .ui-btn {
   flex: none;
@@ -145,25 +191,34 @@
   color: var(--text-1);
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    color 0.15s ease,
-    background 0.15s ease;
+    border-color 0.16s ease,
+    color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.08s ease;
 }
 
 .ui-btn:hover:not(:disabled) {
-  border-color: var(--brand);
+  border-color: var(--brand-line);
   color: var(--brand);
+  box-shadow: var(--glow-brand);
+}
+
+.ui-btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .ui-btn.is-primary {
-  background: var(--brand);
-  border-color: var(--brand);
+  background: var(--brand-gradient);
+  border-color: transparent;
   color: var(--on-brand);
+  font-weight: 600;
 }
 
 .ui-btn.is-primary:hover:not(:disabled) {
-  background: var(--brand-hover);
   color: var(--on-brand);
+  filter: brightness(1.08);
+  box-shadow: var(--glow-brand);
 }
 
 .ui-btn.is-danger {
@@ -175,10 +230,11 @@
   background: var(--danger-soft);
   border-color: var(--danger);
   color: var(--danger-hover);
+  box-shadow: 0 0 14px var(--danger-soft);
 }
 
 .ui-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: default;
 }
 
@@ -189,27 +245,41 @@
 
 /* 实心 = 高强调的主动作(配合 is-danger 即「实心红」,用于清空这类不可逆动作) */
 .ui-btn.is-solid {
-  background: var(--brand);
-  border-color: var(--brand);
+  background: var(--brand-gradient);
+  border-color: transparent;
   color: var(--on-brand);
+  font-weight: 600;
 }
 
 .ui-btn.is-solid:hover:not(:disabled) {
-  background: var(--brand-hover);
-  border-color: var(--brand-hover);
   color: var(--on-brand);
+  filter: brightness(1.08);
 }
 
 .ui-btn.is-danger.is-solid {
-  background: var(--danger);
-  border-color: var(--danger);
+  background: var(--danger-gradient);
+  border-color: transparent;
   color: var(--on-brand);
 }
 
 .ui-btn.is-danger.is-solid:hover:not(:disabled) {
-  background: var(--danger-hover);
-  border-color: var(--danger-hover);
+  background: var(--danger-gradient);
+  border-color: transparent;
   color: var(--on-brand);
+  filter: brightness(1.08);
+}
+
+/* 幽灵按钮：用于密集工具栏（hover 才出现描边），避免一排按钮都带框 */
+.ui-btn.is-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-2);
+}
+
+.ui-btn.is-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--brand-line);
+  color: var(--brand);
 }
 
 .ui-input,
@@ -219,15 +289,24 @@
   padding: 6px 9px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--bg-panel);
+  background: var(--field-bg);
   color: inherit;
   outline: none;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.ui-input::placeholder,
+.ui-textarea::placeholder {
+  color: var(--placeholder);
 }
 
 .ui-input:focus,
 .ui-select:focus,
 .ui-textarea:focus {
   border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
 }
 
 .ui-textarea {
@@ -241,16 +320,27 @@
   padding: 6px 16px;
   border-radius: var(--r-pill);
   border: 1px solid var(--border);
-  background: var(--bg-panel);
+  background: transparent;
   color: var(--text-2);
   cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.ui-tab:hover {
+  border-color: var(--brand-line);
+  color: var(--brand);
 }
 
 .ui-tab.is-active {
   background: var(--brand-soft);
-  border-color: var(--brand);
+  border-color: var(--brand-line);
   color: var(--brand);
   font-weight: 600;
+  box-shadow: var(--glow-brand);
 }
 
 /* 胶囊筛选(可多选/单选的小圆片) */
@@ -259,89 +349,111 @@
   padding: 4px 11px;
   border-radius: var(--r-pill);
   border: 1px solid var(--border);
-  background: var(--bg-panel);
+  background: transparent;
   color: var(--text-2);
   cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease,
+    background 0.16s ease;
+}
+
+.ui-pill:hover {
+  border-color: var(--brand-line);
+  color: var(--brand);
 }
 
 .ui-pill.is-on {
   background: var(--brand-soft);
-  border-color: var(--brand);
+  border-color: var(--brand-line);
   color: var(--brand);
   font-weight: 600;
 }
 
-/* 徽标/标签:一个基类 + 语气修饰(ok/warn/bad),solid 为实心底、line 为描边 */
+/* 徽标/标签:一个基类 + 语气修饰(ok/warn/bad),solid 为实心底、line 为描边。
+ * 赛博风：默认描边式（1px 同色系细线 + 半透明底），比实心色块更像仪表盘读数。 */
 .ui-chip {
   display: inline-block;
   white-space: nowrap;
   font-size: var(--fs-sm);
   line-height: 18px;
   padding: 2px 10px;
-  border-radius: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
   color: var(--text-2);
-  background: var(--border-light);
+  background: var(--bg-hover);
 }
 
 .ui-chip.is-sm {
   font-size: var(--fs-xs);
   line-height: 15px;
   padding: 1px 7px;
-  border-radius: 9px;
+  border-radius: 5px;
 }
 
 .ui-chip.is-ok {
   color: var(--success-strong);
   background: var(--success-soft);
+  border-color: var(--success-line);
 }
 
 .ui-chip.is-warn {
-  color: var(--warn-strong);
-  background: #fdf3d7;
+  color: var(--warn-text);
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
 }
 
 .ui-chip.is-bad {
-  color: var(--danger);
+  color: var(--danger-hover);
   background: var(--danger-soft);
+  border-color: var(--danger-line);
 }
 
 .ui-chip.is-solid {
   color: var(--on-brand);
-  background: var(--brand);
+  background: var(--brand-gradient);
+  border-color: transparent;
 }
 
 .ui-chip.is-line {
+  background: transparent;
   border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
 }
 
 /* 分段控件:2~4 个互斥选项的紧凑切换(容器 + 按钮) */
 .ui-seg {
   display: inline-flex;
+  padding: 2px;
+  gap: 2px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  background: var(--bg-sunken);
   overflow: hidden;
 }
 
 .ui-seg-btn {
   border: none;
-  background: var(--bg-hover);
+  border-radius: calc(var(--r-md) - 2px);
+  background: transparent;
   color: var(--text-3);
   font-size: var(--fs-sm);
-  padding: 5px 12px;
+  padding: 4px 11px;
   cursor: pointer;
   transition:
     background 0.15s,
-    color 0.15s;
+    color 0.15s,
+    box-shadow 0.15s;
 }
 
-.ui-seg-btn + .ui-seg-btn {
-  border-left: 1px solid var(--border);
+.ui-seg-btn:hover {
+  color: var(--text-1);
 }
 
 .ui-seg-btn.is-on {
-  background: var(--brand);
-  color: var(--on-brand);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--brand-line);
 }
 
 /* 文字链接按钮 */
@@ -355,10 +467,38 @@
 }
 
 .ui-link:hover {
+  color: var(--brand);
   text-decoration: underline;
 }
+
+/* 数值/编号：等宽 + 表格数字。KPI、时间戳、计数统一用它，跨行对齐才有仪表盘感 */
+.ui-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 区块小标题：中文靠「字重 + 左侧色条」表达层级，不靠全大写 */
+.ui-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: 0.06em;
+}
+
+.ui-label::before {
+  content: '';
+  width: 3px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--brand-gradient);
+}
+
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-4);
+  background: var(--brand-line);
   border: var(--sb-inset) solid transparent;
   background-clip: content-box;
 }
@@ -366,75 +506,98 @@
   background: transparent;
 }
 
-/* ══════════ 深色主题 ══════════
+/* ══════════ 深色主题：赛博朋克 · 简约科技 ══════════
  * 由「设置 → 偏好与数据 → 外观」切换：App 启动时按偏好往 <html> 写 data-theme，
- * 「跟随系统」则监听 prefers-color-scheme。这里**只覆盖语义令牌**，
+ * 「跟随系统」则监听 prefers-color-scheme。这里只覆盖语义令牌，
  * 业务 CSS 一行都不用改 —— 这也是上一轮把字体/间距/颜色收口到令牌的回报。
  *
- * 取色原则：不做纯黑。--bg #14171a、面板 #1b1f24、浮起 #222831，
- * 层次靠"面板比背景亮一档 + 1px 描边"，纯黑底配纯白字在长时间盯屏时对比过强。
- * 状态色的 soft/line 一律改成同一色相的半透明，保证在深底上仍然可读且不刺眼。
+ * 取色原则：
+ *  - 不做纯黑：底 #050910 带蓝，面板 #0a121e 亮一档，浮起 #101c2b 再亮一档；
+ *  - 主色是霓虹青（#22d3ee），紫色（#a855f7）只做第二强调，避免霓虹打架；
+ *  - 状态色的 soft/line 一律改成同色相半透明，深底上才有染色感而不是脏色块；
+ *  - 描边一律偏冷（蓝灰），这样界面整体像深空里的 HUD 线框。
  */
 [data-theme='dark'] {
   color-scheme: dark;
 
   /* 文字：整体降一档亮度，避免白字扎眼；--text-strong 留给标题 */
-  --text-1: #e6e8eb;
-  /* 次要文字比浅色主题相对更亮一档：深底上 11~12px 的灰字（会话列表「暂无消息」、时间戳、
-     卡片 meta 行）按浅色的换算值会掉到读不清，实测提亮后正常 */
-  --text-2: #c2c9d1;
-  --text-3: #9aa3ac;
-  --text-4: #7d868f;
-  --text-strong: #f2f4f6;
-  --placeholder: #6a727b;
-  --muted: #9aa3ac;
+  --text-1: #d7e3f4;
+  --text-2: #a3b6cf;
+  --text-3: #7286a0;
+  --text-4: #4f6178;
+  --text-strong: #f1f7ff;
+  --placeholder: #46586e;
+  --muted: #7286a0;
 
-  /* 描边与背景：三级层次（底 / 面板 / 浮起） */
-  --border: #2e343c;
-  --border-light: #242a31;
-  --border-strong: #3a424b;
-  --bg: #14171a;
-  --bg-panel: #1b1f24;
-  --bg-hover: #222831;
-  --bg-sunken: #191d22;
-  --bg-mask: rgba(0, 0, 0, 0.62);
-  --panel: #1b1f24;
-  --line: rgba(255, 255, 255, 0.12);
+  /* 描边与背景：三级层次（底 / 面板 / 浮起），描边偏冷 */
+  --border: #1b2a3c;
+  --border-light: #121d2b;
+  --border-strong: #2a3f57;
+  --bg: #050910;
+  --bg-panel: #0a121e;
+  --bg-hover: #101c2b;
+  --bg-sunken: #060c15;
+  --bg-mask: rgba(1, 4, 9, 0.72);
+  --panel: #0a121e;
+  --line: rgba(120, 180, 220, 0.13);
 
-  /* 品牌与状态：软底改成半透明，深底上才有"染色感"而不是一块脏色 */
-  --brand-soft: rgba(7, 193, 96, 0.16);
-  --brand-line: rgba(7, 193, 96, 0.45);
-  --success-soft: rgba(7, 166, 63, 0.18);
-  --success-line: rgba(7, 166, 63, 0.36);
-  --success-strong: #3ddc84;
-  --danger-soft: rgba(250, 81, 81, 0.18);
-  --danger-line: rgba(250, 81, 81, 0.36);
-  --danger-text: #ff9b9b;
-  --warn-soft: rgba(245, 166, 35, 0.18);
-  --warn-line: rgba(245, 166, 35, 0.36);
-  --warn-text: #e8c37a;
-  --warn-strong: #e8c37a;
-  --info: #6ba1ff;
-  --info-soft: rgba(60, 130, 246, 0.18);
-  --note: #a78bfa;
-  --note-soft: rgba(139, 92, 246, 0.18);
+  /* 品牌与状态：霓虹青主色 + 紫色次强调；软底改成半透明，深底上才有染色感 */
+  --brand: #22d3ee;
+  --brand-hover: #67e8f9;
+  --brand-2: #a855f7;
+  --brand-3: #0891b2;
+  --brand-soft: rgba(34, 211, 238, 0.12);
+  --brand-line: rgba(34, 211, 238, 0.48);
+  --on-brand: #03141b;
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.14);
+  --success-strong: #4ade80;
+  --success-line: rgba(52, 211, 153, 0.34);
+  --danger: #ff4d6d;
+  --danger-hover: #ff7a92;
+  --danger-soft: rgba(255, 77, 109, 0.14);
+  --danger-line: rgba(255, 77, 109, 0.38);
+  --danger-text: #ff9db0;
+  --warn: #ffb020;
+  --warn-soft: rgba(255, 176, 32, 0.14);
+  --warn-line: rgba(255, 176, 32, 0.36);
+  --warn-text: #ffd08a;
+  --warn-strong: #ffd08a;
+  --info: #5b9dff;
+  --info-soft: rgba(91, 157, 255, 0.14);
+  --note: #b98cff;
+  --note-soft: rgba(185, 140, 255, 0.14);
+  --chart-blue: #5b9dff;
 
-  /* 交互高光：浅色下是"再白一点"，深色下只能是"再亮一点" */
-  --hover-sheen: rgba(255, 255, 255, 0.08);
-  --badge-sheen: rgba(255, 255, 255, 0.06);
-  --brand-2: #2ee584;
-  --brand-3: #07a84f;
+  /* 交互高光：浅色下是「再白一点」，深色下只能是「再亮一点」 */
+  --hover-sheen: rgba(255, 255, 255, 0.06);
+  --badge-sheen: rgba(255, 255, 255, 0.05);
 
-  /* 阴影与滚动条：深色下阴影要更重才看得出层次；滑块要比底亮 */
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55);
-  --shadow-toast: 0 6px 18px rgba(0, 0, 0, 0.5);
-  --sb-thumb: #3a424b;
+  /* 阴影：深色下用「顶部 1px 冷光 + 更大的落影」表达浮起，而不是纯黑投影 */
+  --shadow-card: inset 0 1px 0 rgba(173, 226, 255, 0.045), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 18px 48px rgba(0, 0, 0, 0.66), 0 0 0 1px rgba(34, 211, 238, 0.1);
+  --shadow-toast: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(34, 211, 238, 0.16);
+  --sb-thumb: #1e3247;
+
+  /* 光效/纹理：只见于深色；浅色主题里这些 token 一律透明 */
+  --glow-brand: 0 0 18px rgba(34, 211, 238, 0.24);
+  --glow-card: inset 0 1px 0 rgba(173, 226, 255, 0.05);
+  --panel-gradient: linear-gradient(180deg, rgba(34, 211, 238, 0.05), rgba(34, 211, 238, 0) 42%);
+  --grid-line: rgba(110, 170, 220, 0.045);
+  --shell-glow-a: rgba(34, 211, 238, 0.1);
+  --shell-glow-b: rgba(168, 85, 247, 0.09);
+  --field-bg: #060d17;
+  --brand-gradient: linear-gradient(135deg, #22d3ee 0%, #0891b2 100%);
+  --danger-gradient: linear-gradient(135deg, #ff4d6d 0%, #c9184a 100%);
+  --nav-bg: #070d16;
+  --nav-active-bg: rgba(34, 211, 238, 0.14);
+  --nav-active-shadow: 0 0 16px rgba(34, 211, 238, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --nav-active-line: #22d3ee;
+  --titlebar-bg: rgba(5, 9, 16, 0.9);
 }
 
 /* 图片/视频在深色下稍微压一点亮度，避免大面积白底图糊在深色界面上 */
 [data-theme='dark'] img,
 [data-theme='dark'] video {
-  filter: brightness(0.94);
+  filter: brightness(0.92) saturate(0.96);
 }
-

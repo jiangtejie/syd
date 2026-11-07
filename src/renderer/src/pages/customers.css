@@ -1,11 +1,34 @@
-/* 客户页 */
+/* 客户页 —— 深色 HUD 表格 + 侧滑画像抽屉
+ *
+ * 设计口径（见 scripts/_tmp/design-brief.md）：
+ * - 层次靠 4 级文字色 + 3 档字号，区块最多一层描边；
+ * - 数字（计数/时间/wxid）统一 .ui-num（等宽 + tabular-nums）；
+ * - 选中 = 品牌青描边 + 淡青底 + 左侧 2px 冷光，与页签/分段控件同一套表达；
+ * - 外观一律复用 ui-*（按钮/输入/胶囊/徽标），本文件只留布局与表格结构。
+ */
 
-/* 页头一行：标题 + 规模统计（此前统计单独占一行，与下面筛选胶囊上的数字重复） */
+/* 滚动容器顶部不留内边距：sticky 表头的 offset 相对 padding 盒，
+ * 留 22px 的话滚动时会有行从那条空隙里漏出来。视觉上改用页头自己的 padding 补回。 */
+.page-scroll.cu-page {
+  padding-top: 0;
+}
+
+/* ── 页头：标题 + HUD 读数 ── */
 .cu-head {
+  padding-top: 22px;
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-3);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4);
   flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.cu-head-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .cu-head .page-title {
@@ -13,110 +36,264 @@
 }
 
 .cu-head-meta {
+  padding-left: 13px;
   font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
+/* HUD 读数条：凹槽底 + 一条冷描边，读数本身是主角 */
+.cu-hud {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.cu-hud-item {
+  position: relative;
+  min-width: 76px;
+  padding: 5px 14px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cu-hud-item + .cu-hud-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--border-light);
+}
+
+.cu-hud-k {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.cu-hud-v {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-strong);
+}
+
+.cu-hud-warn {
+  color: var(--warn-text);
+}
+
+/* ── 工具栏：搜索 + 标签筛选胶囊 ── */
 .cu-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  flex-wrap: wrap;
 }
 
+.cu-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 280px;
+  flex: none;
+}
+
+.cu-search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-4);
+  pointer-events: none;
+}
+
+/* 外观由全局 ui-input 提供；这里只留搜索框的图标内缩 */
 .cu-search {
-  width: 260px;
+  width: 100%;
   height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  font-size: var(--fs-md);
-  color: var(--text-1);
-  outline: none;
-  user-select: text;
-  background: var(--bg-panel);
-  transition: border-color 0.15s ease;
-}
-
-.cu-search:focus {
-  border-color: var(--brand);
+  padding-left: 30px;
 }
 
 .cu-filters {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
 }
 
 .cu-filter {
-  padding: 5px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--bg-panel);
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  cursor: pointer;
-  transition:
-    color 0.12s ease,
-    background-color 0.12s ease,
-    border-color 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.cu-filter.is-active {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: var(--on-brand);
-  font-weight: 500;
+.cu-filter-n {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  transition: color 0.16s ease;
+}
+
+.cu-filter.is-on .cu-filter-n {
+  color: var(--brand);
 }
 
 .cu-filter-clear {
-  color: var(--danger);
-  border-color: var(--danger-line);
-  background: var(--bg-panel);
+  margin-left: var(--sp-1);
 }
 
-.cu-filter-clear:hover {
-  background: var(--danger-soft);
+/* ── 数字员工批量管理条 ── */
+.cu-agentbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-lg);
+  background-color: var(--bg-panel);
+  background-image: var(--panel-gradient);
+  box-shadow: var(--shadow-card);
 }
 
+.cu-agent-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.cu-agent-meta {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cu-agent-meta b {
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.cu-agent-goto {
+  flex: none;
+}
+
+.cu-agent-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.cu-agent-seg {
+  flex: none;
+}
+
+/* 把批量操作推到右侧：左侧是筛选（看哪些），右侧是动作（对哪些做什么） */
+.cu-agent-gap {
+  flex: 1;
+  min-width: 0;
+}
+
+.cu-agent-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  flex: none;
+}
+
+.cu-agent-picked {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.cu-agent-picked b {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.cu-agentbar input[type='checkbox'],
+.cu-list input[type='checkbox'] {
+  accent-color: var(--brand);
+  cursor: pointer;
+  margin: 0;
+}
+
+/* ── 客户表：sticky 表头 + hairline 行分隔 ── */
 .cu-list {
   padding: 0;
-  overflow: hidden;
+  /* sticky 表头需要卡片不做裁剪（圆角改由首/尾行自己处理） */
+  overflow: visible;
 }
 
 .cu-row {
   display: grid;
-  /* 列宽重分配。原来「类型 / 未读」各占 0.5fr（66px）只装两个字，「最近活跃」占 1fr（133px）
-     只装一个时间戳 —— 这些空出来的宽度全部还给真正需要空间的列。
-     注意：**每一行都是独立的 grid 容器**，所以轨道只能用定宽或 fr；用 auto/max-content
-     会各算各的，列与列之间对不齐。
-     定宽列的依据：类型「群聊/个人」2 字 ≈ 24px；最近活跃最坏是跨年的「2026/9/11 13:19:11」≈ 112px；
-     未读是个圆点数字；数字员工是一个「开/关」胶囊。 */
+  /* 每一行都是独立 grid 容器：轨道只能用定宽/fr，列与列之间才对齐 */
   grid-template-columns:
-    26px minmax(0, 1.6fr) 48px minmax(0, 1.1fr) minmax(0, 1.5fr) 118px 40px 68px;
+    26px minmax(0, 1.6fr) 62px minmax(0, 1.1fr) minmax(0, 1.4fr) 112px 52px 64px;
   align-items: center;
   gap: 10px;
-  /* 密度：行高 53 → 43（头像 32→28、上下内边距 10→7）——一屏多出 4 行 */
   padding: 7px 14px;
   font-size: var(--fs-md);
   color: var(--text-1);
   cursor: pointer;
   border-bottom: 1px solid var(--border-light);
-}
-
-.cu-row:last-child {
-  border-bottom: none;
+  transition:
+    background-color 0.14s ease,
+    box-shadow 0.14s ease;
 }
 
 .cu-row:not(.cu-row-head):hover {
   background: var(--bg-hover);
 }
 
+/* 选中（勾选待批量操作的群）：与页签/分段同一种「青描边 + 淡青底」 */
+.cu-row.is-picked {
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+
+.cu-row.is-picked:hover {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
 .cu-row-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   cursor: default;
-  font-size: var(--fs-sm);
+  padding-top: 9px;
+  padding-bottom: 9px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.06em;
   color: var(--text-3);
-  background: var(--bg-hover);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+
+.cu-th-num {
+  text-align: right;
+}
+
+.cu-cell-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .cu-cell-name {
@@ -129,25 +306,29 @@
 .cu-avatar {
   width: 28px;
   height: 28px;
-  border-radius: 6px;
-  color: var(--on-brand);
-  font-size: var(--fs-sm);
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  border-radius: 7px;
+  color: var(--on-brand);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  /* 深底上亮色头像需要一圈冷描边，否则像贴在背景上的色块 */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bg) 42%, transparent);
 }
 
 .cu-avatar.lg {
   width: 44px;
   height: 44px;
+  border-radius: 10px;
   font-size: var(--fs-xl);
 }
 
 .cu-avatar-img {
-  border-radius: 6px;
+  border-radius: 7px;
   object-fit: cover;
-  flex-shrink: 0;
+  border: 1px solid var(--border);
 }
 
 .cu-avatar.lg.cu-avatar-img {
@@ -180,13 +361,18 @@
 }
 
 .cu-cell-kind {
-  font-size: var(--fs-sm);
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
-.cu-cell-kind.is-group {
+.cu-kind-chip {
+  flex: none;
+}
+
+/* 群聊用主色描边（与「数字员工开」同色系），个人用中性徽标 */
+.cu-kind-group {
   color: var(--brand);
-  font-weight: 500;
 }
 
 .cu-cell-tags {
@@ -195,6 +381,14 @@
   gap: 5px;
   min-width: 0;
   overflow: hidden;
+}
+
+.cu-status-chip {
+  flex: none;
+}
+
+.cu-tag-more {
+  flex: none;
 }
 
 .cu-cell-sum {
@@ -206,17 +400,44 @@
   min-width: 0;
 }
 
+.cu-time {
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cu-cell-unread {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .cu-unread {
-  min-width: 18px;
-  height: 18px;
-  border-radius: 9px;
-  background: var(--danger);
-  color: var(--on-brand);
-  font-size: var(--fs-xs);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--danger-line);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger-text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.cu-cell-agent {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* 外观走全局 ui-pill(true=is-on)；这里只留表格单元格里的小尺寸 */
+.cu-agent-toggle {
+  min-width: 34px;
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
 }
 
 .cu-muted {
@@ -225,39 +446,120 @@
 }
 
 .cu-empty {
-  padding: 40px;
-  text-align: center;
+  padding: var(--sp-6) var(--sp-4);
+}
+
+/* ── 分页条 ── */
+.cu-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border-light);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
+
+.cu-pager-info {
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 
-/* 画像抽屉 */
+.cu-pager-info b {
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.cu-pager-ctrl {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* 外观走全局 ui-select / ui-input / ui-btn；这里只留翻页条的尺寸与密度 */
+.cu-pager-select {
+  height: 28px;
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+}
+
+.cu-pager-now {
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.cu-pager-now b {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.cu-pager-jump {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cu-pager-jump-input {
+  width: 68px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.cu-pager-btn {
+  height: 28px;
+}
+
+.cu-pager-btn:disabled {
+  color: var(--text-4);
+}
+
+/* ── 客户画像抽屉 ── */
 .cu-drawer-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.25);
   z-index: 50;
+  background: var(--bg-mask);
+  backdrop-filter: blur(2px);
 }
 
 .cu-drawer {
   position: absolute;
   top: 0;
   right: 0;
-  width: 340px;
+  width: 380px;
+  max-width: calc(100vw - 64px);
   height: 100%;
-  background: var(--bg-panel);
-  color: var(--text-1);
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
-  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  overflow-y: auto;
+  color: var(--text-1);
+  background-color: var(--bg-panel);
+  background-image: var(--panel-gradient);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-pop);
+}
+
+/* 左缘一道冷光：把抽屉与页面分开，又不用重阴影 */
+.cu-drawer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--brand-line), transparent 78%);
 }
 
 .cu-drawer-head {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .cu-drawer-title {
@@ -268,246 +570,181 @@
 .cu-name-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
 }
 
 .cu-name {
-  font-size: var(--fs-xl);
-  font-weight: 600;
-}
-
-.cu-wxid {
-  font-size: var(--fs-xs);
-  color: var(--text-3);
-  margin-top: 2px;
-  word-break: break-all;
-}
-
-.cu-drawer-close {
-  border: none;
-  background: transparent;
-  color: var(--text-3);
   font-size: var(--fs-lg);
-  cursor: pointer;
-  padding: 4px;
-}
-
-.cu-drawer-close:hover {
-  color: var(--text-1);
-}
-
-.cu-section {
-  border-top: 1px solid var(--border-light);
-  padding-top: 12px;
-}
-
-.cu-section-title {
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  margin-bottom: 8px;
-}
-
-.cu-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.cu-kv {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: var(--fs-md);
-  padding: 4px 0;
-}
-
-.cu-kv > span:first-child {
-  color: var(--text-3);
-  flex-shrink: 0;
-}
-
-.cu-summary-cell {
-  text-align: right;
-  word-break: break-all;
-}
-
-.cu-goto {
-  padding: 9px 0;
-  border: none;
-  border-radius: var(--r-md);
-  background: var(--brand);
-  color: var(--on-brand);
-  font-size: var(--fs-lg);
-  cursor: pointer;
-}
-
-.cu-goto:hover {
-  background: var(--brand-hover);
-}
-
-.cu-drawer-hint {
-  font-size: var(--fs-xs);
-  color: var(--text-4);
-  text-align: center;
-}
-
-/* 列表分页条 */
-.cu-pager {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--border-light);
-}
-
-.cu-pager-info {
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-}
-
-.cu-pager-ctrl {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 外观走全局 ui-select / ui-input / ui-btn；这里只留翻页条的尺寸与密度 */
-.cu-pager-select {
-  height: 26px;
-  padding: 0 8px;
-  font-size: var(--fs-sm);
-}
-
-.cu-pager-now {
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  white-space: nowrap;
-}
-
-.cu-pager-jump {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.cu-pager-jump-input {
-  width: 64px;
-  height: 26px;
-  padding: 0 8px;
-  font-size: var(--fs-sm);
-  text-align: center;
-}
-
-.cu-pager-btn {
-  height: 26px;
-  padding: 0 12px;
-  font-size: var(--fs-sm);
-}
-
-.cu-pager-btn:disabled {
-  color: var(--text-4);
-  background: var(--bg-hover);
-}
-
-/* ── 数字员工：群级自动回复批量管理 ── */
-.cu-agentbar {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 8px 10px;
-  padding: var(--sp-2) var(--sp-3);
-  margin-bottom: var(--sp-3);
-  border: 1px solid var(--border-light);
-  border-radius: var(--r-lg);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-card);
-}
-
-/* 窄屏才允许折行（此时省略号让位给完整信息） */
-@media (max-width: 900px) {
-  .cu-agentbar {
-    flex-wrap: wrap;
-  }
-  .cu-agent-meta {
-    white-space: normal;
-  }
-}
-
-.cu-agent-title {
-  font-size: var(--fs-sm);
   font-weight: 600;
-  color: var(--brand);
-}
-
-.cu-agent-meta {
-  font-size: var(--fs-xs);
-  color: var(--text-3);
-  flex: 1;
-  /* 单行省略：状态是「全局默认/模式/群数/覆盖数」四段拼接，窄屏折行会把工具栏撑高一倍；
-     完整口径在 title 里（鼠标悬停可看全） */
+  color: var(--text-strong);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cu-agent-filters {
+.cu-wxid {
+  margin-top: 3px;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  word-break: break-all;
+}
+
+.cu-drawer-close {
+  flex: none;
+  padding: 2px 7px;
+}
+
+.cu-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-4);
+}
+
+.cu-section {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.cu-section:last-child {
+  border-bottom: none;
+}
+
+.cu-section-title {
+  margin-bottom: var(--sp-2);
+}
+
+.cu-section-title.cu-sub-title {
+  margin-top: var(--sp-4);
+}
+
+.cu-tags {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
 }
 
-/* 「话术与决策记录 →」：跳到值班页（同一个数字员工状态的另一处入口） */
-.cu-agent-goto {
-  flex: none;
-  padding: 3px 10px;
+.cu-hint-inline {
   font-size: var(--fs-xs);
-  border: 1px solid var(--brand-line);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--brand);
-  cursor: pointer;
+  color: var(--text-4);
 }
 
-.cu-agent-goto:hover {
-  background: var(--brand-soft);
+.cu-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 3px 0;
+  font-size: var(--fs-md);
 }
 
-.cu-agent-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--fs-sm);
+.cu-kv > span:first-child {
+  flex: none;
+  color: var(--text-3);
+}
+
+.cu-kv > span:last-child {
+  min-width: 0;
+  color: var(--text-1);
+  text-align: right;
+  word-break: break-all;
+}
+
+.cu-summary-cell {
   color: var(--text-2);
-  cursor: pointer;
 }
 
-.cu-agent-picked {
+/* 表单字段：标签在上、控件在下（比左右两列更好读，长 placeholder 不会挤成两行） */
+.cu-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
   font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
-.cu-filter:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.cu-field .ui-input,
+.cu-field .ui-textarea {
+  width: 100%;
+  font-size: var(--fs-md);
+  resize: vertical;
 }
 
-.cu-cell-pick {
+.cu-save {
+  width: 100%;
+  margin-top: var(--sp-3);
+}
+
+.cu-manual-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.cu-tag-x {
+  padding: 0 0 0 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.cu-tag-x:hover {
+  opacity: 1;
+}
+
+.cu-tag-add {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
 }
 
-.cu-cell-agent {
-  display: flex;
-  justify-content: flex-start;
+.cu-tag-add .ui-input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-md);
 }
 
-/* 开关按钮：开=品牌绿，关=中性；带 * 表示该群未单独设置（跟随全局默认） */
-/* 外观走全局 ui-pill(true=is-on)；这里只留表格单元格里的小尺寸 */
-.cu-agent-toggle {
-  min-width: 34px;
-  padding: 3px 8px;
+.cu-drawer-hint {
+  margin-top: var(--sp-2);
   font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--text-4);
+}
+
+.cu-drawer-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-sunken);
+}
+
+.cu-goto {
+  width: 100%;
+}
+
+.cu-drawer-foot .cu-drawer-hint {
+  margin-top: 0;
+  text-align: center;
+}
+
+@media (max-width: 960px) {
+  .cu-head {
+    align-items: flex-start;
+  }
+
+  .cu-search-wrap {
+    width: 100%;
+    max-width: 320px;
+  }
 }

@@ -116,9 +116,14 @@ export default function WorkbenchSkillsSection(): React.JSX.Element {
         </div>
         {skills === null && <div className="st-hint">加载中…</div>}
         {skills !== null && list.length === 0 && (
-          <div className="st-hint">
-            暂无技能。把含 SKILL.md
-            的目录放进技能目录后,点“打开技能目录”查看并重启该设置页即可识别。
+          <div className="st-empty is-sm">
+            <div className="st-empty-glyph" aria-hidden="true">
+              ＋
+            </div>
+            <div className="st-empty-title">还没有业务技能</div>
+            <div className="st-empty-desc">
+              把含 SKILL.md 的目录放进技能目录，再点「打开技能目录」确认；重启本设置页即可识别。
+            </div>
           </div>
         )}
         {skills !== null && list.length > 0 && (

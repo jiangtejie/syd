@@ -25,6 +25,8 @@ function TitleBar(): React.JSX.Element {
 
   return (
     <div className="app-titlebar">
+      {/* 品牌标记：一小颗霓虹菱形，替代原来纯文字的重心 */}
+      <span className="app-titlebar-mark" aria-hidden="true" />
       <span className="app-titlebar-name">{APP_NAME}</span>
       <span className="app-titlebar-page">{PAGE_NAMES[page] ?? ''}</span>
       {unread > 0 && <span className="app-titlebar-badge">{unread > 99 ? '99+' : unread}</span>}

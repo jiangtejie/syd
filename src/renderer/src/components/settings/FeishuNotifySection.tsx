@@ -305,9 +305,7 @@ export function FeishuNotifySection(): React.JSX.Element {
       />
 
       {/* 每日日报：与实时告警分开开关（有人只想要日报），共用上面的接收目标 */}
-      <div className="st-label" style={{ marginTop: 12 }}>
-        每日日报
-      </div>
+      <div className="st-subtitle">每日日报</div>
       <SwitchRow
         label="每天定时推送日报"
         desc="到点把「昨日新增/已解决 · 待处理 · 无人应 · 积压最久」推到上面的接收目标；与实时告警互不影响，也没有待办时照发一条（用来确认定时任务没死）。"
@@ -317,8 +315,7 @@ export function FeishuNotifySection(): React.JSX.Element {
       <div className="st-actions">
         <span className="st-hint">推送时间</span>
         <input
-          className="st-input"
-          style={{ maxWidth: 110 }}
+          className="st-input st-input-time"
           value={digest?.time ?? '09:00'}
           placeholder="09:00"
           onChange={(e) => setDigest((d) => (d ? { ...d, time: e.target.value } : d))}
@@ -346,15 +343,9 @@ export function FeishuNotifySection(): React.JSX.Element {
         </div>
       )}
       {digest?.lastDate && <div className="st-hint">上次发送：{digest.lastDate}</div>}
-      {digestPreview && (
-        <pre className="st-hint" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
-          {digestPreview}
-        </pre>
-      )}
+      {digestPreview && <pre className="st-hint st-preview">{digestPreview}</pre>}
 
-      <div className="st-label" style={{ marginTop: 8 }}>
-        接收目标({config?.targets.length ?? 0})
-      </div>
+      <div className="st-subtitle">接收目标({config?.targets.length ?? 0})</div>
       <div className="im-list">
         {(config?.targets ?? []).length === 0 && (
           <div className="st-hint">还没有接收目标:添加一个群或一个同事。</div>
@@ -462,9 +453,7 @@ export function FeishuNotifySection(): React.JSX.Element {
 
       {recent.length > 0 && (
         <>
-          <div className="st-label" style={{ marginTop: 8 }}>
-            最近发送
-          </div>
+          <div className="st-subtitle">最近发送</div>
           <div className="im-list">
             {recent.map((r) => (
               <div key={r.id} className="mcp-item">

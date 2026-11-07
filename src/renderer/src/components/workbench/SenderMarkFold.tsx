@@ -97,7 +97,7 @@ export function SenderMarkFold({
               <div className="gip-senders-ops">
                 <button
                   type="button"
-                  className="gip-btn"
+                  className="ui-btn is-sm is-ghost gip-btn"
                   onClick={() =>
                     setPicked(
                       picked.length === candidates.length ? [] : candidates.map((s) => s.username)
@@ -108,7 +108,7 @@ export function SenderMarkFold({
                 </button>
                 <button
                   type="button"
-                  className="gip-btn primary"
+                  className="ui-btn is-sm is-primary gip-btn"
                   disabled={!marking}
                   onClick={() => {
                     const users = [...picked]

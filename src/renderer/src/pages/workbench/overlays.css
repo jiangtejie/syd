@@ -1,32 +1,35 @@
-/* ══════════ 附件弹层 ══════════ */
+/* ══════════ 附件弹层（图片/视频/文件预览） ══════════ */
 .wb-att-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  background: var(--bg-mask);
+  backdrop-filter: blur(6px);
 }
 
 .wb-att-dialog {
-  background: var(--bg-panel);
-  border-radius: 10px;
-  padding: 10px 12px 12px;
+  position: relative;
   max-width: 94vw;
   max-height: 92vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  position: relative;
+  gap: var(--sp-2);
+  padding: 10px var(--sp-3) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-pop);
 }
 
 .wb-att-video {
   max-width: 90vw;
   max-height: 80vh;
-  border-radius: 6px;
-  background: #000;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
 }
 
 /* 可缩放图片预览 */
@@ -34,7 +37,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   max-width: 92vw;
 }
 
@@ -45,8 +48,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: repeating-conic-gradient(var(--bg-hover) 0% 25%, var(--bg-panel) 0% 50%) 0 0 / 20px 20px;
-  border-radius: 6px;
+  border-radius: var(--r-md);
+  background: repeating-conic-gradient(var(--bg-hover) 0% 25%, var(--bg-panel) 0% 50%) 0 0 / 20px
+    20px;
   cursor: zoom-in;
   user-select: none;
 }
@@ -69,8 +73,8 @@
 .wb-img-degrade {
   max-width: 92vw;
   padding: 6px 10px;
-  border-radius: 6px;
   border: 1px solid var(--warn-line);
+  border-radius: var(--r-md);
   background: var(--warn-soft);
   color: var(--warn-text);
   font-size: var(--fs-sm);
@@ -79,7 +83,7 @@
 }
 
 .wb-img-hint {
-  padding: 24px 32px;
+  padding: var(--sp-5) var(--sp-6);
   color: var(--text-3);
   font-size: var(--fs-md);
   text-align: center;
@@ -93,48 +97,62 @@
   flex: none;
 }
 
+/* 图片工具栏控件：深色下是一排描边小方钮 */
 .wb-img-btn {
   min-width: 26px;
   padding: 2px 8px;
-  font-size: var(--fs-md);
-  line-height: 1.6;
-  border-radius: 6px;
   border: 1px solid var(--border);
+  border-radius: var(--r-sm);
   background: var(--bg-panel);
   color: var(--text-2);
+  font-size: var(--fs-md);
+  line-height: 1.6;
   cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
 }
 
 .wb-img-btn:hover {
-  border-color: var(--brand);
+  border-color: var(--brand-line);
   color: var(--brand);
+  background: var(--brand-soft);
 }
 
 .wb-img-pct {
   min-width: 56px;
-  text-align: center;
-  font-size: var(--fs-sm);
-  color: var(--text-2);
+  padding: 2px 4px;
   border: none;
   background: none;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+  text-align: center;
   cursor: pointer;
 }
 
-/* 档位标注：高清原图=绿色；默认图/缩略图=警示色（解密层降级不再静默） */
+.wb-img-pct:hover {
+  color: var(--brand);
+}
+
+/* 档位标注：高清原图=品牌青；默认图/缩略图=警示色（解密层降级不再静默） */
 .wb-img-tier {
   padding: 2px 8px;
-  font-size: var(--fs-sm);
-  line-height: 1.6;
-  border-radius: 6px;
   border: 1px solid var(--border);
+  border-radius: var(--r-sm);
   background: var(--bg-panel);
   color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
   cursor: help;
 }
 
 .wb-img-tier.is-hd {
   color: var(--brand);
   border-color: var(--brand-line);
+  background: var(--brand-soft);
 }
 
 .wb-img-tier.is-degraded {
@@ -144,7 +162,7 @@
 }
 
 .wb-att-video-hint {
-  padding: 24px;
+  padding: var(--sp-5);
   color: var(--text-3);
   font-size: var(--fs-md);
 }
@@ -153,15 +171,16 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
 }
 
 .wb-att-file-icon {
-  font-size: 44px;
+  font-size: var(--fs-kpi);
 }
 
 .wb-att-file-name {
+  color: var(--text-1);
   font-weight: 500;
   word-break: break-all;
   text-align: center;
@@ -177,19 +196,12 @@
   font-size: var(--fs-sm);
 }
 
+/* 关闭：外观走 .ui-btn（次级按钮），这里只补宽度 */
 .wb-att-close {
-  padding: 6px 20px;
-  border-radius: 6px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-panel);
-  cursor: pointer;
+  min-width: 96px;
 }
 
-.wb-att-close:hover {
-  background: var(--bg);
-}
-
-/* ── 消息右键菜单 ── */
+/* ── 消息右键菜单（半透明玻璃浮层） ── */
 .ctx-mask {
   position: fixed;
   inset: 0;
@@ -198,28 +210,45 @@
 
 .ctx-menu {
   position: fixed;
-  min-width: 96px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  min-width: 108px;
   padding: 4px;
   z-index: 201;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg-panel) 90%, transparent);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(12px);
+  animation: ctx-in 0.12s ease-out;
+}
+
+@keyframes ctx-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .ctx-item {
   display: block;
   width: 100%;
-  text-align: left;
-  padding: 7px 14px;
+  padding: 7px var(--sp-3);
   border: none;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: transparent;
-  font-size: var(--fs-md);
   color: var(--text-1);
+  font-size: var(--fs-md);
+  text-align: left;
   cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .ctx-item:hover {
-  background: var(--bg-hover);
+  background: var(--brand-soft);
+  color: var(--brand);
 }

@@ -1,40 +1,63 @@
-/* 设置页（颜色/圆角已 token 化，引用 assets/base.css 的全局设计变量） */
+/* ══════════════════════════════════════════════════════════════════════
+ * 设置页 + 设置基元（st-* / sf-* / ag-* / wb-* / lg-* / rp-* / mcp-*）
+ *
+ * 设计语言：深色赛博朋克 · 简约科技感（浅色由同一套语义令牌退化，零额外分支）。
+ * 口径（见 assets/base.css 令牌表）：
+ *  - 一层卡片一层边框：子块一律用 --bg-sunken 凹槽 + hairline 分隔，不再套第二层白底；
+ *  - 选中/焦点/主按钮才发光；普通行 hover 只换底色/描边；
+ *  - 说明文字 --text-3、辅助 --text-4；数字/路径/日志/编号走 --font-mono；
+ *  - 不写死色值与字号：颜色一律 token 或 color-mix，字号一律 --fs-*。
+ * ══════════════════════════════════════════════════════════════════════ */
 
-/* Tab 导航（按板块切换，减少拥挤） */
+/* ── 页签：统一深色分段导航（HUD tab rail） ──
+ * 选中态与全站一致：青描边 + 淡青底 + 轻光。8 个页签不再换行，窄屏横向滚动。 */
 .st-tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 14px 0 16px;
-  max-width: 1520px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
+  flex-wrap: nowrap;
+  gap: 2px;
+  width: fit-content;
+  max-width: 100%;
+  margin: var(--sp-3) 0 var(--sp-4);
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.st-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .st-tab {
-  padding: 7px 16px;
+  flex: none;
+  padding: 6px 14px;
   font-size: var(--fs-md);
-  border-radius: var(--r-pill);
-  border: 1px solid var(--border);
+  border-radius: calc(var(--r-md) - 2px);
+  border: 1px solid transparent;
   background: transparent;
-  color: var(--text-2);
+  color: var(--text-3);
   cursor: pointer;
+  white-space: nowrap;
   transition:
+    color 0.15s ease,
     background 0.15s ease,
     border-color 0.15s ease,
-    color 0.15s ease;
+    box-shadow 0.15s ease;
 }
 
 .st-tab:hover {
-  border-color: var(--brand-line);
   color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 7%, transparent);
 }
 
 .st-tab.is-active {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: var(--on-brand);
-  font-weight: 500;
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+  color: var(--brand);
+  font-weight: 600;
+  box-shadow: var(--glow-brand);
 }
 
 /* Tab 面板内容 */
@@ -42,11 +65,13 @@
   max-width: 1520px;
 }
 
-/* 双列紧凑网格：宽屏固定两列(对齐整齐)、窄屏自动一列 */
+/* ── 布局：双列紧凑网格 ──
+ * 宽屏固定两列（对齐整齐）、窄屏自动一列；卡片高度不齐时的装箱规则保持不变
+ * （见下方 :has 规则），这里只调间距与卡片内层次。 */
 .st-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--sp-3);
   max-width: 1520px;
   align-items: start;
 }
@@ -58,7 +83,7 @@
 }
 
 .st-section {
-  margin-bottom: 14px;
+  margin-bottom: var(--sp-3);
   max-width: 1520px;
 }
 
@@ -69,15 +94,8 @@
 }
 
 /* ── 卡片网格：不让矮卡在列底留一个洞 ──
- * 实测（2026-09）：.st-grid 是固定两列 + align-items:start，卡片高度不等时矮的那列下方会空出
- * 一大块 —— 微信数据 165px、发送与频控 289px、偏好与数据 350px。成因有两种，分开治：
- *
- * ① 两列各一张卡（不足一行）—— 横竖都是各占一列，瀑布流没有任何东西可以「流」过去，
- *    唯一有效的是**等高**：把差的高度收进卡片内部，并让动作行贴底，于是底下那块空白读起来是
- *    「这张卡就这么大」，而不是「这里少了一张卡」。
- * ② 三张及以上 —— 改**瀑布流**（CSS 多列按高度装箱）。实测偏好与数据 350px → 约 140px。
- *    多列是「先竖后横」的填充顺序，卡片顺序不变（第 1 张永远在最前）。
- */
+ * ① 两列各一张卡（不足一行）→ 等高，把差的高度收进卡片内部；
+ * ② 三张及以上 → 多列瀑布流（CSS 多列按高度装箱），卡片顺序不变。 */
 .st-grid:has(> .st-section) {
   align-items: stretch;
 }
@@ -93,29 +111,22 @@
   flex-direction: column;
 }
 
-/* 多出来的高度一律留在**卡片底部**，不做「动作行贴底」——
- * 试过 margin-top:auto 把按钮推到卡底：结果是空白被夹在内容与按钮之间，成了一条穿堂风
- * （实测发送通道状态卡：3 行状态在顶、按钮吊在 460px 处、中间空 260px），比底部留白更刺眼。
- * 留白落在卡底则读起来是这张卡的内边距，不指向任何缺失的东西。 */
-
-/* 网格里只剩一张卡：占满整行 —— 否则右半列会空出一个与卡片等高的洞（发送页并卡后就只剩一张） */
+/* 多出来的高度留在卡片底部，不做动作行贴底（留白读作内边距，而不是缺件） */
 .st-grid:has(> .st-section:only-child) > .st-section {
   grid-column: 1 / -1;
 }
 
-/* ③ 三张及以上：退掉栅格，交给多列装箱 */
 .st-grid:has(> .st-section:nth-child(3)) {
   display: block;
   column-count: 2;
-  column-gap: 14px;
+  column-gap: var(--sp-3);
 }
 
 .st-grid:has(> .st-section:nth-child(3)) > .st-section {
-  /* 多列里让卡片整块参与装箱，不被拆到下一列；width:100% 抵消 inline-block 的行内间隙 */
   display: inline-block;
   width: 100%;
   break-inside: avoid;
-  margin-bottom: 14px; /* 多列模式没有 gap，用 margin 补出卡间距 */
+  margin-bottom: var(--sp-3);
 }
 
 @media (max-width: 860px) {
@@ -124,38 +135,71 @@
   }
 }
 
+/* ── 标题：页内区块 / 卡片内标题 ── */
 .st-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   font-size: var(--fs-lg);
   font-weight: 600;
-  margin-bottom: 12px;
+  color: var(--text-strong);
+  margin-bottom: var(--sp-3);
 }
 
-/* 卡片内二级分区标题（如「图片解密」） */
+.st-title::before {
+  content: '';
+  flex: none;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--brand-gradient);
+  box-shadow: var(--glow-brand);
+}
+
+/* 卡片内二级分区标题（HUD 小标题：左侧霓虹条 + hairline 上边） */
 .st-subtitle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-2);
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--border-light);
+  letter-spacing: 0.04em;
 }
 
-/* 表单行（2026-09 收口）
- * 此前：标签列 170px（长标签会折成两行），输入框 flex:1 在宽屏上被拉成 1000+px ——
- * 一行里左半边是短标签、右半边是超长空框，视线要走很远才找到值。
- * 现在：标签列 140px 且不折行，输入框最宽 460px（文本域除外，它是多行内容）。 */
+.st-subtitle::before {
+  content: '';
+  flex: none;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--brand-gradient);
+}
+
+/* ── 表单行 ──
+ * 一卡一层边框，行与行之间只留 hairline；标签列固定宽度不折行，
+ * 输入框有上限宽度（文本域除外，它是多行内容）。 */
 .st-row {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 6px 0;
+  padding: var(--sp-2) 0;
   font-size: var(--fs-md);
+  min-width: 0;
+}
+
+.st-row + .st-row {
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
 }
 
 .st-label {
-  width: 140px;
+  width: 150px;
   flex-shrink: 0;
-  color: var(--text-1);
+  color: var(--text-2);
+  font-size: var(--fs-md);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -165,6 +209,7 @@
   max-width: 460px;
 }
 
+/* 输入/下拉/文本域：与 .ui-input 同一套外观，另补 32px 行高与选择器细节 */
 .st-input {
   flex: 1;
   min-width: 0;
@@ -172,46 +217,120 @@
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  background: var(--field-bg);
+  color: var(--text-1);
   font-size: var(--fs-md);
   outline: none;
   user-select: text;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease;
 }
 
-.st-input.sm {
-  max-width: 120px;
+.st-input::placeholder {
+  color: var(--placeholder);
+}
+
+.st-input:hover:not(:focus):not(:disabled) {
+  border-color: var(--border-strong);
 }
 
 .st-input:focus {
   border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.st-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+textarea.st-input {
+  height: auto;
+  padding: 7px 10px;
+  line-height: 1.6;
+  resize: vertical;
+  font-family: inherit;
 }
 
 select.st-input {
   cursor: pointer;
-  background: var(--bg-panel);
   padding-right: 8px;
 }
 
+.st-input.sm {
+  flex: 0 0 120px;
+  max-width: 120px;
+}
+
 .st-row input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
+  flex: none;
+  width: 15px;
+  height: 15px;
   accent-color: var(--brand);
   cursor: pointer;
 }
 
+/* 动作行 */
 .st-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 12px;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
 }
 
+/* 说明文字：卡片级用 sm，行内提示用 xs（--text-3 弱化） */
 .st-hint {
   font-size: var(--fs-sm);
+  line-height: 1.6;
   color: var(--text-3);
 }
 
-/* 只读状态行（如 ffmpeg 现状）：与 st-row 同一栅格，但第二列是可换行的说明文字而不是输入框 ——
- * 直接塞进 .st-row 会顶出不换行的一长条（flex 子项默认 min-width:auto）。 */
+.st-hint-inline {
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--text-3);
+  min-width: 0;
+}
+
+/* 独立小节标签（无表单行时）/ 定宽时间输入 / 预format文本 */
+.st-label-gap {
+  margin-top: var(--sp-3);
+}
+
+.st-input-time {
+  flex: 0 0 110px;
+  max-width: 110px;
+}
+
+.st-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+  color: var(--text-3);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.st-saved {
+  color: var(--success-strong);
+  margin-left: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.st-saved::before {
+  content: '✓ ';
+}
+
+/* 只读状态行：第二列是可换行的说明文字而不是输入框 */
 .st-row.is-status {
   align-items: flex-start;
 }
@@ -228,37 +347,33 @@ select.st-input {
   color: var(--warn-text);
 }
 
-.st-saved {
-  color: var(--success);
-  margin-left: 8px;
-}
-
-/* 通道能力探测结果：一行一项，状态用颜色 + 符号双写（不只靠颜色区分） */
+/* ── 探测/体检结果：一行一项，状态用「符号 + 颜色」双写 ── */
 .st-probe {
-  margin-top: 10px;
+  margin-top: var(--sp-3);
   border: 1px solid var(--border-light);
   border-radius: var(--r-md);
-  padding: 10px;
-  background: var(--bg-panel);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-sunken);
 }
 
 .st-probe-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  margin-bottom: 8px;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  margin-bottom: var(--sp-1);
 }
 
 .st-probe-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  font-size: var(--fs-sm);
-  padding: 4px 0;
-  border-top: 1px dashed var(--border-light);
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  padding: 5px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 55%, transparent);
 }
 
 .st-probe-row:first-of-type {
@@ -281,11 +396,11 @@ select.st-input {
 }
 
 .st-probe-row.is-warn .st-probe-icon {
-  color: var(--warning, var(--text-2));
+  color: var(--warn-text);
 }
 
 .st-probe-row.is-skip .st-probe-icon {
-  color: var(--text-3);
+  color: var(--text-4);
 }
 
 .st-probe-label {
@@ -301,6 +416,7 @@ select.st-input {
   word-break: break-word;
 }
 
+/* ── 状态读数（KV 行） ── */
 .st-status {
   display: flex;
   flex-direction: column;
@@ -310,16 +426,28 @@ select.st-input {
 .st-kv {
   display: flex;
   justify-content: space-between;
-  max-width: 320px;
+  align-items: baseline;
+  gap: var(--sp-4);
+  max-width: 360px;
   font-size: var(--fs-md);
+  min-width: 0;
 }
 
 .st-kv > span:first-child {
+  flex: none;
   color: var(--text-3);
 }
 
+.st-kv > span:last-child {
+  min-width: 0;
+  color: var(--text-1);
+  text-align: right;
+  word-break: break-word;
+  font-variant-numeric: tabular-nums;
+}
+
 .st-ok {
-  color: var(--success);
+  color: var(--success-strong);
   font-weight: 600;
 }
 
@@ -328,10 +456,10 @@ select.st-input {
   font-weight: 600;
 }
 
-/* AI：测试连接的结果表 */
+/* AI：测试连接 / 拉取模型的结果行 */
 .st-ai-test {
   min-height: 18px;
-  margin-top: 8px;
+  margin-top: var(--sp-2);
   font-size: var(--fs-sm);
   word-break: break-all;
 }
@@ -341,7 +469,7 @@ select.st-input {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -349,15 +477,16 @@ select.st-input {
   flex: 1;
 }
 
-/* AI：拉取到的模型列表 */
+/* AI：拉取到的模型列表提示（与标签列对齐） */
 .st-model-msg {
   min-height: 18px;
-  margin-top: 2px;
-  padding-left: 180px;
-  font-size: var(--fs-sm);
+  margin-top: var(--sp-1);
+  padding-left: 158px;
+  font-size: var(--fs-xs);
   word-break: break-all;
 }
 
+/* ── 智能体（统一人设） ── */
 .ag-edit {
   display: flex;
   flex-direction: column;
@@ -369,23 +498,23 @@ select.st-input {
   resize: vertical;
   min-height: 76px;
   font-family: inherit;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .ag-actions {
-  margin-top: 8px;
+  margin-top: var(--sp-2);
   align-items: center;
 }
 
 .ag-actions .st-bad {
-  margin-left: 10px;
+  margin-left: var(--sp-2);
   font-size: var(--fs-sm);
 }
 
 .ag-avatar {
   flex: none;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   color: var(--on-brand);
   font-size: var(--fs-md);
@@ -394,31 +523,36 @@ select.st-input {
   align-items: center;
   justify-content: center;
   user-select: none;
+  border: 1px solid color-mix(in srgb, var(--text-strong) 22%, transparent);
 }
 
 .ag-style {
   margin-left: auto;
   flex: none;
   font-size: var(--fs-xs);
-  line-height: 1;
-  padding: 3px 6px;
-  border-radius: var(--r-pill);
+  line-height: 1.5;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
   border: 1px solid transparent;
   white-space: nowrap;
+  font-style: normal;
 }
 
 .ag-style-warm {
   background: var(--warn-soft);
+  border-color: var(--warn-line);
   color: var(--warn-text);
 }
 
 .ag-style-formal {
   background: var(--bg-hover);
+  border-color: var(--border);
   color: var(--text-2);
 }
 
 .ag-style-brief {
   background: var(--success-soft);
+  border-color: var(--success-line);
   color: var(--success-strong);
 }
 
@@ -430,98 +564,131 @@ select.st-input {
   flex: none;
 }
 
-/* 次级按钮 */
-/* 密钥状态卡片 */
-/* ── 状态头条（发送页）──
- * 铺在设置项之前：先看清现在什么状况，再决定改哪个参数。
- * 沿用 .st-keystatus 的视觉语言（浅底 + 细边），但三个状态横向排开、动作按钮靠右。
- * 为什么不做成独立一张卡：与设置卡并排时内容差 289px，而只有两张卡时列底必然留洞 ——
- * 瀑布流救不了（两列各一张，没东西可流），等高也只是把洞从卡间挪进卡里。 */
+.ag-head-title .ag-style {
+  margin-left: 0;
+}
+
+/* ── 发送页状态头条：一行读数 + 右侧动作 ── */
 .st-statbar {
-  margin-bottom: 12px;
-  border: 1px solid var(--border-light);
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--bg-hover);
-  padding: 10px 14px;
+  background: var(--bg-sunken);
+  padding: var(--sp-3) var(--sp-4);
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--sp-5);
   flex-wrap: wrap;
 }
 
-/* .st-kv 的 max-width:320px 是给窄列设计的，横排时放开，否则三组会挤在一起 */
 .st-statbar .st-status {
   flex-direction: row;
-  gap: 24px;
+  gap: var(--sp-6);
   flex-wrap: wrap;
 }
 
 .st-statbar .st-kv {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   max-width: none;
-  gap: 8px;
+}
+
+.st-statbar .st-kv > span:first-child {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+}
+
+.st-statbar .st-kv > span:last-child {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+  text-align: left;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .st-statbar > .ui-btn {
   margin-left: auto;
 }
 
-/* 这张卡是全宽的，数字输入必须定宽，右侧说明才对得成一列。
- * 不写的话：.st-row .st-input:not(textarea) 的 max-width:460px 特异性高于 .st-input.sm 的
- * 120px，加上 .st-input 的 flex:1，输入框会按「行宽 − 标签 − 说明」伸缩 ——
- * 三行说明长短不同，输入框宽度就不同，说明的左边缘跟着参差（窄卡时看不出来，全宽就显形）。 */
+/* 全宽卡里的数字输入必须定宽，右侧说明才对得成一列 */
 .st-section:has(> .sf-card-body > .st-statbar) .st-row .st-input {
   flex: 0 0 120px;
   max-width: 120px;
 }
 
+/* ── 密钥状态读数块 ── */
 .st-keystatus {
-  margin-top: 14px;
+  margin-top: var(--sp-3);
   border: 1px solid var(--border-light);
   border-radius: var(--r-md);
-  background: var(--bg-hover);
-  padding: 10px 14px;
+  background: var(--bg-sunken);
+  padding: 0 var(--sp-3);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+}
+
+.st-keystatus .st-kv {
+  max-width: none;
+  padding: var(--sp-2) 0;
+}
+
+.st-keystatus .st-kv + .st-kv {
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
+}
+
+.st-keystatus .ui-btn {
+  margin-left: var(--sp-2);
 }
 
 .st-path {
-  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   color: var(--text-2);
   word-break: break-all;
   text-align: right;
-  max-width: 380px;
+  max-width: 400px;
 }
 
-/* 解密层提示（长文案，单独成块） */
+/* 解密层提示（长文案，单独成块：左侧警示条 + 低饱和警示底） */
 .st-decrypt-note {
-  margin-top: 12px;
-  font-size: var(--fs-sm);
-  line-height: 1.7;
-  color: var(--warn-text);
-  background: var(--warn-soft);
-  border: 1px solid var(--warn-line);
-  border-radius: var(--r-md);
-  padding: 10px 12px;
+  margin-top: var(--sp-3);
+  font-size: var(--fs-xs);
+  line-height: 1.8;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--warn) 7%, transparent);
+  border-left: 2px solid var(--warn);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
 }
 
-/* 缓存目录卡片：点击整行打开目录选择 */
+.st-decrypt-note strong {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+
+/* ── 缓存目录选择（整行可点） ── */
 .st-cache-pick {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--bg-hover);
+  background: var(--bg-sunken);
   cursor: pointer;
   outline: none;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .st-cache-pick:hover,
 .st-cache-pick:focus-visible {
-  border-color: var(--brand);
+  border-color: var(--brand-line);
   background: var(--brand-soft);
 }
 
@@ -535,28 +702,31 @@ select.st-input {
 .st-cache-tag {
   width: fit-content;
   font-size: var(--fs-xs);
-  line-height: 1;
-  padding: 3px 8px;
-  border-radius: var(--r-pill);
-  color: var(--success);
+  line-height: 1.5;
+  padding: 1px 8px;
+  border-radius: var(--r-sm);
+  color: var(--success-strong);
   background: var(--success-soft);
+  border: 1px solid var(--success-line);
 }
 
 .st-cache-tag.custom {
   color: var(--info);
   background: var(--info-soft);
+  border-color: color-mix(in srgb, var(--info) 36%, transparent);
 }
 
 .st-cache-dir {
-  font-size: var(--fs-sm);
-  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
   word-break: break-all;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .st-cache-change {
   flex-shrink: 0;
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   color: var(--brand);
 }
 
@@ -566,24 +736,31 @@ select.st-input {
 
 /* 版本号行 */
 .st-version {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--border-light);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 55%, transparent);
   font-size: var(--fs-xs);
   color: var(--text-4);
   text-align: center;
 }
 
-/* ── MCP 服务器管理 ── */
-
+/* ── 行卡片（IM 账号 / 飞书任务 / 审计 / 接收目标） ── */
 .mcp-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-3);
   border: 1px solid var(--border-light);
   border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  padding: var(--sp-2) var(--sp-3);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.mcp-item:hover {
+  border-color: var(--border);
   background: var(--bg-hover);
-  padding: 8px 12px;
 }
 
 .mcp-item-main {
@@ -592,37 +769,46 @@ select.st-input {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .mcp-item-main b {
   font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-1);
 }
 
 .mcp-kind {
   font-size: var(--fs-xs);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  padding: 1px 6px;
-  color: var(--text-2);
-  background: var(--bg-panel);
+  line-height: 1.6;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  padding: 0 6px;
+  color: var(--text-3);
+  background: transparent;
+  white-space: nowrap;
 }
 
 .mcp-on {
   font-size: var(--fs-xs);
+  line-height: 1.6;
+  border: 1px solid var(--success-line);
+  border-radius: var(--r-sm);
+  padding: 0 6px;
   color: var(--success-strong);
   background: var(--success-soft);
-  border-radius: var(--r-pill);
-  padding: 1px 6px;
+  white-space: nowrap;
 }
 
 .mcp-off {
   font-size: var(--fs-xs);
-  color: var(--text-3);
-  background: var(--bg-panel);
+  line-height: 1.6;
   border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  padding: 0 6px;
+  color: var(--text-3);
+  background: transparent;
+  white-space: nowrap;
 }
 
 .mcp-desc {
@@ -637,80 +823,144 @@ select.st-input {
 .mcp-item-ops {
   flex: none;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .mcp-edit {
-  margin-top: 12px;
-  border-top: 1px dashed var(--border-light);
-  padding-top: 8px;
+  margin-top: var(--sp-3);
 }
 
-/* 阈值小时输入(设置-偏好与数据) */
+/* 阈值小时输入（设置-偏好与数据） */
 .st-th-input {
   width: 92px !important;
   flex: none;
 }
 
-/* ── 统一人设（单一智能体）编辑布局 ── */
-.ag-single {
-  margin-top: 10px;
+/* ── 空态（页面内嵌版）：图标 + 标题 + 说明 ── */
+.st-empty {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 720px;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-5) var(--sp-4);
+  text-align: center;
+}
+
+.st-empty.is-sm {
+  gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-3);
+}
+
+.st-empty-glyph {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: var(--fs-lg);
+  line-height: 1;
+  box-shadow: var(--glow-brand);
+}
+
+.st-empty.is-sm .st-empty-glyph {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-md);
+}
+
+.st-empty-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.st-empty.is-sm .st-empty-title {
+  font-size: var(--fs-sm);
+}
+
+.st-empty-desc {
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  color: var(--text-3);
+  max-width: 460px;
+}
+
+.st-empty.is-sm .st-empty-desc {
+  font-size: var(--fs-xs);
+  max-width: 420px;
+}
+
+/* ── 统一人设编辑布局 ── */
+.ag-single {
+  margin-top: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: 760px;
 }
 
 .ag-loading {
   color: var(--text-3);
   font-size: var(--fs-sm);
-  padding: 12px 2px;
+  padding: var(--sp-3) 2px;
 }
 
 .ag-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
 }
 
 .ag-head-title {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
 .ag-head-title b {
   font-size: var(--fs-lg);
   font-weight: 600;
+  color: var(--text-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 注入范围说明：低饱和「规则条」，别做成第三个盒子 */
 .ag-scope {
   font-size: var(--fs-xs);
-  line-height: 1.6;
+  line-height: 1.75;
   color: var(--text-3);
-  background: var(--bg-hover);
+  background: var(--bg-sunken);
+  border-left: 2px solid var(--brand-line);
   border-radius: var(--r-sm);
-  padding: 8px 10px;
+  padding: var(--sp-2) var(--sp-3);
 }
 
-/* ── AI 通道可靠性卡 ── */
+/* ── AI 运行/可靠性读数 ── */
 .rel-grid {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-width: 420px;
+  gap: var(--sp-2);
+  max-width: 520px;
 }
 
 .rel-rate {
-  /* 关键数字走 --fs-kpi：原来写死 30px，比全站任何一处数字都大，也不在阶梯上 */
   font-size: var(--fs-kpi);
   font-weight: 600;
   line-height: 1.1;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 .rel-rate.is-ok {
@@ -732,7 +982,8 @@ select.st-input {
 .rel-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
   font-size: var(--fs-sm);
   color: var(--text-2);
 }
@@ -740,27 +991,30 @@ select.st-input {
 .rel-fails {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .rel-fails-title {
   font-size: var(--fs-xs);
   color: var(--text-3);
+  letter-spacing: 0.04em;
+  padding-bottom: var(--sp-1);
 }
 
 .rel-fail {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-3);
   font-size: var(--fs-xs);
   color: var(--text-2);
-  line-height: 1.5;
+  line-height: 1.6;
+  padding: 4px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 55%, transparent);
 }
 
 .rel-fail time {
   flex: none;
   color: var(--text-4);
-  font-size: var(--fs-xs);
-  line-height: 1.7;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .rel-fail span {
@@ -769,56 +1023,95 @@ select.st-input {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ag-head-title .ag-style {
-  margin-left: 0;
-  font-style: normal;
-}
 
-/* ── 统一设置卡(标题+说明+内容体)与胶囊开关 ── */
+/* ── 统一设置卡：标题行（标题 + 说明 + 右侧状态 chip）+ 内容体 ── */
 .sf-card {
   overflow: hidden;
 }
 
 .sf-card-head {
   display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
+}
+
+.sf-card-head-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding-bottom: 10px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--border);
+  gap: var(--sp-1);
+}
+
+.sf-card-extra {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-top: 1px;
 }
 
 .sf-card-title {
   font-size: var(--fs-lg);
   font-weight: 600;
-  color: var(--text-1);
+  color: var(--text-strong);
+  letter-spacing: 0.01em;
 }
 
 .sf-card-desc {
   font-size: var(--fs-sm);
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--text-3);
+  max-width: 96ch;
+}
+
+.sf-card-body {
+  min-width: 0;
+}
+
+.sf-card-body > .st-hint {
+  max-width: 96ch;
 }
 
 .sf-card-body > * + * {
-  margin-top: 2px;
+  margin-top: var(--sp-1);
 }
 
-/* 开关 */
+/* 卡片正文段落（接入说明等）：行宽收在可读区间 */
+.sf-card-body p {
+  margin: 0 0 var(--sp-2);
+  line-height: 1.8;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  max-width: 96ch;
+}
+
+.sf-card-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── 开关：轨道用凹槽底，开启态青 + 轻光 ── */
 .sf-switch {
   flex: none;
   position: relative;
-  width: 38px;
-  height: 21px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-hover);
+  width: 40px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-sunken);
   cursor: pointer;
   padding: 0;
   transition:
     background 0.18s ease,
-    border-color 0.18s ease;
-  box-shadow: inset 0 0 0 0 transparent;
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.sf-switch:hover:not(:disabled):not(.is-on) {
+  border-color: var(--brand-line);
 }
 
 .sf-switch:focus-visible {
@@ -829,6 +1122,7 @@ select.st-input {
 .sf-switch.is-on {
   background: var(--brand);
   border-color: var(--brand);
+  box-shadow: var(--glow-brand);
 }
 
 .sf-switch:disabled {
@@ -840,26 +1134,28 @@ select.st-input {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--bg-panel);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: transform 0.18s ease;
+  background: var(--text-3);
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease;
 }
 
 .sf-switch.is-on .sf-switch-knob {
-  transform: translateX(17px);
+  transform: translateX(18px);
+  background: var(--on-brand);
 }
 
-/* 开关行:左文右钮 */
+/* 开关行：左文右钮，行间 hairline */
 .sf-switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 9px 2px;
-  border-bottom: 1px dashed var(--border-light);
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
 }
 
 .sf-switch-row:last-child {
@@ -879,33 +1175,144 @@ select.st-input {
 }
 
 .sf-switch-desc {
-  font-size: var(--fs-sm);
-  line-height: 1.55;
+  font-size: var(--fs-xs);
+  line-height: 1.65;
   color: var(--text-3);
+  max-width: 92ch;
 }
 
-/* 卡片正文段落(接入说明等) */
-.sf-card-body p {
-  margin: 0 0 8px;
+/* ── 状态胶囊（卡片标题右 / 说明行） ── */
+.sf-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-2);
+}
+
+.sf-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 9px;
+  font-size: var(--fs-xs);
   line-height: 1.7;
-  font-size: var(--fs-sm);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
   color: var(--text-2);
+  white-space: nowrap;
+  user-select: none;
 }
 
-.sf-card-body p:last-child {
-  margin-bottom: 0;
+.sf-pill.is-ok {
+  border-color: var(--success-line);
+  background: var(--success-soft);
+  color: var(--success-strong);
 }
 
-/* ── 设置 → 技能 tab:业务技能(SKILL.md)网格卡片 ── */
-/* 业务技能独占整行(宽度随窗口自适应),不用双列栅格 */
+.sf-pill.is-off {
+  color: var(--text-3);
+  background: transparent;
+  border-color: var(--border);
+}
+
+.sf-pill.is-warn {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.sf-pill.is-bad {
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+/* ── 折叠区（高级/排查） ── */
+.sf-adv {
+  margin-top: var(--sp-3);
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 55%, transparent);
+  padding-top: var(--sp-2);
+}
+
+.sf-adv > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  list-style: none;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.sf-adv > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sf-adv > summary::before {
+  content: '\25B8';
+  display: inline-block;
+  width: 12px;
+  color: var(--text-4);
+  transition: transform 0.15s ease;
+}
+
+.sf-adv[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.sf-adv > summary:hover {
+  color: var(--brand);
+}
+
+.sf-adv-body {
+  margin-top: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* 主动作行：主按钮在左，次要/危险动作推右 */
+.sf-actions-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.sf-actions-split .is-end {
+  margin-left: auto;
+}
+
+/* 隐私/风险提示：比 st-hint 更醒目，但仍是「条」而不是「块」 */
+.sf-note-warn {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--warn-line);
+  border-left-width: 2px;
+  background: var(--warn-soft);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+}
+
+/* ── 单列纵向堆叠（卡片内一组控件的容器，替代一层额外的 grid） ── */
 .wb-skills-full {
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: none;
 }
 
+/* ── 设置 → 技能：SKILL.md 网格卡片 ── */
 .wb-skills-toolbar {
   flex-wrap: wrap;
-  row-gap: 6px;
-  margin-top: 8px;
+  row-gap: var(--sp-1);
+  margin-top: 0;
 }
 
 .wb-skills-dir {
@@ -913,9 +1320,9 @@ select.st-input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
-/* 上限选择(右对齐到工具栏末尾) */
 .wb-limit-pick {
   margin-left: auto;
   flex: none;
@@ -940,9 +1347,10 @@ select.st-input {
 
 .wb-skills-count {
   flex: none;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   color: var(--text-3);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .wb-skills-count.over {
@@ -950,10 +1358,10 @@ select.st-input {
 }
 
 .wb-skill-grid {
-  margin-top: 10px;
+  margin-top: var(--sp-2);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
+  gap: var(--sp-2);
   align-items: stretch;
 }
 
@@ -962,10 +1370,10 @@ select.st-input {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border-light);
   border-radius: var(--r-md);
-  background: var(--bg-hover);
+  background: var(--bg-sunken);
   transition:
     border-color 0.15s ease,
     background 0.15s ease;
@@ -973,18 +1381,19 @@ select.st-input {
 
 .wb-skill-card:hover {
   border-color: var(--border);
+  background: var(--bg-hover);
 }
 
 .wb-skill-card.is-on {
   border-color: var(--brand-line);
-  background: rgba(7, 193, 96, 0.05);
+  background: color-mix(in srgb, var(--brand) 5%, transparent);
 }
 
 .wb-skill-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -999,9 +1408,9 @@ select.st-input {
 
 .wb-skill-desc {
   margin: 0;
-  font-size: var(--fs-sm);
-  line-height: 1.55;
-  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--text-3);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1012,19 +1421,22 @@ select.st-input {
   margin-top: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
   padding-top: 2px;
   font-size: var(--fs-xs);
-  color: var(--text-3);
+  color: var(--text-4);
+  font-family: var(--font-mono);
 }
 
 .wb-skill-state {
   flex: none;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--bg-panel);
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: transparent;
   border: 1px solid var(--border);
+  color: var(--text-3);
+  font-family: inherit;
 }
 
 .wb-skill-state.on {
@@ -1044,31 +1456,36 @@ select.st-input {
 .lg-root {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .lg-toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-strong) 55%, transparent);
 }
 
 .lg-sel {
-  max-width: 130px;
+  flex: none;
+  width: 130px;
 }
 
 .lg-query {
-  max-width: 240px;
+  flex: 1 1 240px;
+  max-width: 320px;
 }
 
 .lg-auto {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   color: var(--text-2);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .lg-auto input {
@@ -1083,41 +1500,68 @@ select.st-input {
   white-space: nowrap;
 }
 
+/* 保留策略读数条 */
+.lg-policy {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+}
+
 .lg-meta {
   font-size: var(--fs-xs);
   color: var(--text-4);
 }
 
+.lg-num {
+  flex: none;
+  width: 96px;
+  height: 28px;
+}
+
+/* 日志列表：等宽 + 凹槽底，长列表独立滚动 */
 .lg-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   border: 1px solid var(--border-light);
   border-radius: var(--r-md);
-  padding: 6px;
+  padding: var(--sp-2);
+  min-height: 220px;
   max-height: 62vh;
   overflow-y: auto;
-  background: var(--bg);
-  /* 滚动容器隔离布局/绘制 */
+  background: var(--bg-sunken);
   contain: layout paint;
+}
+
+.lg-list .st-empty {
+  margin: auto;
 }
 
 .lg-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--sp-2);
   width: 100%;
   border: none;
   background: transparent;
-  padding: 3px 6px;
+  padding: 4px 6px;
   border-radius: var(--r-sm);
   cursor: pointer;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace;
-  transition: background 0.12s;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-1);
+  transition: background 0.12s ease;
   /* 长列表渲染优化：视口外行跳过布局/绘制 */
   content-visibility: auto;
-  contain-intrinsic-size: auto 64px;
+  contain-intrinsic-size: auto 26px;
 }
 
 .lg-row:hover {
@@ -1128,16 +1572,17 @@ select.st-input {
   flex: none;
   font-size: var(--fs-xs);
   color: var(--text-4);
+  font-variant-numeric: tabular-nums;
 }
 
 .lg-lv {
   flex: none;
-  width: 42px;
+  width: 44px;
   text-align: center;
   font-size: var(--fs-xs);
   font-weight: 700;
   padding: 1px 0;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
 }
 
 /* 数据源 logging.ts 的 level 为小写，类选择器大小写敏感 */
@@ -1157,13 +1602,13 @@ select.st-input {
 }
 
 .lg-lv.is-debug {
-  color: var(--text-4);
+  color: var(--text-3);
   background: var(--bg-hover);
 }
 
 .lg-scope {
   flex: none;
-  max-width: 90px;
+  max-width: 96px;
   font-size: var(--fs-xs);
   color: var(--text-3);
   overflow: hidden;
@@ -1180,17 +1625,29 @@ select.st-input {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lg-policy {
+
+/* ── 飞书 Base 同步记录（等宽读数表） ── */
+.lb-history {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--fs-sm);
-  color: var(--text-2);
+  flex-direction: column;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  padding: var(--sp-1) var(--sp-3);
 }
 
-.lg-num {
-  max-width: 90px;
-  height: 28px;
+.lb-history-row {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--text-3);
+  padding: 4px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-strong) 50%, transparent);
+  word-break: break-all;
+}
+
+.lb-history-row:first-child {
+  border-top: none;
 }
 
 /* ══════════ 定时任务 · 数据上报 ══════════ */
@@ -1199,20 +1656,25 @@ select.st-input {
 }
 
 .rp-job-list {
-  margin-top: 10px;
+  margin-top: var(--sp-3);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .rp-job {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: var(--sp-3);
   border: 1px solid var(--border-light);
   border-radius: var(--r-md);
-  background: var(--bg-hover);
-  padding: 9px 12px;
+  background: var(--bg-sunken);
+  padding: var(--sp-3);
+  transition: border-color 0.15s ease;
+}
+
+.rp-job:hover {
+  border-color: var(--border);
 }
 
 .rp-job-main {
@@ -1220,14 +1682,14 @@ select.st-input {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .rp-job-head {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .rp-job-head b {
@@ -1237,17 +1699,19 @@ select.st-input {
 
 .rp-job-sched {
   font-size: var(--fs-xs);
-  color: var(--text-2);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  padding: 1px 8px;
+  line-height: 1.6;
+  color: var(--brand);
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
+  border-radius: var(--r-sm);
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
 }
 
 .rp-job-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 4px var(--sp-3);
   font-size: var(--fs-xs);
   color: var(--text-3);
 }
@@ -1261,6 +1725,7 @@ select.st-input {
   color: var(--text-3);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -1282,7 +1747,7 @@ select.st-input {
 
 .rp-form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-bottom: 10px;
+  margin: var(--sp-2) 0 var(--sp-3);
 }
 
 .rp-form-grid .st-th-input {
@@ -1297,149 +1762,42 @@ select.st-input {
 }
 
 .rp-run-list {
-  margin-top: 10px;
+  margin-top: var(--sp-2);
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-1);
 }
 
 .rp-run {
   border: 1px solid var(--border-light);
   border-radius: var(--r-sm);
-  padding: 6px 10px;
-  background: var(--bg-hover);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-sunken);
 }
 
 .rp-run-line {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: 4px var(--sp-3);
   font-size: var(--fs-xs);
   color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .rp-run-err {
-  margin: 6px 0 0;
+  margin: var(--sp-2) 0 0;
   max-height: 140px;
   overflow: auto;
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  line-height: 1.5;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-all;
-  color: var(--danger);
-  background: var(--bg-panel);
+  color: var(--danger-text);
+  background: var(--bg);
   border: 1px solid var(--danger-line);
   border-radius: var(--r-sm);
-  padding: 6px 8px;
-}
-
-/* ---- status pills + advanced blocks (sync cards) ---- */
-.sf-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 2px 0 10px;
-}
-
-.sf-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--border);
-  background: var(--bg-hover);
-  color: var(--text-2);
-  white-space: nowrap;
-  user-select: none;
-}
-
-.sf-pill.is-ok {
-  border-color: var(--success-strong);
-  background: var(--success-soft);
-  color: var(--success-strong);
-}
-
-.sf-pill.is-off {
-  color: var(--text-3);
-}
-
-.sf-pill.is-warn {
-  border-color: var(--warn-text);
-  background: var(--warn-soft);
-  color: var(--warn-text);
-}
-
-.sf-pill.is-bad {
-  border-color: var(--danger);
-  background: var(--bg-hover);
-  color: var(--danger-hover);
-}
-
-.sf-adv {
-  margin-top: 10px;
-  border-top: 1px dashed var(--border-light);
-  padding-top: 8px;
-}
-
-.sf-adv > summary {
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  list-style: none;
-}
-
-.sf-adv > summary::-webkit-details-marker {
-  display: none;
-}
-
-.sf-adv > summary::before {
-  content: '\25B8';
-  display: inline-block;
-  width: 12px;
-  transition: transform 0.15s ease;
-}
-
-.sf-adv[open] > summary::before {
-  transform: rotate(90deg);
-}
-
-.sf-adv > summary:hover {
-  color: var(--brand);
-}
-
-.sf-adv-body {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* main action row: primary on the left, secondary/danger pushed right */
-.sf-actions-split {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.sf-actions-split .is-end {
-  margin-left: auto;
-}
-
-/* privacy / risk note: a bit louder than st-hint */
-.sf-note-warn {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--warn-text);
-  background: var(--warn-soft);
-  color: var(--warn-text);
-  font-size: var(--fs-sm);
-  line-height: 1.65;
+  padding: var(--sp-2);
 }

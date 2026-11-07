@@ -1,6 +1,5 @@
-import { IssueActions } from './IssueBits'
+import { IssueActions, SeverityChip, StatusChip } from './IssueBits'
 import { TeamMarkButton } from '../TeamMarkButton'
-import { statusChip } from '../../lib/monitorChips'
 import { ageText, fmtTimeShort } from '../../../../shared/monitorMetrics'
 import type {
   FeedbackIssue,
@@ -12,6 +11,9 @@ import type {
 /**
  * 追踪抽屉：状态/严重度/复发标记 + 跟进人指派与默认跟进人建议 + 证据时间线 + 处置动作。
  * 从 MonitorPage 拆出（页面只负责取数、筛选与布局）。
+ *
+ * 视觉：右侧浮层面的语言 —— page-card 底 + 顶部一道品牌色细光 + 深色下略强的落影；
+ * 没有选中问题时给一块"待选择"空态，保持左右两栏等高、不塌陷。
  */
 export function IssueDrawer({
   active,
@@ -43,16 +45,45 @@ export function IssueDrawer({
   onSetStatus: (id: number, status: FeedbackIssueStatus) => void
   onConfirmDoubt: (id: number) => void
   onLocate: (sessionUsername: string, occurAt: number) => void
-}): React.JSX.Element | null {
-  if (!active) return null
+}): React.JSX.Element {
+  if (!active) {
+    return (
+      <div className="page-card mon-drawer is-idle">
+        <div className="ui-empty mon-drawer-idle">
+          <div className="ui-empty-glyph" aria-hidden="true">
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="7.5" />
+              <circle cx="12" cy="12" r="2.4" />
+              <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
+            </svg>
+          </div>
+          <div className="ui-empty-title">选择一条问题</div>
+          <div className="ui-empty-desc">
+            这里会展示该问题的证据时间线、跟进人指派与处置状态，处理动作在底部。
+          </div>
+          <div className="ui-empty-hint">也可以先按状态 / 类型 / 严重度筛选，再点左侧列表。</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="mon-card mon-drawer">
+    <div className="page-card mon-drawer">
       <div className="mon-drawer-head">
-        <span className={`mon-st ${statusChip(active).cls}`}>{statusChip(active).label}</span>
-        <span className="mon-row-type">{active.type}</span>
+        <StatusChip issue={active} />
+        <span className="mon-drawer-type">{active.type}</span>
         <button
           type="button"
-          className="mon-x"
+          className="ui-btn is-ghost is-sm mon-x"
           onClick={() => {
             onClose()
             onClose()
@@ -63,8 +94,14 @@ export function IssueDrawer({
       </div>
       <div className="mon-drawer-title">{active.title}</div>
       <div className="mon-drawer-meta">
-        {active.groupName || active.groupUsername} · 首现 {fmtTimeShort(active.occurAt)}
-        {active.status === 'open' && <> · 已积压 {ageText(active.occurAt)}</>}
+        {active.groupName || active.groupUsername} · 首现{' '}
+        <span className="ui-num">{fmtTimeShort(active.occurAt)}</span>
+        {active.status === 'open' && (
+          <>
+            {' '}
+            · 已积压 <span className="ui-num">{ageText(active.occurAt)}</span>
+          </>
+        )}
       </div>
       {active.summary && <div className="mon-drawer-summary">{active.summary}</div>}
       {/* 处理备注：同事在飞书多维表格里填的结论（回写进本地，只读展示） */}
@@ -77,15 +114,11 @@ export function IssueDrawer({
 
       {(active.severity && active.severity !== '一般') || (active.reopenCount ?? 0) > 0 ? (
         <div className="mon-drawer-flags">
-          {active.severity && active.severity !== '一般' && (
-            <em className={`mon-sev is-${active.severity === '紧急' ? 'urgent' : 'high'}`}>
-              {active.severity}优先级
-            </em>
-          )}
+          <SeverityChip severity={active.severity} />
           {(active.reopenCount ?? 0) > 0 && (
-            <em className="mon-reopen">
-              本议题第 {(active.reopenCount ?? 0) + 1} 次出现（含此前 {active.reopenCount ?? 0}{' '}
-              次已闭环记录）
+            <em className="ui-chip is-sm mon-reopen-chip">
+              本议题第 {(active.reopenCount ?? 0) + 1} 次出现
+              <span className="mon-reopen-sub">（含此前 {active.reopenCount ?? 0} 次已闭环）</span>
             </em>
           )}
         </div>
@@ -94,7 +127,7 @@ export function IssueDrawer({
       <div className="mon-drawer-owner">
         <span className="mon-drawer-owner-label">跟进人</span>
         <select
-          className="mon-select mon-owner-select-wide"
+          className="ui-select mon-select mon-owner-select-wide"
           value={active.assignee ?? ''}
           onChange={(e) => void onAssign(active.id, e.target.value)}
           title="指派/更换跟进人（团队成员，空 = 取消指派）"
@@ -113,7 +146,7 @@ export function IssueDrawer({
         ) : active.lastReplyBy ? (
           <button
             type="button"
-            className="mon-btn ghost"
+            className="ui-btn is-ghost is-sm"
             title={`${ownerName(active.lastReplyBy)} 回复过这条问题：点击指派为跟进人`}
             onClick={() => void onAssign(active.id, active.lastReplyBy ?? '')}
           >
@@ -130,7 +163,10 @@ export function IssueDrawer({
 
       <div className="mon-drawer-scroll">
         {detailLoading ? (
-          <div className="mon-drawer-empty">加载证据中…</div>
+          <div className="mon-drawer-empty">
+            <span className="ui-spin" aria-hidden="true" />
+            加载证据中…
+          </div>
         ) : !detail ? (
           <div className="mon-drawer-empty">无证据详情</div>
         ) : (
@@ -156,10 +192,10 @@ export function IssueDrawer({
                         onMarked={onMarkTeam}
                       />
                     )}
-                    <time>{fmtTimeShort(m.time)}</time>
-                    {i === 0 && <em className="mon-tl-mark">首现</em>}
+                    <time className="ui-num">{fmtTimeShort(m.time)}</time>
+                    {i === 0 && <em className="ui-chip is-sm mon-tl-mark">首现</em>}
                     {i === detail.related.length - 1 && detail.related.length > 1 && (
-                      <em className="mon-tl-mark">最新</em>
+                      <em className="ui-chip is-sm mon-tl-mark">最新</em>
                     )}
                   </div>
                   <div className="mon-tl-text">{m.text || '[非文本消息]'}</div>
@@ -174,7 +210,7 @@ export function IssueDrawer({
         {active.needConfirm && active.status === 'open' && (
           <button
             type="button"
-            className="mon-btn primary"
+            className="ui-btn is-primary is-sm"
             onClick={() => void onConfirmDoubt(active.id)}
             title="核实为真实问题，移出疑似桶并计入待办"
           >
@@ -184,7 +220,7 @@ export function IssueDrawer({
         <IssueActions issue={detail ?? active} onSet={(s) => void onSetStatus(active.id, s)} />
         <button
           type="button"
-          className="mon-btn ghost"
+          className="ui-btn is-ghost is-sm"
           onClick={() => onLocate(active.groupUsername, active.occurAt)}
           title="跳到该群聊天并滚动到问题首次出现的时间附近"
         >

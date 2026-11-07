@@ -14,19 +14,25 @@ export function SettingsCard({
   title,
   desc,
   children,
-  className = ''
+  className = '',
+  extra
 }: {
   title?: string
   desc?: string
   children: ReactNode
   className?: string
+  /** 标题行右侧的状态 chip（如「已连接」「3 个任务」）：层次上属于卡头，不塞进正文 */
+  extra?: ReactNode
 }): React.JSX.Element {
   return (
     <section className={`page-card st-section sf-card${className ? ` ${className}` : ''}`}>
-      {(title || desc) && (
+      {(title || desc || extra) && (
         <header className="sf-card-head">
-          {title && <div className="sf-card-title">{title}</div>}
-          {desc && <div className="sf-card-desc">{desc}</div>}
+          <div className="sf-card-head-main">
+            {title && <div className="sf-card-title">{title}</div>}
+            {desc && <div className="sf-card-desc">{desc}</div>}
+          </div>
+          {extra && <div className="sf-card-extra">{extra}</div>}
         </header>
       )}
       <div className="sf-card-body">{children}</div>

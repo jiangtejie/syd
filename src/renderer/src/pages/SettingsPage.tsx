@@ -18,7 +18,6 @@ import { LarkBaseSyncSection } from '../components/settings/LarkBaseSyncSection'
 import {
   AdvancedBlock,
   FieldRow,
-  PillRow,
   SettingsCard,
   StatusPill,
   SwitchRow
@@ -650,12 +649,8 @@ function SettingsPage(): React.JSX.Element {
             <WorkbenchApprovalSection />
           </SettingsCard>
 
-          <SettingsCard
-            title="业务技能(SKILL.md)"
-            desc="把可复用的口径写成技能文件，AI 按技能回答；启用上限与注入预算成正比。"
-          >
-            <WorkbenchSkillsSection />
-          </SettingsCard>
+          {/* 技能卡由 WorkbenchSkillsSection 自带卡头（此前外面又包了一层，标题重复） */}
+          <WorkbenchSkillsSection />
         </div>
       )}
 
@@ -684,6 +679,12 @@ function SettingsPage(): React.JSX.Element {
           <SettingsCard
             title="AI 通道配置(OpenAI 兼容)"
             desc="选择通道会自动填入官方接口地址(火山方舟需在控制台创建推理接入点后填写 ep-xxx);模型名可点「获取模型」拉取或手动填写。改动即时保存,建议先「测试连接」验证。思考型模型(DeepSeek Reasoner/Qwen 思考/GLM-Z 等)会把思考算进输出预算,预算不足时会出现「思考完了却没有正文」,可在此调高或改用非思考模型。"
+            extra={
+              <StatusPill
+                tone={boolVal(form['ai.enabled']) ? 'ok' : 'off'}
+                text={boolVal(form['ai.enabled']) ? '已启用' : '未启用'}
+              />
+            }
           >
             <SwitchRow
               label="启用 AI 调用"
@@ -848,16 +849,19 @@ function SettingsPage(): React.JSX.Element {
             desc="每次真实模型调用的成功率、失败原因与 token 用量。「本次运行」是内存态、重启清零、只覆盖工作台;按天数则是落库记录,覆盖所有模块(含后台群问题分析与数字员工值班)。"
           >
             <div className="st-actions">
-              {(['run', 1, 7, 30] as const).map((s) => (
-                <button
-                  key={String(s)}
-                  type="button"
-                  className={'ui-btn is-sm' + (aiCostScope === s ? ' is-primary' : '')}
-                  onClick={() => setAiCostScope(s)}
-                >
-                  {s === 'run' ? '本次运行' : String(s) + ' 天'}
-                </button>
-              ))}
+              <div className="ui-seg" role="group" aria-label="统计范围">
+                {(['run', 1, 7, 30] as const).map((s) => (
+                  <button
+                    key={String(s)}
+                    type="button"
+                    className={'ui-seg-btn' + (aiCostScope === s ? ' is-on' : '')}
+                    aria-pressed={aiCostScope === s}
+                    onClick={() => setAiCostScope(s)}
+                  >
+                    {s === 'run' ? '本次运行' : String(s) + ' 天'}
+                  </button>
+                ))}
+              </div>
             </div>
             {aiCostScope === 'run' ? (
               <WorkbenchReliabilitySection />
@@ -869,9 +873,7 @@ function SettingsPage(): React.JSX.Element {
           <SettingsCard
             title="飞书云文档(读取多维表格/文档)"
             desc="让 AI 能读飞书多维表格(Base)与云文档: 把 /base/ 或 /docx/ 链接发给 AI 即可。只读, 不会修改飞书里的数据。App ID / Secret 留空则自动复用 IM 渠道里的飞书机器人账号。"
-          >
-            {/* 凭证细节默认收起:配好之后界面上只留一句人话状态 + 动作按钮 */}
-            <PillRow>
+            extra={
               <StatusPill
                 tone={larkStatus?.configured ? 'ok' : 'off'}
                 text={
@@ -879,12 +881,19 @@ function SettingsPage(): React.JSX.Element {
                     ? '读取中…'
                     : larkStatus.configured
                       ? larkStatus.source === 'im'
-                        ? `已连接（复用 IM 账号「${larkStatus.accountName ?? '飞书机器人'}」）`
+                        ? `已连接（复用 IM 渠道账号）`
                         : '已连接（设置页凭证）'
-                      : '未配置飞书应用凭证'
+                      : '未配置凭证'
+                }
+                title={
+                  larkStatus?.configured && larkStatus.source === 'im'
+                    ? `复用 IM 渠道账号「${larkStatus.accountName ?? '飞书机器人'}」`
+                    : undefined
                 }
               />
-            </PillRow>
+            }
+          >
+            {/* 凭证细节默认收起:配好之后界面上只留一句人话状态 + 动作按钮 */}
             <div className="st-hint">
               {larkStatus?.configured
                 ? 'AI 可以直接读你发来的多维表格 / 云文档链接（只读，不改动飞书里的数据）。'

@@ -39,6 +39,29 @@ const DECISION_LABEL: Record<string, string> = {
   skip: '不介入'
 }
 
+/** 决策 → 全局徽标(ui-chip)的语气修饰；页面不再自己定义一套徽标外观 */
+const DECISION_CHIP: Record<string, string> = {
+  script: 'is-ok is-line',
+  llm: 'is-line dt-chip-llm',
+  handoff: 'is-warn is-line',
+  skip: ''
+}
+
+/** 回放预演的动作 → 徽标语气 */
+const PREVIEW_CHIP: Record<string, string> = {
+  reply: 'is-ok is-line',
+  confirm: 'is-warn is-line',
+  handoff: 'is-bad is-line',
+  llm: 'is-line dt-chip-llm'
+}
+
+const PREVIEW_LABEL: Record<string, string> = {
+  reply: '会回',
+  confirm: '需确认',
+  handoff: '转人工',
+  llm: '需兜底'
+}
+
 /** 意图来源 → 徽标文案（与主进程 intent.ts 的 INTENT_SOURCE_TEXT 保持一致） */
 const INTENT_SOURCE_LABEL: Record<string, string> = {
   script: '话术',
@@ -305,68 +328,117 @@ function DutyPage(): React.JSX.Element {
 
   return (
     <div className="page-scroll dt-page">
-      <h2 className="page-title">值班 · 数字员工</h2>
-      <div className="page-subtitle">
-        按话术自动应答客户群；当前为
-        <b>{status?.defaultMode === 'live' ? ' 正式模式' : ' 影子模式（只记录不发送）'}</b>
-        ，自动回复 <b>{status?.defaultEnabled ? '默认开启' : '默认关闭'}</b>
-        {status ? ` · 话术 ${status.scripts} 条 · 单独设置 ${status.overrides} 个群` : ''}
+      <div className="dt-head">
+        <h2 className="page-title">值班 · 数字员工</h2>
+        <span className="dt-head-meta">话术优先、模型兜底 · 高风险消息只转人工，不自动发送</span>
       </div>
 
-      <div className="dt-toolbar">
-        <button
-          type="button"
-          className="ui-btn is-primary dt-btn"
-          disabled={busy !== ''}
-          onClick={() => void runNow()}
-        >
-          {busy === 'run' ? '执行中…' : '立即跑一轮'}
-        </button>
-        {(status?.missingIntent ?? 0) > 0 && (
+      {/* 状态头条：左状态灯 + 标题/说明 + 中部 7 天读数 + 右侧动作 */}
+      <section
+        className={`dt-status${
+          status ? (status.defaultMode === 'live' ? ' is-live' : ' is-shadow') : ' is-off'
+        }`}
+      >
+        <span className="dt-lamp" aria-hidden="true" />
+        <div className="dt-status-main">
+          <div className="dt-status-title">
+            {status
+              ? status.defaultMode === 'live'
+                ? '正式模式运行中'
+                : '影子模式运行中'
+              : '正在读取数字员工状态'}
+            {status && (
+              <span
+                className={`ui-chip is-sm${
+                  status.defaultMode === 'live' ? ' is-ok is-line' : ' is-warn is-line'
+                }`}
+              >
+                {status.defaultMode === 'live' ? '可发送' : '只记录不发送'}
+              </span>
+            )}
+            {status && (
+              <span className="ui-chip is-sm is-line dt-chip-auto">
+                自动回复{status.defaultEnabled ? '默认开启' : '默认关闭'}
+              </span>
+            )}
+          </div>
+          <div className="dt-status-desc">
+            按话术自动应答客户群，命中话术优先、LLM 只兜底。
+            {status ? ` 话术 ${status.scripts} 条 · 单独设置 ${status.overrides} 个群。` : ''}
+            群开关在「客户」页批量管理。
+          </div>
+        </div>
+        {stats && (
+          <div className="dt-kpis" aria-label="近 7 天判定读数">
+            <div className="dt-kpi">
+              <span className="dt-kpi-k">命中话术</span>
+              <span className="dt-kpi-v ui-num">{stats.script}</span>
+            </div>
+            <div className="dt-kpi">
+              <span className="dt-kpi-k">模型兜底</span>
+              <span className="dt-kpi-v ui-num">{stats.llm}</span>
+            </div>
+            <div className="dt-kpi">
+              <span className="dt-kpi-k">转人工</span>
+              <span className="dt-kpi-v ui-num">{stats.handoff}</span>
+            </div>
+            <div className="dt-kpi">
+              <span className="dt-kpi-k">未命中率</span>
+              <span className="dt-kpi-v ui-num">{(stats.noMatchRate * 100).toFixed(0)}%</span>
+            </div>
+          </div>
+        )}
+        <div className="dt-status-ops">
           <button
             type="button"
-            className="ui-btn dt-btn"
+            className="ui-btn is-primary dt-btn"
             disabled={busy !== ''}
-            onClick={() => void backfillIntent()}
-            title="历史上走 LLM 兜底的那批记录意图是空的（所以 Base 的意图列一片空白）。这里用规则层离线补齐，不改决策与发送状态。"
+            onClick={() => void runNow()}
           >
-            {busy === 'intent'
-              ? '补全中…'
-              : '补全历史意图（' + (status?.missingIntent ?? 0) + ' 条）'}
+            {busy === 'run' ? '执行中…' : '立即跑一轮'}
           </button>
-        )}
-        <button
-          type="button"
-          className="ui-btn dt-btn"
-          disabled={busy !== ''}
-          onClick={() => void loadAll()}
-        >
-          刷新
-        </button>
-        {stats && (
-          <span className="dt-stat">
-            近 7 天：命中 {stats.script} · 兜底 {stats.llm} · 转人工 {stats.handoff} · 未命中率{' '}
-            {(stats.noMatchRate * 100).toFixed(0)}%
-          </span>
-        )}
-        <span className="dt-hint">影子模式下不会发出任何消息；群开关在「客户」页批量管理</span>
-      </div>
+          {(status?.missingIntent ?? 0) > 0 && (
+            <button
+              type="button"
+              className="ui-btn is-sm is-ghost dt-btn"
+              disabled={busy !== ''}
+              onClick={() => void backfillIntent()}
+              title="历史上走 LLM 兜底的那批记录意图是空的（所以 Base 的意图列一片空白）。这里用规则层离线补齐，不改决策与发送状态。"
+            >
+              {busy === 'intent'
+                ? '补全中…'
+                : '补全历史意图 ' + (status?.missingIntent ?? 0) + ' 条'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="ui-btn is-sm is-ghost dt-btn"
+            disabled={busy !== ''}
+            onClick={() => void loadAll()}
+          >
+            刷新
+          </button>
+        </div>
+      </section>
 
-      <div className="dt-tabs">
+      <div className="dt-tabs" role="tablist" aria-label="值班视图">
         {(
           [
-            ['shadow', `影子记录 ${shadowList.length}`],
-            ['scripts', `话术库 ${scripts.length}`],
-            ['preview', '回放预演']
+            ['shadow', '影子记录', shadowList.length + handoffList.length],
+            ['scripts', '话术库', scripts.length],
+            ['preview', '回放预演', null]
           ] as const
-        ).map(([k, label]) => (
+        ).map(([k, label, n]) => (
           <button
             key={k}
             type="button"
+            role="tab"
+            aria-selected={tab === k}
             className={`ui-tab dt-tab${tab === k ? ' is-active' : ''}`}
             onClick={() => setTab(k)}
           >
             {label}
+            {n !== null && <span className="dt-tab-n ui-num">{n}</span>}
           </button>
         ))}
       </div>
@@ -374,21 +446,27 @@ function DutyPage(): React.JSX.Element {
       {tab === 'shadow' && (
         <div className="dt-list">
           {handoffList.length > 0 && (
-            <div className="dt-section-title">
-              需人工接手 {handoffList.length} 条（高风险或看不懂的消息）
+            <div className="dt-handoff">
+              <span className="ui-label dt-handoff-label">
+                需人工接手 <span className="ui-num">{handoffList.length}</span> 条
+              </span>
+              <span className="dt-handoff-hint">高风险或看不懂的消息只转人工，不会自动发送</span>
             </div>
           )}
           {[...handoffList, ...shadowList].map((r) => (
-            <div key={r.id} className="dt-card">
+            <article
+              key={r.id}
+              className={`dt-card${r.decision === 'handoff' ? ' is-urgent' : ''}`}
+            >
               <div className="dt-card-head">
-                <span className={`dt-badge is-${r.decision}`}>
+                <span className={`ui-chip is-sm dt-decision ${DECISION_CHIP[r.decision] ?? ''}`}>
                   {DECISION_LABEL[r.decision] ?? r.decision}
                 </span>
                 <span className="dt-group">{r.groupName || r.groupUsername}</span>
-                <span className="dt-time">{fmtTime(r.triggerTime ?? r.createdAt)}</span>
+                <span className="dt-time ui-num">{fmtTime(r.triggerTime ?? r.createdAt)}</span>
                 {r.intent && (
                   <span
-                    className="dt-intent"
+                    className="ui-chip is-sm dt-chip-intent"
                     title={
                       '意图来源：' +
                       (INTENT_SOURCE_LABEL[r.intentSource ?? 'none'] ?? '未归类') +
@@ -403,40 +481,68 @@ function DutyPage(): React.JSX.Element {
                   </span>
                 )}
                 {r.riskLevel && r.riskLevel !== 'A' && (
-                  <span className="dt-risk">{RISK_LABEL[r.riskLevel] ?? r.riskLevel}</span>
+                  <span className={`ui-chip is-sm dt-risk is-${r.riskLevel}`}>
+                    {RISK_LABEL[r.riskLevel] ?? r.riskLevel}
+                  </span>
                 )}
               </div>
-              <div className="dt-trigger">客户：{r.triggerText || '（无文本）'}</div>
-              {r.replyText && <div className="dt-reply">它打算回：{r.replyText}</div>}
+              <div className="dt-trigger">
+                <span className="dt-k">客户</span>
+                <span className="dt-trigger-text">{r.triggerText || '（无文本）'}</span>
+              </div>
+              {r.replyText && (
+                <div className="dt-reply">
+                  <span className="dt-k">它打算回</span>
+                  <span className="dt-reply-text">{r.replyText}</span>
+                </div>
+              )}
               <div className="dt-reason">{r.reason}</div>
               <div className="dt-ops">
                 <button
                   type="button"
-                  className={`dt-fb${r.feedback === 'good' ? ' is-on' : ''}`}
+                  className={`ui-pill dt-fb${r.feedback === 'good' ? ' is-on' : ''}`}
                   onClick={() => void sendFeedback(r.id, 'good')}
                 >
                   👍 答得对
                 </button>
                 <button
                   type="button"
-                  className={`dt-fb${r.feedback === 'bad' ? ' is-on' : ''}`}
+                  className={`ui-pill dt-fb${r.feedback === 'bad' ? ' is-on' : ''}`}
                   onClick={() => void sendFeedback(r.id, 'bad')}
                 >
                   👎 答错了
                 </button>
                 <button
                   type="button"
-                  className={`dt-fb${r.feedback === 'no-reply' ? ' is-on' : ''}`}
+                  className={`ui-pill dt-fb${r.feedback === 'no-reply' ? ' is-on' : ''}`}
                   onClick={() => void sendFeedback(r.id, 'no-reply')}
                 >
                   🚫 不该回
                 </button>
               </div>
-            </div>
+            </article>
           ))}
           {replies.length === 0 && (
-            <div className="dt-empty">
-              还没有记录。影子模式会在群里有新消息时自动判定，也可以点「立即跑一轮」。
+            <div className="page-card dt-empty-card">
+              <div className="ui-empty">
+                <span className="ui-empty-glyph">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path
+                      d="M3 4.5h14v10H8l-4 3v-3H3z"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <div className="ui-empty-title">还没有影子记录</div>
+                <div className="ui-empty-desc">
+                  影子模式会在群里有新消息时自动判定；也可以点右上「立即跑一轮」马上评估一轮。
+                </div>
+                <div className="ui-empty-hint">
+                  当前为影子模式：所有判定只记录，不会发出任何消息。
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -459,8 +565,11 @@ function DutyPage(): React.JSX.Element {
               那些等二期接订单与物流查询
             </span>
           </div>
-          <div className="dt-form">
-            <div className="dt-form-title">{draft.id ? `编辑话术 #${draft.id}` : '新增话术'}</div>
+          <section className="page-card dt-form">
+            <div className="ui-label dt-form-title">
+              {draft.id ? `编辑话术 #${draft.id}` : '新增话术'}
+              <span className="dt-form-hint">关键词 / 正则命中后按模板回复；风险 C 只转人工</span>
+            </div>
             <div className="dt-form-row">
               <input
                 className="ui-input dt-input"
@@ -543,7 +652,7 @@ function DutyPage(): React.JSX.Element {
                 {busy === 'import' ? '导入中…' : '导入'}
               </button>
             </details>
-          </div>
+          </section>
 
           <div className="dt-table">
             <div className="dt-tr dt-th">
@@ -551,12 +660,12 @@ function DutyPage(): React.JSX.Element {
               <span>意图 / 触发方式</span>
               <span>回复</span>
               <span>风险</span>
-              <span>命中</span>
+              <span className="dt-th-num">命中</span>
               <span>操作</span>
             </div>
             {scripts.map((s) => (
               <div key={s.id} className={`dt-tr${s.enabled ? '' : ' is-off'}`}>
-                <span>
+                <span className="dt-td-check">
                   <input
                     type="checkbox"
                     checked={s.enabled}
@@ -564,23 +673,33 @@ function DutyPage(): React.JSX.Element {
                   />
                 </span>
                 <span className="dt-tr-main">
-                  <b>{s.title || s.intent}</b>
+                  <b className="dt-tr-title">{s.title || s.intent}</b>
                   <span className="dt-tr-sub">
                     {s.patterns
-                      .map((p) => `${p.type === 're' ? '正则' : ''}${p.value}`)
+                      .map((p) => `${p.type === 're' ? '正则 ' : ''}${p.value}`)
                       .join(' / ')}
                   </span>
                 </span>
                 <span className="dt-tr-reply">{s.replyText}</span>
-                <span className={`dt-risk is-${s.riskLevel}`}>{RISK_LABEL[s.riskLevel]}</span>
-                <span className="dt-muted">{s.hitCount}</span>
+                {s.riskLevel === 'A' ? (
+                  <span className="dt-muted dt-risk-a">{RISK_LABEL[s.riskLevel]}</span>
+                ) : (
+                  <span className={`ui-chip is-sm dt-risk is-${s.riskLevel}`}>
+                    {RISK_LABEL[s.riskLevel]}
+                  </span>
+                )}
+                <span className="dt-muted dt-hit ui-num">{s.hitCount}</span>
                 <span className="dt-tr-ops">
-                  <button type="button" className="dt-mini" onClick={() => editScript(s)}>
+                  <button
+                    type="button"
+                    className="ui-btn is-sm is-ghost dt-mini"
+                    onClick={() => editScript(s)}
+                  >
                     编辑
                   </button>
                   <button
                     type="button"
-                    className="dt-mini danger"
+                    className="ui-btn is-sm is-ghost dt-mini dt-mini-danger"
                     onClick={() => void removeScript(s.id)}
                   >
                     删除
@@ -589,8 +708,25 @@ function DutyPage(): React.JSX.Element {
               </div>
             ))}
             {scripts.length === 0 && (
-              <div className="dt-empty">
-                还没有话术。先加几条最常见的（物流时效 / 营业时间 / 地址 / 发票），或批量导入模板。
+              <div className="ui-empty dt-empty">
+                <span className="ui-empty-glyph">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path
+                      d="M4 3.5h12v13H4z"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                    />
+                    <path d="M7 7.5h6M7 10.5h6M7 13.5h4" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>
+                </span>
+                <div className="ui-empty-title">还没有话术</div>
+                <div className="ui-empty-desc">
+                  先加几条最常见的（物流时效 / 营业时间 / 地址 / 发票），或导入推荐话术模板。
+                </div>
+                <div className="ui-empty-hint">
+                  数字员工只「接住话头 + 承诺动作」，不编造到货时间与库存数字。
+                </div>
               </div>
             )}
           </div>
@@ -623,48 +759,87 @@ function DutyPage(): React.JSX.Element {
           </div>
           {preview && (
             <>
-              <div className="dt-stat-line">
-                群 {preview.totals.groups} · 消息 {preview.totals.msgs} · 会回{' '}
-                {preview.totals.decisions} · 转人工 {preview.totals.handoff} · 非文本（图片/语音）
-                {preview.totals.nonText}
+              <div className="dt-kpis dt-kpis-inline" aria-label="预演读数">
+                <div className="dt-kpi">
+                  <span className="dt-kpi-k">群</span>
+                  <span className="dt-kpi-v ui-num">{preview.totals.groups}</span>
+                </div>
+                <div className="dt-kpi">
+                  <span className="dt-kpi-k">消息</span>
+                  <span className="dt-kpi-v ui-num">{preview.totals.msgs}</span>
+                </div>
+                <div className="dt-kpi">
+                  <span className="dt-kpi-k">会回</span>
+                  <span className="dt-kpi-v ui-num">{preview.totals.decisions}</span>
+                </div>
+                <div className="dt-kpi">
+                  <span className="dt-kpi-k">转人工</span>
+                  <span className="dt-kpi-v ui-num">{preview.totals.handoff}</span>
+                </div>
+                <div className="dt-kpi">
+                  <span className="dt-kpi-k">非文本</span>
+                  <span className="dt-kpi-v ui-num">{preview.totals.nonText}</span>
+                </div>
               </div>
               {preview.intents.length > 0 && (
                 <div className="dt-intents">
                   {preview.intents.map((it) => (
-                    <span key={it.intent} className="dt-intent-chip">
-                      {it.intent} × {it.n}
+                    <span key={it.intent} className="ui-chip is-sm dt-chip-intent">
+                      {it.intent}
+                      <span className="dt-intent-n ui-num">× {it.n}</span>
                     </span>
                   ))}
                 </div>
               )}
               <div className="dt-list">
                 {preview.samples.slice(0, 60).map((s, i) => (
-                  <div key={i} className="dt-card">
+                  <article key={i} className="dt-card">
                     <div className="dt-card-head">
-                      <span className={`dt-badge is-${s.action}`}>
-                        {s.action === 'reply'
-                          ? '会回'
-                          : s.action === 'confirm'
-                            ? '需确认'
-                            : s.action === 'handoff'
-                              ? '转人工'
-                              : '需兜底'}
+                      <span className={`ui-chip is-sm dt-decision ${PREVIEW_CHIP[s.action] ?? ''}`}>
+                        {PREVIEW_LABEL[s.action] ?? s.action}
                       </span>
                       <span className="dt-group">{s.groupName}</span>
-                      <span className="dt-time">{fmtTime(s.time)}</span>
+                      <span className="dt-time ui-num">{fmtTime(s.time)}</span>
                       <span className="dt-muted">{s.sender}</span>
-                      {s.intent && <span className="dt-intent">{s.intent}</span>}
+                      {s.intent && <span className="ui-chip is-sm dt-chip-intent">{s.intent}</span>}
                     </div>
-                    <div className="dt-trigger">{s.text}</div>
-                    {s.reply && <div className="dt-reply">{s.reply}</div>}
+                    <div className="dt-trigger">
+                      <span className="dt-k">客户</span>
+                      <span className="dt-trigger-text">{s.text}</span>
+                    </div>
+                    {s.reply && (
+                      <div className="dt-reply">
+                        <span className="dt-k">会回</span>
+                        <span className="dt-reply-text">{s.reply}</span>
+                      </div>
+                    )}
                     <div className="dt-reason">{s.reason}</div>
-                  </div>
+                  </article>
                 ))}
               </div>
             </>
           )}
           {!preview && (
-            <div className="dt-empty">点「开始预演」看它在你们群里的表现（预演不会发消息）</div>
+            <div className="page-card dt-empty-card">
+              <div className="ui-empty">
+                <span className="ui-empty-glyph">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path
+                      d="M10 3.5a6.5 6.5 0 1 0 6.5 6.5"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                    <path d="M13 2.5 16.5 3l-.5 3.5" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>
+                </span>
+                <div className="ui-empty-title">还没跑过预演</div>
+                <div className="ui-empty-desc">
+                  点「开始预演」，用最近几天的真实群消息跑一遍判定：会回哪些、哪些转人工，一目了然。
+                </div>
+                <div className="ui-empty-hint">预演不写库、不发送，可以放心反复跑。</div>
+              </div>
+            </div>
           )}
         </div>
       )}

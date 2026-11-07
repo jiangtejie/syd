@@ -13,9 +13,14 @@ const DutyPage = lazy(() => import('./pages/DutyPage'))
 const ExportPage = lazy(() => import('./pages/ExportPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
-/** 懒加载页面的占位(与页面区同底色,避免闪白) */
+/** 懒加载页面的占位：品牌色转圈 + 弱文字（深色下不闪白，浅色下也不突兀） */
 function PageLoading(): React.JSX.Element {
-  return <div style={{ padding: 24, color: '#999', fontSize: 13 }}>加载中…</div>
+  return (
+    <div className="app-loading" role="status" aria-live="polite">
+      <span className="ui-spin app-loading-spin" aria-hidden="true" />
+      <span>加载中…</span>
+    </div>
+  )
 }
 import TitleBar from './components/TitleBar'
 import ToastHost from './components/ToastHost'

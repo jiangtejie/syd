@@ -1,30 +1,57 @@
 /* 应用外壳：标题栏 + 导航栏 + 页面容器 */
 
+/* 整个窗口的底：深色下是「深空 + 双色辉光 + 极淡网格」，
+ * 浅色下辉光/网格 token 是透明的，只剩原来的 #f5f6f7。 */
 .app-shell {
   display: flex;
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(1200px 640px at 84% -14%, var(--shell-glow-a), transparent 62%),
+    radial-gradient(1000px 560px at 2% 108%, var(--shell-glow-b), transparent 58%),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size:
+    auto,
+    auto,
+    36px 36px,
+    36px 36px;
 }
 
 /* ── 自定义标题栏（拖拽区，右侧避让原生窗控按钮 ~176px） ── */
 .app-titlebar {
+  position: relative;
   height: 36px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 176px 0 14px;
-  background: var(--bg);
+  background: var(--titlebar-bg);
   border-bottom: 1px solid var(--border-light);
   -webkit-app-region: drag;
   user-select: none;
 }
 
+/* 标题栏底边的一道微光：深色下是界面里最克制的一条「霓虹线」 */
+.app-titlebar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--brand-line), transparent 42%);
+  opacity: 0.55;
+}
+
 .app-titlebar-name {
   font-size: var(--fs-sm);
   font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--text-2);
 }
 
@@ -36,6 +63,7 @@
 .app-titlebar-page::before {
   content: '·';
   margin-right: 8px;
+  color: var(--text-4);
 }
 
 .app-titlebar-badge {
@@ -45,10 +73,12 @@
   background: var(--danger);
   color: var(--on-brand);
   font-size: var(--fs-xs);
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0 5px;
+  box-shadow: 0 0 10px var(--danger-soft);
 }
 
 .app-body {
@@ -57,15 +87,32 @@
   display: flex;
 }
 
+/* 左侧导航：深色玻璃条。两套主题下它都是深色（浅色主题里它是页面里唯一的深色块），
+ * 所以文字/图标一律用固定的深色底配色，不跟 --text-* 走。 */
 .app-nav {
+  position: relative;
   width: 64px;
   flex-shrink: 0;
-  background: var(--text-1);
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 12px 0;
   gap: 4px;
+  background: var(--nav-bg);
+  border-right: 1px solid var(--border-light);
+}
+
+/* 导航右缘的一线冷光：把导航与页面分开，又不抢内容 */
+.app-nav::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--brand-line), transparent 72%);
+  opacity: 0.35;
 }
 
 /* 设置固定于导航底部(分隔线 + 底部容器自动贴底) */
@@ -81,7 +128,7 @@
 .app-nav-sep {
   width: 28px;
   height: 1px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
   margin: 2px 0 4px;
 }
 
@@ -102,7 +149,7 @@
   object-fit: cover;
   display: block;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  background: #2a2f36;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 /* 未连接 / 无头像：空占位（虚线圆 + 人形）；已选账号但暂无头像时为实心 */
@@ -113,10 +160,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-3);
-  background: #2a2f36;
-  border: 1px dashed rgba(255, 255, 255, 0.28);
+  color: var(--nav-fg);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px dashed rgba(255, 255, 255, 0.26);
   box-sizing: border-box;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .app-nav-avatar.is-set .app-nav-avatar-empty {
@@ -132,25 +182,27 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  border: 2px solid var(--text-1);
+  border: 2px solid var(--nav-bg);
   box-sizing: border-box;
 }
 
 .app-nav-dot.on {
-  background: #2ee584;
-  box-shadow: 0 0 5px rgba(46, 229, 132, 0.8);
+  background: var(--nav-online);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--nav-online) 85%, transparent);
 }
 
 .app-nav-dot.warn {
   background: var(--warn);
+  box-shadow: 0 0 6px var(--warn-soft);
 }
 
 .app-nav-dot.off {
-  background: var(--text-2);
+  background: var(--nav-fg);
 }
 
 .app-nav-avatar:hover .app-nav-avatar-empty {
-  color: var(--border-strong);
+  color: var(--nav-fg-strong);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .app-nav-item {
@@ -158,27 +210,29 @@
   width: 52px;
   padding: 7px 0;
   border: none;
-  border-radius: var(--r-md);
+  border-radius: 10px;
   background: transparent;
-  color: var(--text-3);
+  color: var(--nav-fg);
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .app-nav-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--border-light);
+  background: var(--nav-hover-bg);
+  color: var(--nav-fg-strong);
 }
 
 .app-nav-item.is-active {
-  background: rgba(7, 193, 96, 0.18);
-  color: #2ee584;
+  background: var(--nav-active-bg);
+  color: var(--nav-active-line);
+  box-shadow: var(--nav-active-shadow);
 }
 
 .app-nav-item.is-active::before {
@@ -188,9 +242,14 @@
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
-  height: 22px;
+  height: 20px;
   border-radius: 2px;
-  background: #2ee584;
+  background: var(--nav-active-line);
+  box-shadow: 0 0 10px var(--nav-active-line);
+}
+
+.app-nav-item.is-active .app-nav-icon {
+  filter: drop-shadow(0 0 6px var(--brand-soft));
 }
 
 .app-nav-icon {
@@ -207,6 +266,7 @@
 
 .app-nav-label {
   font-size: var(--fs-xs);
+  letter-spacing: 0.02em;
 }
 
 .app-main {
@@ -230,17 +290,34 @@
 .page-scroll {
   height: 100%;
   overflow-y: auto;
-  padding: 20px 24px 32px;
+  padding: 22px 26px 34px;
   /* 细滚动条：仅覆盖宽度/内缩，其余见 assets/base.css 全局实现 */
   --sb-w: 6px;
   --sb-inset: 0;
 }
 
+/* 页面标题：左侧一条霓虹渐变竖条 —— 全站唯一的"结构装饰"，跨页统一 */
 .page-title {
+  position: relative;
   font-size: var(--fs-xl);
   font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--text-strong);
   margin: 0 0 4px;
+  padding-left: 13px;
+}
+
+.page-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 17px;
+  border-radius: 2px;
+  background: var(--brand-gradient);
+  box-shadow: var(--glow-brand);
 }
 
 .page-subtitle {
@@ -249,14 +326,14 @@
   margin-bottom: 16px;
 }
 
-/* 卡片语言（2026-09 统一）：白底 + 一档浅描边 + 一档极浅阴影 + 12px 圆角。
- * 此前是硬编码 var(--border-light) + 10px 圆角 + 无阴影，个别页面又自己写了一套 14px 圆角 + 双层阴影；
- * 同一产品里两种卡片口径，跨页切换时会有"换了个软件"的感觉。 */
+/* 卡片语言（2026-09 统一）：面板底 + 一档冷描边 + 一档极浅阴影 + 12px 圆角。
+ * 深色下额外叠一层顶部极淡的品牌色渐变（--panel-gradient），让卡片有"被屏幕照亮"的层次。 */
 .page-card {
-  background: var(--bg-panel);
+  background-color: var(--bg-panel);
+  background-image: var(--panel-gradient);
   border: 1px solid var(--border-light);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-card), var(--glow-card);
   padding: var(--sp-4);
   color: var(--text-1);
 }
@@ -280,28 +357,35 @@
   align-items: center;
   gap: 7px;
   padding: 8px 18px;
-  border-radius: 20px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
   font-size: var(--fs-md);
-  color: var(--on-brand);
+  color: var(--text-strong);
+  background: var(--bg-panel);
   box-shadow: var(--shadow-toast);
   animation: toast-in 0.2s ease-out;
 }
 
+/* 三种语气：只染色（描边 + 图标/文字），不铺满整块底色 —— 深色下整块亮色太吵 */
 .toast-success {
-  background: rgba(7, 166, 63, 0.95);
+  border-color: var(--success-line);
+  color: var(--success-strong);
 }
 
 .toast-error {
-  background: rgba(229, 72, 77, 0.95);
+  border-color: var(--danger-line);
+  color: var(--danger-text);
 }
 
 .toast-info {
-  background: rgba(31, 35, 41, 0.92);
+  border-color: var(--border-strong);
+  color: var(--text-2);
 }
 
 .toast-icon {
   font-size: var(--fs-sm);
   font-weight: 700;
+  display: inline-flex;
 }
 
 @keyframes toast-in {
@@ -344,14 +428,16 @@
   padding: 8px 24px;
   border: none;
   border-radius: var(--r-md);
-  background: var(--brand);
+  background: var(--brand-gradient);
   color: var(--on-brand);
   font-size: var(--fs-md);
+  font-weight: 600;
   cursor: pointer;
+  box-shadow: var(--glow-brand);
 }
 
 .eb-reload:hover {
-  background: var(--brand-hover);
+  filter: brightness(1.08);
 }
 
 /* ── 统一确认弹窗（替代 window.confirm；遮罩点击 / Esc 关闭） ── */
@@ -363,14 +449,30 @@
   align-items: center;
   justify-content: center;
   background: var(--bg-mask);
+  backdrop-filter: blur(2px);
 }
 
 .confirm-dialog {
+  position: relative;
   width: min(400px, calc(100vw - 48px));
-  background: var(--bg-panel);
+  background-color: var(--bg-panel);
+  background-image: var(--panel-gradient);
+  border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-pop);
   padding: 18px 18px 14px;
+  overflow: hidden;
+}
+
+/* 弹窗顶部的高光细线：深色下让浮层有"发光边框"的错觉 */
+.confirm-dialog::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--brand-line), transparent);
 }
 
 .confirm-title {
@@ -399,39 +501,49 @@
   padding: 6px 16px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--bg-panel);
+  background: transparent;
   color: var(--text-2);
   font-size: var(--fs-md);
   cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease,
+    background 0.16s ease;
 }
 
 .confirm-btn:hover {
   background: var(--bg-hover);
+  border-color: var(--brand-line);
+  color: var(--brand);
 }
 
 .confirm-primary {
-  border: none;
-  background: var(--brand);
+  border-color: transparent;
+  background: var(--brand-gradient);
   color: var(--on-brand);
+  font-weight: 600;
 }
 
 .confirm-primary:hover {
-  background: var(--brand-hover);
+  border-color: transparent;
+  background: var(--brand-gradient);
+  color: var(--on-brand);
+  filter: brightness(1.08);
 }
 
 .confirm-primary.is-danger {
-  background: var(--danger);
+  background: var(--danger-gradient);
 }
 
 .confirm-primary.is-danger:hover {
-  background: var(--danger-hover);
+  background: var(--danger-gradient);
 }
 
 /* ── 「标记同事」就地入口（证据时间线里） ── */
 .tm-mark {
   margin-left: 6px;
   padding: 1px 6px;
-  border: 1px dashed var(--brand);
+  border: 1px dashed var(--brand-line);
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--brand);
@@ -442,5 +554,125 @@
 }
 
 .tm-mark:hover {
-  background: rgba(7, 193, 96, 0.1);
+  background: var(--brand-soft);
+}
+/* ── 标题栏左侧的品牌标记：一个小菱形（旋转 45° 的方块），像仪表盘上的信号灯 ── */
+.app-titlebar-mark {
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-radius: 1.5px;
+  background: var(--brand-gradient);
+  box-shadow: var(--glow-brand);
+  transform: rotate(45deg);
+  flex: none;
+}
+
+/* ── 首启向导（只在确实缺账号/密钥时出现）──
+ * 之前是组件内联样式 + 一堆不存在的 token（var(--bg-1, #fff) 永远走 #fff），
+ * 深色下是一块白板；这里改成和全站同一套面板语言：三段进度 + 加光面板。 */
+.frw-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-mask);
+  backdrop-filter: blur(3px);
+}
+
+.frw-panel {
+  position: relative;
+  width: min(520px, 92vw);
+  padding: 24px 26px 20px;
+  background-color: var(--bg-panel);
+  background-image: var(--panel-gradient);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+}
+
+.frw-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--brand-line), transparent);
+}
+
+.frw-steps {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.frw-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  color: var(--text-3);
+}
+
+.frw-step.is-done {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--brand);
+  box-shadow: var(--glow-brand);
+}
+
+.frw-step-no {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+.frw-step-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.frw-title {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.frw-detail {
+  margin-top: 8px;
+  font-size: var(--fs-md);
+  line-height: 1.75;
+  color: var(--text-2);
+}
+
+.frw-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+/* ── 懒加载占位（App 的 Suspense fallback）── */
+.app-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6);
+  color: var(--text-3);
+  font-size: var(--fs-md);
+}
+
+.app-loading-spin {
+  width: 13px;
+  height: 13px;
+  color: var(--brand);
+  opacity: 1;
 }

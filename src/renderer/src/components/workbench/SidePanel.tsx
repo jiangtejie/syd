@@ -44,7 +44,7 @@ function SidePanel(): React.JSX.Element {
             type="button"
             role="tab"
             aria-selected={view === 'issues'}
-            className={`wb-pane-tab${view === 'issues' ? ' is-active' : ''}`}
+            className={`ui-tab wb-pane-tab${view === 'issues' ? ' is-active' : ''}`}
             onClick={() => setView('issues')}
           >
             群问题
@@ -56,7 +56,7 @@ function SidePanel(): React.JSX.Element {
             type="button"
             role="tab"
             aria-selected={view === 'suggest'}
-            className={`wb-pane-tab${view === 'suggest' ? ' is-active' : ''}`}
+            className={`ui-tab wb-pane-tab${view === 'suggest' ? ' is-active' : ''}`}
             onClick={() => setView('suggest')}
           >
             回复建议

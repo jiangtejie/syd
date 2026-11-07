@@ -47,26 +47,33 @@ export function PlanBanner({
   return (
     <div ref={ref}>
       {dupPlan && (
-        <div className="mon-card mon-plan">
+        <div className="page-card mon-plan">
           <div className="mon-plan-head">
             <b>合并重复议题</b>
             <span className="mon-plan-sub">
-              发现 <b>{dupPlan.clusters}</b> 组重复、共 <b>{dupPlan.merged}</b> 条冗余记录（
+              发现 <b className="ui-num">{dupPlan.clusters}</b> 组重复、共{' '}
+              <b className="ui-num">{dupPlan.merged}</b> 条冗余记录（
               {dupPlan.plan.reduce((s, x) => s + x.dropIds.length + 1, 0)} 条 → {dupPlan.clusters}{' '}
               条）
             </span>
             <span className="mon-plan-spacer" />
             <button
               type="button"
-              className="mon-btn danger"
+              className="ui-btn is-danger is-sm"
               disabled={busy}
               onClick={() => void onExecuteMerge()}
             >
-              {busy ? '合并中…' : `执行合并(${dupPlan.merged})`}
+              {busy ? (
+                '合并中…'
+              ) : (
+                <>
+                  执行合并（<span className="ui-num">{dupPlan.merged}</span>）
+                </>
+              )}
             </button>
             <button
               type="button"
-              className="mon-btn ghost"
+              className="ui-btn is-ghost is-sm"
               disabled={busy}
               onClick={() => onCancelMerge()}
             >
@@ -90,14 +97,14 @@ export function PlanBanner({
                 </span>
                 {it.strong && (
                   <span
-                    className="mon-plan-why"
+                    className="ui-chip is-sm mon-plan-why"
                     title="高置信：开启「自动合并重复议题」后由后台自动处理"
                   >
                     高置信
                   </span>
                 )}
                 {it.reasons.length > 0 && (
-                  <span className="mon-plan-why" title={it.reasons.join('；')}>
+                  <span className="ui-chip is-sm mon-plan-why" title={it.reasons.join('；')}>
                     {it.reasons[0]}
                   </span>
                 )}
@@ -114,7 +121,7 @@ export function PlanBanner({
         </div>
       )}
       {archiveAsk && (
-        <div className="mon-card mon-plan">
+        <div className="page-card mon-plan">
           <div className="mon-plan-head">
             <b>归档历史记录</b>
             <span className="mon-plan-sub">
@@ -124,12 +131,16 @@ export function PlanBanner({
             <span className="mon-plan-spacer" />
             <button
               type="button"
-              className="mon-btn primary"
+              className="ui-btn is-primary is-sm"
               onClick={() => void onExecuteArchive()}
             >
               确认归档
             </button>
-            <button type="button" className="mon-btn ghost" onClick={() => onCancelArchive()}>
+            <button
+              type="button"
+              className="ui-btn is-ghost is-sm"
+              onClick={() => onCancelArchive()}
+            >
               取消
             </button>
           </div>

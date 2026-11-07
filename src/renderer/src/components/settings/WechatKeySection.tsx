@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { toast } from '../../stores/toast'
-import { SettingsCard } from './ui'
+import { SettingsCard, StatusPill } from './ui'
 import type { KeyAccountInfo, KeyStatusInfo } from '../../../../shared/types'
 import { ffmpegSummary, type FfmpegStatus } from '../../../../shared/ffmpeg'
 import { useAsyncEffect } from '../../lib/useAsyncEffect'
@@ -356,7 +356,22 @@ function WechatKeySection(): React.JSX.Element {
           右「语音转写与图片解密」= 两项可选能力。此前「密钥状态」挂在右卡尾部，但它报的是
           **数据库密钥**的状态，和语音转写/图片密钥没有关系 —— 归到左卡之后左右高度也更接近
           （470/635 → 约 520/590），配合 .st-grid 的等高规则就不再在列底留一个洞。 */}
-      <SettingsCard title="账号与密钥">
+      <SettingsCard
+        title="账号与密钥"
+        extra={
+          !wxid.trim() ? (
+            <StatusPill tone="off" text="未选择账号" />
+          ) : !status?.hasKey ? (
+            <StatusPill tone="bad" text="未导入密钥" />
+          ) : status.status === 'valid' ? (
+            <StatusPill tone="ok" text="密钥已验证" />
+          ) : status.status === 'invalid' ? (
+            <StatusPill tone="bad" text="密钥已失效" />
+          ) : (
+            <StatusPill tone="warn" text="待验证" />
+          )
+        }
+      >
         {/* 当前账号：已保存密钥的账号下拉选择；无已导入账号或手动输入其他账号时展开文本输入 */}
         {accounts.length > 0 && (
           <label className="st-row">
@@ -492,8 +507,7 @@ function WechatKeySection(): React.JSX.Element {
                       {status.keyRingSize} 条
                       <button
                         type="button"
-                        className="ui-btn"
-                        style={{ marginLeft: 8 }}
+                        className="ui-btn is-sm"
                         disabled={busy !== null}
                         onClick={() => void doClearKeyRing()}
                       >
@@ -537,7 +551,18 @@ function WechatKeySection(): React.JSX.Element {
         </div>
       </SettingsCard>
 
-      <SettingsCard title="语音转写与图片解密">
+      <SettingsCard
+        title="语音转写与图片解密"
+        extra={
+          asrStage === null ? (
+            <StatusPill tone="off" text="语音未检测" />
+          ) : asrStage.available ? (
+            <StatusPill tone="ok" text="语音已就绪" />
+          ) : (
+            <StatusPill tone="off" text="语音未配置" />
+          )
+        }
+      >
         <div className="st-subtitle">语音转写（腾讯云 ASR）</div>
         <label className="st-row">
           <span className="st-label">SecretId</span>

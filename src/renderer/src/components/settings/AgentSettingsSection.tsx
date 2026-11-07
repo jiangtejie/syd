@@ -145,7 +145,15 @@ function AgentSettingsSection(): React.JSX.Element {
     return <div className="ag-single ag-loading">加载人设中…</div>
   }
   if (!person) {
-    return <div className="ag-single ag-loading">{errorTip || '人设数据不可用'}</div>
+    return (
+      <div className="st-empty is-sm">
+        <div className="st-empty-glyph" aria-hidden="true">
+          !
+        </div>
+        <div className="st-empty-title">人设数据不可用</div>
+        <div className="st-empty-desc">{errorTip || '请重启应用后重试。'}</div>
+      </div>
+    )
   }
 
   return (

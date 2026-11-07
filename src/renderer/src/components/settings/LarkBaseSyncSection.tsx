@@ -801,9 +801,9 @@ export function LarkBaseSyncSection({ reloadKey }: { reloadKey: number }): React
               <div className="st-subtitle">
                 最近同步记录（{baseStatus?.history?.length ?? 0} 轮）
               </div>
-              <div>
+              <div className="lb-history">
                 {(baseStatus?.history ?? []).slice(0, 8).map((h, i) => (
-                  <div key={i}>
+                  <div key={i} className="lb-history-row">
                     {KIND_LABEL[String(h.kind ?? '')] ?? String(h.kind ?? '')} ·{' '}
                     {fmtStamp(Number(h.at ?? 0))} ·{' '}
                     {h.error

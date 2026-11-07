@@ -15,7 +15,9 @@ import { getCachePath } from '../services/paths'
 
 /** 主题来源交给 nativeTheme 统管：它同时决定渲染端的 prefers-color-scheme，
  *  以及窗口底色（切主题瞬间不会先闪一下白）。取值与渲染端 ThemeMode 一致。 */
-const THEME_BG: Record<string, string> = { light: '#f5f6f7', dark: '#14171a' }
+const THEME_BG: Record<string, string> = { light: '#f5f6f7', dark: '#050910' }
+/** 原生窗控按钮（最小化/最大化/关闭）的符号色：深色下必须换成浅色，否则看不见 */
+const THEME_SYMBOL: Record<string, string> = { light: '#5f6368', dark: '#9fb3c8' }
 
 function dirSize(dir: string): number {
   let total = 0
@@ -78,8 +80,15 @@ export function registerAppHandlers(): void {
     const m = normalizeThemeMode(mode)
     nativeTheme.themeSource = m
     const dark = m === 'dark' || (m === 'system' && nativeTheme.shouldUseDarkColors)
-    const bg = THEME_BG[dark ? 'dark' : 'light']
-    for (const w of BrowserWindow.getAllWindows()) w.setBackgroundColor(bg)
+    const key = dark ? 'dark' : 'light'
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.setBackgroundColor(THEME_BG[key])
+      try {
+        w.setTitleBarOverlay({ color: '#00000000', symbolColor: THEME_SYMBOL[key], height: 36 })
+      } catch {
+        /* Linux 等不支持 overlay 的平台忽略 */
+      }
+    }
     return { ok: true, dark }
   })
 

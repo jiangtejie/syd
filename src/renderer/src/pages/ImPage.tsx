@@ -5,7 +5,7 @@ import type {
   ImChannelReceiveMode,
   KeyAccountInfo
 } from '../../../shared/types'
-import { SettingsCard, SwitchRow } from '../components/settings/ui'
+import { AdvancedBlock, SettingsCard, SwitchRow } from '../components/settings/ui'
 import { FeishuTaskPanel } from '../components/settings/FeishuTaskPanel'
 import { FeishuAuditPanel } from '../components/settings/FeishuAuditPanel'
 import { ContactPicker } from '../components/settings/ContactPicker'
@@ -25,6 +25,22 @@ const imApi = window.api?.cs?.im
 const keyStoreApi = window.api?.cs?.keyStore
 
 const CHAN_LABEL: Record<string, string> = { feishu: '飞书机器人', wechat_claw: '微信 ClawBot' }
+
+/** 账号连接状态的单一出处：状态灯色 + 人话文案（颜色与文案双写，不只靠颜色区分） */
+function accountStatus(a: ImChannelAccount): {
+  tone: 'ok' | 'warn' | 'bad' | 'idle'
+  text: string
+} {
+  if (a.receiveMode === 'off') return { tone: 'idle', text: '仅推送（不接收消息）' }
+  if (a.status === 'connected')
+    return {
+      tone: 'ok',
+      text: a.receiveMode === 'allowlist' ? '已连接（只收白名单私聊）' : '已连接'
+    }
+  if (a.status === 'connecting') return { tone: 'warn', text: '连接中…' }
+  if (a.status === 'error') return { tone: 'bad', text: `连接失败：${a.statusText ?? ''}` }
+  return { tone: 'idle', text: '未启动' }
+}
 
 /** 权限名单文本 → 映射(每行 ou_xxx 或 ou_xxx=viewer|operator|admin;不写档位=operator) */
 function parsePermText(text: string): Record<string, string> | undefined {
@@ -311,13 +327,19 @@ export function ImSection({
   return (
     <div className="im-section">
       <div className="im-head">
-        <div className="st-title">IM 渠道（飞书机器人 / 微信 ClawBot）</div>
+        <div className="im-head-title">
+          <div className="st-title">IM 渠道（飞书机器人 / 微信 ClawBot）</div>
+          <span className="ui-chip is-sm">
+            {accounts === null ? '读取中' : `${accounts.length} 个账号`}
+          </span>
+        </div>
         <button type="button" className="ui-btn is-primary" onClick={startNew}>
           ＋ 接入 IM 账号
         </button>
       </div>
 
       <SettingsCard
+        className="im-intro"
         title="接入说明"
         desc="两种官方渠道:飞书机器人(自建应用长连接)与微信 ClawBot(腾讯官方 iLink 智能体机器人,需在微信内开通 ClawBot 并获取 bot_token)。保存后自动连接,状态实时刷新。"
       >
@@ -331,87 +353,102 @@ export function ImSection({
           私聊直接发消息即可,群聊需 @ 机器人(一期仅支持文本)。连接失败的原因会显示在下方账号状态里,
           也可查看日志文件 logs/im.log(位于用户数据目录)。
         </p>
-        <p>
-          可选「绑定微信业务账号」:绑定后,机器人对话会以该账号的上下文运行,具备与客服工作台一致的业务查询能力
-          (客户/群问题/监控/最近消息/统计等);不绑定则仅限通用对话,业务查询会被拒绝。
-          绑定后默认任何能私聊或在群里 @
-          该机器人的飞书用户都能触发业务查询——如需限定范围,请填写「业务查询白名单」。
-        </p>
-        <p>
-          微信 ClawBot:在微信内开通官方「ClawBot(智能体)」后可二选一接入:直接粘贴 bot_token,
-          或点「扫码绑定」用微信扫授权二维码自动建号(免去手动获取 token)。 机器人经腾讯 iLink
-          官方通道收发文字消息,媒体(图片/文件)仅提示不解析,回复需本应用保持运行。
-        </p>
-        <p>
-          提醒推送(新问题 / 盯办提醒 / 日报)不在此屏配置,已收到「偏好与数据 → 通知与提醒」:
-          {onOpenNotifications ? (
-            <button type="button" className="ui-btn is-sm" onClick={onOpenNotifications}>
-              去设置通知与提醒
-            </button>
-          ) : (
-            '见 偏好与数据 → 通知与提醒'
-          )}
-        </p>
+        <AdvancedBlock label="更多说明（绑定业务账号 / ClawBot / 提醒推送）">
+          <p>
+            可选「绑定微信业务账号」:绑定后,机器人对话会以该账号的上下文运行,具备与客服工作台一致的业务查询能力
+            (客户/群问题/监控/最近消息/统计等);不绑定则仅限通用对话,业务查询会被拒绝。
+            绑定后默认任何能私聊或在群里 @
+            该机器人的飞书用户都能触发业务查询——如需限定范围,请填写「业务查询白名单」。
+          </p>
+          <p>
+            微信 ClawBot:在微信内开通官方「ClawBot(智能体)」后可二选一接入:直接粘贴 bot_token,
+            或点「扫码绑定」用微信扫授权二维码自动建号(免去手动获取 token)。 机器人经腾讯 iLink
+            官方通道收发文字消息,媒体(图片/文件)仅提示不解析,回复需本应用保持运行。
+          </p>
+          <p>
+            提醒推送(新问题 / 盯办提醒 / 日报)不在此屏配置,已收到「偏好与数据 → 通知与提醒」:
+            {onOpenNotifications ? (
+              <button type="button" className="ui-btn is-sm" onClick={onOpenNotifications}>
+                去设置通知与提醒
+              </button>
+            ) : (
+              '见 偏好与数据 → 通知与提醒'
+            )}
+          </p>
+        </AdvancedBlock>
       </SettingsCard>
 
       <SettingsCard title="已接入账号(IM 渠道)">
         <div className="im-list">
           {accounts === null && <div className="st-hint">加载中…</div>}
           {accounts !== null && accounts.length === 0 && (
-            <div className="st-hint">
-              暂无 IM 账号。点「接入 IM 账号」选择 飞书机器人 或 微信 ClawBot,按界面提示填写即可。
+            <div className="st-empty im-empty">
+              <div className="st-empty-glyph" aria-hidden="true">
+                ◇
+              </div>
+              <div className="st-empty-title">还没有接入 IM 账号</div>
+              <div className="st-empty-desc">
+                点右上角「接入 IM 账号」，选择飞书机器人或微信 ClawBot，按界面提示填写凭证即可。
+              </div>
             </div>
           )}
-          {accounts?.map((a) => (
-            <div key={a.id} className="mcp-item">
-              <div className="mcp-item-main">
-                <b>{a.name}</b>
-                <span className="mcp-kind">{CHAN_LABEL[a.channel] ?? a.channel}</span>
-                {a.enabled ? (
-                  <span className="mcp-on">启用</span>
-                ) : (
-                  <span className="mcp-off">停用</span>
-                )}
-                {a.receiveMode === 'off' && <span className="mcp-kind">仅推送</span>}
-                {a.receiveMode === 'allowlist' && <span className="mcp-kind">只收白名单私聊</span>}
-                {Object.keys(a.permissions ?? {}).length > 0 && (
-                  <span className="mcp-kind">
-                    权限名单 {Object.keys(a.permissions ?? {}).length}
-                  </span>
-                )}
-                <span className="mcp-desc">
-                  状态:
-                  {a.receiveMode === 'off'
-                    ? '仅推送(不接收消息)'
-                    : a.status === 'connected'
-                      ? a.receiveMode === 'allowlist'
-                        ? '已连接(只收白名单私聊,拒收群消息)'
-                        : '已连接'
-                      : a.status === 'connecting'
-                        ? '连接中…'
-                        : a.status === 'error'
-                          ? `连接失败:${a.statusText ?? ''}`
-                          : '未启动'}
-                  {a.wxid ? ` · 绑定业务:${a.wxid}` : ''}
-                </span>
+          {accounts?.map((a) => {
+            const st = accountStatus(a)
+            return (
+              <div key={a.id} className="im-account">
+                <div className="im-account-main">
+                  <div className="im-account-head">
+                    <b className="im-account-name">{a.name}</b>
+                    <span className="mcp-kind">{CHAN_LABEL[a.channel] ?? a.channel}</span>
+                    {a.enabled ? (
+                      <span className="mcp-on">启用</span>
+                    ) : (
+                      <span className="mcp-off">停用</span>
+                    )}
+                    {a.receiveMode === 'off' && <span className="mcp-kind">仅推送</span>}
+                    {a.receiveMode === 'allowlist' && (
+                      <span className="mcp-kind">只收白名单私聊</span>
+                    )}
+                    {Object.keys(a.permissions ?? {}).length > 0 && (
+                      <span className="mcp-kind">
+                        权限名单 {Object.keys(a.permissions ?? {}).length}
+                      </span>
+                    )}
+                  </div>
+                  <div className="im-account-meta">
+                    <span className={`im-account-status is-${st.tone}`}>
+                      <span className={`im-dot is-${st.tone}`} aria-hidden="true" />
+                      {st.text}
+                    </span>
+                    {a.wxid && <span>绑定业务:{a.wxid}</span>}
+                  </div>
+                </div>
+                <div className="im-account-ops">
+                  <button
+                    type="button"
+                    className="ui-btn is-ghost is-sm"
+                    onClick={() => editAccount(a)}
+                  >
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-btn is-ghost is-sm"
+                    onClick={() => void toggle(a)}
+                  >
+                    {a.enabled ? '停用' : '启用'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-btn is-danger is-sm"
+                    onClick={() => void remove(a)}
+                  >
+                    删除
+                  </button>
+                </div>
               </div>
-              <div className="mcp-item-ops">
-                <button type="button" className="ui-btn is-sm" onClick={() => editAccount(a)}>
-                  编辑
-                </button>
-                <button type="button" className="ui-btn is-sm" onClick={() => void toggle(a)}>
-                  {a.enabled ? '停用' : '启用'}
-                </button>
-                <button
-                  type="button"
-                  className="ui-btn is-danger is-sm"
-                  onClick={() => void remove(a)}
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </SettingsCard>
 
@@ -430,11 +467,11 @@ export function ImSection({
       </SettingsCard>
 
       {open && (
-        <div className="mcp-edit">
-          <div className="st-title">
-            {editId ? '编辑账号' : '接入新账号'}
-            {form.channel ? ` · ${CHAN_LABEL[form.channel]}` : ''}
-          </div>
+        <SettingsCard
+          className="mcp-edit"
+          title={editId ? '编辑账号' : '接入新账号'}
+          desc={form.channel ? CHAN_LABEL[form.channel] : undefined}
+        >
           {!editId && (
             <div className="im-kind-pick">
               {(['feishu', 'wechat_claw'] as const).map((k) => (
@@ -671,7 +708,7 @@ export function ImSection({
               {saving ? '保存中…' : '保存账号'}
             </button>
           </div>
-        </div>
+        </SettingsCard>
       )}
 
       {scanBox && (

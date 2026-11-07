@@ -1,6 +1,9 @@
-/* ══════════ 右栏「群问题」面板 ══════════ */
+/* ══════════ 右栏「群问题」面板 ══════════
+ * 密集列表口径：行间只留 hairline，hover = --bg-hover；表头 sticky 且弱化；
+ * 状态/严重度/类型全部是「同色系半透明底 + 1px 描边」的小胶囊，不用实心大红块。
+ */
 .gip {
-  padding: 12px 14px 20px;
+  padding: var(--sp-3) var(--sp-3) var(--sp-5);
   display: flex;
   flex-direction: column;
   min-height: 100%;
@@ -10,8 +13,8 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
 }
 
 .gip-head-line {
@@ -21,87 +24,124 @@
 }
 
 .gip-title {
-  font-weight: 600;
   font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-strong);
 }
 
-.gip-days-tag {
-  font-size: var(--fs-xs);
-  padding: 1px 7px;
-  border-radius: var(--r-pill);
-  background: var(--info-soft);
-  color: var(--info);
+/* 分析窗口是「设置」（标题行右侧），下面是「动作」：设置一行、动作一行，互不挤压 */
+.gip-head-line .gip-select {
+  margin-left: auto;
 }
 
-/* 分析窗口是「设置」，四个按钮是「动作」：设置留在左侧，动作整组靠右，装不下就折行。
-   这 5 个控件一共要 ~413px —— 右栏从写死的 520px 改成比例栏后（≤440px）会顶出横向滚动条。 */
 .gip-tools {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  /* 6px 而不是 8px：1880px 以上的窗口右栏吃满 440px 上限时，5 个控件刚好一行放得下 */
   gap: 6px;
 }
 
-.gip-tools > .gip-select {
-  margin-right: auto;
+/* 灾难性动作（清空重析）推到最右，和常规动作隔开，减少误点 */
+.gip-tools > .ui-btn:last-child {
+  margin-left: auto;
 }
 
+/* 外观走 .ui-select，这里只压高度（工具栏一行里要跟幽灵按钮同高） */
 .gip-select {
+  height: 28px;
+  padding: 0 6px;
   font-size: var(--fs-sm);
-  padding: 4px 6px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  color: inherit;
-  outline: none;
 }
 
+/* ── 统计条：一行读数，数字等宽；每一项都是弱底小胶囊 ── */
 .gip-stats {
   flex: none;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 6px 0 8px;
-  font-size: var(--fs-xs);
+  padding: var(--sp-1) 0 var(--sp-3);
   border-bottom: 1px solid var(--border-light);
-  margin-bottom: 8px;
+  margin-bottom: var(--sp-2);
 }
 
 .gip-stat {
-  color: var(--text-2);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  color: var(--text-3);
+}
+
+.gip-stat .gip-stat-n {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: inherit;
 }
 
 .gip-stat.is-open {
-  color: var(--danger);
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
+.gip-stat.is-open .gip-stat-n {
+  color: var(--danger-hover);
+}
+
 .gip-stat.is-done {
+  border-color: var(--success-line);
+  background: var(--success-soft);
+  color: var(--success-strong);
+}
+
+.gip-stat.is-done .gip-stat-n {
   color: var(--success-strong);
 }
 
 .gip-stat.is-stalled {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.gip-stat.is-stalled .gip-stat-n {
+  color: var(--warn-text);
+}
+
+.gip-stat.is-follow {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.gip-stat.is-follow .gip-stat-n {
   color: var(--warn-text);
 }
 
 .gip-stat.is-doubt {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
   color: var(--warn-text);
   font-weight: 600;
-  background: var(--warn-soft);
-  border-radius: var(--r-pill);
-  padding: 1px 8px;
 }
 
 /* 疑似待确认提示条 */
 .gip-doubt-head {
-  font-size: var(--fs-xs);
-  color: var(--warn-text);
-  background: var(--warn-soft);
-  border-radius: var(--r-sm);
-  padding: 5px 9px;
   margin-bottom: 6px;
+  padding: 5px 9px;
+  border: 1px dashed var(--warn-line);
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
 }
 
 .gip-st.is-doubt {
@@ -111,77 +151,104 @@
   border: 1px dashed var(--warn);
 }
 
-/* 严重度 / 复发标记 */
+/* ── 状态 / 严重度 / 类型徽标：统一描边胶囊 ── */
 .gip-sev {
   font-style: normal;
-  font-size: var(--fs-xs);
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: var(--r-pill);
   flex: none;
   white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: var(--fs-xs);
+  line-height: 1;
 }
 
 .gip-sev.is-urgent {
-  background: var(--danger);
-  color: var(--on-brand);
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+  color: var(--danger-hover);
   font-weight: 600;
 }
 
 .gip-sev.is-high {
   background: var(--warn-soft);
+  border-color: var(--warn-line);
   color: var(--warn-text);
 }
 
 .gip-sev.is-reopen {
   background: var(--bg-hover);
-  color: var(--danger);
-  border: 1px solid var(--border);
+  border-color: var(--border);
+  color: var(--danger-text);
 }
 
 .gip-meta {
   margin-left: auto;
-  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-4);
   font-size: var(--fs-xs);
 }
 
+/* 忙碌/排除提示：信息色弱底，左侧一道强调线 */
 .gip-busy {
-  font-size: var(--fs-sm);
-  color: var(--info);
+  margin-bottom: var(--sp-2);
   padding: 6px 10px;
+  border-left: 2px solid var(--info);
   border-radius: var(--r-sm);
   background: var(--info-soft);
-  margin-bottom: 8px;
+  color: var(--info);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
   animation: gip-pulse 1.2s ease-in-out infinite;
 }
 
 @keyframes gip-pulse {
   50% {
-    opacity: 0.55;
+    opacity: 0.6;
   }
 }
 
 .gip-error {
-  font-size: var(--fs-sm);
-  color: var(--danger);
-  line-height: 1.5;
+  margin-bottom: var(--sp-2);
   padding: 6px 10px;
   border: 1px solid var(--danger-line);
-  background: var(--danger-soft);
   border-radius: var(--r-sm);
-  margin-bottom: 8px;
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
   word-break: break-all;
 }
 
+/* 面板内空态：给一个低语气的菱形符号，而不是一句灰字 */
 .gip-empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: var(--sp-5) var(--sp-2);
   color: var(--text-3);
   font-size: var(--fs-sm);
   line-height: 1.7;
-  padding: 18px 6px;
   text-align: center;
 }
 
-/* ── 表格 ── */
+.gip-empty-box::before {
+  content: '◇';
+  font-size: var(--fs-lg);
+  line-height: 1;
+  color: var(--text-4);
+}
+
+/* 证据时间线里的「无关联消息」小占位不重复画菱形 */
+.gip-tl .gip-empty {
+  color: var(--text-4);
+  font-size: var(--fs-xs);
+  padding: 2px 0;
+}
+
+/* ── 表格：表头 sticky + 弱化；行间 hairline；hover 只换底色 ── */
 .gip-table {
   display: flex;
   flex-direction: column;
@@ -190,22 +257,26 @@
 .gip-tr {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 6px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 6px;
 }
 
 .gip-th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 6px 6px 7px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-4);
   font-size: var(--fs-xs);
-  color: var(--text-3);
-  border-bottom: 1px solid var(--border-light);
-  padding-bottom: 5px;
   user-select: none;
 }
 
 .gip-cell-st {
   flex: none;
-  /* 58px 是「跟进超时」四个字（--fs-xs 下 44px + 左右内边距 12px）不被压出来的下限 */
-  width: 58px;
+  /* 60px = 「跟进超时」四个字 44px + 左右内边距 12px + 1px 余量，避免亚像素取整时折成两行 */
+  width: 60px;
 }
 
 /* 单元格竖排：标题行 / 元信息行各占一行，标题才有两行的余地 */
@@ -214,14 +285,16 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .gip-cell-x {
   flex: none;
-  width: 18px;
+  width: 24px;
   text-align: center;
-  color: var(--text-3);
+  color: var(--text-4);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
 }
 
 .gip-caret {
@@ -231,46 +304,55 @@
 .gip-row {
   cursor: pointer;
   border-bottom: 1px solid var(--border-light);
-  transition: background 0.12s;
+  transition:
+    background 0.12s,
+    box-shadow 0.12s;
 }
 
 .gip-row:hover {
   background: var(--bg-hover);
 }
 
+/* 展开行：底色抬起 + 左侧 2px 品牌竖条，一眼看出「这一条正在看」 */
 .gip-row.is-expanded {
   background: var(--bg-hover);
   border-bottom-color: transparent;
+  box-shadow: inset 2px 0 0 var(--brand);
 }
 
 .gip-st {
   display: inline-block;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
   font-size: var(--fs-xs);
   line-height: 16px;
-  padding: 0 6px;
-  border-radius: var(--r-pill);
   text-align: center;
   white-space: nowrap;
 }
 
 .gip-st.is-open {
   background: var(--danger-soft);
-  color: var(--danger);
+  border-color: var(--danger-line);
+  color: var(--danger-hover);
   font-weight: 600;
 }
 
 .gip-st.is-done {
   background: var(--success-soft);
+  border-color: var(--success-line);
   color: var(--success-strong);
 }
 
 .gip-st.is-stalled {
   background: var(--warn-soft);
+  border-color: var(--warn-line);
   color: var(--warn-text);
 }
 
 .gip-st.is-archived {
   background: var(--bg-hover);
+  border-color: var(--border);
   color: var(--text-3);
 }
 
@@ -299,6 +381,7 @@
   font-size: var(--fs-md);
   font-weight: 500;
   line-height: 1.35;
+  color: var(--text-1);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -308,32 +391,32 @@
 .gip-type {
   flex: none;
   font-style: normal;
-  font-size: var(--fs-xs);
-  line-height: 15px;
   padding: 0 5px;
+  border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-hover);
   color: var(--text-2);
-  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  line-height: 15px;
 }
 
 .gip-type.t-客诉 {
   background: var(--danger-soft);
-  color: var(--danger);
-  border-color: transparent;
+  border-color: var(--danger-line);
+  color: var(--danger-hover);
 }
 
 .gip-type.t-售后,
 .gip-type.t-物流 {
   background: var(--warn-soft);
+  border-color: var(--warn-line);
   color: var(--warn-text);
-  border-color: transparent;
 }
 
 .gip-type.t-价格 {
   background: var(--info-soft);
+  border-color: color-mix(in srgb, var(--info) 32%, transparent);
   color: var(--info);
-  border-color: transparent;
 }
 
 .gip-sub-line {
@@ -355,22 +438,24 @@
 /* ── 展开详情：证据时间线 ── */
 .gip-detail-wrap {
   border-bottom: 1px solid var(--border-light);
+  background: var(--bg);
 }
 
 .gip-detail {
-  padding: 6px 6px 12px 12px;
-  border-left: 2px solid var(--brand);
   margin-left: 6px;
+  padding: 6px 6px var(--sp-3) var(--sp-3);
+  border-left: 2px solid var(--brand-line);
 }
 
 .gip-summary {
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  line-height: 1.6;
-  padding: 8px 10px;
-  margin: 2px 0 10px;
-  background: var(--bg);
+  margin: 2px 0 var(--sp-3);
+  padding: var(--sp-2) 10px;
+  border: 1px solid var(--border-light);
   border-radius: var(--r-sm);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
   word-break: break-all;
 }
 
@@ -378,26 +463,30 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: var(--sp-2);
   font-size: var(--fs-xs);
   color: var(--text-3);
-  margin-bottom: 8px;
 }
 
 .gip-method {
-  font-size: var(--fs-xs);
   padding: 0 6px;
   border-radius: var(--r-pill);
+  border: 1px solid color-mix(in srgb, var(--info) 32%, transparent);
   background: var(--info-soft);
   color: var(--info);
+  font-size: var(--fs-xs);
 }
 
 .gip-when {
   margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-4);
 }
 
 .gip-tl {
   position: relative;
-  padding-left: 14px;
+  padding-left: var(--sp-3);
 }
 
 .gip-tl::before {
@@ -415,6 +504,7 @@
   padding: 2px 0 10px;
 }
 
+/* 时间线圆点：外圈用详情底色的 1.5px 描边把竖线切开 */
 .gip-tl-dot {
   position: absolute;
   left: -13.5px;
@@ -423,21 +513,23 @@
   height: 7px;
   border-radius: 50%;
   background: var(--text-4);
-  border: 1.5px solid var(--bg-panel);
+  border: 1.5px solid var(--bg);
 }
 
 .gip-tl-item.is-my .gip-tl-dot {
   background: var(--brand);
 }
 
-.gip-tl-item.is-my .gip-tl-body {
-  background: var(--success-soft);
+.gip-tl-body {
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  padding: 5px var(--sp-2);
+  background: var(--bg-panel);
 }
 
-.gip-tl-body {
-  border-radius: var(--r-sm);
-  padding: 5px 8px;
-  background: var(--bg);
+.gip-tl-item.is-my .gip-tl-body {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
 }
 
 .gip-tl-head {
@@ -449,37 +541,40 @@
 
 .gip-tl-head b {
   font-weight: 600;
-  color: var(--text-1);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .gip-tl-item.is-my .gip-tl-head b {
-  color: var(--success-strong);
+  color: var(--brand);
 }
 
 .gip-tl-head time {
-  color: var(--text-3);
   flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-4);
 }
 
 .gip-tag-mark {
+  flex: none;
   font-style: normal;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg-hover);
+  color: var(--text-3);
   font-size: var(--fs-xs);
   line-height: 14px;
-  padding: 0 5px;
-  border-radius: var(--r-pill);
-  background: var(--border-light);
-  color: var(--text-2);
-  flex: none;
 }
 
 .gip-tl-text {
+  margin-top: 3px;
+  color: var(--text-1);
   font-size: var(--fs-sm);
   line-height: 1.55;
-  color: var(--text-1);
-  margin-top: 3px;
   word-break: break-word;
   white-space: pre-wrap;
 }
@@ -487,7 +582,7 @@
 .gip-detail-foot {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
   margin-top: 10px;
 }

@@ -1,10 +1,11 @@
-/* ── 对话交互细化：消息入场 / 长文本断行 / 审批提示 ──
+/* ── 对话交互细化：消息入场 / 长文本断行 / 定位高亮 ──
  * 气泡的定位上下文、可选中、断行由 .md-host 提供（components/chat/rich.css，两个工作台共用） */
 
 .wb-plain {
   overflow-wrap: anywhere;
 }
 
+/* 消息入场：只做 4px 上移 + 淡入，避免长会话里大面积动效 */
 .wb-row {
   animation: wb-row-in 0.16s ease-out;
 }
@@ -20,67 +21,50 @@
   }
 }
 
-/* ── 思考等待动画（收到首字前） ── */
-.wb-thinking {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 32px;
+/* 会话检索定位到的消息：伪元素短暂高亮（合成层，不重绘背景）。
+ * 同款规则在对话页的 pages/workbench/misc.css（两页共用类名），这里再兜一份，
+ * 保证本页不依赖另一页的样式文件。 */
+.wb-page .wb-msg-flash {
+  position: relative;
 }
 
-.wb-thinking-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-4);
-  animation: wb-dot-bounce 1.2s infinite ease-in-out;
+.wb-page .wb-msg-flash::after {
+  content: '';
+  position: absolute;
+  inset: -4px -6px;
+  border-radius: var(--r-md);
+  background: var(--brand);
+  opacity: 0;
+  pointer-events: none;
+  animation: wb-page-flash 2.2s ease-out;
 }
 
-.wb-thinking-dot:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.wb-thinking-dot:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-.wb-thinking-text {
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  margin-left: 3px;
-  opacity: 0.75;
-}
-
-@keyframes wb-dot-bounce {
+@keyframes wb-page-flash {
   0%,
-  80%,
-  100% {
-    opacity: 0.25;
-    transform: translateY(0);
+  30% {
+    opacity: 0.14;
   }
-  40% {
-    opacity: 1;
-    transform: translateY(-2px);
+  100% {
+    opacity: 0;
   }
 }
 
-/* ── 用户上翻阅读时「回到底部」胶囊 ── */
+/* ── 用户上翻阅读时「回到底部」胶囊（半透明面板 + 一档浮起阴影） ── */
 .wb-jump {
   position: sticky;
-  bottom: 10px;
+  bottom: var(--sp-2);
   display: block;
-  margin: 6px auto 2px;
-  padding: 5px 16px;
-  font-size: var(--fs-sm);
-  border: 1px solid var(--border-light);
+  margin: var(--sp-1) auto 2px;
+  padding: 4px 14px;
+  border: 1px solid var(--border);
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.94);
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
   color: var(--text-2);
-  box-shadow: 0 2px 10px rgba(31, 35, 41, 0.1);
+  box-shadow: var(--shadow-card);
   cursor: pointer;
   transition:
-    color 0.15s,
-    border-color 0.15s;
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .wb-jump:hover {
@@ -88,20 +72,21 @@
   border-color: var(--brand-line);
 }
 
-/* ── 更早消息入口(超长会话窗口化) ── */
+/* ── 更早消息入口(超长会话窗口化)：虚线圈入口，弱于内容 ── */
 .wb-older {
   display: block;
-  margin: 2px auto 8px;
-  padding: 4px 14px;
-  font-size: var(--fs-sm);
-  border: 1px solid var(--border-light);
+  width: fit-content;
+  margin: var(--sp-1) auto var(--sp-2);
+  padding: 3px 14px;
+  border: 1px dashed var(--border);
   border-radius: var(--r-pill);
-  background: var(--bg-panel);
+  background: transparent;
   color: var(--text-3);
+  font-size: var(--fs-sm);
   cursor: pointer;
   transition:
-    color 0.15s,
-    border-color 0.15s;
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .wb-older:hover {
@@ -116,8 +101,18 @@
 /* 思考过程（终稿折叠 / 生成中实时）、Token 脚注、引用来源都已下沉到
    公共渲染层 components/chat/rich.css（.md-reason-* / .md-tokens / .md-ev-*） */
 
-/* 实时思考卡：卡面用面板底色（普通气泡是页面底色），衬托内部浅灰的思考内容 */
-.wb-bubble.is-reason-live {
-  background: var(--bg-panel);
-}
+/* 减少动态偏好：不做入场/呼吸（系统级设置，不用动效对抗它） */
+@media (prefers-reduced-motion: reduce) {
+  .wb-row,
+  .wb-hero,
+  .wb-ai-empty {
+    animation: none;
+  }
 
+  .wb-thinking-dot,
+  .wb-side-run-dot,
+  .wb-tl-node.is-start .wb-tl-dot,
+  .wb-tl-state {
+    animation: none;
+  }
+}

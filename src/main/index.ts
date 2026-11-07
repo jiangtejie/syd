@@ -9,7 +9,8 @@ import {
   nativeImage,
   dialog,
   protocol,
-  net
+  net,
+  nativeTheme
 } from 'electron'
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
@@ -201,11 +202,12 @@ function createWindow(): void {
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#00000000',
-      symbolColor: '#5f6368',
+      // 深色主题下原生窗控按钮用冷灰，浅色主题由 cs:app:setTheme 换回深灰
+      symbolColor: '#9fb3c8',
       height: 36
     },
-    // 防启动白闪：与渲染端底色一致
-    backgroundColor: '#f5f6f7',
+    // 防启动白闪：与渲染端深色主题的底色一致（默认深色，见 whenReady 里的 nativeTheme）
+    backgroundColor: '#050910',
     title: APP_NAME,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
@@ -364,6 +366,10 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     // 必须与 electron-builder appId 一致，否则 Windows 通知标题显示错误
     electronApp.setAppUserModelId('com.wechatcs.desktop')
+
+    // 外观默认深色（赛博朋克主题）：窗口底色/null 与原生窗控按钮在首帧就按深色落地，
+    // 避免「先闪一下浅色再切深色」。渲染端 initTheme 读到显式浅色偏好后，会在首帧后立刻纠正。
+    nativeTheme.themeSource = 'dark'
 
     // 初始化本地库（幂等 DDL + 老库补列 + 一次性数据迁移，见 db/schema.ts）
     const tables = listTables(getDb())

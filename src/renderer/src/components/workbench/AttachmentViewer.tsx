@@ -28,19 +28,9 @@ export interface Attachment {
 }
 
 /**
- * 图片占位/降级图（仅查看大图时兜底；列表气泡不加载占位图，避免并发外链）。
- * 早期版本使用外网 text_to_image API，离线/失败时白屏；改成本地内联 SVG（data URI），任何环境即时可用。
+ * 图片兜底（仅查看大图时用）。早期版本用内联 SVG data URI 占位，浅色底图在深色主题下会糊成一块白；
+ * 现在不再有占位图 URL：真图取不到时直接渲染 .wb-img-box-empty + .wb-img-hint（纯 DOM，两套主题都成立）。
  */
-const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="480" viewBox="0 0 360 480">
-<rect width="360" height="480" fill="#f2f4f7"/>
-<g fill="none" stroke="#b7bdc7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
-<rect x="138" y="150" width="84" height="66" rx="6"/>
-<circle cx="164" cy="170" r="4.5"/>
-<path d="M138 202l26-28 18 18 16-20 24 30"/>
-</g>
-<text x="180" y="258" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#9aa0a6">图片暂时无法预览</text>
-</svg>`
-export const PLACEHOLDER_IMAGE_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(PLACEHOLDER_SVG)}`
 
 /** 一次解密的结果：URL + 实际命中的档位（界面要如实标注，别把缩略图当原图展示） */
 interface DecryptImageOutcome {
@@ -334,7 +324,7 @@ function tierHint(
  * 工具栏同时标注实际命中档位（高清原图/默认图/缩略图）—— 解密层的降级不再静默。
  *
  * **几何一律走 imageFit 纯函数**：原始尺寸与 src 绑定（换图必须重测），显示宽高由「原图宽高 × 同一个缩放系数」
- * 得出 —— 曾经的写法把上一张图（本地占位 SVG 360×480）的尺寸配到下一张真图上，横图会被拉成 3:4 变形。
+ * 得出 —— 曾经的写法把上一张图（本地占位图 360×480）的尺寸配到下一张真图上，横图会被拉成 3:4 变形。
  */
 function ImagePreviewer({
   src,
@@ -396,7 +386,7 @@ function ImagePreviewer({
         <div className="wb-img-box wb-img-box-empty">
           <div className="wb-img-hint">图片解密中…</div>
         </div>
-      ) : failed ? (
+      ) : failed || !src ? (
         <div className="wb-img-box wb-img-box-empty">
           <div className="wb-img-hint">
             图片加载失败：本地缓存可能已被清理，重开会话会自动重新解密
@@ -485,7 +475,7 @@ function AttachmentViewer({
     degradedReason,
     busy
   } = useDecryptImage(attachment.imageMd5, 'best')
-  const src = attachment.url || decrypted || PLACEHOLDER_IMAGE_URL
+  const src = attachment.url || decrypted || ''
   // 真图还在解密：给中性提示，别先闪一张写着「图片暂时无法预览」的占位图
   const loading = !attachment.url && !decrypted && busy
 
@@ -516,7 +506,7 @@ function AttachmentViewer({
             <div className="wb-att-file-hint">文件打开与导出需媒体解密支持（待接入）</div>
           </div>
         )}
-        <button className="wb-att-close" onClick={onClose}>
+        <button type="button" className="ui-btn wb-att-close" onClick={onClose}>
           关闭
         </button>
       </div>

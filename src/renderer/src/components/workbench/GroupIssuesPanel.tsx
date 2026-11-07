@@ -46,7 +46,7 @@ function OwnerPicker({
     <label className="gip-owner" title="指派/更换跟进人（团队成员，空 = 取消指派）">
       <span className="gip-owner-label">跟进人</span>
       <select
-        className="gip-select gip-owner-select"
+        className="ui-select gip-select gip-owner-select"
         value={issue.assignee ?? ''}
         onChange={(e) => void assign(issue.id, e.target.value || null)}
       >
@@ -102,7 +102,7 @@ function StatusActions({
           </button>
           <button
             type="button"
-            className="ui-btn gip-btn ghost"
+            className="ui-btn is-ghost gip-btn"
             title="误报/无需处理：归档后同一问题不再提醒"
             onClick={() => act('archived')}
           >
@@ -193,7 +193,7 @@ function IssueTimeline({
         <StatusActions issue={cur} />
         <button
           type="button"
-          className="ui-btn gip-btn ghost"
+          className="ui-btn is-ghost gip-btn"
           onClick={() => onLocate(cur.occurAt)}
           title="切到该群聊天并滚动到问题发生时间附近"
         >
@@ -524,11 +524,9 @@ function GroupIssuesPanel(): React.JSX.Element {
       <div className="gip-head">
         <div className="gip-head-line">
           <span className="gip-title">本群问题</span>
-          <span className="gip-days-tag">近 {days} 天</span>
-        </div>
-        <div className="gip-tools">
+          {/* 分析窗口是「设置」：放标题行右侧，和下面一排「动作」分开，5 个控件就不必挤一行折行 */}
           <select
-            className="gip-select"
+            className="ui-select gip-select"
             value={days}
             title="分析窗口（自然日）：切窗后立即按新窗口重新分析"
             onChange={(e) => {
@@ -547,9 +545,11 @@ function GroupIssuesPanel(): React.JSX.Element {
               </option>
             ))}
           </select>
+        </div>
+        <div className="gip-tools">
           <button
             type="button"
-            className="ui-btn gip-btn ghost"
+            className="ui-btn is-ghost gip-btn"
             disabled={feishuSending || !wxid || !activeSessionId}
             onClick={() => void sendToFeishu()}
             title="把本群未闭环问题摘要发到飞书（接收目标在 设置 → IM 渠道 → 飞书通知 里配置）"
@@ -558,7 +558,7 @@ function GroupIssuesPanel(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className={`ui-btn gip-btn${excluded ? '' : ' ghost'}`}
+            className={`ui-btn gip-btn${excluded ? '' : ' is-ghost'}`}
             disabled={analyzing}
             onClick={onToggleScope}
             title={
@@ -571,7 +571,7 @@ function GroupIssuesPanel(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="ui-btn gip-btn ghost"
+            className="ui-btn is-ghost gip-btn"
             disabled={analyzing}
             onClick={onReanalyze}
             title="重算本群问题:清空待处理记录后按当前窗口重新分析(历史已解决/归档保留)"
@@ -595,20 +595,32 @@ function GroupIssuesPanel(): React.JSX.Element {
       {/* 统计 */}
       <div className="gip-stats">
         {groups.doubt.length > 0 && (
-          <span className="gip-stat is-doubt">疑似 {groups.doubt.length}</span>
+          <span className="gip-stat is-doubt">
+            疑似 <b className="gip-stat-n ui-num">{groups.doubt.length}</b>
+          </span>
         )}
         <span className="gip-stat is-open">
-          待处理 {issues.filter((i) => i.status === 'open' && !i.followUp && !i.needConfirm).length}
+          待处理{' '}
+          <b className="gip-stat-n ui-num">
+            {issues.filter((i) => i.status === 'open' && !i.followUp && !i.needConfirm).length}
+          </b>
         </span>
         <span className="gip-stat is-follow">
-          跟进中 {issues.filter((i) => i.status === 'open' && i.followUp && !i.needConfirm).length}
+          跟进中{' '}
+          <b className="gip-stat-n ui-num">
+            {issues.filter((i) => i.status === 'open' && i.followUp && !i.needConfirm).length}
+          </b>
         </span>
         <span className="gip-stat is-done">
-          已解决 {issues.filter((i) => i.status === 'done').length}
+          已解决{' '}
+          <b className="gip-stat-n ui-num">{issues.filter((i) => i.status === 'done').length}</b>
         </span>
         {groups.history.some((i) => i.status === 'stalled') && (
           <span className="gip-stat is-stalled">
-            已搁置 {groups.history.filter((i) => i.status === 'stalled').length}
+            已搁置{' '}
+            <b className="gip-stat-n ui-num">
+              {groups.history.filter((i) => i.status === 'stalled').length}
+            </b>
           </span>
         )}
         {(analyzedAt || methodHint || coverage) && (

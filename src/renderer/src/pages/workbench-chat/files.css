@@ -1,33 +1,41 @@
 /* ── 渠道接收文件(工作台侧栏入口 + 管理弹层) ── */
 .wb-filetray {
-  padding: 6px 10px;
-  border-top: 1px solid var(--border-light);
+  padding-top: var(--sp-2);
 }
 
+/* 入口卡：图标框 + 两行文字 + 右侧「管理」，hover 才染色（面板上一块小 HUD 端口） */
 .wb-filetray-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   width: 100%;
-  padding: 6px 8px;
-  border: 1px dashed var(--border);
-  border-radius: var(--r-sm);
-  background: transparent;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg-panel) 70%, transparent);
   cursor: pointer;
   font-family: inherit;
   text-align: left;
   transition:
-    border-color 0.15s,
-    background 0.15s;
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .wb-filetray-summary:hover {
-  border-color: var(--brand);
+  border-color: var(--brand-line);
   background: var(--brand-soft);
 }
 
 .wb-filetray-icon {
-  font-size: var(--fs-lg);
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--brand-line);
+  border-radius: var(--r-sm);
+  color: var(--brand);
+  background: var(--brand-soft);
 }
 
 .wb-filetray-text {
@@ -40,13 +48,14 @@
 
 .wb-filetray-text b {
   font-size: var(--fs-sm);
-  color: var(--text-2);
   font-weight: 600;
+  color: var(--text-2);
 }
 
 .wb-filetray-text span {
   font-size: var(--fs-xs);
   color: var(--text-4);
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -58,8 +67,9 @@
   color: var(--brand);
 }
 
+/* ── 管理弹层（外壳走全局 .confirm-dialog） ── */
 .wb-files-dialog {
-  width: min(760px, calc(100vw - 40px));
+  width: min(780px, calc(100vw - 40px));
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -69,9 +79,9 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed var(--border-light);
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .wb-files-sel {
@@ -83,8 +93,31 @@
   color: var(--text-2);
 }
 
+.wb-files-count b {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
 .wb-files-spacer {
   flex: 1;
+}
+
+/* 媒体缓存现状：一行凹陷底读数条，不与文件列表抢边框 */
+.wb-files-media {
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.wb-files-hint {
+  padding: var(--sp-4) var(--sp-2);
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
 }
 
 .wb-files-list {
@@ -94,27 +127,38 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 0;
+  gap: 2px;
+  padding: var(--sp-2) 0;
 }
 
+/* 文件行：行与行之间只有留白 + hover 底色，不再每行套一个边框 */
 .wb-file-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border: 1px solid var(--border-light);
+  gap: var(--sp-2);
+  padding: 6px var(--sp-2);
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .wb-file-item:hover {
-  border-color: var(--border);
-  background: var(--bg);
+  background: var(--bg-hover);
+  border-color: var(--border-light);
 }
 
 .wb-file-kind {
   flex: none;
-  font-size: var(--fs-xl);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  background: var(--bg-sunken);
 }
 
 .wb-file-main {
@@ -122,7 +166,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .wb-file-main b {
@@ -136,6 +180,7 @@
 .wb-file-main span {
   font-size: var(--fs-xs);
   color: var(--text-4);
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -144,70 +189,71 @@
 .wb-file-ops {
   flex: none;
   display: flex;
-  gap: 6px;
+  gap: var(--sp-1);
 }
 
 .wb-files-policy {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--border-light);
+  gap: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-light);
   font-size: var(--fs-sm);
   color: var(--text-2);
 }
 
 .wb-files-num {
-  max-width: 80px;
+  max-width: 84px;
   height: 28px;
 }
 
-/* 工作区绑定条(头部右侧) */
-.wb-ws-box {
+/* 自动清理勾选项：自绘 checkbox 走品牌色 */
+.wb-files-check {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  max-width: 46%;
+  cursor: pointer;
+  color: var(--text-2);
+}
+
+.wb-files-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+/* ── 工作区绑定条(头部右侧)：未绑定=虚线，已绑定=品牌描边 ── */
+.wb-ws-box {
+  gap: var(--sp-1);
+  max-width: 52%;
 }
 
 .wb-ws-name {
-  display: inline-block;
-  max-width: 200px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 3px 9px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg-sunken);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-xs);
-  color: var(--text-2);
-  padding: 2px 8px;
-  border: 1px dashed var(--border);
-  border-radius: 999px;
-  background: var(--bg);
 }
 
-/* ══════════ 可达性:触屏/键盘下操作可见 + 命中区加大 ══════════ */
-.wb-side-item:focus-within .wb-side-ops,
-.wb-side-item:hover .wb-side-ops {
-  display: flex;
+.wb-ws-name svg {
+  flex: none;
 }
 
-.wb-side-ops button {
-  min-width: 22px;
-  min-height: 22px;
-  padding: 2px 5px;
-  border-radius: 4px;
-  font-size: var(--fs-sm);
-}
-
-.wb-side-ops button:focus-visible {
-  outline: 2px solid var(--brand-line);
+.wb-ws-name.is-bound {
+  border-style: solid;
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
   color: var(--brand);
-}
-
-@media (pointer: coarse) {
-  .wb-side-ops {
-    display: flex;
-  }
-  /* 复制按钮（.md-copy）的粗指针常显规则在 components/chat/rich.css */
-  .wb-msg-edit {
-    opacity: 0.85;
-  }
 }

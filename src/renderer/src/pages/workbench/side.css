@@ -1,4 +1,7 @@
-/* ══════════ 右栏（宽栏）：双视图容器 ══════════ */
+/* ══════════ 右栏（宽栏）：双视图容器 + 回复建议 ══════════
+ * 口径：栏头（页签）与左/中栏同高（--wb-head-h）+ 1px 冷描边；内容区滚动；
+ * 卡片 = --bg-hover 底 + 1px --border 描边 + --r-md 圆角（与群问题面板同一套卡片语言）。
+ */
 .wb-suggest {
   min-height: 0; /* 关键：允许滚动 */
   border-left: 1px solid var(--border);
@@ -15,48 +18,42 @@
   flex-direction: column;
 }
 
-/* 视图切换（群会话时出现） */
+/* 视图切换（群会话时出现）：栏头高度对齐三栏，页签外观走 .ui-tab */
 .wb-pane-tabs {
   flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 14px 0;
+  height: var(--wb-head-h);
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
 }
 
+/* 只留布局：外观由 .ui-tab / .ui-tab.is-active 提供 */
 .wb-pane-tab {
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 12px;
-  font-size: var(--fs-sm);
-  border: none;
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
 }
 
-.wb-pane-tab:hover {
-  background: var(--bg-hover);
-}
-
-.wb-pane-tab.is-active {
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-weight: 600;
-}
-
+/* 页签上的未读数：淡化底 + 描边的小徽标，和左栏未读同一套语言 */
 .wb-pane-badge {
   font-style: normal;
-  font-size: var(--fs-xs);
-  line-height: 14px;
-  min-width: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
   padding: 0 4px;
   border-radius: var(--r-pill);
-  background: var(--danger);
-  color: var(--on-brand);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  color: var(--danger-hover);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  line-height: 1;
   text-align: center;
 }
 
@@ -67,17 +64,40 @@
   overscroll-behavior: contain;
 }
 
+/* ── 回复建议面板 ── */
 .wb-suggest-panel {
-  padding: 16px;
+  padding: 0 var(--sp-3) var(--sp-4);
   display: flex;
   flex-direction: column;
   min-height: 100%;
 }
 
+/* 无页签（私聊）时它自己就是栏头：48px 高 + 底部细线，和左/中栏对齐 */
 .wb-suggest-title {
-  font-weight: 600;
-  margin-bottom: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
+  height: var(--wb-head-h);
+  margin: 0 calc(-1 * var(--sp-3)) var(--sp-3);
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+/* 群会话：顶部已有「群问题 / 回复建议」页签，面板标题重复出现就删掉（纯视觉，不动 DOM） */
+.wb-pane:has(.wb-pane-tabs) .wb-suggest-panel {
+  padding-top: var(--sp-3);
+}
+
+.wb-pane:has(.wb-pane-tabs) .wb-suggest-title {
+  display: none;
 }
 
 /* 当前会话使用的智能体（人设）选择条 */
@@ -85,13 +105,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: -4px 0 12px;
+  margin-bottom: var(--sp-3);
   flex-shrink: 0;
 }
 
 .wb-suggest-agent-label {
   font-size: var(--fs-xs);
-  color: var(--text-2);
+  color: var(--text-3);
   flex: none;
 }
 
@@ -101,29 +121,31 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   font-size: var(--fs-sm);
-  padding: 4px 8px;
+  padding: 5px var(--sp-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-panel);
+  border-radius: var(--r-md);
+  background: var(--bg-hover);
   color: inherit;
   cursor: pointer;
   text-align: left;
   overflow: hidden;
   transition:
     border-color 0.15s,
-    color 0.15s;
+    background 0.15s;
 }
 
 .wb-suggest-agent-current:hover {
-  border-color: var(--brand);
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
 }
 
 .wb-suggest-agent-current b {
   flex: 0 1 auto;
   min-width: 0;
   font-weight: 600;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -140,55 +162,76 @@
   color: var(--brand);
 }
 
+/* 空态：不用只留一句灰字，给一个低语气的图标 + 说明 */
 .wb-suggest-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+  padding: var(--sp-5) var(--sp-3);
+  border: 1px dashed var(--border-light);
+  border-radius: var(--r-md);
   color: var(--text-3);
-  font-size: var(--fs-md);
-  line-height: 1.6;
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  text-align: center;
+}
+
+.wb-suggest-empty::before {
+  content: '◇';
+  font-size: var(--fs-xl);
+  line-height: 1;
+  color: var(--brand);
 }
 
 .wb-suggest-tag {
+  font-style: normal;
   font-size: var(--fs-xs);
   font-weight: 500;
   margin-left: 6px;
   padding: 1px 6px;
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--brand);
   vertical-align: 1px;
-}
-
-.wb-suggest-tag-ai {
-  background: var(--info-soft);
-  color: var(--info);
 }
 
 .wb-suggest-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
 }
 
+/* 建议卡：同一套卡片语言（--bg-hover 底 + 1px 描边 + r-md），hover 只换描边 */
 .wb-suggest-card {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 10px 12px;
+  padding: var(--sp-2) var(--sp-3);
   background: var(--bg-hover);
   transition:
     border-color 0.15s,
     background 0.15s;
 }
 
+.wb-suggest-card:hover {
+  border-color: var(--border-strong);
+}
+
 .wb-suggest-card.is-chosen {
-  border-color: var(--brand);
-  background: var(--success-soft);
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
 }
 
 .wb-suggest-text {
   font-size: var(--fs-md);
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--text-1);
   white-space: pre-wrap;
   word-break: break-word;
-  margin-bottom: 8px;
+  margin-bottom: var(--sp-2);
   user-select: text;
 }
 
@@ -196,70 +239,44 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
-/* 回复字数：与右端的动作按钮同一行，不额外占高度 */
+/* 回复字数：等宽数字，与右端按钮同一行，不额外占高度 */
 .wb-suggest-len {
-  font-size: var(--fs-xs);
-  color: var(--text-3);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
 }
 
+/* 选用按钮：外观走 .ui-btn.is-primary，这里只固定尺寸 */
 .wb-suggest-btn {
-  font-size: var(--fs-sm);
-  padding: 4px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--brand);
-  background: var(--bg-panel);
-  color: var(--brand);
-  cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  flex: none;
 }
 
-.wb-suggest-btn:hover:not(:disabled) {
-  background: var(--brand);
-  color: var(--on-brand);
-}
-
-.wb-suggest-btn:disabled {
-  opacity: 0.7;
-  cursor: default;
-}
-
+/* 已发送成功：把主按钮降级为「成功态描边」，不再抢主色 */
 .wb-suggest-card.is-chosen .wb-suggest-btn {
   background: var(--success-soft);
-  color: var(--success);
-  border-color: var(--success);
-  cursor: default;
+  border-color: var(--success-line);
+  color: var(--success-strong);
+  box-shadow: none;
+  filter: none;
 }
 
+/* 重新生成：整宽次级按钮，固定在面板底部 */
 .wb-suggest-regenerate {
   width: 100%;
-  font-size: var(--fs-md);
-  padding: 8px 0;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-panel);
-  color: var(--text-2);
-  cursor: pointer;
-  margin-top: auto; /* 固定在面板底部 */
-}
-
-.wb-suggest-regenerate:hover:not(:disabled) {
-  background: var(--bg);
-}
-
-.wb-suggest-regenerate:disabled {
-  opacity: 0.6;
-  cursor: default;
+  margin-top: auto;
 }
 
 .wb-suggest-error {
-  color: var(--danger-hover);
-  font-size: var(--fs-md);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r-md);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  font-size: var(--fs-sm);
   line-height: 1.6;
 }
 
@@ -268,10 +285,10 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  margin: 0 0 10px;
+  margin: 0 0 var(--sp-3);
   padding: 6px 10px;
-  background: var(--bg-hover);
-  border-left: 3px solid var(--brand-line);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border-left: 2px solid var(--brand-line);
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
   user-select: text;
 }
@@ -292,38 +309,43 @@
 .wb-send-result {
   font-size: var(--fs-sm);
   padding: 6px 10px;
-  border-radius: 6px;
-  margin-bottom: 10px;
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-3);
   line-height: 1.5;
+  border: 1px solid transparent;
 }
 
 .wb-send-result.is-ok {
   background: var(--success-soft);
-  color: var(--success);
+  border-color: var(--success-line);
+  color: var(--success-strong);
 }
 
 .wb-send-result.is-fail {
   background: var(--danger-soft);
-  color: var(--danger-hover);
+  border-color: var(--danger-line);
+  color: var(--danger-text);
 }
 
-/* ══════════ 顶部提示条 ══════════ */
+/* ══════════ 顶部提示条 ══════════
+ * 浮在画布上方的警示胶囊：半透明玻璃 + 冷描边（不用厚重投影） */
 .wb-banner {
   position: absolute;
-  top: 12px;
+  top: var(--sp-3);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border-radius: 20px;
-  background: var(--warn-soft);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--warn-soft) 85%, var(--bg-panel));
   border: 1px solid var(--warn-line);
   color: var(--warn-text);
   font-size: var(--fs-sm);
   z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(8px);
   pointer-events: none; /* 不遮挡下方内容点击 */
 }
 
@@ -331,5 +353,5 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #f0b429;
+  background: var(--warn);
 }

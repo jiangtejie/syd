@@ -58,8 +58,54 @@ function snippet(content: string, width = 84): string {
   return `…${one.slice(0, width)}…`
 }
 
-/**
- * 常用业务提问预设:点击把规范句式填入输入框(工作台按绑定账号实际数据作答)。
+/** 线性描边图标：与左侧导航同一套 feather 风格，跟随 currentColor */
+function SparkIcon({ size = 18 }: { size?: number }): React.JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 2.5 14 9l6.5 2-6.5 2-2 6.5L10 13l-6.5-2L10 9z" />
+      <path d="M5 20.5h14" />
+    </svg>
+  )
+}
+
+function FolderIcon({ size = 14 }: { size?: number }): React.JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
+    </svg>
+  )
+}
+
+/** 会话行的更新时间：今天 HH:MM，更早 M/D（等宽数字，跨行右对齐） */
+function fmtSessionTime(ts: number): string {
+  const d = new Date(ts)
+  const now = new Date()
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  if (d.toDateString() === now.toDateString()) return pad(d.getHours()) + ':' + pad(d.getMinutes())
+  return d.getMonth() + 1 + '/' + d.getDate()
+}
+
+/** 常用业务提问预设:点击把规范句式填入输入框(工作台按绑定账号实际数据作答)。
  * 模板与 SKILL.md 口径解耦,只负责把问题问清楚。
  */
 const WB_PRESETS: Array<{ label: string; text: string; hint: string }> = [
@@ -222,6 +268,9 @@ function WbApprovals(): React.JSX.Element | null {
     <div className="wb-approvals">
       {approvals.map((a) => (
         <div key={a.runId} className="wb-approval">
+          <span className="wb-approval-icon" aria-hidden="true">
+            !
+          </span>
           <div className="wb-approval-main">
             <span
               className="wb-approval-title"
@@ -247,7 +296,7 @@ function WbApprovals(): React.JSX.Element | null {
             </button>
             <button
               type="button"
-              className="ui-btn is-sm"
+              className="ui-btn is-ghost is-sm"
               title="本会话本轮后续调用该工具不再询问"
               onClick={() => void trustTool(a.runId, a.tool, 'session')}
             >
@@ -255,7 +304,7 @@ function WbApprovals(): React.JSX.Element | null {
             </button>
             <button
               type="button"
-              className="ui-btn is-sm"
+              className="ui-btn is-ghost is-sm"
               title="加入全局「始终允许」名单,之后不再询问(可在 设置 → AI 助手 中撤销)"
               onClick={() => void trustTool(a.runId, a.tool, 'global')}
             >
@@ -717,6 +766,18 @@ export default function WorkbenchChatPage(): React.JSX.Element {
     })
   }
 
+  /** 空态 hero 的预设:没有会话时先建一个(标题取预设名),再把规范句式填进输入框 */
+  const startPreset = async (p: { label: string; text: string }): Promise<void> => {
+    if (activeId === null) {
+      const id = await createChatStore(p.label)
+      if (id === null) {
+        toast.error('新建会话失败,请重启应用后重试')
+        return
+      }
+    }
+    applyPreset(p.text)
+  }
+
   /** 选区追问:把选中内容以引用块带入输入框,用户补充提问后发送 */
   const quoteSelection = (): void => {
     if (!quickAsk) return
@@ -895,7 +956,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
         <button type="button" className="ui-btn is-primary wb-new" onClick={createChat}>
           ＋ 新会话
         </button>
-        <div className="wb-side-tip">
+        <div className={'wb-side-tip' + (connected ? ' is-ok' : ' is-warn')}>
           {connected
             ? '已绑定账号:业务查询与软件能力均可用。'
             : '未绑定账号:仅软件状态可用,业务查询会提示先连接。'}
@@ -903,7 +964,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
         <div className="wb-side-list">
           <div className="wb-side-search">
             <input
-              className="wb-side-search-input"
+              className="ui-input wb-side-search-input"
               placeholder="搜索会话与消息…"
               value={searchQ}
               onChange={(e) => onSearchInput(e.target.value)}
@@ -933,7 +994,12 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           </div>
           {hits !== null ? (
             <>
-              {searchBusy && <div className="wb-empty">搜索中…</div>}
+              {searchBusy && (
+                <div className="wb-empty">
+                  <span className="ui-spin wb-empty-spin" aria-hidden="true" />
+                  搜索中…
+                </div>
+              )}
               {!searchBusy && hits.length === 0 && <div className="wb-empty">没有匹配的消息</div>}
               {hits.map((h) => (
                 <button
@@ -955,9 +1021,20 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             </>
           ) : (
             <>
-              {chats === null && <div className="wb-empty">加载中…</div>}
+              {chats === null && (
+                <div className="wb-empty">
+                  <span className="ui-spin wb-empty-spin" aria-hidden="true" />
+                  加载中…
+                </div>
+              )}
               {chats !== null && chats.length === 0 && (
-                <div className="wb-empty">还没有会话。新建后即可让 AI 查数据、给口径、写总结。</div>
+                <div className="wb-side-empty">
+                  <span className="wb-side-empty-glyph">
+                    <SparkIcon size={15} />
+                  </span>
+                  <b>还没有会话</b>
+                  <span>新建后即可让 AI 查数据、写总结。</span>
+                </div>
               )}
               {(chats ?? []).map((c) => (
                 <div
@@ -966,7 +1043,10 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                   onClick={() => void selectStore(c.id)}
                 >
                   <div className="wb-side-main">
-                    <div className="wb-side-title">{c.title}</div>
+                    <div className="wb-side-row">
+                      <div className="wb-side-title">{c.title}</div>
+                      <span className="wb-side-time ui-num">{fmtSessionTime(c.updatedAt)}</span>
+                    </div>
                     {c.id !== activeId && (busyIds[c.id] || sessNew[c.id] || sessErr[c.id]) && (
                       <div className="wb-side-status">
                         {busyIds[c.id] && (
@@ -1021,7 +1101,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
         <div className="wb-side-foot">
           <button
             type="button"
-            className="ui-btn is-sm"
+            className="ui-btn is-ghost is-sm"
             disabled={activeId === null || messages.length === 0}
             title="把当前会话导出为 Markdown(含工具痕迹与思考过程)"
             onClick={() => void exportCurrent()}
@@ -1030,7 +1110,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="ui-btn is-danger is-sm"
+            className="ui-btn is-danger is-ghost is-sm"
             disabled={chats === null || chats.length === 0}
             title="删除当前账号下的全部工作台会话(不可恢复)"
             onClick={() => void clearAllChats()}
@@ -1043,12 +1123,21 @@ export default function WorkbenchChatPage(): React.JSX.Element {
       <div className="wb-main">
         <div className="wb-head">
           <div className="wb-head-title">
-            <b>{active?.title ?? '工作台'}</b>
-            <span className="wb-head-sub">AI 工作台 · 调用产品能力</span>
+            <span className="wb-head-mark" aria-hidden="true">
+              <SparkIcon size={16} />
+            </span>
+            <div className="wb-head-text">
+              <b>{active?.title ?? '工作台'}</b>
+              <span className="wb-head-sub">AI 工作台 · 调用产品能力</span>
+            </div>
           </div>
           <div className="wb-head-right wb-ws-box">
-            <span className="wb-ws-name" title={wsDir ?? undefined}>
-              {wsDir ? `📁 ${wsName(wsDir)}` : '工作区未绑定'}
+            <span
+              className={'wb-ws-name' + (wsDir ? ' is-bound' : '')}
+              title={wsDir ?? '当前会话未绑定工作区'}
+            >
+              <FolderIcon size={12} />
+              {wsDir ? wsName(wsDir) : '工作区未绑定'}
             </span>
             <button
               type="button"
@@ -1065,7 +1154,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
               <>
                 <button
                   type="button"
-                  className="ui-btn is-sm"
+                  className="ui-btn is-ghost is-sm"
                   title="在文件管理器中打开"
                   onClick={() => void window.api?.cs?.wb?.openWorkspace(activeId!)}
                 >
@@ -1073,7 +1162,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                 </button>
                 <button
                   type="button"
-                  className="ui-btn is-sm"
+                  className="ui-btn is-ghost is-sm"
                   title="解除绑定(文件不会被删除)"
                   onClick={() => void unbindWorkspace()}
                 >
@@ -1086,15 +1175,41 @@ export default function WorkbenchChatPage(): React.JSX.Element {
 
         <div className="wb-body" ref={bodyRef} onScroll={handleBodyScroll}>
           {!activeId && (
-            <div className="wb-welcome">
-              <div className="wb-welcome-title">AI 工作台</div>
-              <div className="wb-welcome-sub">
+            <div className="wb-hero">
+              <div className="wb-hero-mark">
+                <SparkIcon size={26} />
+              </div>
+              <div className="wb-hero-title">AI 工作台</div>
+              <div className="wb-hero-desc">
                 基于标准 agent 引擎,直接调用产品能力:问问题、查监控、看客户、算统计。
+                <br />
                 写操作类能力(后续开放)会先请求你确认。
               </div>
+              <div className="wb-hero-split">
+                <span>试试这样问</span>
+              </div>
+              <div className="wb-hero-presets">
+                {WB_PRESETS.slice(0, 5).map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    className="ui-pill wb-hero-preset"
+                    title={p.hint}
+                    onClick={() => void startPreset(p)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div className="wb-hero-hint">点任意预设会自动新建一个工作台会话</div>
             </div>
           )}
-          {loading && <div className="wb-loading">加载中…</div>}
+          {loading && (
+            <div className="wb-loading">
+              <span className="ui-spin wb-loading-spin" aria-hidden="true" />
+              加载中…
+            </div>
+          )}
           {/* 上下文压缩透明标记(旧历史被摘要折叠) */}
           {!loading && activeId !== null && compactText !== undefined && (
             <CompactionMarker key={activeId} text={compactText} />
@@ -1141,8 +1256,15 @@ export default function WorkbenchChatPage(): React.JSX.Element {
             </div>
           )}
           {activeId !== null && !loading && messages.length === 0 && !activeBusy && (
-            <div className="wb-loading">
-              可以试试:「今天有哪些待处理问题?」「XX 客户最近聊了什么?」「导出范围有多大?」
+            <div className="ui-empty wb-ai-empty">
+              <span className="ui-empty-glyph">
+                <SparkIcon size={22} />
+              </span>
+              <div className="ui-empty-title">开始第一轮对话</div>
+              <div className="ui-empty-desc">
+                直接输入问题,或点输入框上方的「常用提问」套用规范句式;写操作会在执行前先请你确认。
+              </div>
+              <div className="ui-empty-hint">Enter 发送 · Shift+Enter 换行 · Ctrl+N 新建会话</div>
             </div>
           )}
           {/* 当前轮时间线块:按事件顺序渲染(文本段落 / 工具调用 / 推理过程) */}
@@ -1215,9 +1337,16 @@ export default function WorkbenchChatPage(): React.JSX.Element {
 
         {error && (
           <div className="wb-error">
-            <span>✗ {error}</span>
+            <span className="wb-error-icon" aria-hidden="true">
+              ✗
+            </span>
+            <span className="wb-error-msg">{error}</span>
             {!activeBusy && (
-              <button type="button" className="wb-error-retry" onClick={() => void retryStore()}>
+              <button
+                type="button"
+                className="ui-btn is-danger is-sm wb-error-retry"
+                onClick={() => void retryStore()}
+              >
                 重试
               </button>
             )}
@@ -1234,93 +1363,102 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           }}
           onDragOver={(e) => e.preventDefault()}
         >
-          {/* 上下文占用(字符估算):接近预算时提示即将压缩 */}
-          {ctxPct > 0 && (
-            <div
-              className={`wb-ctxline${ctxPct >= 90 ? ' is-hot' : ''}`}
-              title="当前会话上下文估算占用;超过预算会先压缩旧对话再继续"
-            >
-              <span className="wb-ctxline-label">
-                上下文 {ctxPct}%{ctxPct >= 90 ? ' · 接近上限,新一轮将先压缩旧对话' : ''}
-              </span>
-              <span className="wb-ctxline-bar">
-                <i style={{ width: `${ctxPct}%` }} />
-              </span>
-            </div>
-          )}
-          {activeId !== null && (
-            <div className="wb-presets">
-              <span className="wb-presets-tip">常用提问</span>
-              <div className="wb-presets-list">
-                {WB_PRESETS.map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    className="wb-preset-btn"
-                    title={p.hint}
-                    onClick={() => applyPreset(p.text)}
-                  >
-                    {p.label}
-                  </button>
+          <div className="wb-composer-inner">
+            {/* 上下文占用(字符估算):接近预算时提示即将压缩 */}
+            {ctxPct > 0 && (
+              <div
+                className={'wb-ctxline' + (ctxPct >= 90 ? ' is-hot' : '')}
+                title="当前会话上下文估算占用;超过预算会先压缩旧对话再继续"
+              >
+                <span className="wb-ctxline-label">
+                  上下文 <b className="ui-num">{ctxPct}%</b>
+                  {ctxPct >= 90 ? ' · 接近上限,新一轮将先压缩旧对话' : ''}
+                </span>
+                <span className="wb-ctxline-bar">
+                  <i style={{ width: `${ctxPct}%` }} />
+                </span>
+              </div>
+            )}
+            {activeId !== null && (
+              <div className="wb-presets">
+                <span className="wb-presets-tip">常用提问</span>
+                <div className="wb-presets-list">
+                  {WB_PRESETS.map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      className="ui-pill wb-preset-btn"
+                      title={p.hint}
+                      onClick={() => applyPreset(p.text)}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {pendingImgs.length > 0 && (
+              <div className="wb-img-row">
+                {pendingImgs.map((u, i) => (
+                  <span key={i} className="wb-img-chip">
+                    <img src={u} alt="" />
+                    <button
+                      type="button"
+                      title="移除"
+                      onClick={() => setPendingImgs((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      ✕
+                    </button>
+                  </span>
                 ))}
               </div>
-            </div>
-          )}
-          {pendingImgs.length > 0 && (
-            <div className="wb-img-row">
-              {pendingImgs.map((u, i) => (
-                <span key={i} className="wb-img-chip">
-                  <img src={u} alt="" />
+            )}
+            <div className={'wb-inputwrap' + (activeId === null ? ' is-disabled' : '')}>
+              <textarea
+                ref={taRef}
+                className="ui-textarea wb-textarea"
+                placeholder={taPlaceholder}
+                value={draft}
+                rows={1}
+                disabled={!activeId}
+                onChange={(e) => {
+                  const v = e.target.value
+                  // 编辑态清空输入 = 放弃改写,恢复会话原始记录
+                  if (!v && activeId !== null && editingSid === activeId) cancelEditStore()
+                  setDraft(v)
+                  requestAnimationFrame(growTextarea)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    send()
+                  }
+                }}
+              />
+              <div className="wb-composer-ops">
+                <span className="wb-hint">
+                  Enter 发送 · Shift+Enter 换行 · Ctrl+N 新建 · Ctrl+Shift+E 导出 · Ctrl+L 聚焦输入
+                </span>
+                {activeBusy ? (
                   <button
                     type="button"
-                    title="移除"
-                    onClick={() => setPendingImgs((prev) => prev.filter((_, j) => j !== i))}
+                    className="ui-btn is-primary wb-send-btn"
+                    onClick={() => void stopStore()}
                   >
-                    ✕
+                    停止生成
                   </button>
-                </span>
-              ))}
+                ) : (
+                  <button
+                    type="button"
+                    className="ui-btn is-primary wb-send-btn"
+                    disabled={!canSend || !draft.trim()}
+                    onClick={send}
+                  >
+                    发送
+                  </button>
+                )}
+              </div>
             </div>
-          )}
-          <textarea
-            ref={taRef}
-            className="wb-textarea"
-            placeholder={taPlaceholder}
-            value={draft}
-            rows={1}
-            disabled={!activeId}
-            onChange={(e) => {
-              const v = e.target.value
-              // 编辑态清空输入 = 放弃改写,恢复会话原始记录
-              if (!v && activeId !== null && editingSid === activeId) cancelEditStore()
-              setDraft(v)
-              requestAnimationFrame(growTextarea)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                send()
-              }
-            }}
-          />
-          <div className="wb-composer-ops">
-            <span className="wb-hint">
-              Enter 发送 · Shift+Enter 换行 · Ctrl+N 新建 · Ctrl+Shift+E 导出 · Ctrl+L 聚焦输入
-            </span>
-            {activeBusy ? (
-              <button type="button" className="ui-btn is-primary" onClick={() => void stopStore()}>
-                停止生成
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="ui-btn is-primary"
-                disabled={!canSend || !draft.trim()}
-                onClick={send}
-              >
-                发送
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -1331,7 +1469,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
           <div className="confirm-dialog wb-prompt-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="confirm-title">{promptState.title}</div>
             <input
-              className="wb-prompt-input"
+              className="ui-input wb-prompt-input"
               autoFocus
               value={promptVal}
               placeholder={promptState.placeholder}

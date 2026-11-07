@@ -12,10 +12,26 @@ import { useAsyncEffect } from '../../lib/useAsyncEffect'
  *
  * 判定逻辑在 shared/onboarding.ts（纯函数，有自检）：**只在确实缺东西时才弹** ——
  * 已经有账号又有密钥的用户不该被再教一遍，哪怕他从没点过向导。
+ *
+ * 视觉：与全站同一套面板语言（深色下是加光面板 + 霓虹进度块），样式见 pages/shell.css 的 .frw-*。
  */
 
 const configApi = window.api?.cs?.config
 const keyStoreApi = window.api?.cs?.keyStore
+
+/** 进度块：01/02/03 + 短标签，完成的块亮起品牌色 */
+function StepRail({ step }: { step: number }): React.JSX.Element {
+  return (
+    <div className="frw-steps" aria-hidden="true">
+      {FIRST_RUN_STEPS.map((label, i) => (
+        <div key={label} className={`frw-step${i + 1 <= step ? ' is-done' : ''}`}>
+          <span className="frw-step-no">{String(i + 1).padStart(2, '0')}</span>
+          <span className="frw-step-label">{label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function FirstRunWizard(): React.JSX.Element | null {
   const setPage = useWorkbenchStore((s) => s.setPage)
@@ -53,53 +69,12 @@ export function FirstRunWizard(): React.JSX.Element | null {
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.42)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 2000
-      }}
-    >
-      <div
-        style={{
-          width: 480,
-          maxWidth: '92vw',
-          background: 'var(--bg-1, #fff)',
-          color: 'var(--text-1, #222)',
-          borderRadius: 10,
-          padding: '20px 22px',
-          boxShadow: '0 12px 40px rgba(0,0,0,.28)'
-        }}
-      >
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-          {FIRST_RUN_STEPS.map((label, i) => (
-            <div
-              key={label}
-              style={{
-                flex: 1,
-                fontSize: 12,
-                padding: '5px 0',
-                textAlign: 'center',
-                borderRadius: 5,
-                background: i + 1 <= state.step ? 'var(--accent, #3b7ddd)' : 'var(--bg-2, #eee)',
-                color: i + 1 <= state.step ? '#fff' : 'var(--text-3, #888)'
-              }}
-            >
-              {i + 1}. {label}
-            </div>
-          ))}
-        </div>
-
-        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{state.title}</div>
-        <div style={{ fontSize: 13, lineHeight: 1.75, color: 'var(--text-2, #555)' }}>
-          {state.detail}
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+    <div className="frw-mask" role="presentation">
+      <div className="frw-panel" role="dialog" aria-modal="true" aria-label={state.title}>
+        <StepRail step={state.step} />
+        <div className="frw-title">{state.title}</div>
+        <div className="frw-detail">{state.detail}</div>
+        <div className="frw-actions">
           <button type="button" className="ui-btn" disabled={busy} onClick={() => void dismiss()}>
             稍后再说
           </button>

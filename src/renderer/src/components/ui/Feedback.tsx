@@ -58,7 +58,7 @@ export function ErrBar({ msg, onRetry }: ErrBarProps): React.JSX.Element {
     <div className={'ui-err'} role={'alert'}>
       <span className={'msg'}>{msg}</span>
       {onRetry ? (
-        <button className={'ui-btn sm'} type={'button'} onClick={onRetry}>
+        <button className={'ui-btn is-sm'} type={'button'} onClick={onRetry}>
           重试
         </button>
       ) : null}

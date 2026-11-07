@@ -35,7 +35,17 @@ export function FeishuAuditPanel(): React.JSX.Element {
       </div>
       {err && <div className="st-bad">✗ {err}</div>}
       {logs === null && <div className="st-hint">加载中…</div>}
-      {logs !== null && logs.length === 0 && <div className="st-hint">还没有入站记录。</div>}
+      {logs !== null && logs.length === 0 && (
+        <div className="st-empty is-sm">
+          <div className="st-empty-glyph" aria-hidden="true">
+            ◇
+          </div>
+          <div className="st-empty-title">还没有入站记录</div>
+          <div className="st-empty-desc">
+            在飞书里 @ 机器人或私聊发消息后，入站记录会出现在这里。
+          </div>
+        </div>
+      )}
       {logs !== null &&
         logs.map((l) => (
           <AuditRowItem

@@ -8,6 +8,27 @@ import {
   type TimelineItem
 } from '../../lib/toolTimeline'
 
+/** 时间线头部的终端图标（跟随 currentColor） */
+function TerminalIcon(): React.JSX.Element {
+  return (
+    <svg
+      width={12}
+      height={12}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2.5" y="4" width="19" height="16" rx="2.5" />
+      <path d="m6.5 9 3 3-3 3" />
+      <path d="M13 15h5" />
+    </svg>
+  )
+}
+
 /**
  * 工具调用时间线（替代「一次调用一张卡」的平铺）。
  *
@@ -47,19 +68,41 @@ export function ToolTimeline({
   const sum = timelineSummary(steps, now)
   if (items.length === 0) return null
 
-  const meta = [
-    sum.calls > 1 ? `${sum.calls} 次调用` : '',
-    sum.steps > 1 ? `${sum.steps} 步` : '',
-    sum.parallelSteps > 0 ? `${sum.parallelSteps} 步并行` : '',
-    sum.failed > 0 ? `${sum.failed} 个失败` : '',
-    sum.running > 0
-      ? `${sum.running} 个进行中`
-      : sum.durationMs !== undefined
-        ? fmtDuration(sum.durationMs)
-        : ''
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  /** 头部统计：数字走 .ui-num（等宽对齐），空项不占位 */
+  const metaBits: React.ReactNode[] = []
+  const addMeta = (key: string, n: number, label: string): void => {
+    if (metaBits.length > 0) {
+      metaBits.push(
+        <span key={key + '-sep'} className="wb-tl-sep">
+          ·
+        </span>
+      )
+    }
+    metaBits.push(
+      <span key={key}>
+        <b className="ui-num">{n}</b> {label}
+      </span>
+    )
+  }
+  if (sum.calls > 1) addMeta('calls', sum.calls, '次调用')
+  if (sum.steps > 1) addMeta('steps', sum.steps, '步')
+  if (sum.parallelSteps > 0) addMeta('par', sum.parallelSteps, '步并行')
+  if (sum.failed > 0) addMeta('fail', sum.failed, '个失败')
+  if (sum.running > 0) addMeta('run', sum.running, '个进行中')
+  if (sum.running === 0 && sum.durationMs !== undefined) {
+    if (metaBits.length > 0) {
+      metaBits.push(
+        <span key="dur-sep" className="wb-tl-sep">
+          ·
+        </span>
+      )
+    }
+    metaBits.push(
+      <span key="dur" className="ui-num">
+        {fmtDuration(sum.durationMs)}
+      </span>
+    )
+  }
 
   const keyOf = (id: number | string): string => String(id)
   const toggle = (id: number | string): void => {
@@ -70,8 +113,11 @@ export function ToolTimeline({
   return (
     <div className={'wb-tl' + (sum.running > 0 ? ' is-running' : '')}>
       <div className="wb-tl-head">
-        <span className="wb-tl-kind">{title}</span>
-        <span className="wb-tl-meta">{meta}</span>
+        <span className="wb-tl-kind">
+          <TerminalIcon />
+          {title}
+        </span>
+        <span className="wb-tl-meta">{metaBits}</span>
       </div>
       <ol className="wb-tl-body">
         {steps.map((step) => (
@@ -98,9 +144,9 @@ export function ToolTimeline({
                     {it.status === 'start' && <em className="wb-tl-state">执行中</em>}
                     {it.status === 'fail' && <em className="wb-tl-state is-fail">失败</em>}
                     {dur !== undefined && dur >= 1000 && (
-                      <span className="wb-tl-dur">{fmtDuration(dur)}</span>
+                      <span className="wb-tl-dur ui-num">{fmtDuration(dur)}</span>
                     )}
-                    <span className={`wb-tl-caret${open ? ' is-open' : ''}`}>▾</span>
+                    <span className={`wb-tl-caret${open ? ' is-open' : ''}`}>▸</span>
                   </button>
                   {open && (
                     <div className="wb-tl-detail">
@@ -123,7 +169,9 @@ export function ToolTimeline({
                 </div>
               )
             })}
-            {step.parallel && <span className="wb-tl-tag">{step.items.length} 个并行</span>}
+            {step.parallel && (
+              <span className="ui-chip is-sm wb-tl-tag">{step.items.length} 个并行</span>
+            )}
           </li>
         ))}
       </ol>

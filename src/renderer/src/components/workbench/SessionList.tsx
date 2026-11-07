@@ -108,7 +108,7 @@ const SessionItem = memo(function SessionItem({
                  「本群有几个待办」在列表上根本看不到） */}
             <span className="wb-session-name-text">{name}</span>
           </span>
-          <span className="wb-session-time">{formatSessionTime(sessionTime)}</span>
+          <span className="ui-num wb-session-time">{formatSessionTime(sessionTime)}</span>
         </div>
         <div className="wb-session-bottom">
           <span className="wb-session-summary">{summaryText || '暂无消息'}</span>
@@ -168,7 +168,7 @@ const FoldGroupItem = memo(function FoldGroupItem({
             <span className={`wb-fold-arrow ${expanded ? 'is-open' : ''}`}>▸</span>
             折叠的聊天
           </span>
-          <span className="wb-session-time">
+          <span className="ui-num wb-session-time">
             {formatSessionTime(session.lastTimestamp || session.sortTimestamp)}
           </span>
         </div>
@@ -315,10 +315,13 @@ function SessionList(): React.JSX.Element {
 
   return (
     <div className="wb-session-list">
-      <div className="wb-session-header">会话（{sessions.length}）</div>
+      <div className="wb-session-header">
+        会话
+        <span className="wb-session-count">（{sessions.length}）</span>
+      </div>
       <div className="wb-session-search">
         <input
-          className="wb-session-search-input"
+          className="ui-input wb-session-search-input"
           placeholder="搜索会话"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}

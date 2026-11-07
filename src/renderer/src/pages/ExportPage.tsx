@@ -43,6 +43,16 @@ const RANGE_PRESETS = [
   { id: 'custom', label: '自定义' }
 ]
 
+const RANGE_LABEL: Record<string, string> = Object.fromEntries(
+  RANGE_PRESETS.map((r) => [r.id, r.label])
+)
+
+const FORMAT_LABEL: Record<ChatFormat, string> = {
+  txt: '文本 TXT',
+  html: '网页 HTML',
+  json: '数据 JSON'
+}
+
 function ExportPage(): React.JSX.Element {
   const wxid = useWorkbenchStore((s) => s.wxid)
   const source = useWorkbenchStore((s) => s.source)
@@ -386,7 +396,7 @@ function ExportPage(): React.JSX.Element {
           </div>
           <button
             type="button"
-            className="ui-btn exp-btn ghost"
+            className="ui-btn is-sm is-ghost exp-btn"
             disabled={cancelling}
             onClick={() => void cancelExport()}
           >
@@ -409,13 +419,32 @@ function ExportPage(): React.JSX.Element {
 
       {!connected && (
         <div className="page-card exp-empty-state">
-          <div className="exp-empty-title">尚未连接微信</div>
-          <div className="exp-empty-desc">
-            导出的是本机微信库里的真实消息，需要先导入密钥并连接账号。
+          <div className="ui-empty">
+            <span className="ui-empty-glyph">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M10 3v9m0 0 3.2-3.2M10 12 6.8 8.8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M3.5 13v2.5a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V13"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+            <div className="ui-empty-title">尚未连接微信</div>
+            <div className="ui-empty-desc">
+              导出的是本机微信库里的真实消息，需要先导入密钥并连接账号。
+            </div>
+            <button type="button" className="ui-btn is-primary" onClick={() => setPage('settings')}>
+              去设置微信数据与密钥
+            </button>
           </div>
-          <button type="button" className="ui-btn is-primary" onClick={() => setPage('settings')}>
-            去设置微信数据与密钥
-          </button>
         </div>
       )}
 
@@ -492,10 +521,11 @@ function ExportPage(): React.JSX.Element {
                       disabled={busy}
                       onChange={toggleAll}
                     />
-                    全选（{filtered.length}）
+                    全选
+                    <span className="exp-head-n ui-num">{filtered.length}</span>
                   </label>
                   <span className="exp-sess-count">
-                    已选 <b>{selected.size}</b>
+                    已选 <b className="ui-num">{selected.size}</b>
                   </span>
                   <label className="exp-check">
                     <input
@@ -534,10 +564,38 @@ function ExportPage(): React.JSX.Element {
                   ref={attachList}
                   onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
                 >
-                  {loadingSessions && <div className="exp-empty">加载中…</div>}
+                  {loadingSessions && (
+                    <div className="exp-loading">
+                      <span className="ui-spin" />
+                      正在读取会话列表…
+                    </div>
+                  )}
                   {!loadingSessions && visible.length === 0 && (
-                    <div className="exp-empty">
-                      {showOnlySelected ? '还没有选中任何会话' : '没有可导出的会话'}
+                    <div className="ui-empty exp-empty">
+                      <span className="ui-empty-glyph">
+                        <svg
+                          width="20"
+                          height="20"
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M3 4.5h14v10H8l-4 3v-3H3z"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                      <div className="ui-empty-title">
+                        {showOnlySelected ? '还没有选中任何会话' : '没有可导出的会话'}
+                      </div>
+                      <div className="ui-empty-desc">
+                        {showOnlySelected
+                          ? '取消「仅看已选」，或先在左侧勾选要导出的会话。'
+                          : '换个筛选条件，或点右上「刷新」重新读取微信会话列表。'}
+                      </div>
                     </div>
                   )}
                   {/* 窗口化：只渲染视口内的行（会话可能上千行，整表渲染每次勾选都重建全部 DOM）。
@@ -560,11 +618,13 @@ function ExportPage(): React.JSX.Element {
                               />
                               <span className="exp-sess-main">
                                 <span className="exp-sess-name">
-                                  {s.isGroup && <i className="exp-tag">群</i>}
-                                  {s.isOfficialAccount && <i className="exp-tag">公众号</i>}
-                                  {name}
+                                  {s.isGroup && <i className="ui-chip is-sm is-line exp-tag">群</i>}
+                                  {s.isOfficialAccount && (
+                                    <i className="ui-chip is-sm is-line exp-tag">公众号</i>
+                                  )}
+                                  <span className="exp-sess-name-text">{name}</span>
                                 </span>
-                                <span className="exp-sess-sub">{s.username}</span>
+                                <span className="exp-sess-sub ui-num">{s.username}</span>
                               </span>
                             </label>
                           )
@@ -577,75 +637,104 @@ function ExportPage(): React.JSX.Element {
 
               {/* 右:选项与执行 */}
               <div className="page-card exp-opts">
-                <div className="exp-section-title">时间范围</div>
-                <div className="exp-pill-row">
-                  {RANGE_PRESETS.map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      className={`ui-pill exp-pill${range === r.id ? ' is-on' : ''}`}
-                      disabled={busy}
-                      onClick={() => setRange(r.id)}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
-                {range === 'custom' && (
-                  <div className="exp-date-row">
-                    <input
-                      type="date"
-                      className="ui-input exp-input"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                    />
-                    <span>至</span>
-                    <input
-                      type="date"
-                      className="ui-input exp-input"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                    />
+                <section className="exp-section">
+                  <div className="ui-label exp-section-title">时间范围</div>
+                  <div className="ui-seg exp-seg" role="group" aria-label="时间范围">
+                    {RANGE_PRESETS.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        className={`ui-seg-btn${range === r.id ? ' is-on' : ''}`}
+                        disabled={busy}
+                        onClick={() => setRange(r.id)}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
                   </div>
-                )}
-                <div className="exp-hint">{rangeHint}</div>
+                  {range === 'custom' && (
+                    <div className="exp-date-row">
+                      <input
+                        type="date"
+                        className="ui-input exp-input"
+                        value={startDate}
+                        aria-label="开始日期"
+                        onChange={(e) => setStartDate(e.target.value)}
+                      />
+                      <span className="exp-date-sep">至</span>
+                      <input
+                        type="date"
+                        className="ui-input exp-input"
+                        value={endDate}
+                        aria-label="结束日期"
+                        onChange={(e) => setEndDate(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  <div className="exp-hint">{rangeHint}</div>
+                </section>
 
-                <div className="exp-section-title">格式</div>
-                <div className="exp-pill-row">
-                  {(
-                    [
-                      ['txt', '文本 TXT'],
-                      ['html', '网页 HTML'],
-                      ['json', '数据 JSON']
-                    ] as Array<[ChatFormat, string]>
-                  ).map(([id, label]) => (
+                <section className="exp-section">
+                  <div className="ui-label exp-section-title">格式</div>
+                  <div className="ui-seg exp-seg" role="group" aria-label="导出格式">
+                    {(
+                      [
+                        ['txt', '文本 TXT'],
+                        ['html', '网页 HTML'],
+                        ['json', '数据 JSON']
+                      ] as Array<[ChatFormat, string]>
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`ui-seg-btn${format === id ? ' is-on' : ''}`}
+                        disabled={busy}
+                        onClick={() => setFormat(id)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="exp-hint">
+                    附件本体不包含在导出中（消息记录其 md5/文件名引用）；TXT 适合阅读，JSON
+                    保留结构化字段便于未来导入。
+                  </div>
+                </section>
+
+                <section className="exp-section">
+                  <div className="ui-label exp-section-title">导出位置</div>
+                  <div className="exp-folder-row">
+                    <span className="exp-folder ui-num" title={folder || undefined}>
+                      {folder || '未选择（导出时弹窗选择）'}
+                    </span>
                     <button
-                      key={id}
                       type="button"
-                      className={`ui-pill exp-pill${format === id ? ' is-on' : ''}`}
+                      className="ui-btn is-sm exp-btn"
                       disabled={busy}
-                      onClick={() => setFormat(id)}
+                      onClick={() => void pickFolder()}
                     >
-                      {label}
+                      选择目录
                     </button>
-                  ))}
-                </div>
-                <div className="exp-hint">
-                  附件本体不包含在导出中(消息记录其 md5/文件名引用);TXT 适合阅读,JSON
-                  保留结构化字段便于未来导入。
-                </div>
+                  </div>
+                </section>
 
-                <div className="exp-section-title">导出位置</div>
-                <div className="exp-folder-row">
-                  <span className="exp-folder">{folder || '未选择(导出时弹窗选择)'}</span>
-                  <button
-                    type="button"
-                    className="ui-btn exp-btn ghost"
-                    disabled={busy}
-                    onClick={() => void pickFolder()}
-                  >
-                    选择目录
-                  </button>
+                {/* 导出摘要：点主按钮前先把「选了多少 / 范围 / 格式 / 去哪」核对一遍 */}
+                <div className="exp-summary">
+                  <div className="exp-summary-head">
+                    <span className="ui-label">导出摘要</span>
+                    <span className={`ui-chip is-sm${selected.size > 0 ? ' is-ok is-line' : ''}`}>
+                      {selected.size > 0 ? '已就绪' : '待选择会话'}
+                    </span>
+                  </div>
+                  <div className="exp-summary-main">
+                    <span className="exp-summary-n ui-num">{selected.size}</span>
+                    <span className="exp-summary-text">
+                      个会话 · {RANGE_LABEL[range] ?? '全部时间'} · {FORMAT_LABEL[format]}
+                    </span>
+                  </div>
+                  <div className="exp-summary-sub">
+                    {folder ? `输出到 ${folder}` : '输出位置未选择（导出时弹窗选择目录）'}
+                  </div>
                 </div>
 
                 <button
@@ -662,21 +751,33 @@ function ExportPage(): React.JSX.Element {
                 {renderProgress()}
                 {result && (
                   <div className="exp-result">
-                    <div className="exp-result-title">
-                      {result.cancelled ? '已取消导出：' : '✓ 导出完成：'}
-                      {result.files.length} 个文件 · 共{' '}
-                      {result.files.reduce((n, f) => n + f.msgCount, 0)} 条
-                      {result.cancelled ? '（已完成的部分保留在导出目录）' : ''}
+                    <div className="exp-result-head">
+                      <span className="ui-chip is-sm is-ok is-line">
+                        {result.cancelled ? '已取消' : '导出完成'}
+                      </span>
+                      <span className="exp-result-title">
+                        {result.files.length} 个文件 · 共{' '}
+                        <b className="ui-num">{result.files.reduce((n, f) => n + f.msgCount, 0)}</b>{' '}
+                        条
+                      </span>
                     </div>
-                    {result.files.slice(0, 8).map((f, i) => (
-                      <div key={i} className="exp-result-file">
-                        {f.name}（{f.msgCount} 条）
+                    {result.cancelled && <div className="exp-hint">已完成的部分保留在导出目录</div>}
+                    {result.files.length > 0 && (
+                      <div className="exp-result-files">
+                        {result.files.slice(0, 8).map((f, i) => (
+                          <div key={i} className="exp-result-file">
+                            <span className="exp-result-name">{f.name}</span>
+                            <span className="exp-result-n ui-num">{f.msgCount} 条</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                    {result.files.length > 8 && <div>… 等 {result.files.length} 个</div>}
+                    )}
+                    {result.files.length > 8 && (
+                      <div className="exp-hint">… 等 {result.files.length} 个文件</div>
+                    )}
                     {result.skipped.length > 0 && (
                       <div className="exp-hint">
-                        {result.skipped.length} 个会话{result.skipped[0]?.reason}，未生成文件:
+                        {result.skipped.length} 个会话{result.skipped[0]?.reason}，未生成文件：
                         {result.skipped
                           .slice(0, 5)
                           .map((s) => s.name)
@@ -693,28 +794,43 @@ function ExportPage(): React.JSX.Element {
                     </button>
                   </div>
                 )}
-                {chatError && <div className="exp-error">{chatError}</div>}
+                {chatError && (
+                  <div className="ui-err exp-error">
+                    <span className="msg">{chatError}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
           {tab === 'biz' && (
             <div className="page-card exp-biz">
-              <div className="exp-section-title">本地业务数据(JSON 归档)</div>
+              <div className="ui-label exp-section-title">本地业务数据（JSON 归档）</div>
               <div className="exp-biz-list">
-                <div>· 群问题反馈(含证据消息、状态、跟进标记)</div>
-                <div>· 发送审计日志(send_log)</div>
-                <div>· 团队客服成员、智能体(人设)配置</div>
-                <div>· 微信账号摘要(来源/状态,不含密钥)</div>
+                {(
+                  [
+                    ['群问题', '反馈（含证据消息、状态、跟进标记）'],
+                    ['发送审计', '发送审计日志 send_log'],
+                    ['团队配置', '团队客服成员、智能体（人设）配置'],
+                    ['账号摘要', '微信账号摘要（来源/状态，不含密钥）']
+                  ] as Array<[string, string]>
+                ).map(([tag, text]) => (
+                  <div key={tag} className="exp-biz-item">
+                    <span className="ui-chip is-sm is-line exp-biz-tag">{tag}</span>
+                    <span className="exp-biz-text">{text}</span>
+                  </div>
+                ))}
               </div>
               <div className="exp-hint">
-                该归档可在密钥/源库失效后用于回顾运营数据;文件为 JSON,可在其他机器导入查看。
+                该归档可在密钥/源库失效后用于回顾运营数据；文件为 JSON，可在其他机器导入查看。
               </div>
               <div className="exp-folder-row">
-                <span className="exp-folder">{folder || '未选择(导出时弹窗选择)'}</span>
+                <span className="exp-folder ui-num" title={folder || undefined}>
+                  {folder || '未选择（导出时弹窗选择）'}
+                </span>
                 <button
                   type="button"
-                  className="ui-btn exp-btn ghost"
+                  className="ui-btn is-sm exp-btn"
                   disabled={busy}
                   onClick={() => void pickFolder()}
                 >
@@ -732,7 +848,10 @@ function ExportPage(): React.JSX.Element {
               {renderProgress()}
               {bizResult && (
                 <div className="exp-result">
-                  <div className="exp-result-title">✓ 已生成 {bizResult}</div>
+                  <div className="exp-result-head">
+                    <span className="ui-chip is-sm is-ok is-line">导出完成</span>
+                    <span className="exp-result-title exp-result-name">{bizResult}</span>
+                  </div>
                   <button
                     type="button"
                     className="ui-btn is-primary exp-btn"
@@ -742,7 +861,11 @@ function ExportPage(): React.JSX.Element {
                   </button>
                 </div>
               )}
-              {bizError && <div className="exp-error">{bizError}</div>}
+              {bizError && (
+                <div className="ui-err exp-error">
+                  <span className="msg">{bizError}</span>
+                </div>
+              )}
             </div>
           )}
         </>

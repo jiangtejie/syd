@@ -134,7 +134,7 @@ function SuggestionPanel(): React.JSX.Element {
                   <span className="wb-suggest-len">{c.text.length} 字</span>
                   <button
                     type="button"
-                    className="wb-suggest-btn"
+                    className="ui-btn is-primary wb-suggest-btn"
                     disabled={sending}
                     onClick={() => adoptSuggestion(c.text)}
                   >
@@ -150,7 +150,7 @@ function SuggestionPanel(): React.JSX.Element {
       {!noSession && (
         <button
           type="button"
-          className="wb-suggest-regenerate"
+          className="ui-btn wb-suggest-regenerate"
           disabled={suggestLoading}
           onClick={() => void generateSuggestions()}
         >

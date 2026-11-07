@@ -10,7 +10,7 @@ import {
   REPORT_SESSION_MODE_LABEL,
   REPORT_TYPE_LABEL
 } from '../../../../shared/types'
-import { SettingsCard, SwitchRow, FieldRow } from './ui'
+import { SettingsCard, SwitchRow, FieldRow, StatusPill } from './ui'
 import { toast } from '../../stores/toast'
 import { confirmAsk } from '../../stores/confirmDialog'
 import { useAsyncEffect } from '../../lib/useAsyncEffect'
@@ -293,6 +293,20 @@ export default function ReportJobsSection(): React.JSX.Element {
       <SettingsCard
         title="定时任务 · 数据上报"
         desc="把本地微信聊天记录增量上报到你配置的 PostgreSQL(与 chat-sync 表结构兼容),供外部系统/智能体查询。任务按「来源账号」唯一;口令以系统加密存储,界面不显示明文。"
+        extra={
+          jobs === null ? (
+            <StatusPill tone="off" text="读取中…" />
+          ) : (
+            <StatusPill
+              tone={jobs.length > 0 ? 'ok' : 'off'}
+              text={
+                jobs.length > 0
+                  ? `${jobs.length} 个任务 · ${jobs.filter((j) => j.enabled).length} 个启用`
+                  : '暂无任务'
+              }
+            />
+          )
+        }
       >
         <div className="st-actions wb-skills-toolbar">
           <button type="button" className="ui-btn is-primary" onClick={startNew}>
@@ -304,9 +318,15 @@ export default function ReportJobsSection(): React.JSX.Element {
         </div>
         {jobs === null && <div className="st-hint">加载中…</div>}
         {jobs !== null && jobs.length === 0 && (
-          <div className="st-hint">
-            暂无任务。点「新建上报任务」:选来源账号与范围 → 填目标库连接 →
-            设调度,保存后按调度自动增量上报。
+          <div className="st-empty">
+            <div className="st-empty-glyph" aria-hidden="true">
+              ＋
+            </div>
+            <div className="st-empty-title">还没有上报任务</div>
+            <div className="st-empty-desc">
+              点「新建上报任务」：选来源账号与范围 → 填目标库连接 →
+              设调度，保存后按调度自动增量上报。
+            </div>
           </div>
         )}
         <div className="rp-job-list">
@@ -376,13 +396,21 @@ export default function ReportJobsSection(): React.JSX.Element {
                     立即执行
                   </button>
                 )}
-                <button type="button" className="ui-btn is-sm" onClick={() => void openHistory(j)}>
+                <button
+                  type="button"
+                  className="ui-btn is-ghost is-sm"
+                  onClick={() => void openHistory(j)}
+                >
                   历史
                 </button>
-                <button type="button" className="ui-btn is-sm" onClick={() => editJob(j)}>
+                <button type="button" className="ui-btn is-ghost is-sm" onClick={() => editJob(j)}>
                   编辑
                 </button>
-                <button type="button" className="ui-btn is-sm" onClick={() => void toggle(j)}>
+                <button
+                  type="button"
+                  className="ui-btn is-ghost is-sm"
+                  onClick={() => void toggle(j)}
+                >
                   {j.enabled ? '停用' : '启用'}
                 </button>
                 <button

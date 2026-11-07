@@ -1,68 +1,68 @@
 /* 导出页样式。
  *
- * 控件外观（按钮/输入/页签/胶囊/链接）已迁到全局 ui-*（见 assets/base.css），
- * 这里只保留本页**布局**（宽度、flex、栅格）—— 别再把按钮长什么样写第二份。
+ * 控件外观（按钮/输入/页签/分段/徽标/链接）全部来自全局 ui-*（见 assets/base.css），
+ * 这里只保留本页**布局**（宽度、flex、栅格）与页面级状态色（全部走 token）。
  *
- * 2026-09 排版调整：字号归一到 assets/base.css 的 --fs-* 六档；左右两栏从 5:4 改成 1.5:1
- * （会话列表是主战场，设置项是辅助）；导出设置栏 sticky 粘住，滚列表时主按钮不会跑出视野；
- * 分组之间用一条淡分隔线，不再只靠间距暗示。 */
+ * 结构：左（会话选择，窗口化长列表）+ 右（时间范围/格式/输出目录/导出摘要/主按钮）。
+ * 深色赛博朋克口径：分区靠 hairline 与「读数」层级，不靠加框套框；主按钮全宽、唯一发光。
+ */
+
+/* sticky 设置栏同上：滚动容器顶部无 padding，内边距记在页标题上 */
+.page-scroll.exp-page {
+  padding-top: 0;
+}
 
 .exp-page {
   max-width: 1520px;
 }
 
+.exp-page > .page-title {
+  margin-top: 22px;
+}
+
 .exp-tabs {
   display: flex;
-  gap: 8px;
-  margin: 4px 0 var(--sp-4);
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0 var(--sp-4);
 }
 
-.exp-empty {
-  color: var(--text-3);
-  font-size: var(--fs-md);
-  padding: var(--sp-6) var(--sp-2);
-  text-align: center;
-}
-
-/* 未连接空态：给出口（能直接跳去设置），而不是只说"请先去设置" */
+/* 未连接空态：给出口（能直接跳去设置），而不是只说「请先去设置」 */
 .exp-empty-state {
+  padding: 0;
+}
+
+.exp-loading {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 36px 20px;
-  text-align: center;
-}
-
-.exp-empty-title {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  color: var(--text-1);
-}
-
-.exp-empty-desc {
-  font-size: var(--fs-sm);
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-4);
+  font-size: var(--fs-md);
   color: var(--text-3);
-  max-width: 420px;
-  line-height: 1.7;
+}
+
+/* ui-empty 的本页收紧版（左栏列表里空间有限） */
+.exp-empty {
+  padding: var(--sp-5) var(--sp-3);
 }
 
 .exp-chat-layout {
   display: grid;
-  grid-template-columns: minmax(360px, 3fr) minmax(300px, 2fr);
+  grid-template-columns: minmax(360px, 3fr) minmax(320px, 2fr);
   gap: var(--sp-4);
   align-items: start;
 }
 
-
+/* ── 左：会话选择 ── */
 .exp-sessions {
   padding: var(--sp-3);
 }
 
 .exp-toolbar {
   display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
 }
 
 /* 只留布局：撑满工具栏（外观由全局 ui-input 提供） */
@@ -81,13 +81,18 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sp-3);
-  font-size: var(--fs-sm);
-  color: var(--text-2);
   padding: var(--sp-1) 2px var(--sp-2);
   border-bottom: 1px solid var(--border-light);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
 }
 
-/* 已选计数：列表头的第二主角（会话多时这是唯一能确认"我选了哪些"的地方） */
+.exp-head-n {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+}
+
+/* 已选计数：列表头的第二主角（会话多时这是唯一能确认「我选了哪些」的地方） */
 .exp-sess-count {
   margin-left: auto;
   color: var(--text-3);
@@ -96,6 +101,7 @@
 .exp-sess-count b {
   color: var(--brand);
   font-size: var(--fs-md);
+  font-weight: 600;
 }
 
 .exp-check {
@@ -105,9 +111,16 @@
   cursor: pointer;
 }
 
+.exp-sessions input[type='checkbox'] {
+  accent-color: var(--brand);
+  cursor: pointer;
+  margin: 0;
+}
+
 /* 列表自带滚动（窗口化按这里的可视高度算切片）：跟着视口走，一屏尽量多列几行 */
 .exp-sess-list {
-  max-height: clamp(300px, calc(100vh - 300px), 760px);
+  max-height: clamp(280px, calc(100vh - 340px), 720px);
+  margin-top: 2px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -115,32 +128,52 @@
 .exp-sess-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 6px;
+  gap: var(--sp-2);
   /* 高度**必须固定**且与 ExportPage 的 ROW_H 一致：列表窗口化按行高算渲染切片，
      两处对不上会出现行错位 / 滚动条长度不对。 */
   height: 46px;
   box-sizing: border-box;
+  padding: 0 var(--sp-2);
+  border-left: 2px solid transparent;
   border-radius: var(--r-sm);
   cursor: pointer;
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease;
 }
 
 .exp-sess-row:hover {
   background: var(--bg-hover);
 }
 
+/* 选中行 = 淡青底 + 左缘品牌线（与客户表/页签同一种选中表达） */
 .exp-sess-row.is-on {
-  background: var(--brand-soft);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  border-left-color: var(--brand);
+}
+
+.exp-sess-row.is-on:hover {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
 }
 
 .exp-sess-main {
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 1px;
 }
 
 .exp-sess-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
   font-size: var(--fs-md);
+  color: var(--text-1);
+}
+
+.exp-sess-name-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -148,149 +181,310 @@
 
 .exp-sess-sub {
   font-size: var(--fs-xs);
-  color: var(--text-3);
+  color: var(--text-4);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 会话类型标签：外观复用 ui-chip（is-line），这里只收紧行高 */
 .exp-tag {
-  font-style: normal;
-  font-size: var(--fs-xs);
-  line-height: 1.5;
+  flex: none;
   padding: 0 5px;
-  margin-right: 5px;
-  border-radius: var(--r-sm);
-  background: var(--info-soft);
+  line-height: 15px;
   color: var(--info);
+  font-style: normal;
 }
 
-/* 设置栏：粘住，列表再长主按钮也在视野里 */
+/* ── 右：选项与执行 ── */
 .exp-opts {
   padding: var(--sp-4);
   position: sticky;
   top: 0;
 }
 
-/* 分组标题：第 2 组起加一条淡分隔线 —— 分组靠线，不靠大间距 */
-.exp-section-title {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-3);
-  margin: var(--sp-4) 0 var(--sp-2);
-}
-
-.exp-section-title:first-child {
-  margin-top: 0;
-}
-
-.exp-opts > .exp-section-title ~ .exp-section-title {
-  border-top: 1px solid var(--border-light);
-  padding-top: var(--sp-3);
-}
-
-.exp-pill-row {
+.exp-section {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* 分组之间用一条淡分隔线，不再只靠间距暗示 */
+.exp-section + .exp-section {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-light);
+}
+
+.exp-section-title {
+  margin: 0;
+}
+
+/* 分段控件撑满设置栏，5 个选项等宽，读数一眼扫完 */
+.exp-seg {
+  display: flex;
+  width: 100%;
+}
+
+.exp-seg .ui-seg-btn {
+  flex: 1;
+  padding: 5px 6px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .exp-date-row {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  margin-top: var(--sp-2);
+}
+
+.exp-date-row .exp-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.exp-date-sep {
+  flex: none;
   font-size: var(--fs-sm);
   color: var(--text-3);
+}
+
+.exp-hint {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  line-height: 1.6;
 }
 
 .exp-folder-row {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  margin: var(--sp-2) 0 var(--sp-4);
 }
 
+/* 输出目录：凹槽底 + 冷描边，路径按等宽显示（深色下是一条「终端」式读数） */
 .exp-folder {
   flex: 1;
   min-width: 0;
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  background: var(--bg);
-  border-radius: var(--r-sm);
   padding: 6px 9px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 导出摘要：点主按钮前先把「选了多少 / 范围 / 格式 / 去哪」核对一遍 */
+.exp-summary {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) calc(var(--sp-3) + 6px);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.exp-summary::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--brand-gradient);
+}
+
+.exp-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.exp-summary-main {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.exp-summary-n {
+  font-size: var(--fs-kpi);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-strong);
+}
+
+.exp-summary-text {
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+
+.exp-summary-sub {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 导出主按钮：全宽、整页唯一发光动作 */
 .exp-go {
   width: 100%;
-  margin-top: var(--sp-2);
-  height: 36px;
+  height: 38px;
+  margin-top: var(--sp-3);
   font-size: var(--fs-md);
 }
 
-/* 辅助说明：一行细字，不要抢主按钮的注意力 */
-.exp-hint {
-  font-size: var(--fs-xs);
-  color: var(--text-3);
-  line-height: 1.6;
-  margin: var(--sp-2) 0 var(--sp-1);
+.exp-btn {
+  flex: none;
 }
 
+/* ── 进度 ── */
 .exp-progress {
-  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
 }
 
-/* 进度行：左文右「取消导出」（导出几十个会话时用户需要能中途停下） */
 .exp-progress-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 6px;
+  gap: var(--sp-2);
 }
 
 .exp-progress-text {
+  min-width: 0;
   font-size: var(--fs-sm);
   color: var(--text-2);
-  min-width: 0;
 }
 
 .exp-bar {
   height: 6px;
-  border-radius: 3px;
-  background: var(--border-light);
+  border-radius: var(--r-pill);
+  background: var(--bg-hover);
   overflow: hidden;
 }
 
 .exp-bar-in {
   height: 100%;
-  background: var(--brand);
+  background: var(--brand-gradient);
   transition: width 0.3s ease;
 }
 
+/* ── 结果 ── */
 .exp-result {
-  margin-top: var(--sp-4);
-  font-size: var(--fs-sm);
-  color: var(--success-strong);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--success-line);
+  border-radius: var(--r-md);
+  background: var(--success-soft);
+}
+
+.exp-result-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
 }
 
 .exp-result-title {
+  font-size: var(--fs-sm);
   font-weight: 600;
-  margin-bottom: 6px;
+  color: var(--success-strong);
+}
+
+.exp-result-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.exp-result-file {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.exp-result-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exp-result-n {
+  flex: none;
+  color: var(--text-3);
+}
+
+.exp-result .ui-btn {
+  align-self: flex-start;
+}
+
+.exp-error {
+  margin-top: var(--sp-2);
+}
+
+/* ── 业务数据 ── */
+.exp-biz {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: 880px;
+}
+
+.exp-biz .exp-folder-row,
+.exp-biz .exp-go {
+  margin-top: var(--sp-2);
+}
+
+.exp-biz-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0;
+}
+
+.exp-biz-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-md);
+  color: var(--text-2);
+}
+
+.exp-biz-tag {
+  flex: none;
+  color: var(--brand);
+}
+
+.exp-biz-text {
+  min-width: 0;
 }
 
 /* ── 窄窗口（≤1080，含 1366 屏左右分屏）──
  * 两栏并排会让会话列表与设置各只剩 300px 出头，改成上下单栏；
- * 设置栏不再 sticky（页面本来就短，跟着滚更自然）。
- * 追加在文件末尾：同优先级下只有写在后面才压得住上面的 .exp-opts{position:sticky}。 */
+ * 设置栏不再 sticky（页面本来就短，跟着滚更自然）。 */
 @media (max-width: 1080px) {
   .exp-chat-layout {
     grid-template-columns: minmax(0, 1fr);
   }
+
   .exp-opts {
     position: static;
   }

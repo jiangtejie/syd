@@ -18,6 +18,18 @@ import { useAsyncEffect } from '../lib/useAsyncEffect'
 /** 每页条数选项 */
 const PAGE_SIZES = [10, 20, 50, 100]
 
+/**
+ * 状态标签 → ui-chip 语气。
+ * 列表与抽屉共用同一套映射：同一个标签在任何位置颜色一致，颜色本身就能读状态。
+ * （超时未回=红 / 待回复=琥珀 / 近期互动=绿 / 其余=中性）
+ */
+function statusTone(tag: string): string {
+  if (tag === '超时未回') return 'is-bad is-line'
+  if (tag === '待回复') return 'is-warn is-line'
+  if (tag === '今日互动' || tag === '近7日互动') return 'is-ok is-line'
+  return ''
+}
+
 /** 真实头像：会话自带 URL 优先，失败/缺失时经 IPC 取本地 head_image，最后回退首字块 */
 function CustomerAvatar({
   profile,
@@ -133,165 +145,170 @@ function ProfileDrawer({
 
   return (
     <div className="cu-drawer-mask" onClick={onClose}>
-      <div className="cu-drawer" onClick={(e) => e.stopPropagation()}>
-        <div className="cu-drawer-head">
+      <aside className="cu-drawer" onClick={(e) => e.stopPropagation()}>
+        <header className="cu-drawer-head">
           <CustomerAvatar profile={customer} size="lg" />
           <div className="cu-drawer-title">
             <div className="cu-name-row">
               <span className="cu-name">{customer.name}</span>
-              <span className={`ui-chip is-sm ${customer.isGroup ? 'is-solid' : 'is-ok is-line'}`}>
+              <span className={`ui-chip is-sm${customer.isGroup ? ' is-line cu-kind-group' : ''}`}>
                 {customer.isGroup ? '群聊' : '个人'}
               </span>
               {customer.unreadCount > 0 && (
-                <span className="cu-unread">{customer.unreadCount}</span>
+                <span className="cu-unread ui-num">{customer.unreadCount}</span>
               )}
             </div>
-            <div className="cu-wxid">{customer.wxid}</div>
-          </div>
-          <button type="button" className="cu-drawer-close" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-
-        <div className="cu-section">
-          <div className="cu-section-title">状态标签（微信数据实时判断）</div>
-          <div className="cu-tags">
-            {customer.statusTags.map((t) => (
-              <span key={t} className="ui-chip is-sm is-ok is-line">
-                {t}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div className="cu-section">
-          <div className="cu-section-title">资料</div>
-          <div className="cu-kv">
-            <span>备注</span>
-            <span>{customer.remark || '—'}</span>
-          </div>
-          <div className="cu-kv">
-            <span>微信昵称</span>
-            <span>{customer.nickname || '—'}</span>
-          </div>
-        </div>
-
-        <div className="cu-section">
-          <div className="cu-section-title">活跃情况</div>
-          <div className="cu-kv">
-            <span>最近活跃</span>
-            <span>{formatSessionTime(customer.lastActive)}</span>
-          </div>
-          <div className="cu-kv">
-            <span>未读消息</span>
-            <span>{customer.unreadCount}</span>
-          </div>
-          <div className="cu-kv">
-            <span>最近消息</span>
-            <span className="cu-summary-cell">{customer.summary || '—'}</span>
-          </div>
-        </div>
-
-        <div className="cu-section">
-          <div className="cu-section-title">客户档案（持久，重启不丢）</div>
-          <div className="cu-kv">
-            <span>建档时间</span>
-            <span>{customer.firstSeenAt ? formatSessionTime(customer.firstSeenAt) : '未建档'}</span>
-          </div>
-          <div className="cu-kv">
-            <span>来源</span>
-            <input
-              className="ui-input"
-              value={source}
-              disabled={busy}
-              placeholder={'如：抖音探店视频 / 门店扫码 / 老客介绍'}
-              onChange={(e) => setSource(e.target.value)}
-            />
-          </div>
-          <div className="cu-kv">
-            <span>内部备注</span>
-            <textarea
-              className="ui-textarea"
-              rows={2}
-              value={note}
-              disabled={busy}
-              placeholder={'大客户 / 账期客户 / 慎报价…（微信备注里放不下这些）'}
-              onChange={(e) => setNote(e.target.value)}
-            />
+            <div className="cu-wxid ui-num">{customer.wxid}</div>
           </div>
           <button
             type="button"
-            className="ui-btn is-primary"
-            disabled={busy || (source === customer.source && note === customer.note)}
-            onClick={() => void saveFields()}
+            className="ui-btn is-ghost is-sm cu-drawer-close"
+            onClick={onClose}
+            aria-label="关闭客户画像"
           >
-            {busy ? '保存中…' : '保存来源与备注'}
+            ✕
           </button>
+        </header>
 
-          <div className="cu-section-title" style={{ marginTop: 12 }}>
-            人工标签（{customer.manualTags.length}）
-          </div>
-          <div className="cu-tags">
-            {customer.manualTags.length === 0 && (
-              <span className="cu-hint-inline">还没有人工标签</span>
-            )}
-            {customer.manualTags.map((t) => (
-              <span key={t} className="ui-chip is-sm is-warn">
-                {t}
-                <button
-                  type="button"
-                  title={'删除标签'}
-                  style={{
-                    marginLeft: 6,
-                    background: 'none',
-                    border: 0,
-                    cursor: 'pointer',
-                    color: 'inherit'
-                  }}
-                  onClick={() => void removeTag(t)}
-                >
-                  ✕
-                </button>
+        <div className="cu-drawer-body">
+          <section className="cu-section">
+            <div className="ui-label cu-section-title">状态标签</div>
+            <div className="cu-tags">
+              {customer.statusTags.map((t) => (
+                <span key={t} className={`ui-chip is-sm ${statusTone(t)}`}>
+                  {t}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          <section className="cu-section">
+            <div className="ui-label cu-section-title">资料</div>
+            <div className="cu-kv">
+              <span>备注</span>
+              <span>{customer.remark || '—'}</span>
+            </div>
+            <div className="cu-kv">
+              <span>微信昵称</span>
+              <span>{customer.nickname || '—'}</span>
+            </div>
+          </section>
+
+          <section className="cu-section">
+            <div className="ui-label cu-section-title">活跃情况</div>
+            <div className="cu-kv">
+              <span>最近活跃</span>
+              <span className="ui-num">{formatSessionTime(customer.lastActive)}</span>
+            </div>
+            <div className="cu-kv">
+              <span>未读消息</span>
+              <span className="ui-num">{customer.unreadCount}</span>
+            </div>
+            <div className="cu-kv cu-kv-block">
+              <span>最近消息</span>
+              <span className="cu-summary-cell">{customer.summary || '—'}</span>
+            </div>
+          </section>
+
+          <section className="cu-section">
+            <div className="ui-label cu-section-title">客户档案</div>
+            <div className="cu-kv">
+              <span>建档时间</span>
+              <span className="ui-num">
+                {customer.firstSeenAt ? formatSessionTime(customer.firstSeenAt) : '未建档'}
               </span>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
-              className="ui-input"
-              value={newTag}
-              disabled={busy}
-              placeholder={'打一个标签（回车添加）'}
-              onChange={(e) => setNewTag(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void addTag()
-              }}
-            />
+            </div>
+            <label className="cu-field">
+              <span>来源</span>
+              <input
+                className="ui-input"
+                value={source}
+                disabled={busy}
+                placeholder={'如：抖音探店视频 / 门店扫码 / 老客介绍'}
+                onChange={(e) => setSource(e.target.value)}
+              />
+            </label>
+            <label className="cu-field">
+              <span>内部备注</span>
+              <textarea
+                className="ui-textarea"
+                rows={2}
+                value={note}
+                disabled={busy}
+                placeholder={'大客户 / 账期客户 / 慎报价…（微信备注里放不下这些）'}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </label>
             <button
               type="button"
-              className="ui-btn"
-              disabled={busy || newTag.trim() === ''}
-              onClick={() => void addTag()}
+              className="ui-btn is-primary cu-save"
+              disabled={busy || (source === customer.source && note === customer.note)}
+              onClick={() => void saveFields()}
             >
-              添加
+              {busy ? '保存中…' : '保存来源与备注'}
             </button>
-          </div>
-          <div className="cu-drawer-hint">
-            来源与标签是「触达目标筛选」和「营销归因」的依据 —— 微信里没有这两个字段，只有这里有。
-          </div>
+
+            <div className="ui-label cu-section-title cu-sub-title">
+              人工标签 <span className="ui-num">{customer.manualTags.length}</span>
+            </div>
+            <div className="cu-tags">
+              {customer.manualTags.length === 0 && (
+                <span className="cu-hint-inline">还没有人工标签</span>
+              )}
+              {customer.manualTags.map((t) => (
+                <span key={t} className="ui-chip is-sm is-warn cu-manual-tag">
+                  {t}
+                  <button
+                    type="button"
+                    title={'删除标签'}
+                    className="cu-tag-x"
+                    onClick={() => void removeTag(t)}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="cu-tag-add">
+              <input
+                className="ui-input"
+                value={newTag}
+                disabled={busy}
+                placeholder={'打一个标签（回车添加）'}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void addTag()
+                }}
+              />
+              <button
+                type="button"
+                className="ui-btn"
+                disabled={busy || newTag.trim() === ''}
+                onClick={() => void addTag()}
+              >
+                添加
+              </button>
+            </div>
+            <div className="cu-drawer-hint">
+              来源与标签是「触达目标筛选」和「营销归因」的依据 —— 微信里没有这两个字段，只有这里有。
+            </div>
+          </section>
         </div>
 
-        <button
-          type="button"
-          className="cu-goto"
-          onClick={() => {
-            onClose()
-            gotoSession(customer.wxid)
-          }}
-        >
-          进入会话
-        </button>
-        <div className="cu-drawer-hint">标签基于微信会话数据（未读/时间/类型）实时判断</div>
-      </div>
+        <footer className="cu-drawer-foot">
+          <button
+            type="button"
+            className="ui-btn is-primary cu-goto"
+            onClick={() => {
+              onClose()
+              gotoSession(customer.wxid)
+            }}
+          >
+            进入会话
+          </button>
+          <div className="cu-drawer-hint">标签基于微信会话数据（未读/时间/类型）实时判断</div>
+        </footer>
+      </aside>
     </div>
   )
 }
@@ -484,45 +501,77 @@ function CustomersPage(): React.JSX.Element {
     )
 
   return (
-    <div className="page-scroll">
-      {/* 统计并进页头右侧：原来单独占一行「共 24 位客户 · 待回复 7 位」，而下面筛选胶囊上
-          本来就带 待回复 7 / 超时未回 5 / 今日互动 24 这些数字 —— 同一批数字说两遍，白占 24px。 */}
-      <div className={'cu-head'}>
-        <h2 className="page-title">客户</h2>
-        <span className={'cu-head-meta'}>
-          共 {customers.length} 位客户 · 标签由微信数据实时判断
-        </span>
+    <div className="page-scroll cu-page">
+      {/* 页头：左侧标题 + 右侧 HUD 读数。统计只出现在这里与筛选胶囊上，不另起一行。 */}
+      <div className="cu-head">
+        <div className="cu-head-main">
+          <h2 className="page-title">客户</h2>
+          <span className="cu-head-meta">标签由微信数据实时判断 · 档案随会话自动并档</span>
+        </div>
+        <div className="cu-hud" aria-label="客户概览">
+          <div className="cu-hud-item">
+            <span className="cu-hud-k">客户总数</span>
+            <span className="cu-hud-v ui-num">{customers.length}</span>
+          </div>
+          <div className="cu-hud-item">
+            <span className="cu-hud-k">待回复</span>
+            <span className="cu-hud-v ui-num cu-hud-warn">{tagCounts.get('待回复') ?? 0}</span>
+          </div>
+          <div className="cu-hud-item">
+            <span className="cu-hud-k">群聊</span>
+            <span className="cu-hud-v ui-num">{groupCount}</span>
+          </div>
+          <div className="cu-hud-item">
+            <span className="cu-hud-k">单聊</span>
+            <span className="cu-hud-v ui-num">{customers.length - groupCount}</span>
+          </div>
+        </div>
       </div>
 
       <div className="cu-toolbar">
-        <input
-          className="cu-search"
-          placeholder="搜索客户名 / 备注 / wxid / 标签"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-        />
+        <div className="cu-search-wrap">
+          <svg
+            className="cu-search-icon"
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M10.5 10.5 14 14" stroke="currentColor" strokeWidth="1.4" />
+          </svg>
+          <input
+            className="ui-input cu-search"
+            placeholder="搜索客户名 / 备注 / wxid / 标签"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+        </div>
         <div className="cu-filters">
           <button
             type="button"
-            className={`cu-filter${effectiveTag === null ? ' is-active' : ''}`}
+            className={`ui-pill cu-filter${effectiveTag === null ? ' is-on' : ''}`}
             onClick={() => setTagFilter(null)}
           >
             全部
+            <span className="cu-filter-n ui-num">{customers.length}</span>
           </button>
           {tagOptions.map((t) => (
             <button
               key={t}
               type="button"
-              className={`cu-filter${effectiveTag === t ? ' is-active' : ''}`}
+              className={`ui-pill cu-filter${effectiveTag === t ? ' is-on' : ''}`}
               onClick={() => setTagFilter(effectiveTag === t ? null : t)}
             >
-              {t} {tagCounts.get(t)}
+              {t}
+              <span className="cu-filter-n ui-num">{tagCounts.get(t)}</span>
             </button>
           ))}
           {hasFilters && (
             <button
               type="button"
-              className="cu-filter cu-filter-clear"
+              className="ui-btn is-ghost is-sm cu-filter-clear"
               onClick={() => {
                 setKeyword('')
                 setTagFilter(null)
@@ -536,208 +585,264 @@ function CustomersPage(): React.JSX.Element {
 
       {/* 数字员工：群级自动回复的「批量」管理入口（总开关/话术/决策记录在「值班」页，两处是同一份状态） */}
       <div className="cu-agentbar">
-        <span className="cu-agent-title">数字员工</span>
-        {/* 状态压成一行：原来在窄屏折成两行，把整条工具栏撑高一半；完整口径放 title */}
-        <span
-          className="cu-agent-meta"
-          title={
-            '全局默认 ' +
-            (defaultOn ? '开' : '关') +
-            ' · ' +
-            (defaultMode === 'shadow' ? '影子模式（只记录不发送）' : '正式模式') +
-            ' · 群 ' +
-            String(groupCount) +
-            ' 个（已开 ' +
-            String(agentOnCount) +
-            '）· 单独设置 ' +
-            String(overrideCount) +
-            ' 个'
-          }
-        >
-          全局默认 {defaultOn ? '开' : '关'} · {defaultMode === 'shadow' ? '影子模式' : '正式模式'}{' '}
-          · 群 {groupCount} 个（已开 {agentOnCount}）· 单独设置 {overrideCount} 个
-        </span>
-        <button
-          type="button"
-          className="cu-agent-goto"
-          onClick={() => gotoPage('duty')}
-          title="这里管的是「按群批量开关」；总开关、话术库与决策记录在「值班」页（同一份状态）"
-        >
-          话术与决策记录 →
-        </button>
-        <div className="cu-agent-filters">
-          {(
-            [
-              ['all', '全部'],
-              ['group', '仅群聊'],
-              ['on', '自动回复开'],
-              ['off', '自动回复关']
-            ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              className={`cu-filter${agentFilter === k ? ' is-active' : ''}`}
-              onClick={() => setAgentFilter(k)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <label className="cu-agent-pick">
-          <input
-            type="checkbox"
-            checked={groupItems.length > 0 && pickedOnPage === groupItems.length}
-            onChange={(e) => {
-              const on = e.target.checked
-              const names = groupItems.map((c) => c.wxid)
-              setPickedGroups((p) =>
-                on ? [...new Set([...p, ...names])] : p.filter((x) => !names.includes(x))
-              )
-            }}
-          />
-          选中本页群
-        </label>
-        <span className="cu-agent-picked">已选 {pickedGroups.length}</span>
-        <button
-          type="button"
-          className="cu-filter"
-          disabled={savingScope || pickedGroups.length === 0}
-          onClick={() => void applyScope(pickedGroups, { enabled: true })}
-        >
-          批量开启
-        </button>
-        <button
-          type="button"
-          className="cu-filter"
-          disabled={savingScope || pickedGroups.length === 0}
-          onClick={() => void applyScope(pickedGroups, { enabled: false })}
-        >
-          批量关闭
-        </button>
-        <button
-          type="button"
-          className="cu-filter"
-          disabled={savingScope || pickedGroups.length === 0}
-          onClick={() => void applyScope(pickedGroups, { reset: true })}
-          title="删掉这些群的单独设置，跟随全局默认"
-        >
-          跟随默认
-        </button>
-        {pickedGroups.length > 0 && (
+        <div className="cu-agent-head">
+          <span className="ui-label">数字员工</span>
+          {/* 状态压成一行：完整口径放 title */}
+          <span
+            className="cu-agent-meta"
+            title={
+              '全局默认 ' +
+              (defaultOn ? '开' : '关') +
+              ' · ' +
+              (defaultMode === 'shadow' ? '影子模式（只记录不发送）' : '正式模式') +
+              ' · 群 ' +
+              String(groupCount) +
+              ' 个（已开 ' +
+              String(agentOnCount) +
+              '）· 单独设置 ' +
+              String(overrideCount) +
+              ' 个'
+            }
+          >
+            全局默认 {defaultOn ? '开' : '关'} ·{' '}
+            {defaultMode === 'shadow' ? '影子模式' : '正式模式'} · 已开{' '}
+            <b className="ui-num">{agentOnCount}</b>/<b className="ui-num">{groupCount}</b> 个群 ·
+            单独设置 <b className="ui-num">{overrideCount}</b> 个
+          </span>
           <button
             type="button"
-            className="cu-filter cu-filter-clear"
-            onClick={() => setPickedGroups([])}
+            className="ui-link cu-agent-goto"
+            onClick={() => gotoPage('duty')}
+            title="这里管的是「按群批量开关」；总开关、话术库与决策记录在「值班」页（同一份状态）"
           >
-            清空选择
+            话术与决策记录 →
           </button>
-        )}
+        </div>
+        <div className="cu-agent-actions">
+          <div className="ui-seg cu-agent-seg" role="group" aria-label="按自动回复筛选客户">
+            {(
+              [
+                ['all', '全部'],
+                ['group', '仅群聊'],
+                ['on', '自动回复开'],
+                ['off', '自动回复关']
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                className={`ui-seg-btn${agentFilter === k ? ' is-on' : ''}`}
+                onClick={() => setAgentFilter(k)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="cu-agent-gap" />
+          <label className="cu-agent-pick">
+            <input
+              type="checkbox"
+              checked={groupItems.length > 0 && pickedOnPage === groupItems.length}
+              onChange={(e) => {
+                const on = e.target.checked
+                const names = groupItems.map((c) => c.wxid)
+                setPickedGroups((p) =>
+                  on ? [...new Set([...p, ...names])] : p.filter((x) => !names.includes(x))
+                )
+              }}
+            />
+            选中本页群
+          </label>
+          <span className="cu-agent-picked">
+            已选 <b className="ui-num">{pickedGroups.length}</b>
+          </span>
+          <button
+            type="button"
+            className="ui-btn is-sm cu-agent-batch"
+            disabled={savingScope || pickedGroups.length === 0}
+            onClick={() => void applyScope(pickedGroups, { enabled: true })}
+          >
+            批量开启
+          </button>
+          <button
+            type="button"
+            className="ui-btn is-sm cu-agent-batch"
+            disabled={savingScope || pickedGroups.length === 0}
+            onClick={() => void applyScope(pickedGroups, { enabled: false })}
+          >
+            批量关闭
+          </button>
+          <button
+            type="button"
+            className="ui-btn is-sm is-ghost cu-agent-batch"
+            disabled={savingScope || pickedGroups.length === 0}
+            onClick={() => void applyScope(pickedGroups, { reset: true })}
+            title="删掉这些群的单独设置，跟随全局默认"
+          >
+            跟随默认
+          </button>
+          {pickedGroups.length > 0 && (
+            <button
+              type="button"
+              className="ui-btn is-sm is-ghost cu-agent-batch"
+              onClick={() => setPickedGroups([])}
+            >
+              清空选择
+            </button>
+          )}
+        </div>
       </div>
       <div className="cu-list page-card">
         <div className="cu-row cu-row-head">
-          <span />
+          <span className="cu-cell-pick" />
           <span>客户</span>
           <span>类型</span>
           <span>状态标签</span>
           <span>最近消息</span>
-          <span>最近活跃</span>
-          <span>未读</span>
+          <span className="cu-th-num">最近活跃</span>
+          <span className="cu-th-num">未读</span>
           <span>数字员工</span>
         </div>
-        {pageItems.map((c) => (
-          <div
-            key={c.wxid}
-            className="cu-row"
-            role="button"
-            tabIndex={0}
-            onClick={() => setSelectedId(c.wxid)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                setSelectedId(c.wxid)
-              }
-            }}
-          >
-            <span className="cu-cell-pick" onClick={(e) => e.stopPropagation()}>
-              {c.isGroup ? (
-                <input
-                  type="checkbox"
-                  checked={pickedGroups.includes(c.wxid)}
-                  onChange={() => togglePick(c.wxid)}
-                  aria-label={`选择 ${c.name}`}
-                />
-              ) : (
-                <span className="cu-muted">—</span>
-              )}
-            </span>
-            <span className="cu-cell-name">
-              <CustomerAvatar profile={c} />
-              <span className="cu-name-stack">
-                <span className="cu-name-text">{c.name}</span>
-                {secondaryLabel(c) && <span className="cu-name-sub">{secondaryLabel(c)}</span>}
+        {pageItems.map((c) => {
+          // 类型标签（群聊/个人）已经在「类型」列里，状态列只展示真正的状态，避免同一行说两遍
+          const statusOnly = c.statusTags.filter((t) => t !== '群聊' && t !== '个人')
+          return (
+            <div
+              key={c.wxid}
+              className={`cu-row${pickedGroups.includes(c.wxid) ? ' is-picked' : ''}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedId(c.wxid)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setSelectedId(c.wxid)
+                }
+              }}
+            >
+              <span className="cu-cell-pick" onClick={(e) => e.stopPropagation()}>
+                {c.isGroup ? (
+                  <input
+                    type="checkbox"
+                    checked={pickedGroups.includes(c.wxid)}
+                    onChange={() => togglePick(c.wxid)}
+                    aria-label={`选择 ${c.name}`}
+                  />
+                ) : (
+                  <span className="cu-muted">—</span>
+                )}
               </span>
-            </span>
-            <span className={`cu-muted cu-cell-kind${c.isGroup ? ' is-group' : ''}`}>
-              {c.isGroup ? '群聊' : '个人'}
-            </span>
-            <span className="cu-cell-tags">
-              {c.statusTags.slice(0, 2).map((t) => (
-                <span key={t} className="ui-chip is-sm is-ok is-line">
-                  {t}
+              <span className="cu-cell-name">
+                <CustomerAvatar profile={c} />
+                <span className="cu-name-stack">
+                  <span className="cu-name-text">{c.name}</span>
+                  {secondaryLabel(c) && <span className="cu-name-sub">{secondaryLabel(c)}</span>}
                 </span>
-              ))}
-              {c.statusTags.length > 2 && (
-                <span className="cu-muted">+{c.statusTags.length - 2}</span>
-              )}
-            </span>
-            <span className="cu-cell-sum">{c.summary || '—'}</span>
-            <span className="cu-muted">{formatSessionTime(c.lastActive)}</span>
-            <span>
-              {c.unreadCount > 0 ? (
-                <span className="cu-unread">{c.unreadCount}</span>
-              ) : (
-                <span className="cu-muted">—</span>
-              )}
-            </span>
-            <span className="cu-cell-agent" onClick={(e) => e.stopPropagation()}>
-              {c.isGroup ? (
-                <button
-                  type="button"
-                  className={`ui-pill cu-agent-toggle${groupOn(c.wxid) ? ' is-on' : ''}`}
-                  title={
-                    groupOn(c.wxid)
-                      ? `自动回复已开启（${(switches[c.wxid]?.mode ?? defaultMode) === 'shadow' ? '影子模式：只记录不发送' : '正式模式'}）—— 点击关闭`
-                      : '自动回复已关闭 —— 点击开启（未单独设置的群跟随全局默认）'
-                  }
-                  onClick={() => void applyScope([c.wxid], { enabled: !groupOn(c.wxid) })}
-                  disabled={savingScope}
+              </span>
+              <span className="cu-cell-kind">
+                <span
+                  className={`ui-chip is-sm cu-kind-chip${c.isGroup ? ' is-line cu-kind-group' : ''}`}
                 >
-                  {groupOn(c.wxid) ? '开' : '关'}
-                  {switches[c.wxid] ? '' : '*'}
-                </button>
-              ) : (
-                <span className="cu-muted">—</span>
-              )}
-            </span>
-          </div>
-        ))}
-        {filtered.length === 0 && (
-          <div className="cu-empty">
-            {hasFilters ? (
-              `没有符合条件${
-                effectiveTag ? `（标签：${effectiveTag}）` : ''
-              }的客户，可点击「清空条件」重新筛选`
-            ) : source === 'empty' ? (
-              <ConnectGuide what="客户列表与他们的档案（来源/备注/标签）" />
-            ) : (
-              '当前账号还没有会话数据'
-            )}
-          </div>
-        )}
+                  {c.isGroup ? '群聊' : '个人'}
+                </span>
+              </span>
+              <span className="cu-cell-tags">
+                {statusOnly.slice(0, 2).map((t) => (
+                  <span key={t} className={`ui-chip is-sm cu-status-chip ${statusTone(t)}`}>
+                    {t}
+                  </span>
+                ))}
+                {statusOnly.length > 2 && (
+                  <span className="cu-muted cu-tag-more">+{statusOnly.length - 2}</span>
+                )}
+                {statusOnly.length === 0 && <span className="cu-muted">—</span>}
+              </span>
+              <span className="cu-cell-sum" title={c.summary || undefined}>
+                {c.summary || '—'}
+              </span>
+              <span className="cu-time ui-num">{formatSessionTime(c.lastActive)}</span>
+              <span className="cu-cell-unread">
+                {c.unreadCount > 0 ? (
+                  <span className="cu-unread ui-num">{c.unreadCount}</span>
+                ) : (
+                  <span className="cu-muted">—</span>
+                )}
+              </span>
+              <span className="cu-cell-agent" onClick={(e) => e.stopPropagation()}>
+                {c.isGroup ? (
+                  <button
+                    type="button"
+                    className={`ui-pill cu-agent-toggle${groupOn(c.wxid) ? ' is-on' : ''}`}
+                    title={
+                      groupOn(c.wxid)
+                        ? `自动回复已开启（${(switches[c.wxid]?.mode ?? defaultMode) === 'shadow' ? '影子模式：只记录不发送' : '正式模式'}）—— 点击关闭`
+                        : '自动回复已关闭 —— 点击开启（未单独设置的群跟随全局默认）'
+                    }
+                    onClick={() => void applyScope([c.wxid], { enabled: !groupOn(c.wxid) })}
+                    disabled={savingScope}
+                  >
+                    {groupOn(c.wxid) ? '开' : '关'}
+                    {switches[c.wxid] ? '' : '*'}
+                  </button>
+                ) : (
+                  <span className="cu-muted">—</span>
+                )}
+              </span>
+            </div>
+          )
+        })}
+        {filtered.length === 0 &&
+          (hasFilters ? (
+            <div className="ui-empty cu-empty">
+              <span className="ui-empty-glyph">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="m13 13 4 4" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+              </span>
+              <div className="ui-empty-title">没有匹配的客户</div>
+              <div className="ui-empty-desc">
+                当前筛选条件{effectiveTag ? `（标签：${effectiveTag}）` : ''}
+                下没有客户，换个标签或清空条件再试。
+              </div>
+              <button
+                type="button"
+                className="ui-btn is-sm"
+                onClick={() => {
+                  setKeyword('')
+                  setTagFilter(null)
+                }}
+              >
+                清空条件
+              </button>
+            </div>
+          ) : source === 'empty' ? (
+            <ConnectGuide what="客户列表与他们的档案（来源/备注/标签）" />
+          ) : (
+            <div className="ui-empty cu-empty">
+              <span className="ui-empty-glyph">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path
+                    d="M3 5.5h14v9H3z"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinejoin="round"
+                  />
+                  <path d="M3 9h14" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+              </span>
+              <div className="ui-empty-title">当前账号还没有会话数据</div>
+              <div className="ui-empty-desc">
+                客户列表由微信会话实时派生：在微信里产生会话后，这里会自动出现客户与状态标签。
+              </div>
+            </div>
+          ))}
         {totalPages > 1 && (
           <div className="cu-pager">
-            <span className="cu-pager-info">共 {filtered.length} 条</span>
+            <span className="cu-pager-info">
+              共 <b className="ui-num">{filtered.length}</b> 条 · 每页{' '}
+              <b className="ui-num">{pageSize}</b> 条
+            </span>
             <div className="cu-pager-ctrl">
               <select
                 className="ui-select cu-pager-select"
@@ -753,18 +858,18 @@ function CustomersPage(): React.JSX.Element {
               </select>
               <button
                 type="button"
-                className="ui-btn cu-pager-btn"
+                className="ui-btn is-sm cu-pager-btn"
                 disabled={curPage <= 1}
                 onClick={() => goPage(curPage - 1)}
               >
                 ‹ 上一页
               </button>
               <span className="cu-pager-now">
-                第 {curPage} / {totalPages} 页
+                第 <b className="ui-num">{curPage}</b> / <b className="ui-num">{totalPages}</b> 页
               </span>
               <button
                 type="button"
-                className="ui-btn cu-pager-btn"
+                className="ui-btn is-sm cu-pager-btn"
                 disabled={curPage >= totalPages}
                 onClick={() => goPage(curPage + 1)}
               >
@@ -783,7 +888,7 @@ function CustomersPage(): React.JSX.Element {
                 />
                 <button
                   type="button"
-                  className="ui-btn cu-pager-btn"
+                  className="ui-btn is-sm cu-pager-btn"
                   disabled={jumpValue === ''}
                   onClick={applyJump}
                 >

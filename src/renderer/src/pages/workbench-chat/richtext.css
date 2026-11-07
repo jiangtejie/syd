@@ -1,28 +1,39 @@
 /* 回复 Markdown（图片/分隔线/表格/任务清单/告警块/链接等）已下沉到
-   公共渲染层 components/chat/rich.css（.md-body），两个 AI 工作台共用同一套排版 */
+   公共渲染层 components/chat/rich.css（.md-body），两个 AI 工作台共用同一套排版；
+   这里只做「本页气泡内」的补充口径，不改公共文件。 */
+
+/* 代码：行内 code 与代码块统一等宽；代码块用凹陷一档的底色，深色下不再是亮块 */
+.wb-bubble .md-body code,
+.wb-bubble .md-body pre code {
+  font-family: var(--font-mono);
+}
+
+.wb-bubble .md-body pre {
+  background: var(--bg-sunken);
+  border-color: var(--border-light);
+}
+
+/* Token/耗时脚注：等宽 + tabular-nums（与 .ui-num 同一口径），右对齐成读数行 */
+.wb-bubble .md-tokens {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 引用来源：气泡内次级块用凹陷底，和正文拉开一层 */
+.wb-bubble .md-ev {
+  background: var(--bg-sunken);
+}
 
 /* ── 新建/重命名会话输入弹窗（Electron 不支持 window.prompt，应用内自绘） ── */
 .wb-prompt-dialog {
   width: min(380px, calc(100vw - 48px));
 }
 
+/* 外观走 .ui-input，这里只补布局 */
 .wb-prompt-input {
   width: 100%;
-  margin-top: 12px;
-  padding: 8px 10px;
-  font-size: var(--fs-md);
-  line-height: 1.5;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-panel);
-  color: var(--text-1);
-  outline: none;
-  user-select: text;
-  box-sizing: border-box;
-}
-
-.wb-prompt-input:focus {
-  border-color: var(--brand);
+  margin-top: var(--sp-3);
 }
 
 /* ── 气泡 hover 复制 ── */
@@ -52,11 +63,11 @@
   color: var(--text-2);
   cursor: pointer;
   opacity: 0;
-  box-shadow: 0 1px 4px rgba(31, 35, 41, 0.08);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--bg) 55%, transparent);
   transition:
-    opacity 0.15s,
-    color 0.15s,
-    border-color 0.15s;
+    opacity 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .wb-msg-anchor.is-editable:hover .wb-msg-edit,
@@ -71,17 +82,17 @@
 
 /* ── 上下文压缩标记(透明化历史变更) ── */
 .wb-compact {
-  margin: 4px 0 8px;
+  margin: var(--sp-2) 0;
 }
 
 .wb-compact-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   width: 100%;
+  padding: 0;
   border: none;
   background: transparent;
-  padding: 0;
   cursor: pointer;
 }
 
@@ -94,19 +105,20 @@
 .wb-compact-label {
   flex: none;
   font-size: var(--fs-xs);
-  color: var(--text-3);
+  color: var(--text-4);
   white-space: nowrap;
+  transition: color 0.15s ease;
 }
 
 .wb-compact-head:hover .wb-compact-label {
-  color: var(--info);
+  color: var(--brand);
 }
 
 .wb-compact-caret {
   flex: none;
   font-size: var(--fs-xs);
-  color: var(--text-3);
-  transition: transform 0.15s;
+  color: var(--text-4);
+  transition: transform 0.15s ease;
 }
 
 .wb-compact-caret.is-open {
@@ -114,11 +126,11 @@
 }
 
 .wb-compact-body {
-  margin-top: 6px;
-  padding: 8px 10px;
-  border-radius: var(--r-sm);
-  background: var(--bg-hover);
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  background: var(--bg-panel);
   font-size: var(--fs-sm);
   line-height: 1.65;
   color: var(--text-2);
@@ -126,46 +138,6 @@
   word-break: break-word;
   user-select: text;
   animation: wb-row-in 0.16s ease-out;
-}
-
-/* ── 常用提问预设 ── */
-.wb-presets {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.wb-presets-tip {
-  flex: none;
-  font-size: var(--fs-xs);
-  line-height: 24px;
-  color: var(--text-3);
-}
-
-.wb-presets-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.wb-preset-btn {
-  font-size: var(--fs-xs);
-  padding: 3px 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  background: var(--bg-panel);
-  color: var(--text-2);
-  cursor: pointer;
-  transition:
-    color 0.15s,
-    border-color 0.15s,
-    background 0.15s;
-}
-
-.wb-preset-btn:hover {
-  color: var(--brand);
-  border-color: var(--brand-line);
-  background: var(--brand-soft);
 }
 
 /* 工具参数/结果、推理过程等内容区允许选中复制(全局 user-select:none 下恢复) */
@@ -177,7 +149,7 @@
 
 /* 富文本组件主题（表格/任务清单/告警块/链接/kbd/mark）已下沉到 components/chat/rich.css */
 
-/* 选区快捷条(追问这段/复制) */
+/* ── 选区快捷条(追问这段/复制)：浮层语言与弹层一致（面板 + 一档描边 + 浮起阴影） ── */
 .wb-quickbar {
   position: fixed;
   transform: translateX(-50%);
@@ -187,24 +159,27 @@
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg-panel);
-  box-shadow: 0 3px 14px rgba(31, 35, 41, 0.16);
+  box-shadow: var(--shadow-pop);
   user-select: none;
 }
 
 .wb-quickbar-btn {
-  border: none;
-  background: transparent;
-  font-size: var(--fs-xs);
-  color: var(--text-2);
-  padding: 4px 9px;
-  border-radius: 6px;
-  cursor: pointer;
-  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 4px 9px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 
 .wb-quickbar-btn:hover {
@@ -214,38 +189,13 @@
 
 /* 回答反馈（有用/没用）在 components/chat/rich.css（.md-feedback / .md-fb-btn） */
 
-/* 错误条内联重试 */
-.wb-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.wb-error-retry {
-  flex: none;
-  border: 1px solid var(--danger-line);
-  background: transparent;
-  color: var(--danger);
-  border-radius: 999px;
-  padding: 2px 10px;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
-}
-
-.wb-error-retry:hover {
-  background: var(--danger-soft);
-}
-
-/* 会话行 ✕ 操作弹层 */
+/* ── 会话行 ✕ 操作弹层 ── */
 .wb-ops-dialog {
   width: min(360px, calc(100vw - 48px));
 }
 
 .wb-ops-name {
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3);
   font-size: var(--fs-sm);
   color: var(--text-3);
   overflow: hidden;
@@ -264,20 +214,20 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 3px;
-  padding: 9px 12px;
-  border: 1px solid var(--border);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-light);
   border-radius: var(--r-md);
   background: transparent;
-  cursor: pointer;
   font-family: inherit;
   text-align: left;
+  cursor: pointer;
   transition:
-    border-color 0.15s,
-    background 0.15s;
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .wb-ops-item:hover {
-  border-color: var(--brand);
+  border-color: var(--brand-line);
   background: var(--brand-soft);
 }
 
@@ -293,10 +243,23 @@
 }
 
 .wb-ops-item.danger b {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .wb-ops-item.danger:hover {
-  border-color: var(--danger);
+  border-color: var(--danger-line);
   background: var(--danger-soft);
+}
+
+/* 触屏下改写按钮常显（其余粗指针规则在 files.css） */
+@media (pointer: coarse) {
+  .wb-msg-edit {
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wb-compact-body {
+    animation: none;
+  }
 }

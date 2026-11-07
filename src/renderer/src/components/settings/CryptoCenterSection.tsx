@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { SettingsCard } from './ui'
+import { SettingsCard, StatusPill } from './ui'
 import { useWorkbenchStore } from '../../stores/workbench'
 import { toast } from '../../stores/toast'
 import type { AccountReadiness, WarmupReport } from '../../../../shared/api'
@@ -10,8 +10,6 @@ import { useAsyncEffect } from '../../lib/useAsyncEffect'
  * 把「密钥 → 库解密 → 图片密钥 → 语音/转写 → 缓存」这条链路的现状一处说清，
  * 并提供一个按钮把它跑通 —— 运营一台闲置机器时不用再逐项试。
  */
-
-const STATUS_ICON: Record<string, string> = { ok: '✅', warn: '⚠️', fail: '❌', skip: '➖' }
 
 function fmtMB(bytes: number): string {
   return bytes >= 1024 * 1024
@@ -83,11 +81,26 @@ function CryptoCenterSection(): React.JSX.Element {
   const steps = readiness?.steps ?? []
   const failed = steps.filter((s) => s.status === 'fail').length
   const warned = steps.filter((s) => s.status === 'warn').length
+  const okCount = steps.filter((s) => s.status === 'ok').length
 
   return (
     <SettingsCard
       title="解密一体化"
       desc="一键接入：定位账号 → 校验并导入你粘贴的密钥 → 推导图片密钥 → 预热解密 → 连接并启动监控；也可随时体检与预热"
+      extra={
+        <StatusPill
+          tone={!wxid ? 'off' : failed > 0 ? 'bad' : warned > 0 ? 'warn' : 'ok'}
+          text={
+            !wxid
+              ? '未选择账号'
+              : failed > 0
+                ? `${failed} 项未通过`
+                : warned > 0
+                  ? `${warned} 项待完善`
+                  : '全部就绪'
+          }
+        />
+      }
     >
       <div className="st-actions">
         <button
@@ -136,22 +149,52 @@ function CryptoCenterSection(): React.JSX.Element {
       </label>
 
       {steps.length > 0 && (
-        <div className="st-hint">
+        <div className="st-probe">
+          <div className="st-probe-head">
+            <span>体检结果</span>
+            <span className="ui-num">
+              {okCount}/{steps.length}
+            </span>
+          </div>
           {steps.map((s) => (
-            <div key={s.id}>
-              {STATUS_ICON[s.status] ?? '•'} {s.label}：{s.detail}
+            <div key={s.id} className={`st-probe-row is-${s.status}`}>
+              <span className="st-probe-icon" aria-hidden="true">
+                {s.status === 'ok'
+                  ? '✓'
+                  : s.status === 'fail'
+                    ? '✗'
+                    : s.status === 'warn'
+                      ? '!'
+                      : '–'}
+              </span>
+              <span className="st-probe-label">{s.label}</span>
+              <span className="st-probe-detail">{s.detail}</span>
             </div>
           ))}
         </div>
       )}
 
       {warmup && (
-        <div className="st-hint">
+        <div className="st-probe">
+          <div className="st-probe-head">
+            <span>预热结果</span>
+            <span className="ui-num">
+              {warmup.items.filter((i) => i.ok).length}/{warmup.items.length}
+            </span>
+          </div>
           {warmup.items.map((i) => (
-            <div key={i.name}>
-              {i.ok ? '✅' : '❌'} {i.name}：{i.ok ? `${i.ms}ms` : i.error}
-              {i.pages ? ` · ${i.pages} 页` : ''}
-              {i.walMerged ? ' · 合并了 WAL' : ''}
+            <div key={i.name} className={`st-probe-row ${i.ok ? 'is-ok' : 'is-fail'}`}>
+              <span className="st-probe-icon" aria-hidden="true">
+                {i.ok ? '✓' : '✗'}
+              </span>
+              <span className="st-probe-label">{i.name}</span>
+              <span className="st-probe-detail">
+                {i.ok
+                  ? [`${i.ms}ms`, i.pages ? `${i.pages} 页` : '', i.walMerged ? '合并了 WAL' : '']
+                      .filter(Boolean)
+                      .join(' · ')
+                  : i.error}
+              </span>
             </div>
           ))}
         </div>

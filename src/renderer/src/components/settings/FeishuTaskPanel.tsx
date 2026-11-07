@@ -31,7 +31,15 @@ export function FeishuTaskPanel(): React.JSX.Element {
       {err && <div className="st-bad">✗ {err}</div>}
       {logs === null && <div className="st-hint">加载中…</div>}
       {logs !== null && logs.length === 0 && (
-        <div className="st-hint">还没有任务。在飞书里对机器人发一句话指令试试。</div>
+        <div className="st-empty is-sm">
+          <div className="st-empty-glyph" aria-hidden="true">
+            ◇
+          </div>
+          <div className="st-empty-title">还没有执行记录</div>
+          <div className="st-empty-desc">
+            在飞书里对机器人发一句指令试试，任务会实时出现在这里。
+          </div>
+        </div>
       )}
       {logs !== null &&
         logs.map((t) => (

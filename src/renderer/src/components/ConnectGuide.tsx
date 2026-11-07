@@ -18,24 +18,30 @@ export function ConnectGuide({
 }): React.JSX.Element {
   const setPage = useWorkbenchStore((s) => s.setPage)
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 10,
-        padding: '28px 20px',
-        textAlign: 'center'
-      }}
-    >
-      <div style={{ fontSize: 15, fontWeight: 600 }}>还没有连接微信数据</div>
-      <div style={{ fontSize: 13, color: 'var(--text-2)', maxWidth: 460, lineHeight: 1.7 }}>
-        {detail ?? `连接后这里会显示${what}。`}
+    <div className="ui-empty">
+      {/* 图标：数据接口（两个插头对接），比"人形占位"更贴「连接数据源」的语义 */}
+      <div className="ui-empty-glyph" aria-hidden="true">
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M9 7V3M15 7V3" />
+          <path d="M6 7h12v3a6 6 0 0 1-6 6v0a6 6 0 0 1-6-6z" />
+          <path d="M12 16v5" />
+        </svg>
       </div>
+      <div className="ui-empty-title">还没有连接微信数据</div>
+      <div className="ui-empty-desc">{detail ?? `连接后这里会显示${what}。`}</div>
       <button type="button" className="ui-btn is-primary" onClick={() => setPage('settings')}>
         去设置导入密钥并连接
       </button>
-      <div style={{ fontSize: 12, color: 'var(--text-3)', maxWidth: 460, lineHeight: 1.7 }}>
+      <div className="ui-empty-hint">
         密钥需要用外部工具从本机微信导出 64 位十六进制串，再粘贴进「设置 → 微信数据与密钥」。
       </div>
     </div>

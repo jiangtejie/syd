@@ -5,27 +5,60 @@
 
 .mon-page {
   max-width: 1760px;
-  padding-bottom: 24px;
+  padding-bottom: var(--sp-6);
 }
 
+/* 标题 + 页签同排：标题左（自带霓虹竖条，全局 .page-title）、页签右 */
 .mon-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.mon-head .page-title {
+  margin: 0;
 }
 
 .mon-tabs {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex: none;
 }
 
-/* 页签外观走全局 ui-tab；这里只留本页尺寸（与导出页 exp-tab 同一手法） */
+/* 页签外观走全局 ui-tab；这里只留本页尺寸与 HUD 序号 */
 .mon-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
   font-size: var(--fs-sm);
   padding: 5px 14px;
+}
+
+.mon-tab-no {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  letter-spacing: 0.04em;
+  transition: color 0.16s ease;
+}
+
+.mon-tab:hover .mon-tab-no {
+  color: var(--text-2);
+}
+
+.mon-tab.is-active .mon-tab-no {
+  color: var(--brand);
+}
+
+/* 说明文案：压到辅助字号，和标题/动作条拉开层级 */
+.mon-subtitle {
+  margin: var(--sp-2) 0 var(--sp-4);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--text-3);
+  max-width: 96ch;
 }
 
 /* 面包板容器：不可见的作用域钩子，避免与 .db-panel(卡片样式) 撞名 */
@@ -35,7 +68,10 @@
 }
 
 .mon-loading {
-  padding: 24px 8px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-6) var(--sp-2);
   font-size: var(--fs-md);
   color: var(--text-3);
 }

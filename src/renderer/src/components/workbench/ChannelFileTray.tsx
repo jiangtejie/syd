@@ -25,6 +25,56 @@ interface FileAccount {
   name: string
 }
 
+/** 线性描边图标：与左侧导航同一套 feather 风格，跟随 currentColor */
+function TrayIcon(): React.JSX.Element {
+  return (
+    <svg
+      width={14}
+      height={14}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
+      <path d="M8 13.5h8" />
+    </svg>
+  )
+}
+
+function FileKindIcon({ image }: { image: boolean }): React.JSX.Element {
+  return (
+    <svg
+      width={14}
+      height={14}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3.5" y="4" width="17" height="16" rx="2.5" />
+      {image ? (
+        <>
+          <circle cx="9" cy="9.5" r="1.6" />
+          <path d="m4.5 17.5 4.5-4.2 3 2.7 2.8-3.2 4.7 4.7" />
+        </>
+      ) : (
+        <>
+          <path d="M7.5 9h9" />
+          <path d="M7.5 12.5h9" />
+          <path d="M7.5 16h5.5" />
+        </>
+      )}
+    </svg>
+  )
+}
+
 const filesApi = window.api?.cs?.files
 const configApi = window.api?.cs?.config
 const CHANNEL_LABEL: Record<string, string> = { feishu: '飞书' }
@@ -207,7 +257,9 @@ export function ChannelFileTray(): React.JSX.Element {
   return (
     <div className="wb-filetray">
       <button type="button" className="wb-filetray-summary" onClick={() => void openDialog()}>
-        <span className="wb-filetray-icon">📁</span>
+        <span className="wb-filetray-icon">
+          <TrayIcon />
+        </span>
         <span className="wb-filetray-text">
           <b>收到的渠道文件</b>
           <span>{summary ?? '暂无(飞书图片/文件会存档于此)'}</span>
@@ -221,7 +273,7 @@ export function ChannelFileTray(): React.JSX.Element {
             <div className="confirm-title">渠道接收文件管理</div>
             <div className="wb-files-toolbar">
               <select
-                className="st-input wb-files-sel"
+                className="ui-select wb-files-sel"
                 value={accountId ?? '__all__'}
                 onChange={(e) => {
                   const v = e.target.value
@@ -236,21 +288,26 @@ export function ChannelFileTray(): React.JSX.Element {
                 ))}
               </select>
               <span className="wb-files-count">
-                {items?.length ?? 0} 项 · 合计 {fmtSize(totals?.bytes ?? 0)}
+                共 <b className="ui-num">{items?.length ?? 0}</b> 项 · 合计{' '}
+                <b className="ui-num">{fmtSize(totals?.bytes ?? 0)}</b>
               </span>
               <span className="wb-files-spacer" />
-              <button type="button" className="ui-btn is-sm" onClick={() => void load()}>
+              <button type="button" className="ui-btn is-ghost is-sm" onClick={() => void load()}>
                 刷新
               </button>
               <button
                 type="button"
-                className="ui-btn is-sm"
+                className="ui-btn is-danger is-sm"
                 disabled={(items?.length ?? 0) === 0}
                 onClick={() => void clearFilter()}
               >
                 清空当前
               </button>
-              <button type="button" className="ui-btn is-sm" onClick={() => void pruneNow()}>
+              <button
+                type="button"
+                className="ui-btn is-ghost is-sm"
+                onClick={() => void pruneNow()}
+              >
                 清理过期/孤儿
               </button>
             </div>
@@ -258,7 +315,7 @@ export function ChannelFileTray(): React.JSX.Element {
             {/* 媒体缓存（图片/视频/表情解密产物 + 语音）：与渠道文件同一清理入口，策略独立 */}
             {media && (
               <div
-                className="st-hint"
+                className="wb-files-media"
                 title="清理按钮会一并回收；上报归档（archive/）属于你自己的数据，不参与淘汰"
               >
                 媒体缓存 {media.files} 个 · {fmtSize(media.bytes)} · 保留 {media.keepDays} 天
@@ -269,13 +326,15 @@ export function ChannelFileTray(): React.JSX.Element {
             )}
 
             <div className="wb-files-list">
-              {items === null && <div className="st-hint">加载中…</div>}
+              {items === null && <div className="wb-files-hint">加载中…</div>}
               {items !== null && items.length === 0 && (
-                <div className="st-hint">当前筛选下没有文件。</div>
+                <div className="wb-files-hint">当前筛选下没有文件。</div>
               )}
               {items?.map((f) => (
                 <div key={f.id} className="wb-file-item">
-                  <span className="wb-file-kind">{f.kind === 'image' ? '🖼' : '📄'}</span>
+                  <span className="wb-file-kind">
+                    <FileKindIcon image={f.kind === 'image'} />
+                  </span>
                   <div className="wb-file-main">
                     <b title={f.fileName}>
                       {f.fileName || (f.kind === 'image' ? '未命名图片' : '未命名文件')}
@@ -289,7 +348,7 @@ export function ChannelFileTray(): React.JSX.Element {
                   <div className="wb-file-ops">
                     <button
                       type="button"
-                      className="ui-btn is-sm"
+                      className="ui-btn is-ghost is-sm"
                       title="在文件夹中显示"
                       onClick={() => void filesApi?.reveal(f.id)}
                     >
@@ -309,7 +368,7 @@ export function ChannelFileTray(): React.JSX.Element {
             </div>
 
             <div className="wb-files-policy">
-              <label className="lg-auto">
+              <label className="wb-files-check">
                 <input
                   type="checkbox"
                   checked={autoClean}
@@ -319,7 +378,7 @@ export function ChannelFileTray(): React.JSX.Element {
               </label>
               <span>全局保留</span>
               <input
-                className="st-input wb-files-num"
+                className="ui-input wb-files-num"
                 type="number"
                 min={1}
                 max={365}
@@ -329,7 +388,7 @@ export function ChannelFileTray(): React.JSX.Element {
               <span>天</span>
               <span>单文件上限</span>
               <input
-                className="st-input wb-files-num"
+                className="ui-input wb-files-num"
                 type="number"
                 min={0}
                 max={500}
@@ -341,7 +400,7 @@ export function ChannelFileTray(): React.JSX.Element {
                 <>
                   <span>本账号保留覆盖</span>
                   <input
-                    className="st-input wb-files-num"
+                    className="ui-input wb-files-num"
                     type="number"
                     min={1}
                     max={365}
@@ -353,7 +412,7 @@ export function ChannelFileTray(): React.JSX.Element {
                   {acctKeepDays.trim() !== '' && (
                     <button
                       type="button"
-                      className="ui-btn is-sm"
+                      className="ui-btn is-ghost is-sm"
                       onClick={() => void clearAcctOverride()}
                     >
                       清除覆盖

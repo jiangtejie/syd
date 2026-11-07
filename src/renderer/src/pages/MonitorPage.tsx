@@ -11,10 +11,11 @@ import {
 } from '../../../shared/monitorMetrics'
 import { useTeamNames } from '../lib/teamNames'
 import { PlanBanner, type DuplicatePlanView } from '../components/monitor/PlanBanner'
-import { KpiCard } from '../components/monitor/IssueBits'
-import { statusChip } from '../lib/monitorChips'
+import { KpiCard, SeverityChip, StatusChip } from '../components/monitor/IssueBits'
 import { nextSelection } from '../lib/selection'
 import { IssueDrawer } from '../components/monitor/IssueDrawer'
+import { useChartTheme } from '../lib/useChartTheme'
+import ConnectGuide from '../components/ConnectGuide'
 import {
   buildAgeOption,
   buildGroupOption,
@@ -47,6 +48,16 @@ const RANGE_OPTIONS = [7, 14, 30]
 const ROW_LIMIT = 1000
 /** 问题列表每页条数选项（默认 15） */
 const PAGE_SIZES = [15, 30, 50, 100]
+
+/** 图表卡内的紧凑空态：复用全局 .ui-empty 结构，只把留白压小 */
+function ChartEmpty({ title, hint }: { title: string; hint: string }): React.JSX.Element {
+  return (
+    <div className="ui-empty mon-chart-empty">
+      <div className="ui-empty-title">{title}</div>
+      <div className="ui-empty-hint">{hint}</div>
+    </div>
+  )
+}
 
 function MonitorPage(): React.JSX.Element {
   const wxid = useWorkbenchStore((s) => s.wxid)
@@ -556,11 +567,12 @@ function MonitorPage(): React.JSX.Element {
     setAnaState(null)
     toast.success('已清空全部问题记录')
   }
-  // 图表配置
-  const trendOption = useMemo(() => buildTrendOption(metrics), [metrics])
-  const typeOption = useMemo(() => buildTypeOption(metrics), [metrics])
-  const groupOption = useMemo(() => buildGroupOption(metrics), [metrics])
-  const ageOption = useMemo(() => buildAgeOption(metrics), [metrics])
+  // 图表配置：配色跟主题走（useChartTheme 在切主题时返回新的一份 → option 重建 → EChart 重绘）
+  const chartTheme = useChartTheme()
+  const trendOption = useMemo(() => buildTrendOption(metrics, chartTheme), [metrics, chartTheme])
+  const typeOption = useMemo(() => buildTypeOption(metrics, chartTheme), [metrics, chartTheme])
+  const groupOption = useMemo(() => buildGroupOption(metrics, chartTheme), [metrics, chartTheme])
+  const ageOption = useMemo(() => buildAgeOption(metrics, chartTheme), [metrics, chartTheme])
 
   const pageTotal = Math.max(1, Math.ceil(filtered.length / pageSize))
   const curPage = Math.min(page, pageTotal)
@@ -691,8 +703,66 @@ function MonitorPage(): React.JSX.Element {
 
   return (
     <div className="mon-panel">
-      {/* 页面标题与页签由 MonitorShell 提供，这里只留本页自己的动作条（右对齐，状态贴右） */}
-      <div className="mon-actions">
+      {/* 页面标题与页签由 MonitorShell 提供，这里只留本页自己的动作条：
+          左＝运行状态读数（同步 / 分析 / 兼容提示），右＝操作；次要动作走幽灵按钮，危险动作单独收在最后；
+          「全量重析 / 合并重复 / 归档历史 / 清空数据」是不可常用操作，与日常动作用细线隔开 */}
+      <div className="mon-actionbar">
+        <div className="mon-meta">
+          {baseSync?.configured && (
+            <span
+              className={`ui-chip is-sm mon-meta-chip${baseSync.lastResult && !baseSync.lastResult.ok ? ' is-bad' : ''}`}
+              title="飞书多维表格同步状态"
+            >
+              {baseSync.lastAt > 0
+                ? `飞书同步 ${fmtTimeShort(baseSync.lastAt)} · 映射 ${baseSync.mappedIssues} 条${
+                    baseSync.lastResult?.failed ? ` · 失败 ${baseSync.lastResult.failed}` : ''
+                  }`
+                : `飞书同步待运行 · 映射 ${baseSync.mappedIssues} 条`}
+              {baseSync.evidence?.enabled
+                ? ` · 证据 ${baseSync.mappedEvidence ?? 0} 条${
+                    baseSync.pendingEvidence ? `(待推 ${baseSync.pendingEvidence})` : ''
+                  }`
+                : ''}
+              {baseSync.evidence?.media
+                ? ` · 附件 ${baseSync.attachedEvidence ?? 0} 条(素材 ${baseSync.mappedMedia ?? 0} 张)`
+                : ''}
+            </span>
+          )}
+          {anaState?.lastAt && !anaBusy && (
+            <span
+              className="ui-chip is-sm mon-meta-chip"
+              title={
+                anaState.error ||
+                `上次全量重析覆盖 ${anaState.groups ?? '?'}/${anaState.groupsTotal ?? '?'} 个活跃群`
+              }
+            >
+              上次分析 {fmtTimeShort(anaState.lastAt)}
+              {anaState.method === 'llm' ? ' · AI 提取' : ' · 规则提取'}
+              {anaState.cancelled ? ' · 已取消' : ''}
+              {typeof anaState.groups === 'number' && anaState.groupsTotal
+                ? ` · ${anaState.groups}/${anaState.groupsTotal} 群`
+                : ''}
+              {anaState.groupsCapped ? ' · 群数超限' : ''}
+              {anaState.error ? ' · 上次失败' : ''}
+            </span>
+          )}
+          {!hasMaintenanceApi && (
+            <span
+              className="ui-chip is-sm is-bad mon-meta-chip"
+              title="preload 桥属于重启才生效的部分:热更新只换了界面,功能代码还是旧的"
+            >
+              ⚠ 维护功能未加载:请完全退出并重启应用
+            </span>
+          )}
+          {skewed && hasMaintenanceApi && (
+            <span
+              className="ui-chip is-sm is-warn mon-meta-chip"
+              title="主进程还是旧版(没有 cs:issue:overview):已自动退回全量列表 + 本地算指标。重启应用即可恢复主进程聚合与明细限量。"
+            >
+              ⚠ 主进程版本较旧:已用兼容模式加载,建议重启应用
+            </span>
+          )}
+        </div>
         <div className="mon-toolbar">
           <select
             className="ui-select mon-select"
@@ -708,7 +778,7 @@ function MonitorPage(): React.JSX.Element {
           </select>
           <button
             type="button"
-            className="ui-btn mon-btn ghost"
+            className="ui-btn is-primary is-sm mon-btn"
             disabled={loading}
             onClick={() => void load()}
           >
@@ -716,7 +786,7 @@ function MonitorPage(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="ui-btn mon-btn ghost"
+            className="ui-btn is-ghost is-sm mon-btn"
             onClick={() => void exportSnapshot()}
             title="导出当前监控快照(KPI/图表/问题清单 JSON)"
           >
@@ -725,7 +795,7 @@ function MonitorPage(): React.JSX.Element {
           {/* 飞书多维表格同步:未配置时点一下就地配置;已配置则一键同步(详细记录在 设置 → 议题同步) */}
           <button
             type="button"
-            className="ui-btn mon-btn ghost"
+            className="ui-btn is-ghost is-sm mon-btn"
             disabled={baseBusy !== '' || setupBusy}
             onClick={() => {
               if (baseSync?.configured) void syncBaseNow()
@@ -751,47 +821,11 @@ function MonitorPage(): React.JSX.Element {
                   ? '收起配置'
                   : '同步到飞书（点此配置）'}
           </button>
-          {baseSync?.configured && (
-            <span
-              className={`mon-ana-state${baseSync.lastResult && !baseSync.lastResult.ok ? ' is-bad' : ''}`}
-              title="飞书多维表格同步状态"
-            >
-              {baseSync.lastAt > 0
-                ? `飞书同步 ${fmtTimeShort(baseSync.lastAt)} · 映射 ${baseSync.mappedIssues} 条${
-                    baseSync.lastResult?.failed ? ` · 失败 ${baseSync.lastResult.failed}` : ''
-                  }`
-                : `飞书同步待运行 · 映射 ${baseSync.mappedIssues} 条`}
-              {baseSync.evidence?.enabled
-                ? ` · 证据 ${baseSync.mappedEvidence ?? 0} 条${
-                    baseSync.pendingEvidence ? `(待推 ${baseSync.pendingEvidence})` : ''
-                  }`
-                : ''}
-              {baseSync.evidence?.media
-                ? ` · 附件 ${baseSync.attachedEvidence ?? 0} 条(素材 ${baseSync.mappedMedia ?? 0} 张)`
-                : ''}
-            </span>
-          )}
-          {anaState?.lastAt && !anaBusy && (
-            <span
-              className="mon-ana-state"
-              title={
-                anaState.error ||
-                `上次全量重析覆盖 ${anaState.groups ?? '?'}/${anaState.groupsTotal ?? '?'} 个活跃群`
-              }
-            >
-              上次分析 {fmtTimeShort(anaState.lastAt)}
-              {anaState.method === 'llm' ? ' · AI 提取' : ' · 规则提取'}
-              {anaState.cancelled ? ' · 已取消' : ''}
-              {typeof anaState.groups === 'number' && anaState.groupsTotal
-                ? ` · ${anaState.groups}/${anaState.groupsTotal} 群`
-                : ''}
-              {anaState.groupsCapped ? ' · 群数超限' : ''}
-              {anaState.error ? ' · 上次失败' : ''}
-            </span>
-          )}
+
+          <span className="mon-tool-sep" aria-hidden="true" />
           <button
             type="button"
-            className="ui-btn mon-btn ghost"
+            className="ui-btn is-ghost is-sm mon-btn"
             disabled={anaBusy || loading}
             onClick={() => void runFullAnalyze()}
             title="对全部活跃群按近 7 天重新分析提取(数据量大时较慢,可中途取消)"
@@ -805,7 +839,7 @@ function MonitorPage(): React.JSX.Element {
           {anaBusy && (
             <button
               type="button"
-              className="ui-btn mon-btn ghost"
+              className="ui-btn is-ghost is-sm mon-btn"
               onClick={() => void cancelAnalyze()}
               title="停止剩余群的分析;已扫过的群结果保留"
             >
@@ -814,7 +848,7 @@ function MonitorPage(): React.JSX.Element {
           )}
           <button
             type="button"
-            className="ui-btn mon-btn ghost"
+            className="ui-btn is-ghost is-sm mon-btn"
             disabled={anaBusy}
             onClick={() => void runMergeDuplicates()}
             title="按标题/证据/客户判据找出历史上被重复提取的同一议题,先预览再合并"
@@ -823,43 +857,28 @@ function MonitorPage(): React.JSX.Element {
           </button>
           <button
             type="button"
-            className="ui-btn mon-btn ghost"
+            className="ui-btn is-ghost is-sm mon-btn"
             disabled={anaBusy}
             onClick={() => void runArchiveStale()}
             title="把 90 天前已解决/已搁置的记录归档:不再占用活跃列表与盯办,闭环率与趋势照旧统计"
           >
             归档历史
           </button>
+          <span className="mon-tool-sep" aria-hidden="true" />
           <button
             type="button"
-            className="ui-btn is-danger mon-btn danger"
+            className="ui-btn is-danger is-sm mon-btn"
             onClick={() => void runClearAll()}
             title="删除该账号全部问题记录(不可恢复)"
           >
             清空数据
           </button>
-          {!hasMaintenanceApi && (
-            <span
-              className="mon-ana-state"
-              title="preload 桥属于重启才生效的部分:热更新只换了界面,功能代码还是旧的"
-            >
-              ⚠ 维护功能未加载:请完全退出并重启应用
-            </span>
-          )}
-          {skewed && hasMaintenanceApi && (
-            <span
-              className="mon-ana-state"
-              title="主进程还是旧版(没有 cs:issue:overview):已自动退回全量列表 + 本地算指标。重启应用即可恢复主进程聚合与明细限量。"
-            >
-              ⚠ 主进程版本较旧:已用兼容模式加载,建议重启应用
-            </span>
-          )}
         </div>
       </div>
 
       {/* 未配置:就地粘贴链接 → 执行并建表 → 认领既有行 → 首批同步 */}
       {setupOpen && !baseSync?.configured && (
-        <div className="mon-sync-setup">
+        <div className="page-card mon-sync-setup">
           <div className="mon-sync-note">
             把多维表格的分享链接粘进来就行。<b>链接里带了表格参数，就会写进你指定的那张表</b>
             （只补列、不新建表）；不带则自动新建「议题」与「数字员工回复」两张表。
@@ -874,7 +893,7 @@ function MonitorPage(): React.JSX.Element {
             />
             <button
               type="button"
-              className="ui-btn mon-btn"
+              className="ui-btn is-primary is-sm mon-btn"
               disabled={setupBusy}
               onClick={() => void runQuickSetup()}
             >
@@ -882,7 +901,7 @@ function MonitorPage(): React.JSX.Element {
             </button>
             <button
               type="button"
-              className="ui-btn mon-btn ghost"
+              className="ui-btn is-ghost is-sm mon-btn"
               disabled={setupBusy}
               onClick={() => setSetupOpen(false)}
             >
@@ -915,13 +934,14 @@ function MonitorPage(): React.JSX.Element {
       />
 
       {!connected ? (
-        <div className="mon-empty">
-          尚未连接微信:请先到 设置 → 微信数据与密钥 连接账号;本地已有人工处理的问题也会展示。
-        </div>
+        <ConnectGuide
+          what="问题监控与运营指标"
+          detail="连接后这里会显示 KPI 读数条、待处理问题列表与趋势图表；本地已有人工处理的问题也会一并展示。"
+        />
       ) : (
         <>
-          {/* KPI 大卡 */}
-          <div className="mon-kpis">
+          {/* KPI 读数条：一格一个指标，数字等宽；危险/警示只在有值时染淡底 */}
+          <div className="page-card mon-kpis">
             <KpiCard
               label="紧急待办"
               value={sevCount.urgent}
@@ -963,7 +983,24 @@ function MonitorPage(): React.JSX.Element {
 
           {/* 钻取列表 + 追踪抽屉 */}
           <div className="mon-bottom">
-            <div className="mon-card mon-list-card">
+            <div className="page-card mon-list-card">
+              <div className="mon-list-head">
+                <span className="ui-label">追踪列表</span>
+                <span className="mon-list-count">
+                  <span className="ui-num">{filtered.length}</span> 条
+                </span>
+                <span className="mon-list-spacer" />
+                {rowInfo.truncated && (
+                  <span
+                    className="mon-ana-state"
+                    title="KPI/趋势按全量数据统计；明细为控制传输量只回传最近的若干条，更早的可用状态/类型筛选或「归档历史」收敛"
+                  >
+                    明细已加载 <span className="ui-num">{rowInfo.loaded}</span>/
+                    <span className="ui-num">{rowInfo.total}</span> 条
+                  </span>
+                )}
+              </div>
+
               <div className="mon-filter-bar">
                 <select
                   className="ui-select mon-select"
@@ -1052,18 +1089,38 @@ function MonitorPage(): React.JSX.Element {
                     setPage(1)
                   }}
                 />
-                {rowInfo.truncated && (
-                  <span
-                    className="mon-ana-state"
-                    title="KPI/趋势按全量数据统计；明细为控制传输量只回传最近的若干条，更早的可用状态/类型筛选或「归档历史」收敛"
-                  >
-                    明细已加载 {rowInfo.loaded}/{rowInfo.total} 条
-                  </span>
-                )}
               </div>
 
               {pageItems.length === 0 ? (
-                <div className="mon-empty">没有符合条件的问题{loading ? '（加载中…）' : ''}</div>
+                <div className="ui-empty mon-list-empty" aria-busy={loading}>
+                  {loading ? (
+                    <span className="ui-spin mon-list-spin" aria-hidden="true" />
+                  ) : (
+                    <div className="ui-empty-glyph" aria-hidden="true">
+                      <svg
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 12h4l2 3h6l2-3h4" />
+                        <path d="M5 5h14l2 7v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z" />
+                      </svg>
+                    </div>
+                  )}
+                  <div className="ui-empty-title">
+                    {loading ? '正在加载问题…' : '没有符合条件的问题'}
+                  </div>
+                  <div className="ui-empty-desc">
+                    {loading
+                      ? '正在读取该账号的问题库，请稍候。'
+                      : '调整上方筛选条件试试，或等待新问题被提取。'}
+                  </div>
+                </div>
               ) : (
                 <>
                   <div className="mon-tbl-head">
@@ -1075,7 +1132,6 @@ function MonitorPage(): React.JSX.Element {
                   </div>
                   <div className="mon-tbl-body">
                     {pageItems.map((it) => {
-                      const chip = statusChip(it)
                       const isOld =
                         // eslint-disable-next-line -- 渲染中取当前时间仅用于积压标红(展示层,允许偶发非纯)
                         it.status === 'open' && Date.now() - it.occurAt > thresh.backlog * 3600_000
@@ -1085,30 +1141,30 @@ function MonitorPage(): React.JSX.Element {
                           className={`mon-row${active?.id === it.id ? ' is-active' : ''}`}
                           onClick={() => void openDetail(it)}
                         >
-                          <span className={`mon-st ${chip.cls}`}>{chip.label}</span>
+                          <span className="mon-row-status">
+                            <StatusChip issue={it} />
+                          </span>
                           <span className="mon-row-type">{it.type}</span>
                           <span className="mon-row-main">
-                            <span className="mon-row-flags">
-                              {it.severity && it.severity !== '一般' && (
-                                <em
-                                  className={`mon-sev is-${it.severity === '紧急' ? 'urgent' : 'high'}`}
-                                >
-                                  {it.severity}
+                            <span className="mon-row-titleline">
+                              <span className="mon-row-title">{it.title}</span>
+                              <SeverityChip severity={it.severity} />
+                              {(it.reopenCount ?? 0) > 0 && (
+                                <em className="ui-chip is-sm mon-reopen-chip">
+                                  ↻ 复发 ×{it.reopenCount}
                                 </em>
                               )}
-                              {(it.reopenCount ?? 0) > 0 && (
-                                <em className="mon-reopen">复发 ×{it.reopenCount}</em>
-                              )}
                             </span>
-                            <span className="mon-row-title">{it.title}</span>
                             <span className="mon-row-sub">
-                              {it.groupName || it.groupUsername} · {fmtTimeShort(it.occurAt)} · 证据{' '}
-                              {it.msgCount} 条{it.autoDone ? ' · 自动' : ''}
+                              {it.groupName || it.groupUsername} ·{' '}
+                              <span className="ui-num">{fmtTimeShort(it.occurAt)}</span> · 证据{' '}
+                              <span className="ui-num">{it.msgCount}</span> 条
+                              {it.autoDone ? ' · 自动' : ''}
                             </span>
                           </span>
                           <span className="mon-row-owner">
                             <select
-                              className="mon-owner-select"
+                              className="ui-select mon-select mon-owner-select"
                               value={it.assignee ?? ''}
                               aria-label="跟进人"
                               title={
@@ -1128,7 +1184,7 @@ function MonitorPage(): React.JSX.Element {
                               ))}
                             </select>
                           </span>
-                          <span className={`mon-row-age${isOld ? ' is-old' : ''}`}>
+                          <span className={`mon-row-age ui-num${isOld ? ' is-old' : ''}`}>
                             {it.status === 'open' ? ageText(it.occurAt) : ''}
                           </span>
                         </div>
@@ -1137,7 +1193,9 @@ function MonitorPage(): React.JSX.Element {
                   </div>
                   <div className="mon-pager">
                     <span className="mon-pager-info">
-                      共 {filtered.length} 条 · 第 {curPage} / {pageTotal} 页
+                      共 <span className="ui-num">{filtered.length}</span> 条 · 第{' '}
+                      <span className="ui-num">{curPage}</span> /{' '}
+                      <span className="ui-num">{pageTotal}</span> 页
                       {groupFilter ? '（已按群钻取）' : ''}
                     </span>
                     <div className="mon-pager-ctrl">
@@ -1159,7 +1217,7 @@ function MonitorPage(): React.JSX.Element {
                       </select>
                       <button
                         type="button"
-                        className="ui-btn mon-btn ghost"
+                        className="ui-btn is-ghost is-sm mon-btn"
                         disabled={curPage <= 1}
                         onClick={() => setPage(curPage - 1)}
                       >
@@ -1167,7 +1225,7 @@ function MonitorPage(): React.JSX.Element {
                       </button>
                       <button
                         type="button"
-                        className="ui-btn mon-btn ghost"
+                        className="ui-btn is-ghost is-sm mon-btn"
                         disabled={curPage >= pageTotal}
                         onClick={() => setPage(curPage + 1)}
                       >
@@ -1199,26 +1257,58 @@ function MonitorPage(): React.JSX.Element {
             />
           </div>
 
-          {/* 图表区 */}
+          {/* 图表区：一张卡=标题行（标题 + 说明 + 时间窗）+ 图表；没数据时给结构化空态而不是空坐标轴 */}
           <div className="mon-charts">
-            <div className="mon-card mon-trend">
-              <div className="mon-card-title">新增 / 解决趋势</div>
-              <EChart option={trendOption} height={190} />
+            <div className="page-card mon-chart mon-trend">
+              <div className="mon-chart-head">
+                <div className="mon-chart-title">新增 / 解决趋势</div>
+                <div className="mon-chart-sub">近 {range} 天 · 按日聚合</div>
+              </div>
+              {metrics.trend.some((t) => t.created + t.resolved > 0) ? (
+                <EChart option={trendOption} height={190} />
+              ) : (
+                <ChartEmpty title="暂无趋势数据" hint="窗口内没有新增或已解决的问题" />
+              )}
             </div>
-            <div className="mon-card mon-pie">
-              <div className="mon-card-title">待处理类型分布</div>
-              <EChart option={typeOption} height={190} />
+            <div className="page-card mon-chart mon-pie">
+              <div className="mon-chart-head">
+                <div className="mon-chart-title">待处理类型分布</div>
+                <div className="mon-chart-sub">当前待处理 · 按类型</div>
+              </div>
+              {metrics.typeOpen.length > 0 ? (
+                <EChart option={typeOption} height={190} />
+              ) : (
+                <ChartEmpty title="暂无待处理问题" hint="所有问题都已闭环或归档" />
+              )}
             </div>
-            <div className="mon-card mon-groups">
-              <div className="mon-card-title">问题最多的群(Top10 · 下拉可钻取)</div>
-              <EChart
-                option={groupOption}
-                height={Math.max(120, metrics.groupTop.length * 20 + 40)}
-              />
+            <div className="page-card mon-chart mon-groups">
+              <div className="mon-chart-head">
+                <div className="mon-chart-title">问题最多的群</div>
+                <div className="mon-chart-sub">
+                  {metrics.groupTop.length > 0
+                    ? `Top ${metrics.groupTop.length} · 下拉可按群钻取`
+                    : 'open 问题最多的群'}
+                </div>
+              </div>
+              {metrics.groupTop.length > 0 ? (
+                <EChart
+                  option={groupOption}
+                  height={Math.max(120, metrics.groupTop.length * 20 + 40)}
+                />
+              ) : (
+                <ChartEmpty title="暂无群问题" hint="当前没有待处理问题归属到群" />
+              )}
             </div>
-            <div className="mon-card mon-age">
-              <div className="mon-card-title">积压年龄分布</div>
-              <EChart option={ageOption} height={190} />
+            <div className="page-card mon-chart mon-age">
+              <div className="mon-chart-head">
+                <div className="mon-chart-title">积压年龄分布</div>
+                <div className="mon-chart-sub">待处理 · 按首现时长分档</div>
+              </div>
+              {metrics.age.some((a) => a.value > 0) ? (
+                <EChart option={ageOption} height={190} />
+              ) : (
+                <ChartEmpty title="暂无积压" hint="当前没有待处理问题，积压分布为空" />
+              )}
             </div>
           </div>
         </>

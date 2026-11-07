@@ -217,7 +217,7 @@ export function LogSection(): React.JSX.Element {
   }
 
   return (
-    <div className="lg-root">
+    <div className="page-card lg-root">
       <div className="lg-toolbar">
         <select
           className="st-input lg-sel"
@@ -272,13 +272,13 @@ export function LogSection(): React.JSX.Element {
           自动刷新(3s)
         </label>
         {!auto && <span className="lg-auto-hint">已暂停 · 无定时刷新,查看请点「刷新」</span>}
-        <button type="button" className="ui-btn" onClick={() => void copyAll()}>
+        <button type="button" className="ui-btn is-ghost" onClick={() => void copyAll()}>
           复制结果
         </button>
-        <button type="button" className="ui-btn" onClick={() => void exportFile()}>
+        <button type="button" className="ui-btn is-ghost" onClick={() => void exportFile()}>
           导出文件
         </button>
-        <button type="button" className="ui-btn" onClick={() => void openFolder()}>
+        <button type="button" className="ui-btn is-ghost" onClick={() => void openFolder()}>
           打开日志目录
         </button>
         <button type="button" className="ui-btn is-danger" onClick={() => void clearLogs()}>
@@ -333,7 +333,15 @@ export function LogSection(): React.JSX.Element {
       <div className="lg-list" role="log">
         {rows === null && <div className="st-hint">加载中…</div>}
         {rows !== null && rows.length === 0 && (
-          <div className="st-hint">没有匹配的日志(可能是新启动尚无输出,或过滤条件过严)。</div>
+          <div className="st-empty is-sm">
+            <div className="st-empty-glyph" aria-hidden="true">
+              ≡
+            </div>
+            <div className="st-empty-title">没有匹配的日志</div>
+            <div className="st-empty-desc">
+              可能是新启动尚无输出，或过滤条件过严。点「刷新」重新拉取，或放宽级别 / 模块 / 关键字。
+            </div>
+          </div>
         )}
         {rows?.map((r, i) => (
           <button

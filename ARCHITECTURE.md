@@ -13,7 +13,7 @@ Electron 桌面应用：读本机微信数据 → 本地库与工作台 → AI �
 | 桌面框架 | Electron 39 + electron-vite 5 | 主进程 / preload / 渲染三端构建；Node 要求 `^20.19.0 \|\| >=22.12.0` |
 | 渲染端 | React 19 + TypeScript 5.9 + zustand 5 | 页面、状态管理（工作台 / 会话 / toast / 确认框） |
 | 图表 | ECharts 6 | 监控中心与看板的纯函数配置（`renderer/src/pages/monitorCharts.ts` 等） |
-| 样式 | Tailwind 4 + 手写 CSS | 页面级 CSS 与设计 token（`assets/*.css`） |
+| 样式 | 手写 CSS + 语义设计 token | 双主题（默认深色赛博朋克 / 浅色可切）；token 唯一源 `assets/base.css`，控件基元 `ui-*` |
 | 本地库 | better-sqlite3-multiple-ciphers 13 | cs.db（WAL）+ 打开微信加密库（兼容 SQLCipher / 明文） |
 | 模型 | AI SDK v7（OpenAI 兼容） | 任意兼容 Base URL；预设 OpenAI / DeepSeek / 百炼 / 智谱 / Moonshot / 硅基流动 / 火山方舟 / Ollama |
 | 其他 | pg 8（上报）、飞书 Node SDK、fzstd（zstd）、exceljs、qrcode | — |

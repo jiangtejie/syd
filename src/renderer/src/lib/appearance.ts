@@ -15,12 +15,17 @@ import { applyResolved, normalizeThemeMode, resolveTheme } from '../../../shared
  * 注：本文件叫 appearance 而不是 theme —— lib/theme.ts 已经是图表配色的地盘。
  */
 const KEY = 'cs.theme'
+/** 没有存过偏好时的默认外观：本版主推的深色赛博朋克主题 */
+const DEFAULT_MODE: ThemeMode = 'dark'
 
 export function readThemeMode(): ThemeMode {
   try {
-    return normalizeThemeMode(localStorage.getItem(KEY))
+    const raw = localStorage.getItem(KEY)
+    // 只有「从未选择过」才落到默认深色；用户显式选过浅色/跟随系统就尊重选择
+    if (raw === null) return DEFAULT_MODE
+    return normalizeThemeMode(raw)
   } catch {
-    return 'system'
+    return DEFAULT_MODE
   }
 }
 

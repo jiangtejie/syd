@@ -339,3 +339,72 @@
 3. **真机验证**（只能你来跑）：本轮新增的「发到飞书」按钮、@ 人、Base 写回、视频附件、审批卡片 —— 这些依赖真实飞书环境，
    我能保证的是编译/构建/离线自检，跑不出「机器人没进群」「应用没开卡片回调」这类平台侧问题。
 
+
+## 4.5 第六轮：深色赛博朋克视觉改版（2026-11）
+
+> 范围：渲染端全部页面 / 全部共享组件 / 应用外壳 / 图表主题 / 主进程窗口外观。行为、数据流、IPC、store 一行未改。
+
+### 结论先行
+
+- **默认外观从「跟随系统的浅色」改为深色赛博朋克**：首次启动无偏好时 `readThemeMode()` 返回 `dark`，主进程 `nativeTheme.themeSource` 与窗口底色（`#050910`）、原生窗控按钮配色在首帧即按深色落地，不再闪白；用户显式选过浅色 / 跟随系统则完全尊重原选择。
+- **浅色主题保留**，且业务 CSS **零主题分支**：新增的光效/纹理 token 在浅色下退化为透明，浅色仍是原来的"白纸 + 灰线 + 微信绿"。
+- **统一设计语言**：深空底（`#050910`）+ 冷色 HUD 线框 + 霓虹青主色（`#22d3ee`）+ 紫色第二强调（`#a855f7`）；数字一律等宽对齐，发光只给主按钮 / 选中 / 焦点。
+
+### 设计系统（`assets/base.css`）
+
+| 组 | 新增 / 变化 |
+| --- | --- |
+| 深色调色板 | 底 `#050910`、面板 `#0a121e`、浮起 `#101c2b`、凹槽 `#060c15`；描边偏冷（`#1b2a3c` / `#121d2b` / `#2a3f57`）；品牌青 `#22d3ee`，主色上的字用深墨 `#03141b` |
+| 状态色 | 深色下统一改成同色相半透明 soft/line：success `#34d399`、danger `#ff4d6d`、warn `#ffb020`、info `#5b9dff`、note `#b98cff` |
+| 光效/层次 | `--glow-brand`、`--glow-card`、`--panel-gradient`、`--grid-line`、`--shell-glow-a/b`、`--brand-gradient`、`--danger-gradient`（浅色下一律为空值） |
+| 字体 | 新增 `--font-mono` + `.ui-num`（等宽 + `tabular-nums`）、`.ui-label`（左侧色条小标题）；字号仍只允许 `--fs-*` 六档 |
+| 外壳 | `--nav-bg/--nav-fg/--nav-fg-strong/--nav-online/--nav-active-*`、`--titlebar-bg`、`--field-bg`（导航在两种主题下都是深色，因此前景色必须与 `--text-*` 解耦） |
+| 基元升级 | `.ui-btn` 主按钮改霓虹青渐变 + 深墨字 + hover 光晕；`.ui-tab/.ui-pill` 选中统一"品牌描边 + 淡底 + 光晕"；`.ui-chip` 改描边式语气色；`.ui-seg` 改凹槽轨道；新增 `.ui-btn.is-ghost`、`.ui-empty-glyph/.ui-empty-desc/.ui-empty-hint` |
+
+### 应用外壳 / 共享组件
+
+- **标题栏**：品牌菱形标记 + 底部一条极淡霓虹线（取消原来"整栏平铺"的观感）。
+- **左侧导航**：深色玻璃条 + 右缘冷光；激活项 = 淡青底 + 1px 青描边 + 外发光 + 左侧 3px 竖条；前景色改用导航专用 token（修复了旧深色主题下"导航用 `--text-1` 当底色"导致的浅色条 bug）。
+- **页面容器**：`.page-title` 左侧加霓虹渐变竖条；`.page-card` 叠顶部品牌色渐变 + 顶部 1px 冷光；`.app-shell` 背景改为「双色径向辉光 + 36px 极淡网格」，只在深色可见。
+- **Toast / 确认框 / Modal**：玻璃化（面板底 + 语气描边），浮层顶部加一条品牌色细线；遮罩加轻模糊。
+- **首启向导**：原组件是内联样式 + 一堆不存在的 token（`var(--bg-1, #fff)` 永远落回白色，深色下是一块白板）→ 改 `.frw-*` 面板语言 + 01/02/03 进度块。
+- **其他**：`ConnectGuide` 改 `.ui-empty` 结构 + 数据接口图标；`Feedback` 里 `ui-btn sm` 修正为 `ui-btn is-sm`；**`components/ui/ui.css` 改为 `main.tsx` 全局引入**（此前只随 Modal/Feedback 的懒加载 chunk 走，懒加载页直接用 `.ui-empty/.ui-spin` 会丢样式）。
+
+### 图表主题（`lib/theme.ts` + `lib/useChartTheme.ts` + `components/EChart.tsx`）
+
+- 配色拆成 `CHART`（浅色）/ `CHART_DARK`（深色，与 base.css 对色）+ `chartColorsFor(dark)`；
+- `useChartTheme()` 用 `MutationObserver` 监听 `<html data-theme>`，切主题时页面图表自动重绘；
+- `EChart` 注册 `cs-light` / `cs-dark` 两套 echarts 主题（轴/分隔线/图例/tooltip/分类色），切主题时重建实例并回填当前 option；
+- 监控中心与运营看板全部改用 `useChartTheme()` + `useMemo`：`monitorCharts.ts` 四个 `build*Option(metrics, colors)` 变纯函数，DashboardPage 的 5 张图同理；环形图中心数字用 canvas 等宽字体等效 `.ui-num`。
+
+### 逐页要点
+
+| 页面 | 改动 |
+| --- | --- |
+| 对话工作台 | 三栏改「左右抬升面板 + 中间下沉画布」，栏头统一 48px；会话行选中统一青描边；**我方气泡清掉 `#95ec69` 等全部写死色**改品牌青体系；未读徽标改描边式；输入区 hairline 分离 + `.ui-textarea`；右栏群问题/回复建议统一 `.ui-tab` + 卡片语言；富文本 `rich.css` 代码块/表格/告警块深色化 |
+| AI 工作台 | 页头品牌标记 + 两级标题 + 工作区 chip；空态 hero 改「品牌标记 + 24px 标题 + 预设胶囊」；消息气泡/思考胶囊/错误条/审批卡统一；工具时间线改 HUD 面板（竖轴 + 状态节点 + 等宽耗时）；ChannelFileTray 去掉对 settings.css 懒加载样式的依赖 |
+| 监控中心 | 动作条降噪（状态读数 chips 左置、刷新主按钮、维护动作分组）；KPI 改连续 HUD 读数条（等宽数字 + 3px 状态条 + 有值才染底）；筛选/列表/详情抽屉/图表卡统一 `.page-card` + hairline；图表接 `useChartTheme()` |
+| 运营看板 | 顶部 5 格 HUD 读数条；待回复队列/发送监控/质量/响应时效全部 `.ui-num`；饼图白描边改透明；图表接 `useChartTheme()`；清掉 `dashboard.css` 全部写死色 |
+| 设置页 | 8 页签改 HUD 分段导航（nowrap 横向滚动）；卡片统一"标题 + 说明 + 右侧状态 chip"；输入/开关/下拉/分段/复选深色化；密钥/加密中心读数字块、飞书 Base 记录改等宽凹槽表、日志区 `--font-mono` + 级别状态色、IM 账号卡/二维码弹窗深色化；修复"业务技能"双层同名卡片 |
+| 客户页 | 页头右侧 HUD 读数；搜索/筛选/批量条迁 `ui-*`；客户表改 HUD 表（sticky 表头、行 hover、勾选青淡底 + 左缘青线、类型/状态 `ui-chip`、时间/未读等宽右对齐）；画像抽屉三段式深色化 |
+| 值班页 | 页头改状态头条（状态灯 + 模式/自动回复 chip + 近 7 天 4 个读数 + 主按钮）；影子记录/话术库/回放预演统一卡片与 `.ui-tab`；三种空态 `.ui-empty`；话术表 sticky 表头 |
+| 数据导出页 | 时间范围/格式改 `.ui-seg`；新增「导出摘要」卡（大读数 + 范围/格式/路径 + 就绪 chip）；列表选中态/checkbox 品牌色；导出主按钮全宽 `is-primary` |
+
+### 一致性与清理
+
+- 页面 CSS 里**不再有写死 hex/rgb/rgba**（全仓仅剩 base.css / theme.ts 的 token 定义与 2 处说明性注释）；字号写死 0 处（hygiene 自检口径）。
+- 清掉了 `settings.css` 缺失的 `st-hint-inline` 等类、修了 `.wb-reason-live` 选择器笔误、`Feedback` 的 `ui-btn sm`。
+- 保留的"刻意不 token 化"：头像辨识色板（`lib/ui.ts`，非语义色）、导航"在线"绿（导航恒深色）。
+
+### 验证
+
+- `npm run typecheck`（node + web）0 error；`npx eslint .` 0/0；`npx electron-vite build` 通过；`npm run test:all`（30+ 离线自检）全部通过；`source-hygiene` / `theme-selftest` 通过。
+- 视觉证据（Electron 离屏渲染真实构建产物，1440×900，含 16 屏两主题）：`scripts/_tmp/final-dark/`、`scripts/_tmp/final-light/`；
+  带数据/抽屉/表单等富态自查：`scripts/_tmp/shots-t1-rich-dark/`、`scripts/_tmp/shots-t2-rich-dark/`、`scripts/_tmp/shots-t3-dark/`、`scripts/_tmp/t5-shots-dark/`。
+- 复现方式：`npm run ui:preview`（或 `npx electron-vite build --outDir out-preview/x` + `node scripts/ui-preview/make-preview.mjs out-preview/x/renderer` + `node scripts/ui-preview/serve.mjs`），再用 `scripts/_tmp/shot.cjs` 截图。
+
+### 已知遗留
+
+1. 真机外观核对（只能人工跑）：Electron 原生窗控按钮配色随主题切换、Windows 高 DPI 下 1px 描边的观感、真实数据下的极端长文本。
+2. 个别页面在预览桩缺字段时会显示「—」（如客户页最近消息、消息时间分隔条），属 mock 数据问题，不是样式问题。
+3. 设置页「人设数据不可用」等空态依赖真实配置/DB，预览环境只能验证样式与排版。

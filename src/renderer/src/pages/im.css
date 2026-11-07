@@ -1,25 +1,156 @@
-/* ══════════ IM 渠道管理(嵌入 设置 → IM 渠道 tab) ══════════ */
+/* ══════════ IM 渠道管理（嵌入 设置 → IM 渠道 tab） ══════════
+ * 账号卡 / 状态灯 / 二维码区 / 开关与动作按钮与设置页同一套语言：
+ * 凹槽底 + hairline、选中青描边、状态只染徽标与状态灯。 */
 
 .im-section {
   display: flex;
   flex-direction: column;
 }
 
+/* 区块头：标题 + 主操作 */
 .im-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin: 2px 0 8px;
+  gap: var(--sp-3);
+  margin: 2px 0 var(--sp-3);
+}
+
+.im-head .st-title {
+  margin-bottom: 0;
+}
+
+.im-head-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+/* 接入说明：正文用可读行宽，展开区（AdvancedBlock）里的段落同样适用 */
+.im-intro .sf-card-body p {
+  max-width: 96ch;
 }
 
 .im-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
-/* IM 表单:白名单多行输入与顶对齐行 */
+/* ── 已接入账号卡 ── */
+.im-account {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  padding: var(--sp-2) var(--sp-3);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.im-account:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+
+.im-account-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.im-account-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.im-account-name {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+}
+
+.im-account-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* 状态灯：只给「连接/启用」这类实时状态，1 个小圆点 + 文案，颜色双写 */
+.im-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+
+.im-dot.is-ok {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success-soft);
+}
+
+.im-dot.is-warn {
+  background: var(--warn);
+  box-shadow: 0 0 6px var(--warn-soft);
+}
+
+.im-dot.is-bad {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger-soft);
+}
+
+.im-account-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.im-account-status.is-ok {
+  color: var(--success-strong);
+}
+
+.im-account-status.is-warn {
+  color: var(--warn-text);
+}
+
+.im-account-status.is-bad {
+  color: var(--danger-text);
+}
+
+.im-account-ops {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+}
+
+/* 空态（无账号）由 .st-empty 承担，这里只补卡片内的间距 */
+.im-empty {
+  margin-top: var(--sp-2);
+}
+
+/* ── 接入/编辑表单：顶对齐行（文本域） ── */
 .st-row-top {
   align-items: flex-start;
 }
@@ -32,45 +163,65 @@ textarea.im-allow-area {
   height: auto;
   min-height: 56px;
   padding: 6px 10px;
-  line-height: 1.5;
+  line-height: 1.6;
   resize: vertical;
-  font-family: inherit;
+  font-family: var(--font-mono);
 }
 
-/* 渠道类型选择(接入新账号时) */
+/* 表单里的说明：与输入列对齐，收窄行宽 */
+.im-bind-hint {
+  display: block;
+  margin: 0 0 var(--sp-2) 158px;
+  max-width: 640px;
+}
+
+@media (max-width: 720px) {
+  .im-bind-hint {
+    margin-left: 0;
+  }
+}
+
+/* ── 渠道类型选择（接入新账号）：与全局 .ui-seg 同一种分段控件 ── */
 .im-kind-pick {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: var(--sp-3);
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
 }
 
 .im-kind-btn {
-  padding: 6px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--r-md) - 2px);
   background: transparent;
-  color: var(--text-2);
+  color: var(--text-3);
   font-size: var(--fs-sm);
   cursor: pointer;
+  white-space: nowrap;
   transition:
-    background 0.15s,
-    border-color 0.15s,
-    color 0.15s;
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .im-kind-btn:hover {
-  border-color: var(--brand-line);
-  color: var(--brand);
+  color: var(--text-1);
 }
 
 .im-kind-btn.is-on {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: var(--on-brand);
-  font-weight: 500;
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+  color: var(--brand);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--brand-line);
 }
 
-/* 扫码绑定行(ClawBot 新接入) */
+/* 扫码绑定行 */
 .im-scan-row {
   align-items: flex-start;
 }
@@ -78,12 +229,13 @@ textarea.im-allow-area {
 .im-scan-cell {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
   align-items: flex-start;
+  min-width: 0;
 }
 
 .im-scan-err {
-  color: var(--danger) !important;
+  color: var(--danger-text) !important;
 }
 
 /* ── 扫码绑定弹窗 ── */
@@ -98,36 +250,55 @@ textarea.im-allow-area {
 }
 
 .im-qr-box {
-  width: min(360px, calc(100vw - 48px));
+  position: relative;
+  width: min(380px, calc(100vw - 48px));
   max-height: calc(100vh - 60px);
   overflow: auto;
   background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-pop);
-  padding: 18px 20px 16px;
+  padding: var(--sp-4) var(--sp-5) var(--sp-4);
   display: flex;
   flex-direction: column;
 }
 
+/* 顶部一道极细冷光（弹层的「被照亮」感，不是整块发光） */
+.im-qr-box::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--sp-4);
+  right: var(--sp-4);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--brand-line), transparent);
+}
+
+.im-qr-box .st-title {
+  margin-bottom: var(--sp-2);
+}
+
 .im-qr-msg {
-  margin-top: 6px;
+  margin-top: var(--sp-1);
   font-size: var(--fs-sm);
-  color: var(--brand);
-  line-height: 1.6;
+  color: var(--text-2);
+  line-height: 1.65;
 }
 
 .im-qr-msg.is-err {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
+/* 二维码区：深色凹槽 + 冷描边，二维码本身保持原图清晰度 */
 .im-qr-stage {
-  margin: 12px auto 4px;
+  margin: var(--sp-3) auto var(--sp-1);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-panel);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 10px;
+  padding: var(--sp-3);
   min-height: 120px;
   width: fit-content;
   max-width: 100%;
@@ -137,12 +308,13 @@ textarea.im-allow-area {
   width: 240px;
   height: 240px;
   image-rendering: pixelated;
+  border-radius: var(--r-sm);
 }
 
 .im-qr-steps {
-  margin: 8px 0 4px;
+  margin: var(--sp-2) 0 var(--sp-1);
   padding-left: 18px;
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  line-height: 1.8;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  line-height: 1.85;
 }

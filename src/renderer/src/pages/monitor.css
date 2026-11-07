@@ -1,7 +1,8 @@
-/* ══════════ 问题监控中心(大屏 BI + 钻取追踪) ══════════ */
-/* ── 工具栏状态文字(此前 .mon-ana-state 未定义 → 裸文本) ── */
+/* ══════════ 问题监控中心（大屏 BI + 钻取追踪）══════════ */
+
+/* ── 工具条里的状态文字（明细截断提示 / 同步面板错误行） ── */
 .mon-ana-state {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   color: var(--text-3);
   white-space: nowrap;
   max-width: 44ch;
@@ -9,32 +10,92 @@
   text-overflow: ellipsis;
 }
 
-/* 状态文字里的异常态(同步失败 / 构建过旧) */
 .mon-ana-state.is-bad {
-  color: var(--danger, #d4380d);
+  color: var(--danger-text);
 }
 
-/* ── 飞书多维表格同步:未配置时就地配置面板 ── */
+/* ── 页面动作条：左＝运行状态读数，右＝操作。
+ *    次要动作走幽灵按钮（默认无边框），一排按钮不打架；维护类动作前加一条细竖线分组。 ── */
+.mon-actionbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.mon-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 没有状态可报时整块收掉，避免动作条左侧空一块 */
+.mon-meta:empty {
+  display: none;
+}
+
+.mon-meta-chip {
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mon-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  flex: none;
+}
+
+/* 输入外观走全局 ui-input / ui-select，这里只收本页尺寸（工具栏要一行放得下） */
+.mon-input,
+.mon-select {
+  font-size: var(--fs-sm);
+  padding: 4px 8px;
+  height: 28px;
+}
+
+/* 本页动作按钮：比默认 ui-btn 更紧凑（工具栏密度） */
+.mon-btn {
+  font-size: var(--fs-sm);
+  padding: 4px 10px;
+  height: 28px;
+  white-space: nowrap;
+}
+
+/* 维护动作分组的分隔线 */
+.mon-tool-sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 var(--sp-1);
+  background: var(--border);
+}
+
+/* ── 飞书多维表格同步：未配置时就地配置面板 ── */
 .mon-sync-setup {
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-panel);
-  padding: 10px 12px;
-  margin: 8px 0;
+  padding: var(--sp-3) var(--sp-4);
+  margin: 0 0 var(--sp-4);
 }
 
 .mon-sync-note {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
+  line-height: 1.7;
   color: var(--text-3);
-  line-height: 1.6;
 }
 
 .mon-sync-row {
   display: flex;
   align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
-  margin: 6px 0;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-1);
 }
 
 .mon-sync-row .mon-input {
@@ -45,63 +106,59 @@
 /* 外壳（标题/页签/容器）的样式在 monitor-shell.css —— 那一个由 MonitorShell 自己导入，
    因为本文件只随「问题监控」懒加载块走，用户停在「运营看板」时它不会加载。 */
 
-/* 面板自己的动作条（工具栏 + 同步/AI 状态）：贴在右侧，标题行归外壳 */
-.mon-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 2px;
-}
-
-.mon-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 输入框外观已迁到全局 ui-input / ui-select；这里只留本页尺寸 */
-.mon-input,
-.mon-select {
-  font-size: var(--fs-sm);
-  padding: 5px 9px;
-}
-
-.mon-empty {
-  color: var(--text-3);
-  font-size: var(--fs-md);
-  padding: 28px 8px;
-  text-align: center;
-}
-
-/* ── KPI ── */
+/* ══════════ KPI 读数条 ══════════
+ * 一条连续的 HUD 读数带：格子之间只用 1px 冷线分隔，不再八张卡片各包一层边框。
+ * 危险/警示格只有在「有值」时才染淡底（is-hot，由 KpiCard 判断），0 不该整版泛红。 */
 .mon-kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  margin: 10px 0 12px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 1px;
+  padding: 1px;
+  margin: var(--sp-3) 0 var(--sp-4);
+  background: var(--border-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+@media (max-width: 1320px) {
+  .mon-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .mon-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .mon-kpi {
   position: relative;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-light);
-  border-radius: var(--r-md);
-  padding: 12px 14px 10px;
-  min-height: 84px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  overflow: hidden;
-  box-shadow: var(--shadow-card);
+  gap: 2px;
+  min-height: 78px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) calc(var(--sp-3) + 3px);
+  background: var(--bg-panel);
+  transition: background 0.16s ease;
 }
 
+/* 3px 左侧状态色条：默认中性，tone-* 换色 */
 .mon-kpi::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
+  top: var(--sp-3);
+  bottom: var(--sp-3);
   width: 3px;
-  background: var(--brand);
+  border-radius: 0 2px 2px 0;
+  background: var(--border-strong);
+}
+
+.mon-kpi:hover {
+  background: var(--bg-hover);
 }
 
 .mon-kpi.tone-danger::before {
@@ -116,426 +173,475 @@
   background: var(--success);
 }
 
+/* 有值才染底：读数是 0 时保持安静，出现异常数字才"亮"起来 */
+.mon-kpi.tone-danger.is-hot {
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg-panel));
+}
+
+.mon-kpi.tone-warn.is-hot {
+  background: color-mix(in srgb, var(--warn) 6%, var(--bg-panel));
+}
+
+.mon-kpi.tone-ok.is-hot {
+  background: color-mix(in srgb, var(--success) 5%, var(--bg-panel));
+}
+
 .mon-kpi-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
   font-size: var(--fs-xs);
   color: var(--text-2);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mon-kpi-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.mon-kpi.tone-danger .mon-kpi-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+.mon-kpi.tone-warn .mon-kpi-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+
+.mon-kpi.tone-ok .mon-kpi-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
 }
 
 .mon-kpi-value {
   font-size: var(--fs-kpi);
-  font-weight: 700;
-  line-height: 1.25;
-  margin-top: 2px;
-  color: var(--text-1);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
 }
 
-.mon-kpi.tone-danger .mon-kpi-value {
+/* 数字只在"有值"时才上状态色：读数是 0 时保持中性，避免整版泛红 */
+.mon-kpi.tone-danger.is-hot .mon-kpi-value {
   color: var(--danger);
 }
 
-.mon-kpi.tone-warn .mon-kpi-value {
+.mon-kpi.tone-warn.is-hot .mon-kpi-value {
   color: var(--warn-text);
 }
 
-.mon-kpi.tone-ok .mon-kpi-value {
+.mon-kpi.tone-ok.is-hot .mon-kpi-value {
   color: var(--success-strong);
 }
 
 .mon-kpi-hint {
   font-size: var(--fs-xs);
+  line-height: 1.4;
   color: var(--text-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ── 图表区 ── */
-.mon-charts {
-  display: grid;
-  grid-template-columns: 1.5fr 1fr;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.mon-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-light);
-  border-radius: var(--r-md);
-  padding: 12px 14px;
-  box-shadow: var(--shadow-card);
-  min-width: 0;
-}
-
-.mon-card-title {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--text-2);
-  margin-bottom: 8px;
-}
-
-/* ── 底部:列表 + 抽屉(共享列高,严格等高对齐;下方留出呼吸间距) ── */
+/* ══════════ 底部：追踪列表 + 右侧追踪抽屉（严格等高） ══════════ */
 .mon-bottom {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 12px;
+  gap: var(--sp-3);
   align-items: stretch;
-  margin-bottom: 28px;
-  --col-h: min(680px, calc(100vh - 300px));
+  margin-bottom: var(--sp-4);
+  --col-h: min(660px, calc(100vh - 340px));
+}
+
+@media (max-width: 1180px) {
+  .mon-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── 列表卡：头部/筛选/表头固定，表体内部滚动 ── */
+.mon-list-card {
+  display: flex;
+  flex-direction: column;
+  height: var(--col-h);
+  min-height: 400px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.mon-list-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) 0;
+  min-width: 0;
+}
+
+.mon-list-count {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.mon-list-count .ui-num {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.mon-list-spacer {
+  flex: 1;
 }
 
 .mon-filter-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
-  margin-bottom: 8px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  min-width: 0;
+}
+
+.mon-filter-bar .ui-input {
+  flex: 1 1 160px;
+  min-width: 140px;
+  max-width: 280px;
+}
+
+.mon-tbl-head {
+  display: grid;
+  grid-template-columns: 78px 54px minmax(0, 1fr) 130px 76px;
+  column-gap: var(--sp-2);
+  align-items: center;
+  padding: var(--sp-2);
+  margin: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-sunken);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.mon-tbl-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mon-tbl-head span:first-child {
+  padding-left: 2px;
+}
+
+.mon-tbl-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-2) var(--sp-1);
 }
 
 .mon-row {
   display: grid;
-  grid-template-columns: 74px 60px minmax(0, 1fr) 150px 96px;
-  column-gap: 8px;
+  grid-template-columns: 78px 54px minmax(0, 1fr) 130px 76px;
+  column-gap: var(--sp-2);
   align-items: center;
-  padding: 8px 10px;
-  border-radius: var(--r-sm);
+  padding: var(--sp-2);
   border-bottom: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
   cursor: pointer;
+  transition: background 0.15s ease;
   /* 长列表渲染优化：视口外行跳过布局/绘制 */
   content-visibility: auto;
-  contain-intrinsic-size: auto 64px;
+  contain-intrinsic-size: auto 58px;
+}
+
+.mon-row:last-child {
+  border-bottom: none;
 }
 
 .mon-row:hover {
   background: var(--bg-hover);
 }
 
-.mon-row > .mon-st {
-  justify-self: center;
-}
-
+/* 选中态：和页签/分段同一种表达 —— 品牌色描边 + 淡色底（左侧 2px 竖条更贴合表格） */
 .mon-row.is-active {
   background: var(--brand-soft);
+  box-shadow: inset 2px 0 0 var(--brand);
 }
 
-.mon-st {
-  flex: none;
-  width: 62px;
-  text-align: center;
-  font-size: var(--fs-xs);
-  line-height: 18px;
-  padding: 0 2px;
-  border-radius: var(--r-pill);
-  white-space: nowrap;
-}
-
-.mon-st.is-open {
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-weight: 600;
-}
-
-.mon-st.is-follow {
-  background: var(--warn-soft);
-  color: var(--warn-text);
-}
-
-.mon-st.is-overdue {
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-weight: 700;
-}
-
-.mon-st.is-done {
-  background: var(--success-soft);
-  color: var(--success-strong);
-}
-
-.mon-st.is-auto {
-  background: var(--success-soft);
-  color: var(--success-strong);
-}
-
-.mon-st.is-stalled {
-  background: var(--warn-soft);
-  color: var(--warn-text);
-}
-
-.mon-st.is-archived {
-  background: var(--bg-hover);
-  color: var(--text-3);
+.mon-row-status {
+  min-width: 0;
 }
 
 .mon-row-type {
-  flex: none;
   font-size: var(--fs-xs);
-  line-height: 15px;
-  padding: 0 6px;
-  border-radius: var(--r-sm);
-  background: var(--bg-hover);
-  color: var(--text-2);
-  border: 1px solid var(--border);
+  color: var(--text-3);
 }
 
 .mon-row-main {
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mon-row-titleline {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
 .mon-row-title {
-  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: var(--fs-md);
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mon-row.is-active .mon-row-title {
+  color: var(--text-strong);
+}
+
+.mon-sev-chip,
+.mon-reopen-chip {
+  flex: none;
+}
+
+.mon-reopen-chip {
+  color: var(--text-2);
 }
 
 .mon-row-sub {
   display: block;
+  min-width: 0;
   font-size: var(--fs-xs);
   color: var(--text-3);
-  margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.mon-row-sub .ui-num {
+  color: var(--text-2);
+}
+
+.mon-row-owner {
+  min-width: 0;
+}
+
+/* 行内跟进人选择器：默认透明不抢视线，hover/focus 才浮出来 */
+.mon-owner-select {
+  width: 100%;
+  max-width: 124px;
+  height: 24px;
+  font-size: var(--fs-xs);
+  padding: 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.mon-owner-select:hover {
+  border-color: var(--border);
+  background: var(--bg-panel);
+  color: var(--text-1);
+}
+
+.mon-owner-select:focus {
+  border-color: var(--brand);
+  background: var(--bg-panel);
+}
+
 .mon-row-age {
-  flex: none;
+  justify-self: end;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.mon-row-age.is-old {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+/* 无数据 / 加载中：占满表体高度，用全局空态结构（图标 + 标题 + 说明） */
+.mon-list-empty {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+/* 列表加载中的转圈：和空态图标同一位置，避免加载时先闪一下"无数据" */
+.mon-list-spin {
+  width: 22px;
+  height: 22px;
+  border-width: 2px;
+  color: var(--brand);
+}
+
+/* ── 分页 ── */
+.mon-pager {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  margin-top: auto;
+  border-top: 1px solid var(--border-light);
+}
+
+.mon-pager-info {
   font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
-.mon-row-age.is-old {
-  color: var(--danger);
+.mon-pager-info .ui-num {
+  color: var(--text-1);
   font-weight: 600;
 }
 
-/* ── 追踪抽屉(与左侧表格共享 --col-h 严格等高;头部/操作区固定,聊天证据区内部滚动) ── */
+.mon-pager-ctrl {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+
+.mon-pager-ctrl .mon-select {
+  width: auto;
+}
+
+/* ══════════ 追踪抽屉（右侧浮层面板）══════════ */
 .mon-drawer {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: var(--col-h);
-  min-height: 420px;
+  min-height: 400px;
   overflow: hidden;
+  padding: var(--sp-4);
+  border-color: var(--border);
 }
 
-.mon-drawer-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  margin-top: 2px;
+/* 深色下：更强的落影 + 顶部一道品牌色细光，让抽屉"浮"起来（浅色保持干净） */
+[data-theme='dark'] .mon-drawer {
+  box-shadow: var(--shadow-pop), var(--glow-card);
+}
+
+[data-theme='dark'] .mon-drawer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--brand-line), transparent 72%);
+}
+
+.mon-drawer.is-idle {
+  align-items: center;
+  justify-content: center;
+}
+
+.mon-drawer-idle {
+  width: 100%;
 }
 
 .mon-drawer-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
-.mon-x {
-  margin-left: auto;
-  border: none;
-  background: none;
+.mon-drawer-type {
+  font-size: var(--fs-xs);
   color: var(--text-3);
-  font-size: var(--fs-md);
-  cursor: pointer;
+}
+
+.ui-btn.mon-x {
+  margin-left: auto;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
 }
 
 .mon-drawer-title {
   font-size: var(--fs-lg);
   font-weight: 600;
-  margin: 8px 0 4px;
   line-height: 1.5;
+  color: var(--text-strong);
+  margin: var(--sp-2) 0 var(--sp-1);
 }
 
 .mon-drawer-meta {
   font-size: var(--fs-xs);
   color: var(--text-3);
-  margin-bottom: 8px;
+  margin-bottom: var(--sp-2);
+}
+
+.mon-drawer-meta .ui-num {
+  color: var(--text-2);
 }
 
 .mon-drawer-summary {
   font-size: var(--fs-sm);
+  line-height: 1.65;
   color: var(--text-2);
-  line-height: 1.6;
-  background: var(--bg);
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
-  margin-bottom: 10px;
-  word-break: break-all;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-2);
+  word-break: break-word;
 }
 
 .mon-drawer-empty {
-  color: var(--text-3);
-  font-size: var(--fs-sm);
-  padding: 16px 4px;
-}
-
-.mon-drawer-tl {
-  position: relative;
-  padding-left: 14px;
-  margin: 6px 0;
-}
-
-.mon-drawer-tl::before {
-  content: '';
-  position: absolute;
-  left: 3px;
-  top: 8px;
-  bottom: 8px;
-  width: 1px;
-  background: var(--border);
-}
-
-.mon-tl-item {
-  position: relative;
-  padding: 2px 0 10px;
-}
-
-.mon-tl-dot {
-  position: absolute;
-  left: -13px;
-  top: 8px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-4);
-  border: 1.5px solid var(--bg-panel);
-}
-
-.mon-tl-item.is-my .mon-tl-dot {
-  background: var(--brand);
-}
-
-.mon-tl-item.is-my .mon-tl-body {
-  background: var(--success-soft);
-}
-
-.mon-tl-body {
-  background: var(--bg);
-  border-radius: var(--r-sm);
-  padding: 5px 8px;
-}
-
-.mon-tl-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--fs-xs);
-}
-
-.mon-tl-head b {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mon-tl-head time {
-  color: var(--text-3);
-  flex: none;
-}
-
-.mon-tl-mark {
-  font-style: normal;
-  font-size: var(--fs-xs);
-  padding: 0 5px;
-  border-radius: var(--r-pill);
-  background: var(--border-light);
-  color: var(--text-2);
-  flex: none;
-}
-
-.mon-tl-text {
+  gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-1);
   font-size: var(--fs-sm);
-  line-height: 1.55;
-  margin-top: 3px;
-  word-break: break-word;
-  white-space: pre-wrap;
+  color: var(--text-3);
 }
 
-.mon-drawer-foot {
+.mon-drawer-flags {
   display: flex;
   align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
-  margin-top: 10px;
+  gap: var(--sp-1);
+  margin: var(--sp-1) 0 var(--sp-2);
 }
 
-.mon-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+.mon-reopen-sub {
+  color: var(--text-3);
 }
 
-/* 按钮外观已迁到全局 ui-btn；这里只保留本页密度(工具栏用小号) */
-.mon-btn {
-  font-size: var(--fs-sm);
-  padding: 4px 10px;
-}
-
-.mon-btn.ghost {
-  border-color: var(--border);
-  background: var(--bg-panel);
-}
-
-.mon-btn.danger {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-/* 危险操作(清空/合并):与 confirm-primary.is-danger 同色系 */
-.mon-btn.danger {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.mon-btn.danger:hover {
-  background: rgba(250, 81, 81, 0.08);
-}
-
-.mon-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.mon-drawer-note {
-  margin-top: 10px;
-  font-size: var(--fs-xs);
-  color: var(--warn-text);
-  background: var(--warn-soft);
-  border-radius: var(--r-sm);
-  padding: 6px 9px;
-}
-
-/* ── 跟进人（问题指派）── */
-
-.mon-row-owner {
-  flex: none;
-}
-
-.mon-owner-select {
-  max-width: 116px;
-  font-size: var(--fs-xs);
-  line-height: 20px;
-  padding: 1px 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-panel);
-  color: var(--text-2);
-  cursor: pointer;
-  outline: none;
-}
-
-.mon-owner-select:hover,
-.mon-owner-select:focus {
-  border-color: var(--brand);
-  color: var(--text-1);
-}
-
+/* ── 跟进人 ── */
 .mon-drawer-owner {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0 2px;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
 }
 
 .mon-drawer-owner-label {
@@ -560,180 +666,182 @@
 
 .mon-drawer-owner-hint {
   font-size: var(--fs-xs);
-  color: var(--text-3);
+  color: var(--text-4);
 }
 
-/* ── 问题列表分页表格 ── */
+/* ── 证据时间线：左侧竖线 + 节点，我方/团队的回复节点亮成品牌色 ── */
+.mon-drawer-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: var(--sp-1);
+  padding-right: var(--sp-1);
+}
 
-.mon-tbl-head {
-  display: grid;
-  grid-template-columns: 74px 60px minmax(0, 1fr) 150px 96px;
-  column-gap: 8px;
+.mon-drawer-tl {
+  position: relative;
+  padding-left: var(--sp-4);
+  margin: var(--sp-1) 0;
+}
+
+.mon-drawer-tl::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 6px;
+  bottom: var(--sp-2);
+  width: 1px;
+  background: var(--border);
+}
+
+.mon-tl-item {
+  position: relative;
+  padding: var(--sp-1) 0 var(--sp-2);
+}
+
+.mon-tl-dot {
+  position: absolute;
+  left: -13px;
+  top: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-4);
+  box-shadow: 0 0 0 3px var(--bg-panel);
+}
+
+.mon-tl-item.is-my .mon-tl-dot {
+  background: var(--brand);
+}
+
+.mon-tl-body {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.mon-tl-item.is-my .mon-tl-body {
+  background: var(--success-soft);
+  border-color: var(--success-line);
+}
+
+.mon-tl-head {
+  display: flex;
   align-items: center;
-  padding: 5px 10px;
-  margin-top: 6px;
-  border-radius: var(--r-sm);
-  background: var(--bg-hover);
+  gap: var(--sp-1);
   font-size: var(--fs-xs);
-  color: var(--text-3);
 }
 
-.mon-tbl-head span {
+.mon-tl-head b {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mon-tbl-head span:first-child {
-  text-align: center;
-}
-
-/* 问题列表卡:纵向弹性,表体占满剩余高度,总高与右侧抽屉一致 */
-.mon-list-card {
-  display: flex;
-  flex-direction: column;
-  height: var(--col-h);
-  min-height: 420px;
-}
-
-.mon-list-card > .mon-empty {
-  flex: 1 1 auto;
-  display: grid;
-  place-content: center;
-  padding: 20px 8px;
-}
-
-.mon-tbl-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  margin-top: 4px;
-  overflow-y: auto;
-}
-
-.mon-pager {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.mon-pager-info {
-  font-size: var(--fs-xs);
-  color: var(--text-3);
-}
-
-.mon-pager-ctrl {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.mon-tl-head time {
   margin-left: auto;
+  flex: none;
+  color: var(--text-4);
 }
 
-.mon-pager-ctrl .mon-select {
-  width: auto;
+.mon-tl-mark {
+  flex: none;
 }
 
-/* ── 严重度 / 疑似 / 复发标记 ── */
-
-.mon-st.is-doubt {
-  background: var(--warn-soft);
-  color: var(--warn-text);
-  font-weight: 600;
-  border: 1px dashed var(--warn);
+.mon-tl-text {
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-1);
+  margin-top: 2px;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
-.mon-row-flags {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-right: 6px;
-  vertical-align: middle;
-}
-
-.mon-sev,
-.mon-reopen {
-  font-style: normal;
-  font-size: var(--fs-xs);
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: var(--r-pill);
-  white-space: nowrap;
-}
-
-.mon-sev.is-urgent {
-  background: var(--danger);
-  color: var(--on-brand);
-  font-weight: 600;
-}
-
-.mon-sev.is-high {
-  background: var(--warn-soft);
-  color: var(--warn-text);
-}
-
-.mon-reopen {
-  background: var(--bg-hover);
-  color: var(--danger);
-  border: 1px solid var(--danger-line);
-}
-
-.mon-drawer-flags {
+.mon-drawer-foot {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 2px 0 8px;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  margin-top: var(--sp-2);
+  border-top: 1px solid var(--border-light);
 }
 
-.mon-drawer-flags .mon-sev,
-.mon-drawer-flags .mon-reopen {
-  font-size: var(--fs-xs);
-  padding: 3px 7px;
+.mon-drawer-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
 }
 
-/* ── 维护操作方案/确认(页内展示,替代全局确认弹窗) ── */
+/* ── 处理备注（来自飞书多维表格：同事在手机上填的结论） ── */
+.mon-drawer-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-2);
+  background: var(--warn-soft);
+  border-left: 2px solid var(--warn);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  margin: var(--sp-2) 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mon-drawer-note b {
+  flex: none;
+  color: var(--warn-text);
+}
+
+/* ══════════ 维护操作方案/确认（页内展示，替代全局确认弹窗） ══════════ */
 .mon-plan {
-  margin-top: 10px;
-  border-color: var(--border);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
 }
 
 .mon-plan-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
 }
 
 .mon-plan-head b {
   font-size: var(--fs-md);
-  color: var(--text-1);
+  color: var(--text-strong);
 }
 
 .mon-plan-sub {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   color: var(--text-2);
 }
 
 .mon-plan-spacer {
   flex: 1;
-  min-width: 8px;
+  min-width: var(--sp-2);
 }
 
 .mon-plan-list {
-  margin-top: 8px;
+  margin-top: var(--sp-2);
   max-height: 240px;
   overflow-y: auto;
-  border-top: 1px dashed var(--border-light);
+  border-top: 1px solid var(--border-light);
 }
 
 .mon-plan-item {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 5px 0;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
   font-size: var(--fs-sm);
-  border-bottom: 1px dashed var(--border-light);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .mon-plan-item:last-child {
@@ -761,35 +869,64 @@
 
 .mon-plan-why {
   flex: 0 0 auto;
-  color: var(--text-3);
-  font-size: var(--fs-xs);
 }
 
 .mon-plan-note {
-  margin-top: 8px;
+  margin-top: var(--sp-2);
   font-size: var(--fs-xs);
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--text-3);
 }
 
-/* 处理备注（来自飞书多维表格：同事在手机上填的结论） */
-.mon-drawer-note {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  line-height: 1.6;
-  background: var(--bg);
-  border-left: 2px solid var(--brand);
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
-  margin-bottom: 10px;
-  white-space: pre-wrap;
-  word-break: break-all;
+/* ══════════ 图表区：统一 page-card 语言（标题行 + 说明/时间窗 + 图表） ══════════ */
+.mon-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
 }
 
-.mon-drawer-note b {
-  flex: none;
-  color: var(--brand);
+@media (max-width: 1180px) {
+  .mon-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mon-chart {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+
+.mon-chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.mon-chart-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.mon-chart-sub {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mon-chart-empty {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 150px;
+}
+
+.mon-chart-empty .ui-empty-title {
+  font-size: var(--fs-md);
 }

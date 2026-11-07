@@ -42,7 +42,7 @@ export default function MonitorShell(): React.JSX.Element {
       <div className="mon-head">
         <h2 className="page-title">监控</h2>
         <div className="mon-tabs" role="tablist" aria-label="监控板块">
-          {TABS.map((t) => (
+          {TABS.map((t, i) => (
             <button
               key={t.key}
               type="button"
@@ -51,13 +51,21 @@ export default function MonitorShell(): React.JSX.Element {
               className={`ui-tab mon-tab${tab === t.key ? ' is-active' : ''}`}
               onClick={() => setTab(t.key)}
             >
+              <span className="mon-tab-no ui-num">{String(i + 1).padStart(2, '0')}</span>
               {t.label}
             </button>
           ))}
         </div>
       </div>
-      <div className="page-subtitle">{meta.desc}</div>
-      <Suspense fallback={<div className="mon-loading">加载中…</div>}>
+      <div className="page-subtitle mon-subtitle">{meta.desc}</div>
+      <Suspense
+        fallback={
+          <div className="mon-loading">
+            <span className="ui-spin" aria-hidden="true" />
+            加载中…
+          </div>
+        }
+      >
         {tab === 'ops' ? <DashboardPage /> : <MonitorPage />}
       </Suspense>
     </div>

@@ -1,31 +1,193 @@
-/* 值班页（数字员工） */
+/* 值班页（数字员工）—— 状态头条 + 影子记录 + 话术库 + 回放预演
+ *
+ * 角色分工：
+ * - 状态头条（.dt-status）承担页头：左侧状态灯 + 标题/说明 + 7 天读数 + 右侧动作；
+ * - 记录/话术表沿用全站 HUD 表格语言（sticky 表头 / hairline / hover 冷色底）；
+ * - 按钮/输入/页签/徽标全部复用 ui-*，本文件只留布局与状态色（全部走 token）。
+ */
 
-.dt-page {
-  padding: 20px 24px 40px;
+/* 同客户页：sticky 表头需要滚动容器顶部无 padding，视觉内边距放到页头身上 */
+.page-scroll.dt-page {
+  padding-top: 0;
 }
 
-.dt-toolbar {
+/* ── 页头 ── */
+.dt-head {
+  padding-top: 22px;
   display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
   flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.dt-head .page-title {
+  margin: 0;
+}
+
+.dt-head-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* ── 状态头条 ── */
+.dt-status {
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 14px 0;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-lg);
+  background-color: var(--bg-panel);
+  background-image: var(--panel-gradient);
+  box-shadow: var(--shadow-card), var(--glow-card);
+  overflow: hidden;
 }
 
-.dt-stat {
-  font-size: var(--fs-sm);
+/* 顶部一道极淡冷光：深色下表达「这是一块实时状态面板」，浅色下几乎不可见 */
+.dt-status::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--brand-line), transparent);
+}
+
+/* 状态 → 颜色：正式=青（实时）/ 影子=琥珀（观察）/ 未读取=灰 */
+.dt-status.is-live {
+  --dt-state: var(--brand);
+}
+
+.dt-status.is-shadow {
+  --dt-state: var(--warn);
+}
+
+.dt-status.is-off {
+  --dt-state: var(--text-4);
+}
+
+.dt-lamp {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dt-state);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--dt-state) 16%, transparent),
+    0 0 12px color-mix(in srgb, var(--dt-state) 40%, transparent);
+}
+
+.dt-status-main {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dt-status-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.dt-chip-auto {
   color: var(--text-2);
+  background: var(--bg-hover);
 }
 
-.dt-stat-line {
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  margin-bottom: 10px;
+.dt-status-desc {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  line-height: 1.6;
 }
 
+.dt-kpis {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-4);
+  flex: none;
+}
+
+.dt-status > .dt-kpis {
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--border-light);
+}
+
+.dt-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dt-kpi-k {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.dt-kpi-v {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1.25;
+}
+
+.dt-status-ops {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.dt-btn {
+  flex: none;
+}
+
+/* ── 页签 ── */
+.dt-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.dt-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dt-tab-n {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  transition: color 0.16s ease;
+}
+
+.dt-tab.is-active .dt-tab-n {
+  color: var(--brand);
+}
+
+/* ── 通用小字 ── */
 .dt-hint {
   font-size: var(--fs-xs);
   color: var(--text-3);
+  line-height: 1.6;
 }
 
 .dt-muted {
@@ -33,44 +195,73 @@
   color: var(--text-3);
 }
 
-.dt-tabs {
+.dt-toolbar {
   display: flex;
-  gap: 6px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 14px;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
 }
 
-.dt-section-title {
-  font-size: var(--fs-sm);
-  color: var(--warn-text);
-  margin: 6px 0 10px;
-}
-
-.dt-list,
-.dt-scripts,
-.dt-preview {
+/* ── 影子记录列表 ── */
+.dt-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-2);
+}
+
+.dt-handoff {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: 0 2px;
+}
+
+/* 用 ui-label 的结构（左侧色条 + 小字），颜色改成告警色 */
+.dt-handoff-label {
+  color: var(--warn-text);
+}
+
+.dt-handoff-label::before {
+  background: var(--warn);
+}
+
+.dt-handoff-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 
 .dt-card {
-  border: 1px solid var(--border);
+  position: relative;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-light);
   border-radius: var(--r-md);
-  background: var(--bg-panel);
-  padding: 12px 14px;
+  background-color: var(--bg-panel);
+  background-image: var(--panel-gradient);
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.dt-card:hover {
+  border-color: var(--border-strong);
+}
+
+/* 需人工接手的记录：左缘一条琥珀线，一眼能从列表里挑出来 */
+.dt-card.is-urgent {
+  box-shadow: inset 2px 0 0 var(--warn);
 }
 
 .dt-card-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-2);
 }
 
 .dt-group {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-1);
 }
@@ -80,122 +271,147 @@
   color: var(--text-3);
 }
 
-.dt-intent {
-  font-size: var(--fs-xs);
-  padding: 1px 8px;
-  border-radius: 10px;
-  background: var(--info-soft);
+.dt-decision {
+  flex: none;
+}
+
+/* LLM 兜底 = 信息蓝（第二层语义色，不与主色青抢） */
+.dt-chip-llm {
   color: var(--info);
+}
+
+/* 意图 = 第二强调紫（简报：紫只做第二强调） */
+.dt-chip-intent {
+  color: var(--note);
+  flex: none;
+}
+
+.dt-intent-src {
+  margin-left: 5px;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
 }
 
 .dt-risk {
-  font-size: var(--fs-xs);
-  padding: 1px 8px;
-  border-radius: 10px;
-  background: var(--warn-soft);
+  flex: none;
+}
+
+.dt-risk.is-B {
   color: var(--warn-text);
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
 }
 
 .dt-risk.is-C {
+  color: var(--danger-text);
   background: var(--danger-soft);
-  color: var(--danger);
+  border-color: var(--danger-line);
 }
 
-.dt-badge {
-  font-size: var(--fs-xs);
-  padding: 1px 8px;
-  border-radius: 10px;
-  background: var(--bg-hover);
-  color: var(--text-2);
-}
-
-.dt-badge.is-script,
-.dt-badge.is-reply {
-  background: rgba(7, 193, 96, 0.14);
-  color: var(--brand);
-}
-
-.dt-badge.is-handoff {
-  background: var(--warn-soft);
-  color: var(--warn-text);
-}
-
-.dt-badge.is-llm {
-  background: var(--info-soft);
-  color: var(--info);
+/* 记录正文：左列是「谁说的」标签，右列是内容（两行都对齐同一条基线） */
+.dt-trigger,
+.dt-reply {
+  display: flex;
+  gap: var(--sp-2);
+  line-height: 1.65;
 }
 
 .dt-trigger {
-  font-size: var(--fs-sm);
+  margin-bottom: var(--sp-2);
+}
+
+.dt-k {
+  flex: none;
+  min-width: 42px;
+  padding-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+}
+
+.dt-trigger-text {
+  min-width: 0;
+  font-size: var(--fs-md);
   color: var(--text-2);
   white-space: pre-wrap;
-  margin-bottom: 6px;
+  word-break: break-word;
 }
 
 .dt-reply {
-  font-size: var(--fs-sm);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-2);
+  border-left: 2px solid var(--brand-line);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--bg-sunken);
+}
+
+.dt-reply-text {
+  min-width: 0;
+  font-size: var(--fs-md);
   color: var(--text-1);
-  background: var(--bg-hover);
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
   white-space: pre-wrap;
-  margin-bottom: 6px;
+  word-break: break-word;
 }
 
 .dt-reason {
   font-size: var(--fs-xs);
-  color: var(--text-3);
+  color: var(--text-4);
+  line-height: 1.6;
 }
 
 .dt-ops {
   display: flex;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: var(--sp-2);
+  flex-wrap: wrap;
 }
 
+/* 反馈小胶囊：外观复用 ui-pill（选中态即 ui-pill.is-on），这里只收紧尺寸 */
 .dt-fb {
-  padding: 3px 10px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--bg-panel);
-  color: var(--text-2);
   font-size: var(--fs-xs);
-  cursor: pointer;
+  padding: 2px 9px;
 }
 
-.dt-fb.is-on {
-  border-color: var(--brand);
-  color: var(--brand);
-  background: rgba(7, 193, 96, 0.12);
+/* ── 空态卡片 ── */
+.dt-empty-card {
+  padding: 0;
 }
 
 .dt-empty {
-  padding: 24px;
-  text-align: center;
-  color: var(--text-3);
-  font-size: var(--fs-sm);
+  padding: var(--sp-6) var(--sp-4);
 }
 
-/* 话术库 */
-.dt-form {
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-panel);
-  padding: 12px 14px;
+/* ── 话术库 ── */
+.dt-scripts,
+.dt-preview {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-3);
+}
+
+/* 外观由 page-card + ui-* 提供；这里只留表单排布 */
+.dt-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
 }
 
 .dt-form-title {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--text-1);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+
+.dt-form-hint {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text-4);
 }
 
 .dt-form-row {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
 }
 
@@ -207,8 +423,8 @@
 }
 
 .dt-input.dt-num {
-  min-width: 70px;
-  width: 80px;
+  width: 84px;
+  min-width: 0;
 }
 
 .dt-select {
@@ -218,35 +434,45 @@
 .dt-textarea {
   width: 100%;
   resize: vertical;
-  line-height: 1.5;
-  font-family: inherit;
 }
 
 .dt-form-ops {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
 }
 
 .dt-import summary {
+  padding: var(--sp-1) 0;
   font-size: var(--fs-sm);
-  color: var(--text-2);
+  color: var(--text-3);
   cursor: pointer;
-  margin-bottom: 6px;
 }
 
+.dt-import summary:hover {
+  color: var(--text-2);
+}
+
+.dt-import .dt-textarea {
+  margin: var(--sp-1) 0 var(--sp-2);
+}
+
+/* ── 话术表（HUD 表格，sticky 表头） ── */
 .dt-table {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: var(--r-md);
-  background: var(--bg-panel);
-  overflow: hidden;
+  background-color: var(--bg-panel);
+  background-image: var(--panel-gradient);
+  /* sticky 表头需要不裁剪；圆角交给表头处理 */
+  overflow: visible;
 }
 
 .dt-tr {
   display: grid;
-  grid-template-columns: 44px 1.4fr 1.6fr 82px 56px 110px;
-  gap: 10px;
+  grid-template-columns: 44px minmax(0, 1.35fr) minmax(0, 1.6fr) 86px 64px 108px;
+  gap: var(--sp-2);
   align-items: center;
-  padding: 9px 14px;
+  padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border-light);
   font-size: var(--fs-sm);
 }
@@ -256,13 +482,36 @@
 }
 
 .dt-tr.is-off {
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 .dt-th {
-  background: var(--bg-hover);
-  color: var(--text-3);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-top: 9px;
+  padding-bottom: 9px;
   font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--r-md) var(--r-md) 0 0;
+}
+
+.dt-th-num {
+  text-align: right;
+}
+
+.dt-td-check {
+  display: flex;
+  align-items: center;
+}
+
+.dt-table input[type='checkbox'] {
+  accent-color: var(--brand);
+  cursor: pointer;
+  margin: 0;
 }
 
 .dt-tr-main {
@@ -270,6 +519,12 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+}
+
+.dt-tr-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-1);
 }
 
 .dt-tr-sub {
@@ -281,8 +536,81 @@
 }
 
 .dt-tr-reply {
+  font-size: var(--fs-xs);
+  line-height: 1.5;
   color: var(--text-2);
   overflow: hidden;
-  text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.dt-hit {
+  text-align: right;
+  color: var(--text-2);
+}
+
+.dt-tr-ops {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.dt-mini {
+  padding: 2px 8px;
+}
+
+/* 删除 = 危险动作：hover 才染色，避免每行都挂一个红按钮 */
+.ui-btn.is-ghost.dt-mini-danger:hover:not(:disabled) {
+  border-color: var(--danger-line);
+  color: var(--danger-text);
+  background: var(--danger-soft);
+}
+
+/* ── 回放预演 ── */
+.dt-kpis-inline {
+  align-self: flex-start;
+  gap: var(--sp-5);
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+
+.dt-intents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dt-intent-n {
+  margin-left: 5px;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+}
+
+@media (max-width: 1080px) {
+  .dt-status {
+    align-items: flex-start;
+  }
+
+  .dt-status > .dt-kpis {
+    padding-left: 0;
+    border-left: none;
+    flex-wrap: wrap;
+  }
+
+  .dt-status-ops {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  /* 窄窗收起「命中」列：表头与数据行一起藏，否则表头会多出一个格子挤到下一行 */
+  .dt-tr {
+    grid-template-columns: 36px minmax(0, 1.2fr) minmax(0, 1.6fr) 72px 108px;
+  }
+
+  .dt-tr > :nth-child(5) {
+    display: none;
+  }
+}

@@ -1096,6 +1096,7 @@ function MessagePanel(): React.JSX.Element {
   if (!activeSession) {
     return (
       <div className="wb-chat-empty">
+        <div className="wb-chat-empty-glyph">◈</div>
         <div className="wb-chat-empty-title">{APP_NAME}</div>
         <div className="wb-chat-empty-sub">从左侧选择一个会话开始</div>
       </div>
@@ -1106,10 +1107,12 @@ function MessagePanel(): React.JSX.Element {
     <div className="wb-chat-panel">
       <div className="wb-chat-header">
         <span className="wb-chat-name">{activeSession.displayName || activeSession.username}</span>
-        {activeSession.isWeCom && <span className="wb-tag">企微</span>}
-        {activeSession.isOfficialAccount && <span className="wb-tag">公众号</span>}
+        {activeSession.isWeCom && <span className="ui-chip is-sm">企微</span>}
+        {activeSession.isOfficialAccount && <span className="ui-chip is-sm">公众号</span>}
         {activeSession.unreadCount > 0 && (
-          <span className="wb-tag wb-tag-danger">{activeSession.unreadCount} 条未读</span>
+          <span className="ui-chip is-sm is-bad">
+            <span className="ui-num">{activeSession.unreadCount}</span> 条未读
+          </span>
         )}
       </div>
       <div className="wb-chat-body" ref={bodyRef} onScroll={onBodyScroll}>
@@ -1205,8 +1208,8 @@ function MessagePanel(): React.JSX.Element {
               )}
             </div>
             <textarea
-              className="wb-chat-textarea"
-              placeholder="输入人工回复，Enter 发送，Shift+Enter 换行"
+              className="ui-textarea wb-chat-textarea"
+              placeholder="输入人工回复…"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -1218,7 +1221,7 @@ function MessagePanel(): React.JSX.Element {
             />
             <button
               type="button"
-              className="wb-chat-send"
+              className="ui-btn is-primary wb-chat-send"
               disabled={sending || (!draft.trim() && pendingFiles.length === 0)}
               onClick={() => void handleSend()}
             >
@@ -1228,6 +1231,10 @@ function MessagePanel(): React.JSX.Element {
                   ? `发送(${pendingFiles.length})`
                   : '发送'}
             </button>
+          </div>
+          <div className="wb-chat-hint">
+            <span>Enter 发送 · Shift+Enter 换行</span>
+            {draft.length > 0 && <span className="ui-num wb-chat-count">{draft.length} 字</span>}
           </div>
         </div>
       </div>

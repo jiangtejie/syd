@@ -56,8 +56,26 @@ function MdImg(props: React.ImgHTMLAttributes<HTMLImageElement>): React.JSX.Elem
   )
 }
 
+/**
+ * 表格：外面套一层横向滚动容器。
+ * 为什么不在 CSS 里给 table 加 display:block + overflow（常见写法）：那样表格会退化成
+ * 收缩块，列宽按内容挤在一起、且右侧留一大块空白。包一层 wrap 之后表格仍按 table 布局
+ * 吃满宽度，列多时由 wrap 横向滚动，深色下也不会撑破气泡。
+ */
+function MdTable({
+  node,
+  ...props
+}: React.TableHTMLAttributes<HTMLTableElement> & { node?: unknown }): React.JSX.Element {
+  void node
+  return (
+    <div className="md-table-wrap">
+      <table {...props} />
+    </div>
+  )
+}
+
 /** 固定组件映射（模块级稳定引用）：终稿与流式缓冲共用同一套渲染语义 */
-const MD_COMPONENTS = { a: MdLink, img: MdImg }
+const MD_COMPONENTS = { a: MdLink, img: MdImg, table: MdTable }
 
 /**
  * 放行应用内的自定义协议：ct-media://（解密后的聊天媒体，见 media/mediaProtocol.ts）。
