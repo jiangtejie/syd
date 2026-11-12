@@ -10,6 +10,10 @@ out-preview
 resources/bin/
 .DS_Store
 .eslintcache
+
+# 后台任务工具的运行时状态（task 快照 / 事件流 / 租约锁）：机器本地、含锁文件，与 .eslintcache 同类。
+# 此前既未跟踪也未忽略，`git add -A` 会把它误纳入 —— scripts/_tmp 已踩过两次同样的坑。
+.reasonix/
 *.log*
 *.tsbuildinfo
 
