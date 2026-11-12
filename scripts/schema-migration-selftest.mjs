@@ -8,8 +8,9 @@
  * 做法：schema.ts 是 TS 且相对导入没带扩展名，node 的 type-stripping 不能直接吃，
  * 所以先用 esbuild 打成 CJS（顺带证明主进程侧的代码可独立打包），再在临时库里执行。
  *
- * esbuild 不写进 package.json：它是 vite 的传递依赖，本仓库 npm/pnpm 两套锁文件都在，
- * 为一个自检脚本动锁会带出上千行无关变更（实测 npm 顺带裁掉了 760 行历史依赖）。
+ * esbuild 已显式进 devDependencies：22 个自检脚本都 import 它，此前靠 vite/electron-vite 的
+ * 传递依赖活着（升级即炸）。当时不敢声明是因为 npm/pnpm 两套锁文件并存、动锁会带出上千行
+ * 无关变更；现在只保留 pnpm 一套锁，声明它只需 3 行 importer 变更。
  */
 import Database from 'better-sqlite3-multiple-ciphers'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
@@ -24,7 +25,7 @@ let buildSync
 try {
   ;({ buildSync } = await import('esbuild'))
 } catch {
-  console.error('需要 esbuild（vite 的传递依赖）：请先 npm install / pnpm install')
+  console.error('需要 esbuild（已在 devDependencies 声明）：请先 pnpm install')
   process.exit(1)
 }
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')

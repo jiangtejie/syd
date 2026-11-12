@@ -49,10 +49,6 @@ export const INTENT_SOURCE_TEXT: Record<IntentSource, string> = {
   none: '未归类'
 }
 
-export function intentSourceText(source: string): string {
-  return INTENT_SOURCE_TEXT[(source || 'none') as IntentSource] ?? '未归类'
-}
-
 /** 规则层置信度低于它 → 值得请模型复核 */
 const REVIEW_BELOW = 0.7
 /** 模型复核结果的缓存(文本 hash → 结论),避免同一句话反复问模型 */
@@ -100,11 +96,6 @@ export function intentLabelSet(wxid?: string): string[] {
     }
   }
   return out
-}
-
-/** 话术自带的意图:命中话术时直接采纳,不再跑规则 */
-export function intentFromScript(intent: string): IntentResult {
-  return { intent: intent.trim(), source: 'script', confidence: 1, evidence: ['命中话术'] }
 }
 
 /** 只跑规则层(同步、零成本):预览/回填默认走它 */

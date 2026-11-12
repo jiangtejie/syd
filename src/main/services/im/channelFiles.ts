@@ -1,5 +1,5 @@
 import { app, shell } from 'electron'
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { getConfig } from '../../db/repos/config'
 import * as repo from '../../db/repos/imFileRepo'
@@ -209,15 +209,6 @@ export function stopFileHousekeeping(): void {
   if (cleanupTimer) {
     clearInterval(cleanupTimer)
     cleanupTimer = null
-  }
-}
-
-/** 确保目录存在(写入前) */
-export function ensureFileRoot(): void {
-  try {
-    if (!existsSync(fileRoot())) mkdirSync(fileRoot(), { recursive: true })
-  } catch {
-    /* 忽略 */
   }
 }
 

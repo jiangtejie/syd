@@ -6,6 +6,13 @@
 >
 > **失效项（2026-09 追加）**：涉及 `GrowthPage.tsx` / `components/growth/*` / `growth*.css` 的章节与表格行
 > 已随营销模块**整体下线**失效；行内保留原样以存证，不要再按它们排期。
+>
+> **组件已删（2026-11 追加）**：`components/ui/Modal.tsx` 与 `Feedback.tsx`（`Spinner/Empty/ErrBar`）
+> 建好后**一直零 import**，已随死代码清理删除（见 `improvement-backlog.md` A6）；只被它们使用的
+> `.ui-modal*` / `.ui-mask` / `.ui-empty-step*` 样式块一并删除。
+> **但本文「`ui.css` 改为 `main.tsx` 全局引入」这条结论仍然成立且更重要**：页面是直接用
+> `.ui-empty` / `.ui-spin` / `.ui-err` 这些**类名**手写 markup 的（`.ui-empty` 有 60 处引用），
+> 不依赖那两个组件 —— 所以类名与全局引入都必须保留。`lib/useEscape.ts` / `lib/useCountUp.ts` 同批删除。
 
 ## 0. 基线（本轮实测）
 

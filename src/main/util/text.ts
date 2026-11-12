@@ -23,9 +23,3 @@ export function clipMultiline(s: string, max: number, note = '…(已截断)'): 
   const t = s ?? ''
   return t.length > max ? `${t.slice(0, max)}\n${note}` : t
 }
-
-/** 任意值（非字符串先 JSON.stringify）+ 「…」 */
-export function clipValue(v: unknown, max: number): string {
-  const s = typeof v === 'string' ? v : JSON.stringify(v ?? '')
-  return s.length > max ? s.slice(0, max) + '…' : s
-}

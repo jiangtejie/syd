@@ -163,6 +163,18 @@ export const COLUMN_MIGRATIONS: ColumnMigration[] = [
     note: '会话域：空=客服工作台（营销 AI 工作台曾用 growth，该模块已下线，迁移 8 清掉了它的会话）'
   },
   {
+    table: 'chat_session',
+    column: 'summary',
+    ddl: 'TEXT',
+    note: '长会话旧段摘要：落库后不必每轮重新摘要（此前每轮都拿全量历史重算一次，成本随轮次线性叠加）'
+  },
+  {
+    table: 'chat_session',
+    column: 'summary_upto_id',
+    ddl: 'INTEGER NOT NULL DEFAULT 0',
+    note: '摘要水位：已覆盖到的最大 chat_message.id。水位之前的行只活在摘要里，不再进上下文也不再重复喂模型'
+  },
+  {
     table: 'lark_sync_map',
     column: 'remote_status',
     ddl: "TEXT NOT NULL DEFAULT ''",

@@ -1,132 +1,15 @@
-/* ══════════ 共享弹层基元 ══════════
- * 为什么要有它：此前「弹层」有四套实现 —— 业务面板各一套、对话页的 .wb-* 覆盖层、
- * 图片灯箱，各自写了一份遮罩 + 卡片 + 关闭按钮，
- * 改一处口径（圆角/遮罩深浅/头像位置的关闭按钮）要改四处。这里给出唯一一套。
+/* ══════════ 跨页共用的空态 / 错误条 / 转圈 ══════════
+ * 为什么要有它：同一个「没有数据」曾在客户页/数据页/看板各写一份长相不同的空态与红条。
+ * 这里给出唯一一套类名，页面直接用（.ui-empty / .ui-err / .ui-spin）。
  *
- * 与 ConfirmDialog 的分工：确认框（是/否）继续走 components/ConfirmDialog.tsx（那套有它的
- * Promise 契约与焦点策略）；Modal 负责**内容型弹层**（选择、详情、表单）。
+ * 约定：空态必须「说清下一步」（用 .ui-empty-hint 给可执行动作，而不是「暂无数据」四个字）；
+ * 错误条要能给重试（自己在 .ui-err 里放一个 ui-btn）。
  *
- * 迁移方式：逐页替换，替换完删掉该页对应样式 —— 别一次性重写全站（同 base.css 里 ui-* 的约定）。
+ * 弹层不在这里：确认框走 components/ConfirmDialog.tsx（它有 Promise 契约与焦点策略），
+ * 其余覆盖层各页用自己的 .wb-* / 灯箱样式。
  */
-.ui-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  background: var(--bg-mask);
-  backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--sp-6) var(--sp-4);
-  animation: ui-fade-in 160ms ease-out both;
-}
-
-.ui-modal {
-  position: relative;
-  width: min(720px, 100%);
-  max-height: min(86vh, 900px);
-  display: flex;
-  flex-direction: column;
-  background-color: var(--bg-panel);
-  background-image: var(--panel-gradient);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-pop);
-  overflow: hidden;
-  animation: ui-pop 180ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
-}
-
-/* 浮层顶部细光：深色下让弹层自带「发光边框」的错觉，浅色下是极淡的品牌色 */
-.ui-modal::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--brand-line), transparent);
-  pointer-events: none;
-}
-
-.ui-modal.is-sm {
-  width: min(460px, 100%);
-}
-.ui-modal.is-lg {
-  width: min(920px, 100%);
-}
-
-.ui-modal-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  border-bottom: 1px solid var(--border-light);
-}
-
-.ui-modal-head .t {
-  flex: none;
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  color: var(--text-1);
-}
-
-.ui-modal-head .s {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ui-modal-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--sp-4);
-}
-
-.ui-modal-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4);
-  border-top: 1px solid var(--border-light);
-  background: var(--bg-sunken);
-}
-
-@keyframes ui-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes ui-pop {
-  from {
-    opacity: 0;
-    transform: scale(0.97) translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* 减少动态偏好：不做缩放与淡入（系统级设置，别用动效对抗它） */
-@media (prefers-reduced-motion: reduce) {
-  .ui-mask,
-  .ui-modal {
-    animation: none;
-  }
-}
-
 /* ── 空态与错误条（跨页共用） ── */
-/* ── 转圈：慢操作（首次爆改先拆解素材 10-30s / 媒体重下 / 批量诊断）必须有"在动"的证据 ── */
+/* ── 转圈：慢操作（媒体重下 / 批量诊断 / 首次解密）必须有"在动"的证据 ── */
 .ui-spin {
   display: inline-block;
   flex: none;
@@ -136,7 +19,7 @@
   opacity: 0.85;
   animation: ui-spin 0.7s linear infinite;
   vertical-align: -2px;
-  /* JSX 里 <Spinner /> 与后面的文字之间没有空白节点，间距只能靠这里给 */
+  /* 转圈与后面的文字之间没有空白节点，间距只能靠这里给 */
   margin-right: 5px;
 }
 
@@ -159,38 +42,6 @@
   font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text-1);
-}
-
-.ui-empty-steps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  max-width: 560px;
-  text-align: left;
-}
-
-.ui-empty-step {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-2);
-  font-size: var(--fs-md);
-  line-height: 1.7;
-  color: var(--text-2);
-}
-
-.ui-empty-step .no {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--brand);
-  background: var(--brand-soft);
 }
 
 .ui-err {

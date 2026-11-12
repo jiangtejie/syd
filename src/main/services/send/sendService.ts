@@ -459,11 +459,6 @@ export function enqueueSendFile(job: Omit<SendJob, 'resolve' | 'text'>): Promise
   return enqueueSend({ ...job, text: '' })
 }
 
-export function isHalted(): boolean {
-  hydrateOnce()
-  return halted
-}
-
 export function resetCircuit(): void {
   halted = false
   failStreak = 0

@@ -187,26 +187,6 @@ export function listRepliesChangedSince(wxid: string, sinceMs: number, limit = 3
   return rows.map(toReply)
 }
 
-export function setReplyStatus(
-  id: number,
-  status: ReplyStatus,
-  extra: { sentAt?: number; verifyOk?: boolean; error?: string } = {}
-): void {
-  getDb()
-    .prepare(
-      'UPDATE agent_reply SET status = ?, sent_at = COALESCE(?, sent_at),' +
-        ' verify_ok = COALESCE(?, verify_ok), error = ?, updated_at = ? WHERE id = ?'
-    )
-    .run(
-      status,
-      extra.sentAt ?? null,
-      extra.verifyOk === undefined ? null : extra.verifyOk ? 1 : 0,
-      extra.error ?? null,
-      Date.now(),
-      id
-    )
-}
-
 /** 人工反馈：good=答得对 / bad=答错 / no-reply=这条根本不该回（反例，供后续优化话术） */
 export function setReplyFeedback(id: number, feedback: string): void {
   getDb()
@@ -270,15 +250,4 @@ export function setReplyIntent(
         ' intent_evidence = ?, updated_at = ? WHERE id = ?'
     )
     .run(v.intent, v.source, v.confidence, v.evidence, Date.now(), id)
-}
-
-/** 按来源统计意图识别质量(界面用:规则/模型/未归类各多少条) */
-export function intentSourceCounts(wxid: string): Array<{ source: string; n: number }> {
-  const rows = getDb()
-    .prepare(
-      'SELECT intent_source AS source, COUNT(*) AS n FROM agent_reply' +
-        ' WHERE account_wxid = ? GROUP BY intent_source ORDER BY n DESC'
-    )
-    .all(wxid) as Array<{ source: string; n: number }>
-  return rows.map((r) => ({ source: r.source || 'none', n: Number(r.n ?? 0) }))
 }

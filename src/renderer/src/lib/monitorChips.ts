@@ -1,10 +1,10 @@
 import type { FeedbackIssue, FeedbackIssueStatus } from '../../../shared/types'
 
 /**
- * 状态徽标文案与配色（表格 / 追踪抽屉同口径）：
+ * 状态徽标文案与配色（**全仓唯一口径**：监控表格 / 追踪抽屉 / 群问题面板共用）。
  * 疑似桶优先，open 再细分 跟进中 / 跟进超时，done 标注自动闭环。
+ * 语气映射见 components/monitor/IssueBits.tsx 的 STATUS_TONE。
  */
-/** 状态徽标文案与配色（表格/抽屉/群问题面板同口径：疑似优先，跟进中/超时细分） */
 const STATUS_CHIP: Record<FeedbackIssueStatus, { label: string; cls: string }> = {
   open: { label: '待处理', cls: 'is-open' },
   done: { label: '已解决', cls: 'is-done' },

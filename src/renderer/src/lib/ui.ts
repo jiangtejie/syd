@@ -48,17 +48,6 @@ export function previewSummary(summary: string): string {
   return first.replace(/\s+/g, ' ').trim()
 }
 
-/** 消息时间：当天 HH:mm:ss，否则 M/D HH:mm:ss */
-export function formatMessageTime(ts: number): string {
-  if (!ts) return ''
-  const d = new Date(ts)
-  const now = new Date()
-  const sameDay = d.toDateString() === now.toDateString()
-  const hh = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`
-  if (sameDay) return hh
-  return `${d.getMonth() + 1}/${d.getDate()} ${hh}`
-}
-
 /** 消息时间分隔条：>5 分钟间隔时插入。今天 HH:mm:ss，昨天 昨天 HH:mm:ss，更早 M/D HH:mm:ss，跨年 YYYY/M/D HH:mm:ss */
 export function formatTimeDivider(ts: number): string {
   if (!ts) return ''

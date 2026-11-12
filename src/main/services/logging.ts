@@ -65,10 +65,6 @@ function dayOf(d: Date): string {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
 }
 
-export function logsDir(): string {
-  return dir
-}
-
 /** 确保日志目录就绪并返回其绝对路径(供"打开目录"使用) */
 export function ensureLogsDir(): string {
   ensureCurrentFile()

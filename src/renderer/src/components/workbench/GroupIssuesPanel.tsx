@@ -4,6 +4,7 @@ import { confirmAsk } from '../../stores/confirmDialog'
 import { toast } from '../../stores/toast'
 import { useTeamNames } from '../../lib/teamNames'
 import { fmtTimeShort as fmtTime } from '../../../../shared/monitorMetrics'
+import { statusChip } from '../../lib/monitorChips'
 import { TeamMarkButton } from '../TeamMarkButton'
 import { SenderMarkFold } from './SenderMarkFold'
 import type {
@@ -20,13 +21,6 @@ import type {
  * 交互：点行展开证据时间线（首现→最新）；处理/重开/搁置/误报忽略；自动闭环(检测到客服回复)有徽标；
  *      可从展开区一键「在聊天中定位」。
  */
-
-const STATUS_LABEL: Record<FeedbackIssueStatus, string> = {
-  open: '待处理',
-  done: '已解决',
-  stalled: '已搁置',
-  archived: '已归档'
-}
 
 const DAYS_OPTIONS = [1, 2, 3, 7]
 const DAYS_KEY = 'cs.gipDays'
@@ -415,20 +409,8 @@ function GroupIssuesPanel(): React.JSX.Element {
       {rows.map((it) => {
         const expanded = expandedId === it.id
         const detail = activeDetail && activeDetail.id === it.id ? activeDetail : null
-        // 状态文案：open 区分 待处理/跟进中/跟进超时；done+autoDone=自动解决；疑似桶优先
-        const isOpen = it.status === 'open'
-        const doubtRow = !!(isOpen && it.needConfirm)
-        const stLabel = doubtRow
-          ? '疑似'
-          : isOpen
-            ? it.followUp
-              ? it.followUpOverdue
-                ? '跟进超时'
-                : '跟进中'
-              : '待处理'
-            : it.status === 'done' && it.autoDone
-              ? '自动解决'
-              : (STATUS_LABEL[it.status] ?? it.status)
+        // 状态文案与配色走全仓唯一口径（此前这里内联重写了一遍，且把「跟进超时」和「跟进中」涂成同一个色）
+        const chip = statusChip(it)
         return (
           <div key={it.id}>
             <div
@@ -443,13 +425,7 @@ function GroupIssuesPanel(): React.JSX.Element {
                 }
               }}
             >
-              <span
-                className={`gip-cell-st gip-st ${isOpen && it.followUp ? 'is-follow' : `is-${it.status}`}${
-                  doubtRow ? ' is-doubt' : ''
-                }`}
-              >
-                {stLabel}
-              </span>
+              <span className={`gip-cell-st gip-st ${chip.cls}`}>{chip.label}</span>
               <span className="gip-cell-main">
                 <span className="gip-title-line">
                   <i className={`gip-type t-${it.type}`}>{it.type}</i>

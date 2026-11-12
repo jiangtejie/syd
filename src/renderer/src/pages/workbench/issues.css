@@ -356,6 +356,27 @@
   color: var(--text-3);
 }
 
+/* 语气与监控页 STATUS_TONE 对齐：跟进中=警示、跟进超时=危险、自动闭环=成功。
+   此前这三态都没有规则，「跟进超时」和「跟进中」落到同一个底色，超时看不出来。 */
+.gip-st.is-follow {
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+  color: var(--warn-text);
+}
+
+.gip-st.is-overdue {
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+  color: var(--danger-hover);
+  font-weight: 600;
+}
+
+.gip-st.is-auto {
+  background: var(--success-soft);
+  border-color: var(--success-line);
+  color: var(--success-strong);
+}
+
 .gip-title-line {
   display: flex;
   align-items: flex-start;

@@ -490,7 +490,7 @@ export interface ChatTurn {
 
 /** 会话工具执行事件(渲染端工具卡片) */
 export interface AiChatEvent {
-  type: 'delta' | 'tool' | 'done' | 'error' | 'status'
+  type: 'delta' | 'tool' | 'done' | 'error' | 'status' | 'compaction'
   chatId: number
   wxid?: string
   token?: string

@@ -3,22 +3,22 @@ import { createAiProvider, readProviderConfig, type ToolSchema, type WireMsg } f
 import { getConfig } from '../../../db/repos/config'
 import { getAgentById, getDefaultAgent } from '../../../db/repos/agentRepo'
 import { memoSystemBlock } from '../memo'
-import { getDb } from '../../../db/database'
 import {
   appendChatMessage,
-  clearChatMessages,
   createChat,
   getChatById,
-  lastUserMessage,
+  getChatSummary,
   listChatMessages,
   listChats,
   removeChat,
   renameChat,
   setChatAgent,
+  setChatSummary,
   touchChat
 } from '../../../db/repos/chatRepo'
 import { findTool, schemaFromParams, type ToolCtx, type ToolDef } from './skills'
 import { describeModelError } from '../modelErrors'
+import { mergeSummary, normalizeSummary, planContextWindow, trimByBudget } from '../contextWindow'
 import { sendApproveEnabled, SEND_TOOL_NAME } from '../sendGate'
 import { approvalDecision } from '../workbench/approval'
 import { allowedByTier, getSessionCapTier, tierDeniedText } from '../cap/tiers'
@@ -46,11 +46,8 @@ import type { AiChatEvent, AiStyle, ChatMsgItem, ChatTurn } from '../../../../sh
  */
 
 const MAX_TOOL_ROUNDS = 4
-const HISTORY_MAX_ROWS = 40
-/** 上下文字符预算(约等于主流 8K 上下文的 2/3,防长会话爆窗) */
+/** 上下文字符预算。压缩触发阈值由它派生(×0.75=36k),口径与工作台共用 ai/contextWindow.ts */
 const CONTEXT_CHAR_BUDGET = 48_000
-/** 单条消息最长保留字符(超长截断并加尾注) */
-const MAX_MSG_CHARS = 6000
 const SYSTEM_FALLBACK =
   '你是「' +
   APP_NAME +
@@ -307,11 +304,12 @@ function parseToolIntent(text: string): { tool: string; args: Record<string, unk
   return null
 }
 
-/** 历史消息 → LLM turns(工具结果以 user 角色回填;tool_call 行仅 UI 用,不入上下文) */
-function historyToTurns(rows: ChatMsgItem[]): ChatTurn[] {
+/** 历史消息 → LLM turns(工具结果以 user 角色回填;tool_call/compact 行仅 UI 用,不入上下文) */
+function historyToTurns(rows: ChatMsgItem[]): { turns: ChatTurn[]; dropped: number } {
   const turns: ChatTurn[] = []
   for (const r of rows) {
-    if (r.kind === 'error' || r.kind === 'tool_call') continue
+    // compact 是压缩标记行,喂回模型等于把摘要当对话重复一遍
+    if (r.kind === 'error' || r.kind === 'tool_call' || r.kind === 'compact') continue
     if (r.kind === 'tool_result') {
       turns.push({ role: 'user', content: `[工具结果]\n${r.content}` })
       continue
@@ -320,69 +318,61 @@ function historyToTurns(rows: ChatMsgItem[]): ChatTurn[] {
       turns.push({ role: r.role, content: r.content })
     }
   }
-  // 单条截断 + 总量预算:保留最新,超限从最旧丢弃
-  const kept: ChatTurn[] = []
-  let sum = 0
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const t = turns[i]
-    const content =
-      t.content.length > MAX_MSG_CHARS
-        ? `${t.content.slice(0, MAX_MSG_CHARS)}\n…(超长已截断)`
-        : t.content
-    if (kept.length > 0 && sum + content.length > CONTEXT_CHAR_BUDGET) break
-    kept.unshift({ role: t.role, content })
-    sum += content.length
-  }
-  // 条数上限兜底(预算未触发时)
-  return kept.length > HISTORY_MAX_ROWS ? kept.slice(kept.length - HISTORY_MAX_ROWS) : kept
+  const { kept, dropped } = trimByBudget(turns, CONTEXT_CHAR_BUDGET)
+  return { turns: kept, dropped }
 }
 
-/** 历史总字符估算 */
-function rowsChars(rows: ChatMsgItem[]): number {
-  return rows.reduce((n, r) => n + r.content.length, 0)
+/** 摘要输入里的角色标签(助手侧要区分工具结果/错误,与工作台口径不同) */
+function summaryLabel(r: ChatMsgItem): string {
+  if (r.role === 'user') return '用户'
+  if (r.kind === 'tool_result') return '工具结果'
+  if (r.kind === 'error') return '错误'
+  return '助手'
 }
 
 /**
- * 长会话上下文压缩:历史超阈值时,保留最近一半完整消息,
- * 较早一半用 LLM 压缩成摘要文本(失败则降级直接丢旧,不影响对话)。
+ * 长会话上下文压缩:超阈值时保留最近一半,较早一半摘要成文本。
+ * 摘要落库带水位(已摘要过的行不再重复喂模型),压缩与裁剪都落 compact 行 + 推事件,
+ * 口径与工作台引擎共用 ai/contextWindow.ts —— 此前两边各写一遍,可见性修复只落了工作台那一份。
  */
 async function loadHistoryCtx(
+  wxid: string,
   sessionId: number
 ): Promise<{ rowsTail: ChatMsgItem[]; summary: string | null }> {
-  const rows = listChatMessages(sessionId)
-  if (rows.length < 24 || rowsChars(rows) <= 36_000) {
-    return { rowsTail: rows, summary: null }
-  }
-  const keep = Math.ceil(rows.length / 2)
-  const tail = rows.slice(rows.length - keep)
-  const old = rows.slice(0, rows.length - keep)
+  // compact 是展示行,不参与压缩统计,也不该被再摘要一次
+  const rows = listChatMessages(sessionId).filter((r) => r.kind !== 'compact')
+  const persisted = getChatSummary(sessionId)
+  const plan = planContextWindow(rows, {
+    budgetChars: CONTEXT_CHAR_BUDGET,
+    uptoId: persisted.uptoId,
+    labelOf: summaryLabel
+  })
+  let summary = persisted.summary
+  if (!plan.shouldCompress) return { rowsTail: plan.tail, summary }
+
   const provider = createAiProvider('chat')
-  if (!provider) return { rowsTail: tail, summary: null }
-  const text = old
-    .map((r) => {
-      const who =
-        r.role === 'user'
-          ? '用户'
-          : r.kind === 'tool_result'
-            ? '工具结果'
-            : r.kind === 'error'
-              ? '错误'
-              : '助手'
-      const c = r.content.length > 400 ? `${r.content.slice(0, 400)}…` : r.content
-      return `${who}: ${c}`
-    })
-    .join('\n')
-    .slice(-24_000)
-  try {
-    const s = await provider.complete(
-      '你是对话摘要器。用户会给一段客服 AI 助手的历史对话,请压缩为不超过 400 字的中文摘要,保留:已查到的业务结论与数据要点、客户诉求与状态、执行过的工具及其结果要点、未完成/待跟进事项。不要复述寒暄。',
-      `历史对话:\n${text}`
-    )
-    const summary = (s || '').trim().slice(0, 1400)
-    return { rowsTail: tail, summary: summary || null }
-  } catch {
-    return { rowsTail: tail, summary: null }
+  let fresh: string | null = null
+  if (provider && plan.summaryInput) {
+    try {
+      fresh = normalizeSummary(
+        await provider.complete(
+          '你是对话摘要器。用户会给一段客服 AI 助手的历史对话,请压缩为不超过 400 字的中文摘要,保留:已查到的业务结论与数据要点、客户诉求与状态、执行过的工具及其结果要点、未完成/待跟进事项。不要复述寒暄。',
+          `历史对话:\n${plan.summaryInput}`
+        )
+      )
+    } catch {
+      fresh = null
+    }
   }
+  // 摘要失败**不推进水位**:否则旧段既不在摘要里也不在上下文里,等于永久丢失
+  if (fresh) {
+    summary = mergeSummary(summary, fresh)
+    setChatSummary(sessionId, summary, plan.nextUptoId)
+  }
+  const compactText = summary ?? '旧对话过长已压缩,仅保留最近一段(摘要生成失败,下轮会重试)。'
+  appendChatMessage(sessionId, 'assistant', 'compact', compactText)
+  sendEvent(wxid, { type: 'compaction', chatId: sessionId, text: compactText })
+  return { rowsTail: plan.tail, summary }
 }
 
 async function runTurn(opts: {
@@ -417,12 +407,18 @@ async function runTurn(opts: {
   try {
     if (opts.appendUserRow) appendChatMessage(sessionId, 'user', 'text', userText)
     const agentId = opts.agentId ?? undefined
-    const ctx = await loadHistoryCtx(sessionId)
+    const ctx = await loadHistoryCtx(wxid, sessionId)
     const system =
       (await assembleTurnSystem({ agentId, wxid, sessionId, native: false })) +
       (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '') +
       imChannelNote(wxid)
-    const turns = historyToTurns(ctx.rowsTail)
+    const { turns, dropped } = historyToTurns(ctx.rowsTail)
+    // 裁剪确实丢了行就必须可见(静默丢上下文正是这条链路原来的故障)
+    if (dropped > 0) {
+      const note = `上下文仍超出预算,已丢弃最早的 ${dropped} 条历史(更早的内容在摘要里)。`
+      appendChatMessage(sessionId, 'assistant', 'compact', note)
+      sendEvent(wxid, { type: 'compaction', chatId: sessionId, text: note })
+    }
     turns.push({ role: 'user', content: userText })
 
     // token 用量累计(决策轮 + 工具轮 + 终文)
@@ -911,7 +907,7 @@ async function runTurnNative(opts: {
   try {
     if (opts.appendUserRow) appendChatMessage(sessionId, 'user', 'text', userText)
     const agentId = opts.agentId ?? undefined
-    const ctx = await loadHistoryCtx(sessionId)
+    const ctx = await loadHistoryCtx(wxid, sessionId)
     const system =
       (await assembleTurnSystem({ agentId, wxid, sessionId, native: true })) +
       (ctx.summary ? `\n\n# 较早对话摘要(均发生在本次提问之前)\n${ctx.summary}` : '') +
@@ -919,7 +915,13 @@ async function runTurnNative(opts: {
     let schemas = await nativeSchemas(sessionId, bound)
 
     const wire: WireMsg[] = [{ role: 'system', content: system }]
-    for (const t of historyToTurns(ctx.rowsTail)) {
+    const { turns: histTurns, dropped } = historyToTurns(ctx.rowsTail)
+    if (dropped > 0) {
+      const note = `上下文仍超出预算,已丢弃最早的 ${dropped} 条历史(更早的内容在摘要里)。`
+      appendChatMessage(sessionId, 'assistant', 'compact', note)
+      sendEvent(wxid, { type: 'compaction', chatId: sessionId, text: note })
+    }
+    for (const t of histTurns) {
       wire.push({ role: t.role, content: t.content })
     }
     wire.push({ role: 'user', content: userText })
@@ -1055,56 +1057,6 @@ export function stopChat(wxid: string, chatId: number): void {
 /** 会话是否正在生成(IM 渠道忙碌排队用;键与引擎一致) */
 export function isChatRunning(wxid: string, chatId: number): boolean {
   return !!running.get(runKeyOf(wxid, chatId))?.active
-}
-
-/** 按会话 id 中止其运行(删除/清空会话前调用,防孤儿任务继续写已删会话) */
-export function stopChatById(chatId: number): void {
-  for (const handle of running.values()) {
-    if (handle.chatId === chatId && handle.active) handle.controller.abort()
-  }
-}
-
-/** 重试:移除失败的尾部 assistant/error 行,重跑最后一次 user 消息 */
-export async function retryChat(
-  wxid: string,
-  chatId: number,
-  agentId?: string | null
-): Promise<SendChatResult> {
-  const rows = listChatMessages(chatId)
-  // 去掉尾部 assistant(error/空)或未完成的 tool 轮残留
-  while (rows.length > 0) {
-    const last = rows[rows.length - 1]
-    if (last.role === 'assistant' || last.kind === 'tool_call' || last.kind === 'tool_result') {
-      // 直接重建:清空后重放全部历史代价高;此处删除最后几类行改用 DB 清理辅助函数
-      clearLastMessage(chatId)
-      rows.pop()
-      continue
-    }
-    break
-  }
-  const userText = lastUserMessage(chatId)
-  if (!userText) return { ok: false, error: '没有可重试的消息' }
-  void dispatchTurn({
-    wxid,
-    sessionId: chatId,
-    agentId: agentId ?? undefined,
-    userText,
-    appendUserRow: false
-  })
-  return { ok: true, chatId }
-}
-
-function clearLastMessage(sessionId: number): void {
-  getDb()
-    .prepare(
-      `DELETE FROM chat_message WHERE id = (SELECT MAX(id) FROM chat_message WHERE session_id = ?)`
-    )
-    .run(sessionId)
-}
-
-/** 清空会话消息(保留会话) */
-export function clearChat(sessionId: number): void {
-  clearChatMessages(sessionId)
 }
 
 /** 确认高危工具 */

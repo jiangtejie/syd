@@ -10,7 +10,7 @@ Electron 桌面应用：读本机微信数据 → 本地库与工作台 → AI �
 
 | 层 | 技术 | 说明 |
 | --- | --- | --- |
-| 桌面框架 | Electron 39 + electron-vite 5 | 主进程 / preload / 渲染三端构建；Node 要求 `^20.19.0 \|\| >=22.12.0` |
+| 桌面框架 | Electron 39 + electron-vite 5 | 主进程 / preload / 渲染三端构建；Node 要求 `>=22.12.0`（electron-vite 5 与自检的 `--experimental-strip-types` 两个下限取交集，后者需 ≥22.6）；包管理器 pnpm（`packageManager` 已钉版本） |
 | 渲染端 | React 19 + TypeScript 5.9 + zustand 5 | 页面、状态管理（工作台 / 会话 / toast / 确认框） |
 | 图表 | ECharts 6 | 监控中心与看板的纯函数配置（`renderer/src/pages/monitorCharts.ts` 等） |
 | 样式 | 手写 CSS + 语义设计 token | 双主题（默认深色赛博朋克 / 浅色可切）；token 唯一源 `assets/base.css`，控件基元 `ui-*` |
@@ -85,7 +85,7 @@ src/
 │  ├─ pages/                     对话(Workbench) / AI(WorkbenchChat) / 监控 / 看板 / 客户 / 数据 / 设置
 │  ├─ components/                workbench(消息面板/群问题面板/建议面板/文件托盘) · monitor(抽屉/方案条/KPI) · settings
 │  ├─ stores/                    workbench / workbenchChat / toast / confirmDialog
-│  └─ lib/                       customers / monitorMetrics(已迁 shared) / monitorChips / teamNames / ui / useCountUp
+│  └─ lib/                       customers / monitorMetrics(已迁 shared) / monitorChips / teamNames / ui / toolTimeline / imageFit / sessionAvatar
 └─ shared/                       types.ts（领域类型）· api.ts（桥接口真源）· monitorMetrics.ts（BI 纯函数）
 ```
 
@@ -107,7 +107,8 @@ src/
 - **明文副本**：落 `<cache>/db/<name>_<hash>.db`（以「源库路径 + key」的 md5 命名复用；历史目录 `wx-plain` 启动自动并入），只读打开、用完即关；写入前后有 `prunePlainDbCache` 按 `wechat.plainCacheMaxMB=3072` / `plainCacheMaxFiles=20` 收敛（防「解密副本把磁盘吃满」）。
 
 缓存分区由 `paths.ts` 统一管理（**禁止硬编码子目录**）：
-`db/` 明文库副本 · `media/<wxid>/` 附件解码产物（ct-media 映射根）· `files/` 渠道接收文件 · `tmp/` 一次性临时 · `export/` 导出产物。
+`db/` 明文库副本 · `media/<wxid>/` 附件解码产物（ct-media 映射根）· `files/` 渠道接收文件。
+分区表只登记**真有人写**的用途：曾登记过 `tmp/` 与 `export/`，但存取函数零调用、导出实际走用户选定目录，已一并移除（避免「代码里的分区 ≠ 磁盘上的分区」）。
 
 库定位 `dbLocator.ts` 兼容 `<root>/db_storage`、`<root>/<wxid>/db_storage`、`<root>/<wxid>_xxx/db_storage`，递归扫描 `msg_*.db / message_*.db`，加权定位 `session.db / contact.db / head_image.db`。
 
@@ -283,6 +284,22 @@ PBKDF2 不可逆，它们无法被合并回口令（真机实测：19 个库 19 
 ### 6.4 AI 助手与能力分层（`ai/chat/*` + `ai/cap/*`）
 
 多会话助手，工具来自 `cap/registry.ts`（唯一清单：分组/停用/审批标记）与 `cap/tiers`（会话级能力分层，`chat_session.caps`）、`cap/software`（软件能力包）、`cap/mounts`、`cap/meta`（元工具，让模型自查可用能力）。
+引擎服务的是 **IM 渠道**（飞书机器人 / 微信 ClawBot），事件走 `ai:chat` + `registerEventSink`；工作台引擎服务渲染端，事件走 `ai:wb`。两者是不同 surface，不是新旧替换关系。
+
+### 6.5 上下文窗口与长会话压缩（`ai/contextWindow.ts`，两个引擎共用）
+
+**为什么单独一份**：工作台引擎与 IM 助手引擎原本各写了一遍同样的算法（单条 6000 字截断、总量预算、40 条上限、「保留最近一半 + 旧段摘要」、每行 400 字、摘要输入 24k、输出 1400 字）。复制之后只有一边改了常量，缺陷就只长在其中一份上：
+
+- 工作台裁剪上限 24k **小于**压缩触发阈值 36k → 24k~36k 之间先静默丢行、永远等不到压缩；助手侧预算 48k 大于阈值，同样的代码却没这个 bug。
+- 压缩可见性的修复也只落了一份（工作台落 `compact` 行 + 推 `compaction` 事件，助手侧什么都没有）。
+
+现在三条口径都由纯函数收口（`npm run test:ai-context`）：
+
+1. **触发阈值由预算派生**（`预算 × 0.75`），结构上保证「先压缩、后裁剪」，不可能再配反；助手侧 48k → 36k 与它原阈值一致，行为不变。**超行数上限同样触发压缩**，不再按条数静默丢行。
+2. **裁剪结果显式回传 `dropped`**，两个引擎都必须落 `compact` 行 + 推事件（不许静默）。
+3. **摘要带水位**：`chat_session.summary` + `summary_upto_id`。水位之前的行只活在摘要里，不再进上下文也不再重复喂模型 —— 每行最多被摘要一次，长会话成本不随轮次线性叠加（自检实测 40 轮从近 40 次摘要降到 7 次）。**摘要失败不推进水位**，否则旧段既不在摘要也不在上下文，等于永久丢失。
+
+`clearChatMessages` 必须把摘要与水位一起清（只删消息不清摘要，模型会「记得」已删掉的对话）—— `npm run test:chat-summary` 在临时库上跑真 SQL 钉住这条。
 
 ---
 
@@ -551,11 +568,12 @@ schema 分三层，改表前先判断属于哪一层（见 `db/schema/`）：
 | `issue_feedback` / `issue_feedback_msg` | 在用 | 群问题议题与证据（状态/跟进/指派/复发/归档来源） |
 | `team_member` | 在用 | 团队客服名单（判定「我方同事」的唯一来源） |
 | `ai_agent` | 在用 | 智能体（人设/风格/提示词） |
-| `chat_session` / `chat_message` / `wb_feedback` | 在用 | AI 助手/工作台会话、消息、反馈（👍/👎） |
+| `chat_session` / `chat_message` / `wb_feedback` | 在用 | AI 助手/工作台会话、消息、反馈（👍/👎）。`chat_session` 另带 `summary` + `summary_upto_id`（长会话摘要与水位，见 §6.5） |
 | `im_channel_account` / `im_chat_map` / `im_audit` / `im_file_record` | 在用 | 外部 IM 渠道、会话映射、审计、接收文件索引 |
 | `feishu_send_log` | 在用 | 飞书通知审计（目标/内容/结果/幂等） |
 | `report_job` / `report_run` / `report_cursor` | 在用 | 定时上报任务、运行历史、增量游标 |
-| `customer` / `session` / `tier_rule` / `knowledge_item` / `reply_decision` | 预留（**不再建表**） | 客户库、门控/转人工、条件规则、知识库、决策状态机。DDL 留在 `schema/reserved.ts`，接入时再搬进 `base.ts` —— 此前每次新建库都建出这 5 张空表，导致「库里有的表 ≠ 代码在用的表」 |
+| `customer_profile` / `customer_tag` | 在用 | 客户档案与标签（会话同步只写微信侧事实，绝不碰用户填的字段）。表名不叫 `customer`：`reserved.ts` 里有旧形状 DDL，同名会撞 `IF NOT EXISTS` |
+| `session` / `tier_rule` / `knowledge_item` / `reply_decision` | 预留（**不再建表**） | 门控/转人工、条件规则、知识库、决策状态机。DDL 留在 `schema/reserved.ts`，接入时再搬进 `base.ts` —— 此前每次新建库都建出这些空表，导致「库里有的表 ≠ 代码在用的表」 |
 | `phrase_book` / `skill_package` / `agent_memory` / `ai_custom_tool` / `ai_mcp_server` | 已下线 | 老库残留，由数据迁移一次性删除（`schema/reserved.ts` 的 `LEGACY_TABLES`） |
 
 审计类表（`im_audit` / `feishu_send_log` / `send_log`）按 `created_at` 保留 `db.retentionDays` 天（默认 90，0=不清理），
@@ -624,6 +642,8 @@ npm run test:matcher  # 数字员工话术判定（真实群原话当夹具）
 npm run test:lark     # 飞书同步字段映射（状态往返/跟进人匹配/冲突比对，纯函数）
 npm run test:digest   # 日报文案（时长文案/空口径/行数上限，纯函数）
 npm run test:send     # 发送前目标唯一性与文本比对（纯函数）
+npm run test:ai-context   # 上下文窗口：阈值恒小于预算（24k~36k 静默丢上下文回归）、水位不重复摘要、dropped 可见
+npm run test:chat-summary # 摘要水位持久化：临时库跑真 SQL，钉住「清空会话必须连摘要与水位一起清」
 npm run test:schema   # schema 迁移自检：合成老库上跑三条数据迁移 + 幂等性（不碰真实库）
 npm run test:crypto   # 库解密：合成 SQLCipher 页/WAL 帧，验密钥校验、篡改拒绝、页往返、WAL commit/nTruncate/断帧/跨周期
 npm run test:media-proto # ct-media 路径解析：两段/三段布局、整体编码回归、目录穿越与非法命名
@@ -698,8 +718,10 @@ npm run build         # typecheck + electron-vite 三端构建
 
 ## 17. 待完善与已知边界
 
-- **预留表未接入**：`customer`（客户档案，当前客户页由会话+问题派生）、`session`（门控/转人工）、`tier_rule`、`knowledge_item`、`reply_decision` —— DDL 在 `schema/reserved.ts`，**不再建表**，接入功能时搬回 `base.ts`。
-- **密钥存储两种策略**：微信 DB 密钥走 `key_store` + safeStorage，图片解密密钥（`img:<wxid>:aesKey/xorKey`）仍是 `app_config` 明文，敏感度不同但应统一。
+- **预留表未接入**：`session`（门控/转人工）、`tier_rule`、`knowledge_item`、`reply_decision` —— DDL 在 `schema/reserved.ts`，**不再建表**，接入功能时搬回 `base.ts`。
+  > 原文这里还列着 `customer`（客户档案），**已失效**：客户档案已落库为 `customer_profile` + `customer_tag`（`schema/customer.ts`），客户页是「会话实时态叠档案持久态」，不再只由会话+问题派生。表名刻意不叫 `customer`，因为 `reserved.ts` 里躺着旧形状 DDL，同名会撞 `IF NOT EXISTS` 导致列对不上。
+- **密钥存储已统一加封**：微信 DB 密钥走 `key_store` + safeStorage；图片解密密钥（`img:<wxid>:aesKey/xorKey`）读写两侧统一走 `secrets.ts` 的 `sealSecret/openSecret`，启动时按前缀迁移存量明文。
+  > 原文写「图片密钥仍是 `app_config` 明文，敏感度不同但应统一」，**已失效**（见 `cryptoReadiness.ts` 写侧与 `mediaService.ts` 读侧）。
 - **数字员工只到影子模式**：发送通道（live）未开；图片/语音不理解；单聊不管；话术匹配是关键词/正则，没有语义召回。
 - **数字员工的前置条件**：「我方同事」名单不全时会去回同事的话 —— 上线前必须把名单标全（群问题面板的「同事标记」可批量补）。
 - **约束偏松**：核心表 `NOT NULL` 覆盖率低（靠代码纪律保证），布尔/枚举列无 `CHECK`；`AUTOINCREMENT` 用法不统一（审计表用，核心表不用）。

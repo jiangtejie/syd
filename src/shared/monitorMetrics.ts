@@ -1,4 +1,4 @@
-import type { FeedbackIssue, FeedbackIssueStatus, FeedbackIssueType } from './types'
+import type { FeedbackIssue, FeedbackIssueType } from './types'
 
 /**
  * 问题监控中心指标(BI 聚合纯函数,输入 = 该账号全量 issue,窗口影响趋势统计)。
@@ -204,13 +204,6 @@ export function computeMonitorData(
       .slice(0, 10),
     age: ageBuckets
   }
-}
-
-export const MONITOR_STATUS_LABEL: Record<FeedbackIssueStatus, string> = {
-  open: '待处理',
-  done: '已解决',
-  stalled: '已搁置',
-  archived: '已归档'
 }
 
 function pad2(n: number): string {

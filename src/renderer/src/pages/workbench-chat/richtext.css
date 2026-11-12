@@ -140,10 +140,8 @@
   animation: wb-row-in 0.16s ease-out;
 }
 
-/* 工具参数/结果、推理过程等内容区允许选中复制(全局 user-select:none 下恢复) */
-.wb-toolcard-detail-pre,
-.wb-reason-text,
-.wb-reason-static {
+/* 工具参数/结果内容区允许选中复制(全局 user-select:none 下恢复) */
+.wb-toolcard-detail-pre {
   user-select: text;
 }
 

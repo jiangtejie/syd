@@ -120,21 +120,6 @@ export function saveSyncRef(
     )
 }
 
-/**
- * 按 Base 侧的稳定 ID 找本地映射。
- *
- * 这是多机器共表的对齐入口：拉取时先用记录里的 议题UID 反查本地行，查不到才退回本地行号
- * （老表没有该列、或映射是升级前建立的）。
- */
-export function findSyncRefByRemoteUid(kind: LarkSyncKind, remoteUid: string): LarkSyncRef | null {
-  const uid = (remoteUid ?? '').trim()
-  if (!uid) return null
-  const r = getDb()
-    .prepare('SELECT * FROM lark_sync_map WHERE kind = ? AND remote_uid = ? LIMIT 1')
-    .get(kind, uid) as RefRow | undefined
-  return r ? toRef(r) : null
-}
-
 /** 只更新协作列的上次已知值（拉取应用后调用：把 Base 现值记为「已知」，避免判定成同事又改了一次） */
 export function saveRemoteCollab(
   kind: LarkSyncKind,

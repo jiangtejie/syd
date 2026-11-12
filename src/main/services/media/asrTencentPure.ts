@@ -91,20 +91,6 @@ export function tc3Authorization(input: Tc3Input): string {
   )
 }
 
-/** 签名相关的全部请求头（调用方直接合并进 fetch headers） */
-export function tc3Headers(input: Tc3Input): Record<string, string> {
-  const headers: Record<string, string> = {
-    Authorization: tc3Authorization(input),
-    'Content-Type': input.contentType ?? 'application/json; charset=utf-8',
-    Host: input.host,
-    'X-TC-Action': input.action,
-    'X-TC-Timestamp': String(input.timestamp),
-    'X-TC-Version': input.version
-  }
-  if (input.region) headers['X-TC-Region'] = input.region
-  return headers
-}
-
 /* ── 一句话识别（SentenceRecognition）请求体 ── */
 
 export interface SentenceRecognitionInput {

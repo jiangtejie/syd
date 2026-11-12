@@ -105,17 +105,6 @@ export function listChatMessages(sessionId: number): ChatMsgItem[] {
   return rows.map(rowToMsg)
 }
 
-/**
- * 只取最近 limit 条（按 id 倒序取再翻回升序）。
- * 引擎/每轮对话的上下文预算本来只有 40 条左右，却调用全量版本把整个会话读进内存。
- */
-export function listChatMessagesTail(sessionId: number, limit: number): ChatMsgItem[] {
-  const rows = getDb()
-    .prepare(`SELECT * FROM chat_message WHERE session_id = ? ORDER BY id DESC LIMIT ?`)
-    .all(sessionId, Math.max(1, limit)) as ChatMsgRow[]
-  return rows.reverse().map(rowToMsg)
-}
-
 /** 最后一条助手文本(IM 回复通道用):一条 SQL 取代「读全量再 reverse 查找」 */
 export function lastAssistantText(sessionId: number): string | null {
   const row = getDb()
@@ -192,7 +181,32 @@ export function appendChatMessage(
 }
 
 export function clearChatMessages(sessionId: number): void {
-  getDb().prepare(`DELETE FROM chat_message WHERE session_id = ?`).run(sessionId)
+  const db = getDb()
+  db.prepare(`DELETE FROM chat_message WHERE session_id = ?`).run(sessionId)
+  // 摘要与水位必须一起清：否则清空后旧摘要仍会被注入 system，模型会「记得」已删掉的对话
+  db.prepare(`UPDATE chat_session SET summary = NULL, summary_upto_id = 0 WHERE id = ?`).run(
+    sessionId
+  )
+}
+
+/* ── 长会话摘要与水位(避免每轮重新摘要全量历史) ── */
+
+/** 读会话摘要与水位；无摘要时 summary=null、uptoId=0 */
+export function getChatSummary(sessionId: number): { summary: string | null; uptoId: number } {
+  const row = getDb()
+    .prepare(`SELECT summary, summary_upto_id FROM chat_session WHERE id = ?`)
+    .get(sessionId) as { summary: string | null; summary_upto_id: number | null } | undefined
+  const upto = Number(row?.summary_upto_id ?? 0)
+  return {
+    summary: row?.summary?.trim() || null,
+    uptoId: Number.isFinite(upto) && upto > 0 ? upto : 0
+  }
+}
+
+export function setChatSummary(sessionId: number, summary: string | null, uptoId: number): void {
+  getDb()
+    .prepare(`UPDATE chat_session SET summary = ?, summary_upto_id = ? WHERE id = ?`)
+    .run(summary, Math.max(0, Math.floor(uptoId) || 0), sessionId)
 }
 
 /** 删除会话最后一条消息(重试清理用) */
@@ -270,11 +284,4 @@ export function saveMessageFeedback(input: {
     `INSERT INTO wb_feedback (session_id, message_id, value, reason, created_at)
      VALUES (?, ?, ?, ?, ?)`
   ).run(input.sessionId, input.messageId, input.value, input.reason ?? null, Date.now())
-}
-
-export function feedbackValueOf(messageId: number): 1 | -1 | null {
-  const row = getDb()
-    .prepare(`SELECT value FROM wb_feedback WHERE message_id = ?`)
-    .get(messageId) as { value: number } | undefined
-  return row ? (row.value === 1 ? 1 : -1) : null
 }

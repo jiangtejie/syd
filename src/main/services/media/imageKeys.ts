@@ -216,8 +216,3 @@ export function deriveImageKeys(accountDir: string, knownAesKey?: string): Deriv
   }
   return out
 }
-
-/** 供调用方判断目录是否是账号目录（xwechat_files/<wxid>_xxxx 或旧版结构） */
-export function looksLikeAccountDir(dir: string): boolean {
-  return statExists(dir)
-}

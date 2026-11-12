@@ -5,6 +5,10 @@
   "main": "./out/main/index.js",
   "author": "example.com",
   "homepage": "https://electron-vite.org",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -30,6 +34,8 @@
     "test:virtual-list": "node scripts/virtual-list-selftest.mjs",
     "test:ai-retry": "node scripts/ai-retry-selftest.mjs",
     "test:ai-budget": "node scripts/ai-budget-selftest.mjs",
+    "test:ai-context": "node scripts/ai-context-selftest.mjs",
+    "test:chat-summary": "node scripts/chat-summary-selftest.mjs",
     "test:security": "node scripts/security-policy-selftest.mjs",
     "test:customer": "node scripts/customer-archive-selftest.mjs",
     "test:onboarding": "node scripts/onboarding-selftest.mjs",
@@ -47,7 +53,7 @@
     "test:report-voice": "node --experimental-strip-types scripts/report-voice-selftest.mjs",
     "test:report-voice-pg": "node --experimental-strip-types scripts/report-voice-pg-smoke.mjs",
     "test:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/wechat-window-selftest.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/wechat-ocr-selftest.ps1",
-    "test:all": "npm run test:hygiene && npm run test:theme && npm run test:schema && npm run test:crypto && npm run test:media-proto && npm run test:media-cache && npm run test:media-tier && npm run test:image-fit && npm run test:wxgf && npm run test:asr && npm run test:report-voice && npm run test:matcher && npm run test:lark && npm run test:registry && npm run test:timeline && npm run test:digest && npm run test:send && npm run test:msg-table && npm run test:lark-uid && npm run test:wx-watch && npm run test:virtual-list && npm run test:ai-budget && npm run test:ai-retry && npm run test:security && npm run test:customer && npm run test:onboarding && npm run test:ffmpeg-path && npm run test:voice-pipeline && npm run test:reconcile && npm run test:feedback && npm run test:monitor",
+    "test:all": "npm run test:hygiene && npm run test:theme && npm run test:schema && npm run test:crypto && npm run test:media-proto && npm run test:media-cache && npm run test:media-tier && npm run test:image-fit && npm run test:wxgf && npm run test:asr && npm run test:report-voice && npm run test:matcher && npm run test:lark && npm run test:registry && npm run test:timeline && npm run test:digest && npm run test:send && npm run test:msg-table && npm run test:lark-uid && npm run test:wx-watch && npm run test:virtual-list && npm run test:ai-budget && npm run test:ai-retry && npm run test:ai-context && npm run test:chat-summary && npm run test:security && npm run test:customer && npm run test:onboarding && npm run test:ffmpeg-path && npm run test:voice-pipeline && npm run test:reconcile && npm run test:feedback && npm run test:monitor",
     "test:feedback": "node --experimental-strip-types scripts/reply-attribution-selftest.mjs && node --experimental-strip-types scripts/text-filters-selftest.mjs && node --experimental-strip-types scripts/issue-similarity-selftest.mjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
@@ -92,6 +98,7 @@
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
+    "esbuild": "^0.25.11",
     "eslint": "^9.39.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",

@@ -27,8 +27,10 @@ const APP_DIR_NAME = 'wechat-cs-desktop'
 /** 历史版本明文库目录名（现已并入 db 分区） */
 const LEGACY_PLAIN_DIR = 'wx-plain'
 
-/** 缓存目录顶层分区（新增用途前先在此登记，保证结构统一） */
-export const CACHE_SUB_DIRS = ['db', 'media', 'files', 'tmp', 'export'] as const
+/** 缓存目录顶层分区（新增用途前先在此登记，保证结构统一）。
+ *  只登记**真有人写**的分区：曾登记过 tmp/export，但存取函数零调用、导出实际走用户选定目录，
+ *  留着就是「代码里的分区 ≠ 磁盘上的分区」（同 schema 预留表的教训）。 */
+export const CACHE_SUB_DIRS = ['db', 'media', 'files'] as const
 export type CacheSubDir = (typeof CACHE_SUB_DIRS)[number]
 
 /** 探测第一个可用的非系统盘根目录（如 D:\），不可用返回 null */
@@ -135,16 +137,6 @@ export function getVoiceCacheDir(wxid: string): string {
 /** 渠道接收文件根目录：<cache>/files */
 export function getFilesRootDir(): string {
   return getCacheSubPath('files')
-}
-
-/** 一次性临时文件目录：<cache>/tmp */
-export function getTmpDir(): string {
-  return getCacheSubPath('tmp')
-}
-
-/** 用户导出产物目录：<cache>/export */
-export function getExportDir(): string {
-  return getCacheSubPath('export')
 }
 
 /**

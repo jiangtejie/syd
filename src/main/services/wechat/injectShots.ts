@@ -52,11 +52,6 @@ function listShots(): Array<{ name: string; full: string; size: number; mtimeMs:
   }
 }
 
-export function injectShotsStats(): { count: number; bytes: number } {
-  const all = listShots().filter((f) => isInjectShot(f.name))
-  return { count: all.length, bytes: all.reduce((s, f) => s + f.size, 0) }
-}
-
 /** 按保留期/数量清理注入截图（非截图不动） */
 export function pruneInjectShots(): ShotsPruneResult {
   const out: ShotsPruneResult = { removed: 0, freedBytes: 0, kept: 0 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ImAuditEntry } from '../../../../shared/types'
+import { fmtDuration } from '../../lib/toolTimeline'
 
 /**
  * IM 审计/任务的屏幕侧共用逻辑:轮询取数 + 时间/耗时可读化。
@@ -60,9 +61,7 @@ export function fmtAuditTime(ts: number, withSeconds = true): string {
   return withSeconds ? `${base}:${p(d.getSeconds())}` : base
 }
 
-/** 耗时可读化(s/m) */
+/** 耗时可读化：口径与工具时间线共用一份（此前这里输出 `1m3s`、那边 `1m03s`，同一时长两种写法） */
 export function fmtAuditDur(from: number, to: number | null): string {
-  const ms = (to ?? Date.now()) - from
-  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`
-  return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`
+  return fmtDuration((to ?? Date.now()) - from, false)
 }

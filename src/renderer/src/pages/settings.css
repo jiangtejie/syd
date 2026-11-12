@@ -295,11 +295,7 @@ select.st-input {
   min-width: 0;
 }
 
-/* 独立小节标签（无表单行时）/ 定宽时间输入 / 预format文本 */
-.st-label-gap {
-  margin-top: var(--sp-3);
-}
-
+/* 定宽时间输入 / 预format文本 */
 .st-input-time {
   flex: 0 0 110px;
   max-width: 110px;

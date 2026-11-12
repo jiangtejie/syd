@@ -1,12 +1,5 @@
 import { getConfigBoolean } from '../../db/repos/config'
-import {
-  pullIssuesBack,
-  syncEvidenceOut,
-  syncIssuesOut,
-  syncRepliesOut,
-  type PullResult,
-  type SyncOutResult
-} from './baseSync'
+import { pullIssuesBack, syncEvidenceOut, syncIssuesOut, syncRepliesOut } from './baseSync'
 import { createLogger } from '../logging'
 
 const syncLog = createLogger('lark')
@@ -79,17 +72,4 @@ export function stopBaseSyncScheduler(): void {
   firstTimer = null
   timer = null
   wxid = null
-}
-
-/** 手动触发（设置页「立即同步」）：议题 → 影子回复 → 证据明细 */
-export async function runBaseSyncNow(accountWxid: string, force = false): Promise<SyncOutResult> {
-  const r = await syncIssuesOut(accountWxid, { force })
-  await syncRepliesOut(accountWxid, { force })
-  await syncEvidenceOut()
-  return r
-}
-
-/** 手动拉取同事改动（设置页「拉取同事改动」） */
-export async function runBasePullNow(accountWxid: string): Promise<PullResult> {
-  return pullIssuesBack(accountWxid)
 }

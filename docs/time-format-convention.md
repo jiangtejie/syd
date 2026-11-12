@@ -44,6 +44,13 @@
 保留相对时间的只有**「年龄/耗时」类**文案（积压 `3 天`、任务 `12s`、报表 `3 天前` 的括号补充），
 它们表达的是时长而不是时刻。
 
+> **补漏（2026-11）**：上表声称已统一，但 `pages/WorkbenchChatPage.tsx` 的 AI 会话列表仍留着一份
+> 自写的 `fmtSessionTime`（今天 `HH:MM`、更早 `M/D`），是本轮才发现的漏项 —— 已删掉本地实现，
+> 改走 `lib/ui.ts` 的 `formatSessionTime`（秒级，与会话列表/客户页同一份）。
+> 同轮把**时长**文案也收敛了：`fmtAuditDur` 委托 `lib/toolTimeline.fmtDuration(ms, subSecond=false)`，
+> 此前审计侧输出 `1m3s`、工具时间线输出 `1m03s`，同一时长两种写法。
+> 教训：约定落地后要在**新增页面**上复查，「已落地」不等于「全覆盖」。
+
 ## 4. 验证
 
 - `scripts/lark-sync-selftest.mjs` 新增 [10] 段：断言 `fmtStamp` / `fmtHms` / `fmtTimeShort` 的形状

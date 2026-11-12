@@ -626,10 +626,5 @@ function refreshPlainFromWal(filePath: string, plainPath: string, hexKey: string
   return true
 }
 
-/** 供诊断/自检：当前源库签名（源库或 WAL 变化即变化） */
-export function wechatSourceSignature(filePath: string): string | null {
-  return sourceSignature(filePath)
-}
-
 /** 加密区长度导出（自检与外部校验用） */
 export { ENC_SIZE, PAGE_SIZE }

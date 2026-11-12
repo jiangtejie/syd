@@ -14,6 +14,11 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # 内部审计资料与开发脚本不随包发给终端用户：运行时只读 resourcesPath/ps 与 /bin，
+  # 从不读 docs/ scripts/ ARCHITECTURE.md（此前它们整个进了 app.asar，约 640KB）。
+  - '!docs/**'
+  - '!scripts/**'
+  - '!ARCHITECTURE.md'
 extraResources:
   # 注入脚本放到 app.asar 旁 resources/ps(运行时代码按 process.resourcesPath/ps 读取)
   - from: resources/ps

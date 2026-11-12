@@ -148,13 +148,3 @@ export function saveDutyState(
     )
     .run(wxid, groupUsername, patch.lastSeq ?? null, patch.lastMsgTime ?? null, now, now)
 }
-
-export function clearDutyState(wxid: string, groupUsername?: string): void {
-  if (groupUsername) {
-    getDb()
-      .prepare('DELETE FROM agent_duty_state WHERE account_wxid = ? AND group_username = ?')
-      .run(wxid, groupUsername)
-    return
-  }
-  getDb().prepare('DELETE FROM agent_duty_state WHERE account_wxid = ?').run(wxid)
-}

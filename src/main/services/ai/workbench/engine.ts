@@ -5,10 +5,12 @@ import { getConfig } from '../../../db/repos/config'
 import {
   appendChatMessage,
   getChatById,
+  getChatSummary,
   lastUserMessage,
   listChatMessages,
   popLastChatMessage,
   renameChat,
+  setChatSummary,
   touchChat
 } from '../../../db/repos/chatRepo'
 import { buildWorkbenchSystem } from './context'
@@ -16,6 +18,7 @@ import { buildWorkbenchToolSet, type WbEvidenceRow } from './tools'
 import { emitWorkbenchEvent } from './events'
 import { describeModelError } from '../modelErrors'
 import { budgetExhaustedMessage, looksBudgetExhausted, planOutputBudget } from '../outputBudget'
+import { mergeSummary, normalizeSummary, planContextWindow, trimByBudget } from '../contextWindow'
 import { createLogger } from '../../logging'
 
 const wbLog = createLogger('wb')
@@ -25,14 +28,11 @@ const wbLog = createLogger('wb')
  * - model = openai-compatible(沿用 ai.baseUrl/model/key 配置);
  * - tools = 产品原生能力(见 tools.ts):只读查询 + 唯一写工具 send_message(逐次审批);
  * - 会话复用 chat_session/chat_message;事件通道 ai:wb;AbortController 停止;
- * - 上下文预算:历史 ≤40 条 / ≤24k 字符 / 单条 6k,超限用 generateText 压缩旧段。
+ * - 上下文窗口/压缩口径统一在 ai/contextWindow.ts(与 IM 助手引擎共用一份,含水位)。
  */
 
-const MAX_ROWS = 40
+/** 上下文字符预算。压缩触发阈值由它派生(×0.75),保证「先压缩、后裁剪」 */
 const MAX_CHARS = 24_000
-const MAX_MSG_CHARS = 6000
-const COMPRESS_THRESHOLD_ROWS = 24
-const COMPRESS_THRESHOLD_CHARS = 36_000
 /** 推理过程(思考内容)实时上屏上限:超限后不再推送/落库,避免消息体过大 */
 const REASON_CAP = 6000
 /** 工具调用参数/结果推送到渲染端的上限(渲染端可折叠查看,截断防刷屏) */
@@ -176,10 +176,11 @@ function reasonerModel(model: string): boolean {
 }
 
 /** 历史 → SDK messages(仅 user/assistant 文本;工具行由 SDK 自动重建) */
-function historyToMessages(
-  rows: Array<{ role: string; kind: string; content: string }>
-): ModelMessage[] {
-  const turns: ModelMessage[] = []
+function historyToMessages(rows: Array<{ role: string; kind: string; content: string }>): {
+  messages: ModelMessage[]
+  dropped: number
+} {
+  const turns: Array<{ role: 'user' | 'assistant'; content: string }> = []
   for (const r of rows) {
     if (
       r.kind === 'tool_call' ||
@@ -188,46 +189,26 @@ function historyToMessages(
       r.kind === 'error'
     )
       continue
-    if (r.role === 'user') {
-      turns.push({ role: 'user', content: r.content } as ModelMessage)
-    } else if (r.role === 'assistant') {
-      turns.push({ role: 'assistant', content: r.content } as ModelMessage)
+    if (r.role === 'user' || r.role === 'assistant') {
+      turns.push({ role: r.role, content: r.content })
     }
   }
-  const kept: ModelMessage[] = []
-  let sum = 0
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const t = turns[i]
-    const text = typeof t.content === 'string' ? t.content : ''
-    const content =
-      text.length > MAX_MSG_CHARS ? `${text.slice(0, MAX_MSG_CHARS)}\n…(超长已截断)` : text
-    if (kept.length > 0 && sum + content.length > MAX_CHARS) break
-    kept.unshift({ role: t.role, content } as ModelMessage)
-    sum += content.length
-  }
-  return kept.slice(-MAX_ROWS)
+  const { kept, dropped } = trimByBudget(turns, MAX_CHARS)
+  return { messages: kept as ModelMessage[], dropped }
 }
 
-/** 长会话压缩旧段(失败降级丢弃旧段,不阻塞会话) */
-async function compressHistory(
-  model: WbModel,
-  rows: Array<{ role: string; kind: string; content: string }>
-): Promise<string | null> {
-  const keep = Math.ceil(rows.length / 2)
-  const old = rows.slice(0, rows.length - keep)
-  const text = old
-    .map((r) => `${r.role === 'user' ? '用户' : '助手'}: ${r.content.slice(0, 400)}`)
-    .join('\n')
-    .slice(-24_000)
+/** 长会话压缩旧段(失败降级丢弃旧段,不阻塞会话;水位不推进,下轮重试) */
+async function compressHistory(model: WbModel, summaryInput: string): Promise<string | null> {
+  if (!summaryInput) return null
   try {
     const res = await generateText({
       model,
       maxOutputTokens: 600,
       system:
         '你是对话摘要器。把客服工作台历史对话压缩为不超过 400 字的中文摘要:保留已查到的业务结论与数据要点、客户诉求与状态、待办。不要复述寒暄。',
-      prompt: `历史对话:\n${text}`
+      prompt: `历史对话:\n${summaryInput}`
     })
-    return res.text.trim().slice(0, 1400) || null
+    return normalizeSummary(res.text)
   } catch {
     return null
   }
@@ -294,22 +275,37 @@ export async function sendWorkbenchMessage(
   try {
     // 工具痕迹/压缩标记行仅用于展示,不进入模型上下文与压缩统计
     const allRows = listChatMessages(sessionId)
-    let rows = allRows
+    const rows = allRows
       .filter((r) => r.kind !== 'tool_call' && r.kind !== 'tool_result' && r.kind !== 'compact')
-      .map((r) => ({ role: r.role, kind: r.kind, content: r.content }))
-    let summary: string | null = null
-    const chars = rows.reduce((n, r) => n + r.content.length, 0)
-    if (rows.length >= COMPRESS_THRESHOLD_ROWS && chars > COMPRESS_THRESHOLD_CHARS) {
-      summary = await compressHistory(model, rows)
-      rows = rows.slice(rows.length - Math.ceil(rows.length / 2))
+      .map((r) => ({ id: r.id, role: r.role, kind: r.kind, content: r.content }))
+    // 摘要带水位:已摘要过的行只活在摘要里,不再每轮重新喂模型(长会话成本不随轮次叠加)
+    const persisted = getChatSummary(sessionId)
+    const plan = planContextWindow(rows, { budgetChars: MAX_CHARS, uptoId: persisted.uptoId })
+    let summary: string | null = persisted.summary
+    if (plan.shouldCompress) {
+      const fresh = await compressHistory(model, plan.summaryInput)
+      // 摘要失败**不推进水位**:否则旧段既不在摘要里也不在上下文里,等于永久丢失
+      if (fresh) {
+        summary = mergeSummary(summary, fresh)
+        setChatSummary(sessionId, summary, plan.nextUptoId)
+      }
       // 压缩是「历史透明变更」:先于生成推送给渲染端,界面在消息流顶部展示可展开标记;
       // 并落一条 compact 展示行,持久可回看(刷新/重开仍在,重试时随尾部一并清理)
-      const compactText = summary ?? '旧对话过长已压缩,仅保留最近一段(摘要生成失败)。'
+      const compactText = summary ?? '旧对话过长已压缩,仅保留最近一段(摘要生成失败,下轮会重试)。'
       appendChatMessage(sessionId, 'assistant', 'compact', compactText)
       emitWorkbenchEvent(sessionId, { type: 'compaction', text: compactText })
-      wbLog.info(`[会话${sessionId}] 上下文已压缩(rows=${allRows.length})`)
+      wbLog.info(
+        `[会话${sessionId}] 上下文已压缩(rows=${allRows.length} 水位=${plan.nextUptoId} 摘要=${fresh ? 'ok' : '失败'})`
+      )
     }
-    const messages: ModelMessage[] = historyToMessages(rows)
+    const { messages, dropped } = historyToMessages(plan.tail)
+    // 裁剪确实丢了行就必须可见 —— 静默丢上下文正是这条链路原来的故障
+    if (dropped > 0) {
+      const note = `上下文仍超出预算,已丢弃最早的 ${dropped} 条历史(更早的内容在摘要里)。`
+      appendChatMessage(sessionId, 'assistant', 'compact', note)
+      emitWorkbenchEvent(sessionId, { type: 'compaction', text: note })
+      wbLog.warn(`[会话${sessionId}] ${note}`)
+    }
 
     // 附图:把本轮用户消息(末尾 user 行)替换为多模态 parts(图片仅本轮生效,不入库回看)
     if (images.length > 0) {

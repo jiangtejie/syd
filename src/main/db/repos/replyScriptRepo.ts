@@ -106,12 +106,6 @@ export function listScripts(wxid: string, opts: { enabledOnly?: boolean } = {}):
   return rows.map(toScript)
 }
 
-export function getScript(id: number): ReplyScript | null {
-  const r = getDb().prepare('SELECT * FROM reply_script WHERE id = ?').get(id) as
-    ScriptRow | undefined
-  return r ? toScript(r) : null
-}
-
 export function saveScript(input: ReplyScriptInput): number {
   const now = Date.now()
   const db = getDb()

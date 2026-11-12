@@ -8,6 +8,7 @@ import {
   type WbTurnBlock
 } from '../stores/workbenchChat'
 import { splitToolRuns, type TimelineItem } from '../lib/toolTimeline'
+import { formatSessionTime } from '../lib/ui'
 import { useWorkbenchStore } from '../stores/workbench'
 import { toast } from '../stores/toast'
 import { confirmAsk } from '../stores/confirmDialog'
@@ -94,15 +95,6 @@ function FolderIcon({ size = 14 }: { size?: number }): React.JSX.Element {
       <path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
     </svg>
   )
-}
-
-/** 会话行的更新时间：今天 HH:MM，更早 M/D（等宽数字，跨行右对齐） */
-function fmtSessionTime(ts: number): string {
-  const d = new Date(ts)
-  const now = new Date()
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  if (d.toDateString() === now.toDateString()) return pad(d.getHours()) + ':' + pad(d.getMinutes())
-  return d.getMonth() + 1 + '/' + d.getDate()
 }
 
 /** 常用业务提问预设:点击把规范句式填入输入框(工作台按绑定账号实际数据作答)。
@@ -1045,7 +1037,7 @@ export default function WorkbenchChatPage(): React.JSX.Element {
                   <div className="wb-side-main">
                     <div className="wb-side-row">
                       <div className="wb-side-title">{c.title}</div>
-                      <span className="wb-side-time ui-num">{fmtSessionTime(c.updatedAt)}</span>
+                      <span className="wb-side-time ui-num">{formatSessionTime(c.updatedAt)}</span>
                     </div>
                     {c.id !== activeId && (busyIds[c.id] || sessNew[c.id] || sessErr[c.id]) && (
                       <div className="wb-side-status">

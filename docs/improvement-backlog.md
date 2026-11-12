@@ -30,6 +30,10 @@
 | **B3** | **统一微信库「变化」口径**                                            | 新增 `wechat/dbFileWatch.ts`（纯判定）：监控把 **`-wal` 也算变化**（主库 mtime 常不动），但对外只报**库文件本身**（报 -wal 会让下游按路径判 sessionChanged 的逻辑全部失配）；WAL 变化按 3s 冷却节流，主库变化立即放行。`decrypt.openWxDbFile` 增加**增量刷新**：主库没动、只有 WAL 追加时，把当前日志的帧合进已有明文副本（`quick_check` 通过才采用），不再整库重解；判据保守，任一不成立即回落原路径                                                                                                                                                                                                                                                                                                                                  | `npm run test:wx-watch`                   |
 | **B5** | **Base 同步键换全局 uid**（本轮提前做）                               | 新增 `issueUid(wxid, key)`（`baseMapping.ts`）与 Base 列 `议题UID`；`议题ID`（本地行号）保留只作展示。`lark_sync_map` 增 `remote_uid`，推送/拉取/认领三处一律**先按 uid 对齐**，认不出才退回行号；老映射命中后自动补写 uid。表里没有 `议题UID` 列时自动退化为原行为（不报错、不拒收记录）                                                                                                                                                                                                                                                                                                                                                                                                                                              | `npm run test:lark-uid`                   |
 | **A4** | **崩溃兜底 + 任务终态对账**                                           | `services/crashGuard.ts`（新）：`uncaughtException`/`unhandledRejection` 落 `logs/crash-<ts>.log` + 标记文件 + error 日志，**故意不退出进程**（常驻后台还跑着调度）。`db/reconcile.ts`（新）：启动时把「早于本次进程启动」的非终态任务改判 `interrupted`（im_audit / report_run）。`main/index.ts`：尽早注册兜底 + 启动对账 + 读走崩溃标记并记 error                                                                                                                                                                                                                                                                                                                                                               | `npm run test:reconcile`                  |
+| **B9** | **长会话上下文压缩收敛**（2026-11 落地） | 根因是**同一套算法复制了两份**：`workbench/engine.ts` 与 `chat/service.ts` 各写了一遍「单条 6000 截断 + 总量预算 + 40 条上限 + 保留最近一半 + 旧段摘要（每行 400 字 / 输入 24k / 输出 1400 字）」，复制后只有一边改了常量 → 工作台预算 24k **小于**触发阈值 36k，24k~36k 静默丢上下文；助手侧 48k 大于阈值反而没这个 bug。压缩可见性的修复也只落了工作台一份。现收敛为 `ai/contextWindow.ts`（纯函数）：① **阈值由预算派生（×0.75）**，结构上不可能再配反，助手侧 48k→36k 行为不变；② 超行数上限同样触发压缩，不再按条数静默丢行；③ 裁剪回传 `dropped`，两个引擎都落 `compact` 行 + 推事件；④ **摘要落库带水位**（`chat_session.summary` + `summary_upto_id`），每行最多摘要一次（自检实测 40 轮从近 40 次降到 7 次），**摘要失败不推进水位**否则旧段永久丢失；⑤ `clearChatMessages` 连摘要与水位一起清 | `npm run test:ai-context` + `test:chat-summary` |
+| **A5** | **工程配置收口**（2026-11） | ① `electron-builder.yml` 的 `files` 补 `!docs/** !scripts/** !ARCHITECTURE.md` —— 此前内部审计资料整个进了 `app.asar`（实测 docs 21 文件 + scripts 46 文件 + ARCHITECTURE 67KB），而运行时只读 `resourcesPath/ps\|bin`；② 删 stale `package-lock.json`（含 09-13 就已移除的 tailwind 56 处，实际安装器是 pnpm 11.7.0），README 安装口径改 pnpm，`packageManager`/`engines` 钉死；③ `esbuild` 显式进 devDependencies（22 个自检脚本 import 它却零声明，靠 electron-vite 传递依赖活着）；④ `.prettierignore` 补 `out-preview`/`scripts/_tmp`/`resources/bin`（6f7d4c1 只修了 eslint，`npm run format` 仍会重写 200 个产物文件）；⑤ Node 下限抬到 `>=22.12.0`（16 处 `--experimental-strip-types` 需 ≥22.6，Node 20 下 `test:all` 必红） | `prettier.getFileInfo` 实测 + 排除模式匹配验证 |
+| **A6** | **死代码清理**（2026-11） | 按 TS AST 精确删除 **28 个零引用导出**（判据：全仓含本文件、含 scripts 自检在内零引用；「仅本文件内使用的多余 export」不在此列）。含 `chat/service.ts` 照工作台形状写的死副本 `stopChatById/retryChat/clearChat`（IM 侧实际用 `stopChat(wxid,chatId)`）、死转发壳 `decrypt.wechatSourceSignature`（内部 `sourceSignature` 仍在用，**保护没断**）、无人使用的 `paths.getTmpDir/getExportDir`。级联清掉 7 个无用 import 与 1 个变死的本地函数；`db/repos/_json.ts` 清空后整文件删除。渲染端删零 import 的 `ui/Modal.tsx`+`ui/Feedback.tsx`、`lib/useCountUp.ts`+`lib/useEscape.ts`、`lib/ui.formatMessageTime`，以及只被它们使用的 CSS 块 —— **`ui-empty*`/`ui-spin`/`ui-err` 保留**（页面手写 markup 直接复用这些类名，`ui-empty` 有 60 处引用）。**经用户确认**：`setReplyStatus`/`feedbackValueOf`/`findSyncRefByRemoteUid`/`runBaseSyncNow`/`runBasePullNow` 这 5 个「待排期能力挂钩」一并删除，将来接功能时按需重写 | `typecheck` + `lint` + `test:all` 全绿 |
+| **A7** | **渲染端口径收敛**（2026-11） | ① 状态徽标：`GroupIssuesPanel` 内联重写的那套文案改走 `lib/monitorChips.statusChip`（全仓唯一口径），并补齐 `.gip-st.is-follow/is-overdue/is-auto` 三条缺失样式 —— 此前「跟进超时」和「跟进中」落到同一个底色，超时看不出来；删零引用的 `MONITOR_STATUS_LABEL`。② 时间精度：`WorkbenchChatPage` 自写的 `HH:MM` 改用 `lib/ui.formatSessionTime`（秒级），补齐 `time-format-convention` 的漏项。③ 时长文案：`fmtAuditDur` 委托 `lib/toolTimeline.fmtDuration(ms, subSecond=false)`，统一 `1m03s` 补零口径（此前审计侧输出 `1m3s`）；顺带修掉**先拆后取整**导致的 `1m60s`/`60s` 显示错误 | `npm run test:timeline`（新增 9 条断言） |
 
 
 **为什么先做这四条**：A1 与 A2 分别对应「已付费的能力被丢弃」和「最难排查的事故」，
@@ -40,12 +44,11 @@
 
 ## B. 1–2 周（成本 M，收益高）
 
-> B 组已全部落地（B1–B8 + 提前做的 B5）；下表只剩刻意未做的跟进项。
+> B 组已全部落地（B1–B9 + 提前做的 B5，B9 于 2026-11 落地见 A 表）；下表只剩刻意未做的跟进项。
 
 | #       | 事项                                           | 关键证据                                                                                                                                                                                                                                                                                                                      | 修好哪条接缝 |
 | ------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| **B9**  | **长会话裁剪阈值不自洽**（未做，来自平台审计） | `ai/workbench/engine.ts` 的裁剪上限 24k 字符 < 压缩触发阈值 36k，24k~36k 之间会**静默丢上下文且界面无任何标记**；且超阈值后每轮都重新摘要一次（输入是库里的全量行、结果只影响本轮），长会话成本随轮次线性叠加。修法：压缩阈值调到裁剪上限之下、摘要落库带水位（`summary + summary_upto_id`）、发生裁剪必须落 compact 标记可见 | —            |
-| **B3b** | **`openWxDbFile` 句柄缓存**（本轮刻意未做）    | 现状：每次读库都 `openWxDbFile` + 用完 `db.close()`，翻 10 页消息就是 10×分片 次开关库。**没做增量句柄缓存是因为所有权契约**：调用方（`queries.ts` 各处）现在负责关库，改成缓存就得同时改掉全部调用点的 close，风险大于本轮收益。等 B3 的增量刷新稳定运行后再单独排期，届时要一起改调用点                                     | —            |
+| **B3b** | **`openWxDbFile` 句柄缓存**（本轮刻意未做）    | 现状：每次读库都 `openWxDbFile` + 用完 `db.close()`，翻 10 页消息就是 10×分片 次开关库（`wechat/queries.ts` 现有 10 处 `.close()`、全仓 15 个 `openWxDbFile` 调用点）。**没做增量句柄缓存是因为所有权契约**：调用方（`queries.ts` 各处）现在负责关库，改成缓存就得同时改掉全部调用点的 close，风险大于本轮收益。等 B3 的增量刷新稳定运行后再单独排期，届时要一起改调用点                                     | —            |
 
 ---
 
@@ -58,7 +61,7 @@
 2. **单聊**：三条引擎全部 `s.isGroup`（`feedback/passes/extract.ts:102`、`agent/duty.ts:117`、`feedback/analyzer.ts:627`）。
    私域成交主战场在闭环外 —— 要不要做「单聊轻闭环」？
 4. **数字员工 live**：`feedback/passes/reply.ts:32-33` 显示 live 只改轮询间隔；
-   `services/agent/` 全目录发送与通知调用**均为 0**；`setReplyStatus` 零调用。
+   `services/agent/` 全目录发送与通知调用**均为 0**；决策状态无人改（`setReplyStatus` 挂钩已随 A6 删除）。
    要么接发送通道，要么把「正式模式」文案改掉 —— **不能让 UI 承诺一个不存在的能力**。
 5. **坐席/绩效**：`team_member` 只有 `(account_wxid, username, label)`，全仓无 user/role/seat 表。
 
@@ -83,9 +86,9 @@
 | 落盘 → 治理   | 注入截图无保留期；`img:*` 密钥明文落库                                                                                                                                   | **B6 已修**（截图默认退出即清；密钥加封 + 存量迁移）                                                                       |
 | 库 → 新鲜度   | 新鲜度算 WAL、监控不算 WAL                                                                                                                                               | **B3 已修**（句柄缓存未做，见下）                                                                                          |
 | 客户 → 主数据 | `customer` 被迁移删除；Base 用本机行号当 ID                                                                                                                              | **B1 已修**（档案落库 + 迁移不再删表）+ **B5 已修**                                                                        |
-| 决策 → 审计   | AI 采纳记 manual；`send_log` 无 `agent_reply_id`；`setReplyStatus` 零调用                                                                                                | A3 局部；B4                                                                                                                |
+| 决策 → 审计   | AI 采纳记 manual；`send_log` 无 `agent_reply_id`；决策状态无人改（`setReplyStatus` 原为零调用挂钩，**A6 已按用户决定删除**，接功能时重写）                                                                                                | A3 局部；B4                                                                                                                |
 | 决策 → 播报   | `queued`（高风险/看不懂）没有消费者、也没有通知                                                                                                                          | 待排期（低成本）                                                                                                           |
-| 反馈 → 聚合   | `wb_feedback` 读取函数零调用；`replyStats` 忽略 `feedback`                                                                                                               | 待排期                                                                                                                     |
+| 反馈 → 聚合   | `wb_feedback` 写得进读不出（`feedbackValueOf` 原为零调用挂钩，**A6 已按用户决定删除**）；`replyStats` 忽略 `feedback`                                                                                                               | 待排期                                                                                                                     |
 | 能力 → 计量   | token 只进单条消息 meta，全仓无聚合                                                                                                                                      | **B4 已修**（`ai_run` + 面板）                                                                                             |
 | 任务 → 终态   | `running` 行被清理逻辑排除，无启动对账                                                                                                                                   | **A4 已修**                                                                                                                |
 | 证据 → 多机   | **证据表仍用「证据ID = 本地 msgId」**，且孤儿清理按「不在本机集合里就删」。多台桌面端共用一张证据表时，**A 机会把 B 机写的证据行当孤儿删掉**（破坏性，比议题串号更严重） | ⚠️ 待做：证据行同样加 uid（`证据UID = hash(wxid,msgId)`）+ 孤儿清理按「本机 uid 空间」收窄，或检测到多机写入时直接禁用清理 |
@@ -95,7 +98,7 @@
 ## F. 保护清单（已做好，别动）
 
 - **解密层**：密钥先行校验、流式分批写盘、WAL 校验合并 + quick_check 回退、原子 rename 落盘。
-- **媒体协议白名单**：`media/mediaProtocol.ts:50-65` + `main/index.ts:161-176`，路径穿越处理干净。
+- **媒体协议白名单**：`media/mediaProtocol.ts:50-65` + `main/index.ts:169-186`，路径穿越处理干净。
 - **发送安全**：熔断持久化、队列上限、逐次审批闸门、`injector` 的 phase 标记
   （「状态未知绝不自动重试」）—— 工程含量最高的一块。
 - **写路径事务**：`issueRepo` 证据重建包事务、`analyzer.applyExtracted` 整批事务。

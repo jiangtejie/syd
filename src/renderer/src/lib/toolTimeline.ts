@@ -92,14 +92,18 @@ export function timelineSummary(steps: TimelineStep[], now = Date.now()): Timeli
   }
 }
 
-/** 时长文案：<10s 带一位小数（0.8s / 3.4s），≥10s 取整（12s），≥60s 用 1m03s */
-export function fmtDuration(ms: number): string {
+/**
+ * 时长文案（**全仓唯一口径**，审计耗时也走这里）。
+ * ≥60s 用 `1m03s`（秒补零，跨行右对齐）；先对总秒数取整再拆分，避免出现 `1m60s`。
+ * subSecond=true：<10s 带一位小数（0.8s / 3.4s），工具延迟需要亚秒精度；
+ * subSecond=false：<60s 一律整秒且至少 1s（审计耗时不足 1s 显示「0s」会让人以为没跑）。
+ */
+export function fmtDuration(ms: number, subSecond = true): string {
   if (!Number.isFinite(ms) || ms < 0) return ''
-  if (ms < 10_000) return (ms / 1000).toFixed(1) + 's'
-  if (ms < 60_000) return Math.round(ms / 1000) + 's'
-  const m = Math.floor(ms / 60_000)
-  const s = Math.round((ms % 60_000) / 1000)
-  return m + 'm' + String(s).padStart(2, '0') + 's'
+  if (subSecond && ms < 10_000) return (ms / 1000).toFixed(1) + 's'
+  const total = Math.max(1, Math.round(ms / 1000))
+  if (total < 60) return `${total}s`
+  return `${Math.floor(total / 60)}m${String(total % 60).padStart(2, '0')}s`
 }
 
 /** 一步的标题：单调用用工具名，多调用用「N 个调用并行」 */

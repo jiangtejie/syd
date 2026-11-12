@@ -2,7 +2,7 @@ import { getConfig } from '../../db/repos/config'
 import { larkCall } from './client'
 import { fetchFields, invalidateFields, type LarkFieldMeta } from './fields'
 import { createLogger } from '../logging'
-import { getPersonConfig, setPersonConfig } from './personMap'
+import { getPersonConfig } from './personMap'
 
 const sysLog = createLogger('lark')
 
@@ -332,9 +332,4 @@ export async function upgradeBaseToSystem(): Promise<UpgradeReport> {
       manual: SYSTEM_MANUAL_STEPS
     }
   }
-}
-
-/** 设置页用:一键升级后把「人员列」也打开/关掉 */
-export function setPersonColumn(enabled: boolean, field?: string): void {
-  setPersonConfig({ enabled, ...(field ? { field } : {}) })
 }
